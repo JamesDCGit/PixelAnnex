@@ -1,0 +1,48 @@
+# ── Node ─────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# ── Environment & secrets ─────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.env
+
+# ── OS ────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+
+# ── Editors ───────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Build / dist ──────────────────────────────────────────────────
+dist/
+build/
+
+# ── Logs ──────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Archives ──────────────────────────────────────────────────────
+*.zip
+*.tar.gz
+
+# ── Old versions (keep only current) ─────────────────────────────
+pixelworld.html
+pixelworld_v2.html
+pixelworld_v3.html
+pixelworld_v4.html
+anthem_demo.html
+flag_test.html

@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PixelWorld — 4096×2048</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#070d1a;font-family:'Courier New',monospace}
+#app{display:flex;flex-direction:column;width:100vw;height:100vh}
+#toolbar{display:flex;align-items:center;gap:8px;padding:7px 14px;flex-shrink:0;background:#0c1526;border-bottom:1px solid rgba(255,255,255,0.07);flex-wrap:wrap;z-index:20;min-height:46px;}
+#toolbar h1{font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#e2e8f0;white-space:nowrap}
+#toolbar h1 span{color:#3b82f6}
+.sep{width:1px;height:20px;background:rgba(255,255,255,0.08);flex-shrink:0}
+select,.btn{background:#162035;border:1px solid rgba(255,255,255,0.1);color:#cbd5e1;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s;}
+select:hover,.btn:hover{border-color:rgba(255,255,255,.22);background:#1e2e4a}
+select:focus,.btn:focus{outline:none;border-color:#3b82f6}
+#brush-wrap{display:flex;align-items:center;gap:6px;font-size:11px;color:#475569}
+#brush-wrap input{width:70px;accent-color:#3b82f6}
+#stats{font-size:11px;color:#334155;margin-left:auto;white-space:nowrap}
+#stats b{color:#64748b}
+#swatch{width:12px;height:12px;border-radius:2px;border:1px solid rgba(255,255,255,.12);flex-shrink:0}
+#viewport{flex:1;position:relative;overflow:hidden;cursor:crosshair}
+canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixelated;image-rendering:crisp-edges}
+#c-border{pointer-events:none}
+#loading{position:absolute;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#070d1a;gap:16px;}
+#loading h2{font-size:14px;font-weight:700;color:#e2e8f0;letter-spacing:.12em;text-transform:uppercase}
+#load-msg{font-size:11px;color:#64748b;min-height:1.4em;text-align:center;max-width:360px;line-height:1.5}
+#prog-bar{width:260px;height:2px;background:#162035;border-radius:1px;overflow:hidden}
+#prog-fill{height:100%;background:#3b82f6;width:0%;transition:width .4s}
+#err-box{display:none;color:#f87171;font-size:11px;text-align:center;max-width:360px;line-height:1.7;padding:12px 16px;border:1px solid rgba(248,113,113,0.3);border-radius:6px;white-space:pre-line}
+#retry-btn{display:none;background:#162035;border:1px solid rgba(255,255,255,0.15);color:#93c5fd;padding:6px 16px;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit}
+#retry-btn:hover{background:#1e2e4a}
+.hud{position:absolute;background:rgba(7,13,26,.9);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:9px 12px;}
+#legend{bottom:12px;left:12px;max-width:200px;max-height:260px;overflow-y:auto}
+#legend::-webkit-scrollbar{width:3px}
+#legend::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:2px}
+#legend h3{font-size:9px;color:#334155;letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px}
+.leg-row{display:flex;align-items:center;gap:6px;margin-bottom:3px;font-size:10px;color:#64748b;white-space:nowrap}
+.leg-dot{width:8px;height:8px;border-radius:1px;flex-shrink:0}
+#zoom-hud{bottom:12px;right:12px;display:flex;flex-direction:column;gap:4px;padding:6px}
+.z-btn{width:27px;height:27px;border-radius:5px;background:#162035;border:1px solid rgba(255,255,255,.08);color:#64748b;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;line-height:1;font-family:inherit;}
+.z-btn:hover{background:#1e2e4a;color:#e2e8f0}
+#tip{position:absolute;display:none;z-index:30;pointer-events:none;background:rgba(7,13,26,.95);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:5px 10px;font-size:11px;color:#cbd5e1;white-space:nowrap;}
+#tip-name{font-weight:700;color:#e2e8f0;margin-bottom:2px}
+#tip-sub{font-size:10px;color:#475569}
+#banner{position:absolute;top:56px;left:50%;transform:translateX(-50%);background:#0b1e3d;border:1px solid #2563eb;border-radius:7px;padding:7px 20px;font-size:12px;color:#93c5fd;display:none;z-index:50;white-space:nowrap;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <h1>Pixel<span>World</span></h1>
+    <div class="sep"></div>
+    <div id="swatch"></div>
+    <select id="csel"><option value="">Loading…</option></select>
+    <div class="sep"></div>
+    <div id="brush-wrap">
+      <span>Brush</span>
+      <input type="range" id="brng" min="1" max="24" value="3" step="1">
+      <span id="blbl">3px</span>
+    </div>
+    <div class="sep"></div>
+    <button class="btn" id="btn-brd">Borders ON</button>
+    <button class="btn" id="btn-rst">Reset View</button>
+    <button class="btn" id="btn-clr">Clear All</button>
+    <div id="stats">4096×2048 · Claimed: <b id="px-count">0</b> px</div>
+  </div>
+  <div id="viewport">
+    <div id="loading">
+      <h2>Loading World</h2>
+      <p id="load-msg">Starting…</p>
+      <div id="prog-bar"><div id="prog-fill"></div></div>
+      <div id="err-box"></div>
+      <button id="retry-btn" onclick="location.reload()">Retry</button>
+    </div>
+    <canvas id="c-base"></canvas>
+    <canvas id="c-claim"></canvas>
+    <canvas id="c-flags"></canvas>
+    <canvas id="c-border"></canvas>
+    <div id="tip"><div id="tip-name"></div><div id="tip-sub"></div></div>
+    <div id="banner"></div>
+    <div class="hud" id="legend"><h3>Territory</h3><div id="leg-items"></div></div>
+    <div class="hud" id="zoom-hud">
+      <button class="z-btn" id="zi">+</button>
+      <button class="z-btn" id="zo">-</button>
+    </div>
+  </div>
+</div>
+<script>
+
+// ── Country DB: ISO numeric → {n:name, c:color} ──────────────────
+const DB={
+  "4":{n:"Afghanistan",c:"#a78bfa"},"8":{n:"Albania",c:"#fb923c"},
+  "12":{n:"Algeria",c:"#f97316"},"24":{n:"Angola",c:"#84cc16"},
+  "32":{n:"Argentina",c:"#38bdf8"},"36":{n:"Australia",c:"#06b6d4"},
+  "40":{n:"Austria",c:"#e879f9"},"31":{n:"Azerbaijan",c:"#fbbf24"},
+  "50":{n:"Bangladesh",c:"#4ade80"},"56":{n:"Belgium",c:"#facc15"},
+  "84":{n:"Belize",c:"#0ea5e9"},"204":{n:"Benin",c:"#16a34a"},
+  "64":{n:"Bhutan",c:"#a3e635"},"68":{n:"Bolivia",c:"#fbbf24"},
+  "70":{n:"Bosnia & Herz.",c:"#818cf8"},"72":{n:"Botswana",c:"#34d399"},
+  "76":{n:"Brazil",c:"#22c55e"},"96":{n:"Brunei",c:"#f59e0b"},
+  "100":{n:"Bulgaria",c:"#f472b6"},"854":{n:"Burkina Faso",c:"#ea580c"},
+  "108":{n:"Burundi",c:"#f97316"},"116":{n:"Cambodia",c:"#7c3aed"},
+  "120":{n:"Cameroon",c:"#ea580c"},"124":{n:"Canada",c:"#ef4444"},
+  "132":{n:"Cape Verde",c:"#0284c7"},"140":{n:"Cent. Afr. Rep.",c:"#b45309"},
+  "148":{n:"Chad",c:"#92400e"},"152":{n:"Chile",c:"#0ea5e9"},
+  "156":{n:"China",c:"#ef4444"},"170":{n:"Colombia",c:"#d97706"},
+  "174":{n:"Comoros",c:"#16a34a"},"178":{n:"Congo",c:"#65a30d"},
+  "180":{n:"DR Congo",c:"#a78bfa"},"188":{n:"Costa Rica",c:"#10b981"},
+  "191":{n:"Croatia",c:"#0ea5e9"},"192":{n:"Cuba",c:"#f43f5e"},
+  "196":{n:"Cyprus",c:"#fbbf24"},"203":{n:"Czech Republic",c:"#60a5fa"},
+  "208":{n:"Denmark",c:"#be185d"},"262":{n:"Djibouti",c:"#0284c7"},
+  "214":{n:"Dominican Rep.",c:"#1d4ed8"},"218":{n:"Ecuador",c:"#f59e0b"},
+  "818":{n:"Egypt",c:"#d97706"},"222":{n:"El Salvador",c:"#0369a1"},
+  "226":{n:"Eq. Guinea",c:"#16a34a"},"232":{n:"Eritrea",c:"#15803d"},
+  "233":{n:"Estonia",c:"#3b82f6"},"231":{n:"Ethiopia",c:"#16a34a"},
+  "242":{n:"Fiji",c:"#0ea5e9"},"246":{n:"Finland",c:"#93c5fd"},
+  "250":{n:"France",c:"#ec4899"},"266":{n:"Gabon",c:"#15803d"},
+  "270":{n:"Gambia",c:"#dc2626"},"268":{n:"Georgia",c:"#f97316"},
+  "276":{n:"Germany",c:"#eab308"},"288":{n:"Ghana",c:"#84cc16"},
+  "300":{n:"Greece",c:"#0284c7"},"320":{n:"Guatemala",c:"#059669"},
+  "324":{n:"Guinea",c:"#dc2626"},"624":{n:"Guinea-Bissau",c:"#16a34a"},
+  "328":{n:"Guyana",c:"#0f766e"},"332":{n:"Haiti",c:"#7c3aed"},
+  "340":{n:"Honduras",c:"#0284c7"},"348":{n:"Hungary",c:"#dc2626"},
+  "356":{n:"India",c:"#f97316"},"360":{n:"Indonesia",c:"#dc2626"},
+  "364":{n:"Iran",c:"#65a30d"},"368":{n:"Iraq",c:"#92400e"},
+  "372":{n:"Ireland",c:"#16a34a"},"376":{n:"Israel",c:"#93c5fd"},
+  "380":{n:"Italy",c:"#10b981"},"388":{n:"Jamaica",c:"#4ade80"},
+  "392":{n:"Japan",c:"#f43f5e"},"400":{n:"Jordan",c:"#92400e"},
+  "398":{n:"Kazakhstan",c:"#60a5fa"},"404":{n:"Kenya",c:"#34d399"},
+  "408":{n:"North Korea",c:"#e11d48"},"410":{n:"South Korea",c:"#3b82f6"},
+  "414":{n:"Kuwait",c:"#16a34a"},"417":{n:"Kyrgyzstan",c:"#f97316"},
+  "418":{n:"Laos",c:"#7c3aed"},"428":{n:"Latvia",c:"#92400e"},
+  "422":{n:"Lebanon",c:"#dc2626"},"426":{n:"Lesotho",c:"#0284c7"},
+  "430":{n:"Liberia",c:"#0284c7"},"434":{n:"Libya",c:"#a3e635"},
+  "440":{n:"Lithuania",c:"#f59e0b"},"442":{n:"Luxembourg",c:"#dc2626"},
+  "450":{n:"Madagascar",c:"#e879f9"},"454":{n:"Malawi",c:"#dc2626"},
+  "458":{n:"Malaysia",c:"#0ea5e9"},"462":{n:"Maldives",c:"#0284c7"},
+  "466":{n:"Mali",c:"#fb923c"},"478":{n:"Mauritania",c:"#16a34a"},
+  "484":{n:"Mexico",c:"#16a34a"},"498":{n:"Moldova",c:"#0284c7"},
+  "496":{n:"Mongolia",c:"#818cf8"},"499":{n:"Montenegro",c:"#0ea5e9"},
+  "504":{n:"Morocco",c:"#c2410c"},"508":{n:"Mozambique",c:"#0891b2"},
+  "104":{n:"Myanmar",c:"#be123c"},"516":{n:"Namibia",c:"#84cc16"},
+  "524":{n:"Nepal",c:"#dc2626"},"528":{n:"Netherlands",c:"#f97316"},
+  "554":{n:"New Zealand",c:"#06b6d4"},"558":{n:"Nicaragua",c:"#0284c7"},
+  "562":{n:"Niger",c:"#f59e0b"},"566":{n:"Nigeria",c:"#10b981"},
+  "807":{n:"North Macedonia",c:"#fbbf24"},"578":{n:"Norway",c:"#dc2626"},
+  "512":{n:"Oman",c:"#f59e0b"},"586":{n:"Pakistan",c:"#16a34a"},
+  "591":{n:"Panama",c:"#0284c7"},"598":{n:"Papua New Guinea",c:"#facc15"},
+  "600":{n:"Paraguay",c:"#0284c7"},"604":{n:"Peru",c:"#dc2626"},
+  "608":{n:"Philippines",c:"#3b82f6"},"616":{n:"Poland",c:"#f43f5e"},
+  "620":{n:"Portugal",c:"#16a34a"},"634":{n:"Qatar",c:"#92400e"},
+  "642":{n:"Romania",c:"#0284c7"},"643":{n:"Russia",c:"#8b5cf6"},
+  "646":{n:"Rwanda",c:"#16a34a"},"682":{n:"Saudi Arabia",c:"#15803d"},
+  "686":{n:"Senegal",c:"#16a34a"},"688":{n:"Serbia",c:"#dc2626"},
+  "694":{n:"Sierra Leone",c:"#0891b2"},"702":{n:"Singapore",c:"#e11d48"},
+  "703":{n:"Slovakia",c:"#0284c7"},"705":{n:"Slovenia",c:"#0ea5e9"},
+  "90":{n:"Solomon Islands",c:"#0284c7"},"706":{n:"Somalia",c:"#f59e0b"},
+  "710":{n:"South Africa",c:"#84cc16"},"728":{n:"South Sudan",c:"#4ade80"},
+  "724":{n:"Spain",c:"#eab308"},"144":{n:"Sri Lanka",c:"#0891b2"},
+  "729":{n:"Sudan",c:"#d4a017"},"740":{n:"Suriname",c:"#16a34a"},
+  "752":{n:"Sweden",c:"#1d4ed8"},"756":{n:"Switzerland",c:"#dc2626"},
+  "760":{n:"Syria",c:"#16a34a"},"762":{n:"Tajikistan",c:"#dc2626"},
+  "834":{n:"Tanzania",c:"#0f766e"},"764":{n:"Thailand",c:"#9333ea"},
+  "768":{n:"Togo",c:"#16a34a"},"780":{n:"Trinidad & Tobago",c:"#dc2626"},
+  "788":{n:"Tunisia",c:"#dc2626"},"792":{n:"Turkey",c:"#7c3aed"},
+  "795":{n:"Turkmenistan",c:"#0891b2"},"800":{n:"Uganda",c:"#f59e0b"},
+  "804":{n:"Ukraine",c:"#fde047"},"784":{n:"UAE",c:"#dc2626"},
+  "826":{n:"United Kingdom",c:"#6366f1"},"840":{n:"USA",c:"#3b82f6"},
+  "858":{n:"Uruguay",c:"#38bdf8"},"860":{n:"Uzbekistan",c:"#14b8a6"},
+  "548":{n:"Vanuatu",c:"#16a34a"},"862":{n:"Venezuela",c:"#fbbf24"},
+  "704":{n:"Vietnam",c:"#dc2626"},"887":{n:"Yemen",c:"#92400e"},
+  "894":{n:"Zambia",c:"#f59e0b"},"716":{n:"Zimbabwe",c:"#22d3ee"},
+  "51":{n:"Armenia",c:"#dc2626"},"112":{n:"Belarus",c:"#dc2626"},
+  "20":{n:"Andorra",c:"#f43f5e"},"308":{n:"Grenada",c:"#16a34a"},
+  "275":{n:"Palestine",c:"#16a34a"}
+};
+
+// ── Constants ─────────────────────────────────────────────────────
+const MAP_W=4096, MAP_H=2048, MAP_PX=MAP_W*MAP_H;
+
+// ── Pure-JS equirectangular projection ────────────────────────────
+// lon [-180,180] → x [0,MAP_W]
+// lat [90,-90]   → y [0,MAP_H]
+// This is ALL we need — no d3-geo required.
+function project(lon,lat){ return [(lon+180)/360*MAP_W, (90-lat)/180*MAP_H]; }
+
+// ── Draw a GeoJSON geometry ring onto a canvas context ────────────
+// Handles Polygon and MultiPolygon, calls ctx.beginPath/fill externally
+// Split a lon/lat ring into sub-rings wherever it crosses the antimeridian (lon=±180).
+// Without this, countries like Russia, USA (Alaska), and Fiji draw a stroke
+// across the entire map width.
+function splitAntimeridian(ring){
+  const out=[];
+  let cur=[];
+  for(let i=0;i<ring.length;i++){
+    const [lon,lat]=ring[i];
+    if(i===0){cur.push([lon,lat]);continue;}
+    const [pLon,pLat]=ring[i-1];
+    const dLon=lon-pLon;
+    if(Math.abs(dLon)>180){
+      // Interpolate latitude at the crossing edge
+      const fromSide=dLon>0?-180:180;
+      const toSide=dLon>0?180:-180;
+      // How far along [pLon→lon+/-360] is the crossing at fromSide?
+      const span=dLon>0?(lon-pLon-360):(lon-pLon+360);
+      const t=(fromSide-pLon)/span;
+      const crossLat=pLat+t*(lat-pLat);
+      cur.push([fromSide,crossLat]);
+      if(cur.length>=2)out.push(cur);
+      cur=[[toSide,crossLat],[lon,lat]];
+    }else{
+      cur.push([lon,lat]);
+    }
+  }
+  if(cur.length>=2)out.push(cur);
+  return out;
+}
+
+function drawRing(ctx,ring){
+  for(const sub of splitAntimeridian(ring)){
+    let first=true;
+    for(const [lon,lat] of sub){
+      const [x,y]=project(lon,lat);
+      if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+  }
+}
+
+function drawGeometry(ctx,geom){
+  if(!geom)return;
+  if(geom.type==="Polygon"){
+    for(const ring of geom.coordinates)drawRing(ctx,ring);
+  }else if(geom.type==="MultiPolygon"){
+    for(const poly of geom.coordinates)for(const ring of poly)drawRing(ctx,ring);
+  }
+}
+
+// ── TopoJSON decoder — minimal, no dependencies ───────────────────
+// Decodes topojson arcs with delta encoding + dequantization
+function topoFeatures(topo){
+  const sc=topo.transform?topo.transform.scale:[1,1];
+  const tr=topo.transform?topo.transform.translate:[0,0];
+  const rawArcs=topo.arcs;
+
+  // Decode a single arc (delta decode + dequantize)
+  function decodeArc(i){
+    const rev=i<0; const arc=rawArcs[rev?~i:i];
+    let x=0,y=0;
+    const pts=arc.map(([dx,dy])=>{x+=dx;y+=dy;return[x*sc[0]+tr[0],y*sc[1]+tr[1]];});
+    return rev?pts.reverse():pts;
+  }
+
+  function arcRing(r){ return r.flatMap(i=>decodeArc(i)); }
+
+  function geomToGeoJSON(g){
+    if(!g)return null;
+    if(g.type==="Polygon") return{type:"Polygon",coordinates:g.arcs.map(arcRing)};
+    if(g.type==="MultiPolygon") return{type:"MultiPolygon",coordinates:g.arcs.map(p=>p.map(arcRing))};
+    return null;
+  }
+
+  return topo.objects.countries.geometries.map(g=>({
+    id:String(g.id??""),
+    name:(g.properties&&g.properties.name)||"",
+    geometry:geomToGeoJSON(g)
+  }));
+}
+
+// ── State ─────────────────────────────────────────────────────────
+let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
+let claimerCount={},geoClaimCnt={},geoTotal={};
+let bordPixel=null;   // Uint8Array MAP_PX — 1 where a border pixel was drawn
+// Stroke tracking for auto-fill (geo countries touched this stroke)
+// strokeGeos is declared inside runAutoFill's outer scope above
+let totalClaimed=0,showBorders=true,brushSize=3,currentIdx=0;
+let isPainting=false,isDragging=false,scale=1,ox=0,oy=0,dragBase={x:0,y:0};
+const conqueredSet=new Set();
+
+const vp=document.getElementById("viewport");
+const cBase=document.getElementById("c-base");
+const cClaim=document.getElementById("c-claim");
+const cBorder=document.getElementById("c-border");
+const bctx=cBase.getContext("2d");
+const claimCtx=cClaim.getContext("2d");
+const cFlags=document.getElementById("c-flags");
+const flagCtx=cFlags.getContext("2d");
+const bordCtx=cBorder.getContext("2d");
+[cBase,cClaim,cFlags,cBorder].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
+
+// ── Helpers ───────────────────────────────────────────────────────
+const $=id=>document.getElementById(id);
+function prog(pct,msg){$("prog-fill").style.width=pct+"%";$("load-msg").textContent=msg;console.log("["+pct+"%] "+msg);}
+function showErr(msg){$("err-box").textContent=msg;$("err-box").style.display="block";$("prog-bar").style.display="none";$("retry-btn").style.display="inline-block";console.error("PixelWorld:",msg);}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const hexRgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+function seededColor(id){let h=0;for(let i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))>>>0;return"hsl("+(h%360)+",60%,52%)";}
+
+function animateProgress(from,to,ms,msg){
+  const t0=performance.now();
+  const step=()=>{const t=Math.min((performance.now()-t0)/ms,1);$("prog-fill").style.width=(from+(to-from)*t)+"%";if(t<1)requestAnimationFrame(step);};
+  $("load-msg").textContent=msg; requestAnimationFrame(step);
+  return new Promise(r=>setTimeout(r,ms));
+}
+
+
+const FLAG_DATA={"4":{"p":["#000000","#DD0000","#007A36"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"8":{"p":["#E41E20","#000000"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"12":{"p":["#006233","#FFFFFF","#D21034"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"24":{"p":["#CC0000","#000000"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"32":{"p":["#74ACDF","#FFFFFF","#F6B40E"],"d":"00000000000000000000001111111111111111211111111111111110000000000000000000000"},"36":{"p":["#00008B","#CC0001"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"40":{"p":["#ED2939","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"31":{"p":["#0092BC","#EF3340"],"d":"00000000000000000000001111111111111111111111111111111111111111111111111111111"},"50":{"p":["#006A4E","#FFFFFF","#D42B1E"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"56":{"p":["#000000","#F5D000","#FF0000"],"d":"00011112222000111122220001111222200011112222000111122220001111222200011112222"},"76":{"p":["#009C3B","#FFDF00","#002776"],"d":"00000000000000001000000001222100001122222110000122210000000010000000000000000"},"96":{"p":["#F7E017","#000000"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"100":{"p":["#FFFFFF","#009B77","#D01C1F"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"854":{"p":["#EF2B2D","#FFFFFF","#009A44"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"108":{"p":["#CE1126","#FFFFFF","#1EB53A"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"116":{"p":["#032EA1","#E00025"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"120":{"p":["#007A5E","#CE1126","#FECB00"],"d":"00011112222000111122220001111222200011112222000111122220001111222200011112222"},"124":{"p":["#FF0000","#FFFFFF"],"d":"00111111100001111111000011111110000111111100001111111000011111110000111111100"},"140":{"p":["#003082","#FFFFFF","#FFCB00"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"148":{"p":["#002664","#CC0001","#FECB00"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"152":{"p":["#D52B1E","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"156":{"p":["#DE2910","#FFDE00"],"d":"00000000000001000000000111000000000100000000000000000000000000000000000000000"},"170":{"p":["#FCD116","#003893","#CE1126"],"d":"00011112222000111122220001111222200011112222000111122220001111222200011112222"},"174":{"p":["#3A75C4","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"178":{"p":["#009543","#FFFFFF","#DC241F"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"180":{"p":["#007FFF","#F7D618","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"188":{"p":["#002B7F","#FFFFFF","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"191":{"p":["#FF0000","#FFFFFF","#0093DD"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"192":{"p":["#002A8F","#FFFFFF","#CF142B"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"196":{"p":["#0032A0","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"203":{"p":["#D7141A","#FFFFFF","#11457E"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"208":{"p":["#C60C30","#FFFFFF"],"d":"00011000000000110000000001100000011111111111111111111110001100000000011000000"},"262":{"p":["#6AB2E7","#12AD2B","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"214":{"p":["#002D62","#CE1126"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"218":{"p":["#FFD100","#003893","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"818":{"p":["#CE1126","#FFFFFF","#000000"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"222":{"p":["#0F47AF","#FFFFFF","#D52B1E"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"226":{"p":["#009A44","#FFFFFF","#3E9A00"],"d":"00011112222000111122220001111222200011112222000111122220001111222200011112222"},"232":{"p":["#4189DD","#12AD2B","#EF3340"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"233":{"p":["#0072CE","#000000"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"231":{"p":["#078930","#FCDD09","#DA121A"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"242":{"p":["#003F87","#CE1126"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"246":{"p":["#003580","#FFFFFF"],"d":"00011000000000110000000001100000011111111111111111111110001100000000011000000"},"250":{"p":["#002395","#FFFFFF","#ED2939"],"d":"00011112222000111122220001111222200011112222000111122220001111222200011112222"},"266":{"p":["#009E60","#FCD116","#3A75C4"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"270":{"p":["#3A7728","#CE1126"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"268":{"p":["#FF0000","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"276":{"p":["#000000","#DD0000","#FFCE00"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"288":{"p":["#006B3F","#FCD116","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"300":{"p":["#0D5EAF","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"308":{"p":["#CE1126","#FFFFFF","#009E60"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"320":{"p":["#4997D0","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"324":{"p":["#CE1126","#FCD116","#009460"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"624":{"p":["#CE1126","#FDEF42","#009E60"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"328":{"p":["#009E49","#FFFFFF","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"332":{"p":["#00209F","#D21034"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"340":{"p":["#0073CF","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"348":{"p":["#CE2939","#FFFFFF","#477050"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"356":{"p":["#FF9933","#FFFFFF","#138808"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"360":{"p":["#CE1126","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"364":{"p":["#239F40","#FFFFFF","#DA0000"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"368":{"p":["#000000","#FFFFFF","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"372":{"p":["#169B62","#FFFFFF","#FF883E"],"d":"00011112222000111122220001111222200011112222000111122220001111222200011112222"},"376":{"p":["#0038B8","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"380":{"p":["#009246","#FFFFFF","#CE2B37"],"d":"00011112222000111122220001111222200011112222000111122220001111222200011112222"},"388":{"p":["#000000","#FFCB00"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"392":{"p":["#FFFFFF","#BC002D"],"d":"00000000000000000000000000111000000011111000000011100000000000000000000000000"},"400":{"p":["#007A3D","#FFFFFF","#000000"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"398":{"p":["#00AFCA","#FAFAFA"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"404":{"p":["#006600","#FFFFFF","#000000"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"408":{"p":["#024FA2","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"410":{"p":["#FFFFFF","#C60C30","#003478"],"d":"00000000000000001000000000111000000011111000000022200000000020000000000000000"},"414":{"p":["#007A3D","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"417":{"p":["#E8112D","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"418":{"p":["#CE1126","#002868"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"428":{"p":["#9E3039","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"422":{"p":["#00A651","#FFFFFF","#EF3340"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"426":{"p":["#009543","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"430":{"p":["#006233","#CE1126"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"434":{"p":["#000000","#229945","#E70013"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"440":{"p":["#FFB81C","#006A44","#C1272D"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"442":{"p":["#EF3340","#FFFFFF","#00A3E0"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"450":{"p":["#FC3D32","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"454":{"p":["#000000","#CE1126","#339E35"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"458":{"p":["#CC0001","#FFFFFF","#006600"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"462":{"p":["#D21034","#007EC6"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"466":{"p":["#14B53A","#FCD116","#009A00"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"478":{"p":["#006233","#FFD700"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"484":{"p":["#006847","#FFFFFF","#CE1126"],"d":"00011112222000111122220001111222200011112222000111122220001111222200011112222"},"498":{"p":["#003DA5","#FFD100"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"496":{"p":["#C4272F","#6CAAD9"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"499":{"p":["#D4AF37","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"504":{"p":["#C1272D","#006233"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"508":{"p":["#009A44","#000000","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"104":{"p":["#FECB00","#34A853","#EA3323"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"516":{"p":["#003580","#CE1126"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"524":{"p":["#003893","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"528":{"p":["#AE1C28","#FFFFFF","#21468B"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"554":{"p":["#00247D","#CC142B"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"558":{"p":["#75AADB","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"562":{"p":["#E05206","#FFFFFF","#26A65B"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"566":{"p":["#008751","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"807":{"p":["#CE2028","#FECE02","#006748"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"578":{"p":["#EF2B2D","#FFFFFF"],"d":"00011000000000110000000001100000011111111111111111111110001100000000011000000"},"512":{"p":["#DB161B","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"586":{"p":["#01411C","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"591":{"p":["#005293","#DA121A"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"598":{"p":["#000000","#CE1126"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"600":{"p":["#D52B1E","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"604":{"p":["#D91023","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"608":{"p":["#0038A8","#FFFFFF","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"616":{"p":["#FFFFFF","#DC143C"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"620":{"p":["#006600","#FFFFFF","#FF0000"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"634":{"p":["#8D1B3D","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"642":{"p":["#002B7F","#FCD116","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"643":{"p":["#FFFFFF","#0039A6","#D52B1E"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"646":{"p":["#20603D","#FAD201"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"682":{"p":["#006C35","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"686":{"p":["#00853F","#FDEF42","#E31B23"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"688":{"p":["#C6363C","#FFFFFF","#0C4076"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"694":{"p":["#1EB53A","#FFFFFF","#0072C6"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"702":{"p":["#EF3340","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"703":{"p":["#FFFFFF","#0B4EA2","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"705":{"p":["#003DA5","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"90":{"p":["#0000CD","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"706":{"p":["#4189DD","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"710":{"p":["#007A4D","#FFFFFF","#FFB612"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"728":{"p":["#078930","#FCDD09","#DA121A"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"724":{"p":["#AA151B","#F1BF00"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"144":{"p":["#8D153A","#FFBD00"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"729":{"p":["#D21034","#FFFFFF","#000000"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"740":{"p":["#377E3F","#FFFFFF","#B40A2D"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"752":{"p":["#006AA7","#FECC02"],"d":"00011000000000110000000001100000011111111111111111111110001100000000011000000"},"756":{"p":["#FF0000","#FFFFFF"],"d":"00000000000000000000000000010000000011111000000001000000000000000000000000000"},"760":{"p":["#007A3D","#FFFFFF","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"762":{"p":["#CC0000","#FFFFFF","#006600"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"834":{"p":["#1EB53A","#FCD116","#000000"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"764":{"p":["#A51931","#F4F5F8","#2D2A4A"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"768":{"p":["#006A4E","#FFCE00","#D21034"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"780":{"p":["#CE1126","#000000"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"788":{"p":["#E70013","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"792":{"p":["#E30A17","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"795":{"p":["#2EA62A","#FFFFFF"],"d":"00000000000000000000001111111111111111111111111111111110000000000000000000000"},"800":{"p":["#000000","#FCDD09","#D21034"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"804":{"p":["#005BBB","#FFD500"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"784":{"p":["#00732F","#FFFFFF","#000000"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"826":{"p":["#FFFFFF","#012169","#C8102E"],"d":"00111001110000010010001100000000100000220000000002200001100000000100001001000"},"840":{"p":["#3C3B6E","#B22234","#FFFFFF"],"d":"00001111111000022222220000111111122222222222111111111112222222222211111111111"},"858":{"p":["#FFFFFF","#75AADB"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"860":{"p":["#1EB53A","#FFFFFF","#CE1126"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"548":{"p":["#009543","#000000","#D21034"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"862":{"p":["#CF142B","#FFD100","#009A44"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"704":{"p":["#DA251D","#FFFF00"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"887":{"p":["#CE1126","#FFFFFF","#000000"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"894":{"p":["#198A00","#FFFFFF","#EF3340"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"716":{"p":["#006400","#FFD200"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"112":{"p":["#CF101A","#FFFFFF","#009844"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"51":{"p":["#D90012","#0033A0","#F2A800"],"d":"00000000000000000000001111111111111111111111111111111112222222222222222222222"},"20":{"p":["#003DA5","#FFD700"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"},"275":{"p":["#000000","#FFFFFF"],"d":"00000000000000000000000000000000011111111111111111111111111111111111111111111"}};
+
+const FLAG_W=11, FLAG_H=7;
+
+// Decode a compressed flag and return pixel rows
+function decodeFlag(id){
+  const f=FLAG_DATA[String(id)];
+  if(!f) return null;
+  const rows=[];
+  for(let y=0;y<FLAG_H;y++){
+    const row=[];
+    for(let x=0;x<FLAG_W;x++){
+      const idx=parseInt(f.d[y*FLAG_W+x]);
+      row.push(f.p[idx]);
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+// Track placed flags: geoIdx -> {claimerIdx, cx, cy}
+const placedFlags={};
+
+// Compute centroid of pixels owned by claimerIdx in geo country geoIdx
+function getGeoCentroid(geoIdx, claimerIdx){
+  let sx=0,sy=0,n=0;
+  for(let i=0;i<MAP_PX;i++){
+    if(featByPixel[i]===geoIdx&&claimByPixel[i]===claimerIdx){
+      sx+=i%MAP_W; sy+=(i/MAP_W)|0; n++;
+    }
+  }
+  if(n===0) return null;
+  return{x:Math.round(sx/n), y:Math.round(sy/n)};
+}
+
+// Draw a flag at pixel position (cx,cy) - centered on that pixel
+function drawFlagAt(cx,cy,claimer){
+  const rows=decodeFlag(claimer.id);
+  if(!rows) return;
+  const ox=cx-Math.floor(FLAG_W/2);
+  const oy=cy-Math.floor(FLAG_H/2);
+  const img=flagCtx.createImageData(FLAG_W+2,FLAG_H+2);
+  const d=img.data;
+  // Black 1px outline
+  for(let y=0;y<FLAG_H+2;y++) for(let x=0;x<FLAG_W+2;x++){
+    const p=(y*(FLAG_W+2)+x)*4;
+    d[p]=0;d[p+1]=0;d[p+2]=0;d[p+3]=255;
+  }
+  // Flag pixels
+  for(let y=0;y<FLAG_H;y++){
+    for(let x=0;x<FLAG_W;x++){
+      const col=rows[y][x];
+      const r=parseInt(col.slice(1,3),16),g=parseInt(col.slice(3,5),16),b=parseInt(col.slice(5,7),16);
+      const p=((y+1)*(FLAG_W+2)+(x+1))*4;
+      d[p]=r;d[p+1]=g;d[p+2]=b;d[p+3]=255;
+    }
+  }
+  flagCtx.putImageData(img, ox-1, oy-1);
+}
+
+// Place or update the flag for a conquered geo country
+function placeFlag(geoIdx, claimerIdx){
+  // Find centroid (throttled — only sample every 8th pixel for speed)
+  let sx=0,sy=0,n=0;
+  for(let i=0;i<MAP_PX;i+=8){
+    if(featByPixel[i]===geoIdx&&claimByPixel[i]===claimerIdx){
+      sx+=i%MAP_W; sy+=(i/MAP_W)|0; n++;
+    }
+  }
+  if(n===0) return;
+  const cx=Math.round(sx/n), cy=Math.round(sy/n);
+  placedFlags[geoIdx]={claimerIdx,cx,cy};
+  drawFlagAt(cx,cy,featList[claimerIdx]);
+}
+
+// Erase a flag for a geo country (when recaptured)
+function eraseFlag(geoIdx){
+  const f=placedFlags[geoIdx];
+  if(!f) return;
+  const ox=f.cx-Math.floor(FLAG_W/2)-1;
+  const oy=f.cy-Math.floor(FLAG_H/2)-1;
+  flagCtx.clearRect(ox,oy,FLAG_W+2,FLAG_H+2);
+  delete placedFlags[geoIdx];
+}
+
+
+// ── finisherFill: claim all remaining pixels when 80% hit ───────────────────
+function finisherFill(geoIdx,claimerIdx){
+  const [r,g,b]=hexRgb(featList[claimerIdx].color);
+  const toFill=[];
+  for(let i=0;i<MAP_PX;i++){
+    if(featByPixel[i]!==geoIdx||claimByPixel[i]===claimerIdx||!landMask[i])continue;
+    toFill.push(i);
+  }
+  for(const gi of toFill){
+    const prev=claimByPixel[gi];
+    if(prev>=0){
+      claimerCount[prev]=Math.max(0,(claimerCount[prev]||1)-1);
+      if(geoClaimCnt[geoIdx]&&geoClaimCnt[geoIdx][prev])
+        geoClaimCnt[geoIdx][prev]=Math.max(0,(geoClaimCnt[geoIdx][prev]||1)-1);
+      const prevKey=geoIdx+":"+prev;
+      if(conqueredSet.has(prevKey)){conqueredSet.delete(prevKey);eraseFlag(geoIdx);}
+    }else{totalClaimed++;}
+    claimByPixel[gi]=claimerIdx;
+    claimerCount[claimerIdx]=(claimerCount[claimerIdx]||0)+1;
+    if(!geoClaimCnt[geoIdx])geoClaimCnt[geoIdx]={};
+    geoClaimCnt[geoIdx][claimerIdx]=(geoClaimCnt[geoIdx][claimerIdx]||0)+1;
+  }
+  if(toFill.length>0){
+    let fx0=MAP_W,fy0=MAP_H,fx1=0,fy1=0;
+    for(const gi of toFill){const px=gi%MAP_W,py=(gi/MAP_W)|0;if(px<fx0)fx0=px;if(px>fx1)fx1=px;if(py<fy0)fy0=py;if(py>fy1)fy1=py;}
+    const fw=fx1-fx0+1,fh=fy1-fy0+1;
+    const img=claimCtx.getImageData(fx0,fy0,fw,fh);const d=img.data;
+    for(const gi of toFill){const px=(gi%MAP_W)-fx0,py=((gi/MAP_W)|0)-fy0;const p=(py*fw+px)*4;d[p]=r;d[p+1]=g;d[p+2]=b;d[p+3]=215;}
+    claimCtx.putImageData(img,fx0,fy0);
+  }
+  $("px-count").textContent=totalClaimed.toLocaleString();
+  scheduleLegend();
+  setTimeout(()=>placeFlag(geoIdx,claimerIdx),0);
+}
+
+// ── checkConquest: 80% threshold check ───────────────────────────────────────
+function checkConquest(geoIdx,claimerIdx){
+  const key=geoIdx+":"+claimerIdx;
+  if(conqueredSet.has(key))return false;
+  const owned=(geoClaimCnt[geoIdx]&&geoClaimCnt[geoIdx][claimerIdx])||0;
+  const total=geoTotal[geoIdx]||0;
+  if(total===0||owned/total<CONQUEST_THRESHOLD)return false;
+  conqueredSet.add(key);
+  const bn=$("banner");
+  bn.innerHTML="&#9873; <span style='color:"+featList[claimerIdx].color+"'>"
+    +featList[claimerIdx].name+"</span> conquered <b>"+featList[geoIdx].name+"</b>!";
+  bn.style.display="block";clearTimeout(bn._t);bn._t=setTimeout(()=>bn.style.display="none",4000);
+  setTimeout(()=>finisherFill(geoIdx,claimerIdx),0);
+  return true;
+}
+
+// ── checkConquestReversal: only erase if drops below threshold ───────────────
+function checkConquestReversal(geoIdx,prev){
+  const key=geoIdx+":"+prev;
+  if(!conqueredSet.has(key))return;
+  const owned=(geoClaimCnt[geoIdx]&&geoClaimCnt[geoIdx][prev])||0;
+  const total=geoTotal[geoIdx]||0;
+  if(total===0||owned/total<CONQUEST_THRESHOLD){conqueredSet.delete(key);eraseFlag(geoIdx);}
+}
+// ── Boot ─────────────────────────────────────────────────────────
+// No external libraries needed at all — just fetch the TopoJSON data.
+async function boot(){
+  prog(5,"Fetching world map data (~2.3MB)…");
+  const dlAnim=animateProgress(5,18,6000,"Downloading Natural Earth 10m countries…");
+
+  let topo;
+  try{
+    const r=await fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-10m.json");
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    topo=await r.json();
+  }catch(e){
+    await dlAnim;
+    throw new Error("Could not fetch map data: "+e.message);
+  }
+  await dlAnim;
+  console.log("TopoJSON fetched. Arcs:",topo.arcs.length,"Geometries:",topo.objects.countries.geometries.length);
+
+  prog(20,"Decoding country geometries…");await sleep(8);
+
+  // Decode TopoJSON → plain GeoJSON features using our own decoder
+  const rawFeats=topoFeatures(topo);
+  console.log("Decoded features:",rawFeats.length);
+
+  // Build featList
+  featList=rawFeats.map(f=>{
+    const db=DB[f.id];
+    return{id:f.id, name:db?db.n:(f.name||"Territory "+f.id), color:db?db.c:seededColor(f.id), geometry:f.geometry};
+  });
+
+  // Populate country selector (alphabetical)
+  const csel=$("csel"); csel.innerHTML="";
+  [...featList].sort((a,b)=>a.name.localeCompare(b.name)).forEach(f=>{
+    const o=document.createElement("option");o.value=featList.indexOf(f);o.textContent=f.name;csel.appendChild(o);
+  });
+  const usaIdx=featList.findIndex(f=>f.id==="840");
+  currentIdx=usaIdx>=0?usaIdx:0; csel.value=currentIdx;
+  const sw=$("swatch"); sw.style.background=featList[currentIdx].color;
+  csel.onchange=e=>{currentIdx=+e.target.value;sw.style.background=featList[currentIdx].color;};
+
+  // ── Render base map on main canvas ───────────────────────────
+  prog(25,"Rendering base map…");
+  bctx.fillStyle="#0a1628"; bctx.fillRect(0,0,MAP_W,MAP_H);
+
+  for(let i=0;i<featList.length;i++){
+    const f=featList[i];
+    if(!f.geometry)continue;
+    const [r,g,b]=hexRgb(f.color);
+    bctx.fillStyle="rgb("+Math.floor(r*.22+28)+","+Math.floor(g*.22+36)+","+Math.floor(b*.22+24)+")";
+    bctx.beginPath();
+    drawGeometry(bctx,f.geometry);
+    bctx.fill("evenodd");
+    if(i%20===0){prog(25+Math.floor(i/featList.length*27),"Rendering countries… "+(i+1)+"/"+featList.length);await sleep(1);}
+  }
+  console.log("Base map rendered");
+
+  // ── Build pixel-country mask on offscreen canvas ──────────────
+  // Encode feat index as: R=hi byte, G=lo byte, B=200 (land marker)
+  prog(54,"Building country mask…"); await sleep(8);
+  const mc=document.createElement("canvas"); mc.width=MAP_W; mc.height=MAP_H;
+  const mctx=mc.getContext("2d");
+  if(!mctx) throw new Error("Failed to get offscreen canvas context");
+  mctx.fillStyle="#000000"; mctx.fillRect(0,0,MAP_W,MAP_H);
+
+  for(let i=0;i<featList.length;i++){
+    const f=featList[i];
+    if(!f.geometry)continue;
+    mctx.fillStyle="rgb("+((i>>8)&0xFF)+","+(i&0xFF)+",200)";
+    mctx.beginPath();
+    drawGeometry(mctx,f.geometry);
+    mctx.fill("evenodd");
+    if(i%20===0){prog(54+Math.floor(i/featList.length*18),"Building mask… "+(i+1)+"/"+featList.length);await sleep(1);}
+  }
+  console.log("Mask rendered");
+
+  // ── Extract mask pixels → typed arrays ───────────────────────
+  prog(74,"Extracting pixel data…"); await sleep(8);
+  const raw=mctx.getImageData(0,0,MAP_W,MAP_H).data;
+  featByPixel =new Int16Array(MAP_PX).fill(-1);
+  claimByPixel=new Int16Array(MAP_PX).fill(-1);
+  landMask    =new Uint8Array(MAP_PX);
+
+  const CHUNK=524288;
+  for(let s=0;s<MAP_PX;s+=CHUNK){
+    const end=Math.min(s+CHUNK,MAP_PX);
+    for(let i=s;i<end;i++){
+      if(raw[i*4+2]>=190){
+        landMask[i]=1;
+        const idx=(raw[i*4]<<8)|raw[i*4+1];
+        if(idx<featList.length){featByPixel[i]=idx;geoTotal[idx]=(geoTotal[idx]||0)+1;}
+      }
+    }
+    prog(74+Math.floor(s/MAP_PX*10),"Processing pixels…");
+    await sleep(1);
+  }
+  const landPx=Object.values(geoTotal).reduce((a,b)=>a+b,0);
+  console.log("Pixel extraction done. Land px:",landPx,"Countries with land:",Object.keys(geoTotal).length);
+
+  // ── Remove micro-islands (<10 connected pixels) ───────────────────────────
+  // Flood-fill each connected land component. Any component with <10 pixels
+  // gets removed from landMask and featByPixel (treated as ocean).
+  // This cleans up rendering artifacts and unclaimable specks.
+  prog(84,"Removing micro-islands…"); await sleep(5);
+  {
+    const visited=new Uint8Array(MAP_PX);
+    const DX2=[-1,1,0,0],DY2=[0,0,-1,1];
+    let removed=0;
+    for(let seed=0;seed<MAP_PX;seed++){
+      if(!landMask[seed]||visited[seed]) continue;
+      // BFS to find this connected component
+      const component=[];
+      const q=[seed]; visited[seed]=1;
+      let qh=0;
+      while(qh<q.length){
+        const ci=q[qh++];
+        component.push(ci);
+        const cx=ci%MAP_W,cy=(ci/MAP_W)|0;
+        for(let d=0;d<4;d++){
+          const nx=cx+DX2[d],ny=cy+DY2[d];
+          if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
+          const ni=ny*MAP_W+nx;
+          if(landMask[ni]&&!visited[ni]){visited[ni]=1;q.push(ni);}
+        }
+      }
+      if(component.length<10){
+        // Remove this micro-island
+        for(const ci of component){
+          landMask[ci]=0;
+          const geo=featByPixel[ci];
+          if(geo>=0&&geoTotal[geo]){
+            geoTotal[geo]=Math.max(0,geoTotal[geo]-1);
+          }
+          featByPixel[ci]=-1;
+        }
+        removed+=component.length;
+      }
+    }
+    console.log("Micro-islands removed:",removed,"pixels");
+  }
+
+  // ── Draw borders on border canvas ────────────────────────────
+  prog(86,"Drawing country borders…"); await sleep(5);
+
+  // Hard pixel borders: scan mask data, mark boundary pixels solid white.
+  // No canvas stroke, no antialiasing. Writing both sides of each edge = 2px thick.
+  prog(86,"Drawing pixel-perfect borders…"); await sleep(5);
+
+  const borderImg=bordCtx.createImageData(MAP_W,MAP_H);
+  const bd=borderImg.data;
+  bordPixel=new Uint8Array(MAP_PX);
+  function wb(i){bd[i*4]=255;bd[i*4+1]=255;bd[i*4+2]=255;bd[i*4+3]=255;bordPixel[i]=1;}
+
+  const CHUNK2=262144;
+  for(let s=0;s<MAP_PX;s+=CHUNK2){
+    const end2=Math.min(s+CHUNK2,MAP_PX);
+    for(let i=s;i<end2;i++){
+      const x=i%MAP_W,y=(i/MAP_W)|0;
+      const ci=featByPixel[i];
+      if(x<MAP_W-1&&featByPixel[i+1]!==ci){wb(i);wb(i+1);}
+      if(y<MAP_H-1&&featByPixel[i+MAP_W]!==ci){wb(i);wb(i+MAP_W);}
+    }
+    prog(86+Math.floor(s/MAP_PX*12),"Drawing borders…");
+    await sleep(1);
+  }
+  bordCtx.putImageData(borderImg,0,0);
+  console.log("Borders drawn – pixel-perfect 2px no antialiasing");
+
+  prog(100,"Ready!"); await sleep(150);
+  $("loading").style.display="none";
+  resetView();
+  console.log("PixelWorld ready!");
+}
+
+// ── Claim pixels ──────────────────────────────────────────────────
+function claimPixel(px,py){
+  if(px<0||px>=MAP_W||py<0||py>=MAP_H)return;
+  const i=py*MAP_W+px;
+  if(!landMask[i])return;
+  const prev=claimByPixel[i];
+  if(prev===currentIdx)return;
+  const geo=featByPixel[i];
+  if(prev>=0){
+    claimerCount[prev]=(claimerCount[prev]||1)-1;
+    if(geo>=0&&geoClaimCnt[geo]){
+      geoClaimCnt[geo][prev]=(geoClaimCnt[geo][prev]||1)-1;
+      checkConquestReversal(geo,prev);
+    }
+  }else{totalClaimed++;$("px-count").textContent=totalClaimed.toLocaleString();}
+  claimByPixel[i]=currentIdx;
+  // Track which geo countries this stroke touches (for auto-fill)
+  if(geo>=0) strokeGeos.add(geo);
+  claimerCount[currentIdx]=(claimerCount[currentIdx]||0)+1;
+  if(geo>=0){
+    if(!geoClaimCnt[geo])geoClaimCnt[geo]={};
+    geoClaimCnt[geo][currentIdx]=(geoClaimCnt[geo][currentIdx]||0)+1;
+       checkConquest(geo,currentIdx);
+  }
+  const [r,g,b]=hexRgb(featList[currentIdx].color);
+  const id=claimCtx.createImageData(1,1);
+  id.data[0]=r;id.data[1]=g;id.data[2]=b;id.data[3]=215;
+  claimCtx.putImageData(id,px,py);
+}
+
+function paintBrush(px,py){
+  const half=Math.floor(brushSize/2),rsq=(brushSize/2)**2;
+  for(let dy=-half;dy<=half;dy++)for(let dx=-half;dx<=half;dx++){
+    if(brushSize>3&&dx*dx+dy*dy>rsq)continue;
+    claimPixel(px+dx,py+dy);
+  }
+  scheduleLegend();
+}
+
+// ── Legend ────────────────────────────────────────────────────────
+let legTimer=null;
+function scheduleLegend(){
+  clearTimeout(legTimer);legTimer=setTimeout(()=>{
+    const el=$("leg-items");el.innerHTML="";
+    Object.entries(claimerCount).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,20).forEach(([idx,cnt])=>{
+      const f=featList[+idx];if(!f)return;
+      const row=document.createElement("div");row.className="leg-row";
+      row.innerHTML="<div class='leg-dot' style='background:"+f.color+"'></div><span>"+f.name+": "+cnt.toLocaleString()+"</span>";
+      el.appendChild(row);
+    });
+  },120);
+}
+
+// ── View ─────────────────────────────────────────────────────────
+function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cClaim,cFlags,cBorder].forEach(c=>c.style.transform=t);}
+function clamp(){const cw=vp.clientWidth,ch=vp.clientHeight;ox=Math.max(Math.min(0,cw-MAP_W*scale),Math.min(0,ox));oy=Math.max(Math.min(0,ch-MAP_H*scale),Math.min(0,oy));}
+function resetView(){const cw=vp.clientWidth,ch=vp.clientHeight;scale=Math.min(cw/MAP_W,ch/MAP_H)*.98;ox=(cw-MAP_W*scale)/2;oy=(ch-MAP_H*scale)/2;applyT();}
+function doZoom(f,cx,cy){const ns=Math.max(.25,Math.min(40,scale*f));ox=cx-(cx-ox)*(ns/scale);oy=cy-(cy-oy)*(ns/scale);scale=ns;clamp();applyT();}
+function screenToMap(sx,sy){const r=vp.getBoundingClientRect();return{x:Math.floor((sx-r.left-ox)/scale),y:Math.floor((sy-r.top-oy)/scale)};}
+
+
+// ── Auto-fill enclosed regions ────────────────────────────────────────────
+// CORRECT ALGORITHM:
+// For each geographic country the stroke touches:
+//   1. Seed BFS from that country's border pixels (pixels adjacent to ocean/other country)
+//      that have not been claimed by the current player.
+//   2. Flood inward through the country, stopping at own claimed pixels.
+//   3. Any country pixel NOT reached = truly enclosed by the player's stroke.
+//
+// This means:
+//   - Incomplete strokes fill nothing (no enclosed region exists)
+//   - Fills are bounded by the geographic country border automatically
+//   - You cannot fill across country borders
+//   - Small border completes a loop → only the loop interior fills
+const MAX_FILL_PX = 500000; // safety cap
+const CONQUEST_THRESHOLD = 0.8; // 80% triggers conquest
+
+function isWallFill(i){
+  if(!landMask[i]) return true;               // ocean: wall
+  if(claimByPixel[i]===currentIdx) return true; // own pixels: wall
+  // border pixels are NOT walls for seeding (they're the seeds themselves)
+  // enemy pixels are passable (get captured)
+  return false;
+}
+
+// Track which geo countries the current stroke has painted in
+let strokeGeos = new Set();
+
+function runAutoFill(){
+  if(!bordPixel||strokeGeos.size===0)return;
+  const geosToCheck = new Set(strokeGeos);
+  strokeGeos = new Set(); // reset for next stroke
+
+  const DX=[-1,1,0,0], DY=[0,0,-1,1];
+
+  for(const geo of geosToCheck){
+    if(geo<0) continue;
+
+    // BFS seeded from geo-country border pixels (adjacent to outside/other country)
+    // that are accessible (not blocked by own claimed pixels)
+    const outside=new Uint8Array(MAP_PX);
+    const queue=new Int32Array(geoTotal[geo]||100000);
+    let head=0, tail=0;
+
+    function enqGeo(i){
+      if(outside[i]||isWallFill(i))return;
+      outside[i]=1; queue[tail++]=i;
+    }
+
+    // Seed: scan all pixels of this geo country for border pixels
+    // bordPixel[i]=1 means adjacent to different geo or ocean
+    for(let i=0;i<MAP_PX;i++){
+      if(featByPixel[i]===geo && bordPixel[i]===1) enqGeo(i);
+    }
+
+    // BFS inward through the geo country
+    while(head<tail){
+      const i=queue[head++];
+      const x=i%MAP_W, y=(i/MAP_W)|0;
+      for(let d=0;d<4;d++){
+        const nx=x+DX[d], ny=y+DY[d];
+        if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
+        const ni=ny*MAP_W+nx;
+        if(featByPixel[ni]!==geo||outside[ni]||isWallFill(ni)) continue;
+        outside[ni]=1; queue[tail++]=ni;
+      }
+    }
+
+    // Collect enclosed: in this geo country, not reachable from border, not own pixel
+    const enclosed=[];
+    for(let i=0;i<MAP_PX;i++){
+      if(featByPixel[i]===geo && !outside[i] && !isWallFill(i)) enclosed.push(i);
+    }
+
+    if(enclosed.length===0||enclosed.length>MAX_FILL_PX) continue;
+
+    // Claim enclosed pixels
+    const [r,g,b]=hexRgb(featList[currentIdx].color);
+    for(const gi of enclosed){
+      const prev=claimByPixel[gi];
+      if(prev>=0){
+        claimerCount[prev]=(claimerCount[prev]||1)-1;
+        if(geoClaimCnt[geo]&&geoClaimCnt[geo][prev])
+          geoClaimCnt[geo][prev]=Math.max(0,(geoClaimCnt[geo][prev]||1)-1);
+      }else{
+        totalClaimed++;
+      }
+      claimByPixel[gi]=currentIdx;
+      claimerCount[currentIdx]=(claimerCount[currentIdx]||0)+1;
+      if(!geoClaimCnt[geo])geoClaimCnt[geo]={};
+      geoClaimCnt[geo][currentIdx]=(geoClaimCnt[geo][currentIdx]||0)+1;
+    }
+
+    // Batch paint enclosed pixels to claim canvas
+    const fillX0=enclosed.reduce((m,gi)=>Math.min(m,gi%MAP_W),MAP_W);
+    const fillY0=enclosed.reduce((m,gi)=>Math.min(m,(gi/MAP_W)|0),MAP_H);
+    const fillX1=enclosed.reduce((m,gi)=>Math.max(m,gi%MAP_W),0);
+    const fillY1=enclosed.reduce((m,gi)=>Math.max(m,(gi/MAP_W)|0),0);
+    const fw=fillX1-fillX0+1, fh=fillY1-fillY0+1;
+    const fillImg=claimCtx.getImageData(fillX0,fillY0,fw,fh);
+    const fd=fillImg.data;
+    for(const gi of enclosed){
+      const fx=(gi%MAP_W)-fillX0, fy=((gi/MAP_W)|0)-fillY0;
+      const fp=(fy*fw+fx)*4;
+      fd[fp]=r;fd[fp+1]=g;fd[fp+2]=b;fd[fp+3]=215;
+    }
+    claimCtx.putImageData(fillImg,fillX0,fillY0);
+
+    checkConquest(geo,currentIdx);
+  }
+
+  $("px-count").textContent=totalClaimed.toLocaleString();
+  scheduleLegend();
+  // Check conquest for all geo countries affected by this fill
+  const affectedGeos=new Set(enclosed.map(gi=>featByPixel[gi]).filter(g=>g>=0));
+  for(const geoIdx of affectedGeos) checkConquest(geoIdx,currentIdx);
+}
+
+
+// ── Input events ─────────────────────────────────────────────────
+vp.addEventListener("mousedown",e=>{
+  if(e.button===1||e.altKey||e.button===2){isDragging=true;dragBase={x:e.clientX-ox,y:e.clientY-oy};vp.style.cursor="grab";return;}
+  isPainting=true;const p=screenToMap(e.clientX,e.clientY);paintBrush(p.x,p.y);
+});
+vp.addEventListener("mousemove",e=>{
+  if(isDragging){ox=e.clientX-dragBase.x;oy=e.clientY-dragBase.y;clamp();applyT();return;}
+  if(isPainting){const p=screenToMap(e.clientX,e.clientY);paintBrush(p.x,p.y);}
+  if(!landMask)return;
+  const p=screenToMap(e.clientX,e.clientY),vr=vp.getBoundingClientRect(),tip=$("tip");
+  if(p.x>=0&&p.x<MAP_W&&p.y>=0&&p.y<MAP_H){
+    const i=p.y*MAP_W+p.x;
+    tip.style.display="block";tip.style.left=(e.clientX-vr.left+14)+"px";tip.style.top=(e.clientY-vr.top-40)+"px";
+    const gi=featByPixel[i],ci=claimByPixel[i];
+    if(landMask[i]){
+      $("tip-name").textContent=gi>=0?featList[gi].name:"Territory";
+      const sub=$("tip-sub");sub.textContent=ci>=0?"Claimed by "+featList[ci].name:"Unclaimed";sub.style.color=ci>=0?featList[ci].color:"#475569";
+    }else{$("tip-name").textContent="Ocean";$("tip-sub").textContent="";}
+  }else{tip.style.display="none";}
+});
+window.addEventListener("mouseup",()=>{
+  if(isPainting) setTimeout(runAutoFill, 10); // defer so last pixel is claimed first
+  isPainting=false;isDragging=false;vp.style.cursor="crosshair";
+});
+vp.addEventListener("mouseleave",()=>{$("tip").style.display="none";isPainting=false;});
+vp.addEventListener("contextmenu",e=>e.preventDefault());
+vp.addEventListener("wheel",e=>{e.preventDefault();const r=vp.getBoundingClientRect();doZoom(e.deltaY<0?1.12:1/1.12,e.clientX-r.left,e.clientY-r.top);},{passive:false});
+$("zi").addEventListener("click",()=>doZoom(1.5,vp.clientWidth/2,vp.clientHeight/2));
+$("zo").addEventListener("click",()=>doZoom(1/1.5,vp.clientWidth/2,vp.clientHeight/2));
+$("btn-rst").addEventListener("click",resetView);
+$("btn-brd").addEventListener("click",function(){showBorders=!showBorders;this.textContent="Borders "+(showBorders?"ON":"OFF");cBorder.style.opacity=showBorders?"1":"0";});
+$("btn-clr").addEventListener("click",()=>{
+  if(claimByPixel)claimByPixel.fill(-1);claimerCount={};geoClaimCnt={};conqueredSet.clear();totalClaimed=0;
+  $("px-count").textContent="0";claimCtx.clearRect(0,0,MAP_W,MAP_H);flagCtx.clearRect(0,0,MAP_W,MAP_H);for(const k in placedFlags)delete placedFlags[k];strokeGeos=new Set();$("leg-items").innerHTML="";
+});
+$("brng").addEventListener("input",e=>{brushSize=+e.target.value;$("blbl").textContent=brushSize+"px";});
+
+// Touch
+let lastDist=null;
+vp.addEventListener("touchstart",e=>{
+  if(e.touches.length===1){isPainting=true;const t=e.touches[0],p=screenToMap(t.clientX,t.clientY);paintBrush(p.x,p.y);}
+  if(e.touches.length===2){isPainting=false;lastDist=tdist(e);}e.preventDefault();
+},{passive:false});
+vp.addEventListener("touchmove",e=>{
+  if(e.touches.length===1&&isPainting){const t=e.touches[0],p=screenToMap(t.clientX,t.clientY);paintBrush(p.x,p.y);}
+  if(e.touches.length===2){const d=tdist(e);if(lastDist){const r=vp.getBoundingClientRect();doZoom(d/lastDist,((e.touches[0].clientX+e.touches[1].clientX)/2)-r.left,((e.touches[0].clientY+e.touches[1].clientY)/2)-r.top);}lastDist=d;}
+  e.preventDefault();
+},{passive:false});
+vp.addEventListener("touchend",()=>{if(isPainting)setTimeout(runAutoFill,0);isPainting=false;lastDist=null;});
+function tdist(e){return Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}
+
+// ── Procedural fallback ───────────────────────────────────────────
+async function proceduralFallback(){
+  featList=[{id:"0",name:"Uncharted World",color:"#3b82f6",geometry:null}];
+  featByPixel=new Int16Array(MAP_PX).fill(0);claimByPixel=new Int16Array(MAP_PX).fill(-1);landMask=new Uint8Array(MAP_PX);
+  const pm=mkPerm(),noise=mkNoise(pm),img=bctx.createImageData(MAP_W,MAP_H),d=img.data;
+  for(let y=0;y<MAP_H;y++){
+    for(let x=0;x<MAP_W;x++){
+      const nx=x/MAP_W-.5,ny=y/MAP_H-.5;
+      let v=noise(nx*4,ny*4)*.6+noise(nx*8,ny*8)*.3+noise(nx*16,ny*16)*.1;v-=Math.abs(ny)*2.5*.35;
+      const i=y*MAP_W+x,p=i*4;
+      if(v>.04){landMask[i]=1;geoTotal[0]=(geoTotal[0]||0)+1;d[p]=44;d[p+1]=60;d[p+2]=44;}
+      else{featByPixel[i]=-1;d[p]=10;d[p+1]=18;d[p+2]=44;}d[p+3]=255;
+    }
+    if(y%256===0){prog(10+Math.floor(y/MAP_H*86),"Generating procedural map…");await sleep(1);}
+  }
+  bctx.putImageData(img,0,0);
+  const csel=$("csel");csel.innerHTML="";
+  const o=document.createElement("option");o.value=0;o.textContent="Uncharted World";csel.appendChild(o);
+  $("swatch").style.background="#3b82f6";
+  prog(100,"Ready (offline mode)");await sleep(80);$("loading").style.display="none";resetView();
+}
+function mkPerm(){const p=Array.from({length:256},(_,i)=>i);for(let i=255;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]];}return[...p,...p];}
+function mkNoise(pm){
+  const fd=t=>t*t*t*(t*(t*6-15)+10),lp=(a,b,t)=>a+t*(b-a),gr=(h,x,y)=>{switch(h&3){case 0:return x+y;case 1:return -x+y;case 2:return x-y;default:return -x-y;}};
+  return(x,y)=>{const X=Math.floor(x)&255,Y=Math.floor(y)&255;x-=Math.floor(x);y-=Math.floor(y);const u=fd(x),v=fd(y),a=pm[X]+Y,b=pm[X+1]+Y;return lp(lp(gr(pm[a],x,y),gr(pm[b],x-1,y),u),lp(gr(pm[a+1],x,y-1),gr(pm[b+1],x-1,y-1),u),v);};
+}
+
+// ── Start — no external library loading needed! ───────────────────
+(async()=>{
+  prog(3,"Initialising…");
+  try{
+    await boot();
+  }catch(e){
+    console.error("boot() failed:",e);
+    showErr("Map load failed: "+e.message+"\n\nFalling back to procedural map…");
+    await sleep(2000);
+    $("err-box").style.display="none";$("prog-bar").style.display="block";$("retry-btn").style.display="none";
+    await proceduralFallback();
+  }
+})();
+-e 
+</script>
+</body>
+</html>
