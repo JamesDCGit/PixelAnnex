@@ -481,7 +481,7 @@ httpServer.listen(PORT, () => {
   console.log(`   HTTP:      http://localhost:${PORT}`);
   console.log(`   WebSocket: ws://localhost:${PORT}`);
   console.log(`   Health:    http://localhost:${PORT}/health`);
-  console.log(`   Bots:      ${BOT_COUNT} (start after first client connects)\n`);
+  console.log(`   Bots:      one per country (start after first client connects)\n`);
 });
 
 process.on('SIGTERM', () => {
