@@ -1,343 +1,354 @@
 /**
- * PixelWorld — Multiplayer WebSocket Server
+ * PixelAnnex — Multiplayer WebSocket Server
  * ==========================================
  * Run:  npm install && node server.js
- * Env:  PORT=8080 (default)
- *       REDIS_URL=redis://localhost:6379 (optional, falls back to in-memory)
+ * Env:  PORT=3000 (default)
  *
- * Message protocol (all JSON over WebSocket):
+ * Protocol (JSON over WebSocket):
  *
  * CLIENT → SERVER
- *   { type:'join',    countryId:string }              — pick a country to play as
- *   { type:'stroke',  pixels:[{x,y}], countryId }     — paint pixels
- *   { type:'fill',    pixels:[{x,y}], countryId }     — auto-fill result
- *   { type:'bomb',    cx,cy,radius,  countryId }      — bomb detonation
- *   { type:'ping' }                                   — keepalive
+ *   { type:'join',       countryId, geoTotal?, geoPixelRuns? }
+ *   { type:'stroke',     pixels:[{x,y}] }
+ *   { type:'bomb',       cx, cy, radius }
+ *   { type:'ping' }
  *
  * SERVER → CLIENT
- *   { type:'welcome', playerId, state }               — full map state on connect
- *   { type:'delta',   pixels:[{x,y,owner}] }          — pixel changes from any player
- *   { type:'conquest',geoIdx,claimerCountryId }       — country conquered
- *   { type:'reversal',geoIdx,claimerCountryId }       — conquest reversed
- *   { type:'players', list:[{id,countryId,pixels}] }  — player list update
+ *   { type:'welcome',    playerId, botIds:[], state:{runs,conquered,players} }
+ *   { type:'delta',      pixels:[{x,y,owner}] }
+ *   { type:'conquest',   geoIdx, countryId }
+ *   { type:'reversal',   geoIdx, countryId }
+ *   { type:'players',    list:[{id,countryId,pixels,isBot}] }
  *   { type:'pong' }
- *   { type:'error',  message }
  */
 
 'use strict';
 
-const http       = require('http');
-const WebSocket  = require('ws');
-const path       = require('path');
-const fs         = require('fs');
+const http      = require('http');
+const WebSocket = require('ws');
+const path      = require('path');
+const fs        = require('fs');
 
-const PORT       = parseInt(process.env.PORT || '8080', 10);
-const MAP_W      = 4096;
-const MAP_H      = 2048;
-const MAP_PX     = MAP_W * MAP_H;
-const CONQUEST_THRESHOLD = 0.8;
-const MAX_STROKE_PX      = 500;   // max pixels per stroke message
-const MAX_FILL_PX        = 500000;
-const BROADCAST_DEBOUNCE = 50;    // ms — batch broadcasts
-const PLAYER_TIMEOUT     = 30000; // ms — drop idle clients
+// ── Config ────────────────────────────────────────────────────────
+const PORT               = parseInt(process.env.PORT || '3000', 10);
+const MAP_W              = 4096;
+const MAP_H              = 2048;
+const MAP_PX             = MAP_W * MAP_H;
+const CONQUEST_THRESHOLD = 0.80;
+const MAX_STROKE_PX      = 500;
+const BROADCAST_MS       = 50;    // delta broadcast debounce
+const PING_MS            = 10000;
+const TIMEOUT_MS         = 30000;
 
-// ── In-memory state ────────────────────────────────────────────────
-// claimByPixel: Int16Array — index into connected player's countryId
-//   -1 = unclaimed, 0+ = country index
-// We use countryId strings (ISO numeric) as the identity key.
-const claimByPixel  = new Int16Array(MAP_PX).fill(-1);
+// ── Bot config ────────────────────────────────────────────────────
+const BOT_COUNT          = 8;     // number of bot players
+const BOT_TICK_MS        = 800;   // ms between bot paint strokes
+const BOT_PIXELS_PER_TICK = 3;    // pixels per stroke
+const BOT_BUCKET_MAX     = 100;
+const BOT_REGEN_MS       = 1000;  // bucket regen interval
 
-// geoClaimCnt[geoIdx][countryId] = pixel count
-const geoClaimCnt   = {};
+// Bot country assignments — use major countries for visible AI presence
+const BOT_COUNTRIES = ['840','156','643','356','76','826','276','250'];
 
-// geoTotal[geoIdx] = total land pixels (loaded from map data)
-// This gets populated when the first client sends their geoTotal snapshot.
-// In production you'd pre-compute this server-side from the TopoJSON.
-const geoTotal      = {};
+// ── Map state ─────────────────────────────────────────────────────
+const claimByPixel = new Int16Array(MAP_PX).fill(-1);
+const geoAtPixel   = new Int16Array(MAP_PX).fill(-1);
+const landMask     = new Uint8Array(MAP_PX).fill(0);
+const geoClaimCnt  = {};   // geoIdx → { countryId → count }
+const geoTotal     = {};   // geoIdx → total land pixels
+const conqueredSet = new Set();
+const countryPxCount = {}; // countryId → pixel count
 
-// conqueredSet: Set of "geoIdx:countryId"
-const conqueredSet  = new Set();
-
-// countryPixelCount[countryId] = total pixels owned
-const countryPixelCount = {};
-
-// countryIdToIndex — maps ISO string to a stable short integer for the typed array
-const countryIdToIndex = new Map();  // "840" → 0
-const indexToCountryId = [];         // 0 → "840"
-
-function getOrCreateIndex(countryId) {
-  if (countryIdToIndex.has(countryId)) return countryIdToIndex.get(countryId);
-  const idx = indexToCountryId.length;
-  countryIdToIndex.set(countryId, idx);
-  indexToCountryId.push(countryId);
+// ── Country index mapping ─────────────────────────────────────────
+const idToIdx = new Map();
+const idxToId = [];
+function getIdx(countryId) {
+  if (idToIdx.has(countryId)) return idToIdx.get(countryId);
+  const idx = idxToId.length;
+  idToIdx.set(countryId, idx);
+  idxToId.push(countryId);
   return idx;
 }
 
-// ── Player tracking ────────────────────────────────────────────────
-let nextPlayerId = 1;
-const players = new Map(); // playerId → { ws, countryId, countryIdx, lastSeen }
+// ── Players ───────────────────────────────────────────────────────
+let nextPid = 1;
+const players = new Map(); // pid → { ws, countryId, countryIdx, lastSeen, isBot }
 
-// ── Broadcast helpers ──────────────────────────────────────────────
-let pendingDelta = [];   // pixels queued for broadcast
-let broadcastTimer = null;
+// ── Broadcast ─────────────────────────────────────────────────────
+let pendingDelta = [];
+let deltaTimer   = null;
 
 function queueDelta(pixels) {
   pendingDelta.push(...pixels);
-  if (!broadcastTimer) {
-    broadcastTimer = setTimeout(flushDelta, BROADCAST_DEBOUNCE);
-  }
+  if (!deltaTimer) deltaTimer = setTimeout(flushDelta, BROADCAST_MS);
 }
 
 function flushDelta() {
-  broadcastTimer = null;
-  if (pendingDelta.length === 0) return;
+  deltaTimer = null;
+  if (!pendingDelta.length) return;
   const msg = JSON.stringify({ type: 'delta', pixels: pendingDelta });
   pendingDelta = [];
   broadcast(msg);
 }
 
-function broadcast(msg, excludeId = null) {
-  for (const [id, p] of players) {
-    if (id === excludeId) continue;
-    if (p.ws.readyState === WebSocket.OPEN) {
-      p.ws.send(msg);
-    }
+function broadcast(msg, excludePid = -1) {
+  for (const [pid, p] of players) {
+    if (pid === excludePid || p.isBot) continue;
+    if (p.ws && p.ws.readyState === WebSocket.OPEN) p.ws.send(msg);
   }
 }
 
 function broadcastPlayers() {
   const list = [];
-  for (const [id, p] of players) {
-    list.push({ id, countryId: p.countryId, pixels: countryPixelCount[p.countryId] || 0 });
+  for (const [pid, p] of players) {
+    list.push({ id: pid, countryId: p.countryId, pixels: countryPxCount[p.countryId] || 0, isBot: !!p.isBot });
   }
   broadcast(JSON.stringify({ type: 'players', list }));
 }
 
-// ── Full state snapshot (sent to new joiners) ──────────────────────
-// Compresses claimByPixel to runs: [{start, len, owner}] (owner = countryId string)
-function buildStateSnapshot() {
+// ── State snapshot (RLE compressed) ──────────────────────────────
+function buildSnapshot() {
   const runs = [];
-  let runStart = -1, runOwner = -1;
+  let rs = -1, ro = -99;
   for (let i = 0; i <= MAP_PX; i++) {
-    const owner = i < MAP_PX ? claimByPixel[i] : -99;
-    if (owner !== runOwner) {
-      if (runOwner >= 0 && runStart >= 0) {
-        runs.push({ s: runStart, l: i - runStart, o: indexToCountryId[runOwner] });
-      }
-      runStart = i;
-      runOwner = owner;
+    const o = i < MAP_PX ? claimByPixel[i] : -999;
+    if (o !== ro) {
+      if (ro >= 0 && rs >= 0) runs.push({ s: rs, l: i - rs, o: idxToId[ro] });
+      rs = i; ro = o;
     }
   }
   return {
-    runs,           // RLE-compressed pixel ownership
+    runs,
     conquered: [...conqueredSet],
     players: [...players.values()].map(p => ({
       countryId: p.countryId,
-      pixels: countryPixelCount[p.countryId] || 0,
+      pixels: countryPxCount[p.countryId] || 0,
+      isBot: !!p.isBot,
     })),
   };
 }
 
-// ── Core game logic ────────────────────────────────────────────────
+// ── Core pixel logic ──────────────────────────────────────────────
 function applyPixels(pixels, countryId) {
-  // Returns { changed: [{x,y,owner}], conquests: [], reversals: [] }
-  const countryIdx = getOrCreateIndex(countryId);
-  const changed    = [];
-  const affectedGeos = new Set();
+  const cidx     = getIdx(countryId);
+  const changed  = [];
+  const affected = new Set();
 
   for (const { x, y } of pixels) {
     if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) continue;
     const i = y * MAP_W + x;
+    if (!landMask[i]) continue;
     const prev = claimByPixel[i];
-    if (prev === countryIdx) continue;  // already owned
+    if (prev === cidx) continue;
 
-    // Decrement previous owner
     if (prev >= 0) {
-      const prevId = indexToCountryId[prev];
-      countryPixelCount[prevId] = Math.max(0, (countryPixelCount[prevId] || 1) - 1);
-      // Update geo counts
-      const geo = getGeoAtPixel(i);
-      if (geo >= 0 && geoClaimCnt[geo]) {
-        geoClaimCnt[geo][prevId] = Math.max(0, (geoClaimCnt[geo][prevId] || 1) - 1);
+      const prevId = idxToId[prev];
+      countryPxCount[prevId] = Math.max(0, (countryPxCount[prevId] || 1) - 1);
+      const geo = geoAtPixel[i];
+      if (geo >= 0 && geoClaimCnt[geo]?.[prevId]) {
+        geoClaimCnt[geo][prevId] = Math.max(0, geoClaimCnt[geo][prevId] - 1);
+        affected.add(geo);
       }
     }
 
-    claimByPixel[i] = countryIdx;
-    countryPixelCount[countryId] = (countryPixelCount[countryId] || 0) + 1;
-
-    const geo = getGeoAtPixel(i);
+    claimByPixel[i] = cidx;
+    countryPxCount[countryId] = (countryPxCount[countryId] || 0) + 1;
+    const geo = geoAtPixel[i];
     if (geo >= 0) {
-      if (!geoClaimCnt[geo]) geoClaimCnt[geo] = {};
+      geoClaimCnt[geo] ??= {};
       geoClaimCnt[geo][countryId] = (geoClaimCnt[geo][countryId] || 0) + 1;
-      affectedGeos.add(geo);
+      affected.add(geo);
     }
-
     changed.push({ x, y, owner: countryId });
   }
 
-  // Check conquests and reversals
   const conquests = [], reversals = [];
-  for (const geo of affectedGeos) {
-    const total = geoTotal[geo];
+  for (const geo of affected) {
+    const total = geoTotal[geo] || 0;
     if (!total) continue;
-
-    // Check conquest
-    const owned = (geoClaimCnt[geo] && geoClaimCnt[geo][countryId]) || 0;
-    const key   = `${geo}:${countryId}`;
+    const owned = geoClaimCnt[geo]?.[countryId] || 0;
+    const key   = geo + ':' + countryId;
     if (!conqueredSet.has(key) && owned / total >= CONQUEST_THRESHOLD) {
       conqueredSet.add(key);
       conquests.push({ geoIdx: geo, countryId });
-
-      // Finisher fill — claim remaining pixels of this geo for countryId
-      const fillResult = finisherFill(geo, countryId);
-      changed.push(...fillResult);
+      changed.push(...finisherFill(geo, countryId));
     }
-
-    // Check conquest reversals for other countries
     for (const [cId, cnt] of Object.entries(geoClaimCnt[geo] || {})) {
-      const rKey = `${geo}:${cId}`;
-      if (cId !== countryId && conqueredSet.has(rKey)) {
-        const rOwned = cnt || 0;
-        if (total > 0 && rOwned / total < CONQUEST_THRESHOLD) {
-          conqueredSet.delete(rKey);
-          reversals.push({ geoIdx: geo, countryId: cId });
-        }
+      const rk = geo + ':' + cId;
+      if (cId !== countryId && conqueredSet.has(rk) && (cnt || 0) / total < CONQUEST_THRESHOLD) {
+        conqueredSet.delete(rk);
+        reversals.push({ geoIdx: geo, countryId: cId });
       }
     }
   }
-
   return { changed, conquests, reversals };
 }
 
 function finisherFill(geoIdx, countryId) {
-  const countryIdx = getOrCreateIndex(countryId);
+  const cidx = getIdx(countryId);
   const filled = [];
-  // We need a way to iterate pixels of a geo country.
-  // For now we iterate all pixels (slow but correct for a first version).
-  // In production, pre-build a geoPixels[geoIdx] index.
   for (let i = 0; i < MAP_PX; i++) {
-    if (getGeoAtPixel(i) !== geoIdx) continue;
-    if (claimByPixel[i] === countryIdx) continue;
+    if (geoAtPixel[i] !== geoIdx) continue;
+    if (claimByPixel[i] === cidx) continue;
     const prev = claimByPixel[i];
     if (prev >= 0) {
-      const prevId = indexToCountryId[prev];
-      countryPixelCount[prevId] = Math.max(0, (countryPixelCount[prevId] || 1) - 1);
-      if (geoClaimCnt[geoIdx] && geoClaimCnt[geoIdx][prevId]) {
-        geoClaimCnt[geoIdx][prevId] = Math.max(0, (geoClaimCnt[geoIdx][prevId] || 1) - 1);
-      }
+      const pid = idxToId[prev];
+      countryPxCount[pid] = Math.max(0, (countryPxCount[pid] || 1) - 1);
+      if (geoClaimCnt[geoIdx]?.[pid]) geoClaimCnt[geoIdx][pid] = Math.max(0, geoClaimCnt[geoIdx][pid] - 1);
     }
-    claimByPixel[i] = countryIdx;
-    countryPixelCount[countryId] = (countryPixelCount[countryId] || 0) + 1;
-    if (!geoClaimCnt[geoIdx]) geoClaimCnt[geoIdx] = {};
+    claimByPixel[i] = cidx;
+    countryPxCount[countryId] = (countryPxCount[countryId] || 0) + 1;
+    geoClaimCnt[geoIdx] ??= {};
     geoClaimCnt[geoIdx][countryId] = (geoClaimCnt[geoIdx][countryId] || 0) + 1;
-    const x = i % MAP_W, y = (i / MAP_W) | 0;
-    filled.push({ x, y, owner: countryId });
+    filled.push({ x: i % MAP_W, y: (i / MAP_W) | 0, owner: countryId });
   }
   return filled;
 }
 
-function applyBomb(cx, cy, radius, countryId) {
-  // Clear all pixels within radius — no owner on cleared pixels
-  const r2 = radius * radius;
-  const cleared = [];
-  const x0 = Math.max(0, cx - radius), x1 = Math.min(MAP_W - 1, cx + radius);
-  const y0 = Math.max(0, cy - radius), y1 = Math.min(MAP_H - 1, cy + radius);
-  const affectedGeos = new Set();
+// ── Bot AI ────────────────────────────────────────────────────────
+// Each bot: paints pixels near its existing territory, defends when attacked.
+// Strategy: expand outward from owned pixels into unclaimed or enemy territory.
 
-  for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      if ((x - cx) ** 2 + (y - cy) ** 2 > r2) continue;
-      const i = y * MAP_W + x;
-      const prev = claimByPixel[i];
-      if (prev < 0) continue;
-      const prevId = indexToCountryId[prev];
-      countryPixelCount[prevId] = Math.max(0, (countryPixelCount[prevId] || 1) - 1);
-      const geo = getGeoAtPixel(i);
-      if (geo >= 0 && geoClaimCnt[geo] && geoClaimCnt[geo][prevId]) {
-        geoClaimCnt[geo][prevId] = Math.max(0, (geoClaimCnt[geo][prevId] || 1) - 1);
-        affectedGeos.add(geo);
-      }
-      claimByPixel[i] = -1;
-      cleared.push({ x, y, owner: null });
-    }
-  }
+const bots = new Map(); // countryId → { countryId, bucket, geoIdx, pixels:Set }
 
-  // Check reversals
-  const reversals = [];
-  for (const geo of affectedGeos) {
-    for (const [cId] of Object.entries(geoClaimCnt[geo] || {})) {
-      const rKey = `${geo}:${cId}`;
-      if (conqueredSet.has(rKey)) {
-        const owned = (geoClaimCnt[geo][cId] || 0);
-        const total = geoTotal[geo] || 0;
-        if (total > 0 && owned / total < CONQUEST_THRESHOLD) {
-          conqueredSet.delete(rKey);
-          reversals.push({ geoIdx: geo, countryId: cId });
-        }
-      }
-    }
-  }
-
-  return { cleared, reversals };
+function getGeoForCountry(countryId) {
+  // Find the geoIdx that matches countryId (they're the same in our DB)
+  return parseInt(countryId, 10);
 }
 
-// geoAtPixel — populated when clients send map data or pre-loaded
-const geoAtPixel = new Int16Array(MAP_PX).fill(-1);
-function getGeoAtPixel(i) { return geoAtPixel[i]; }
+function botInit(countryId) {
+  const bot = {
+    countryId,
+    bucket: BOT_BUCKET_MAX,
+    geoIdx: getGeoForCountry(countryId),
+    pid: nextPid++,
+  };
+  bots.set(countryId, bot);
+  players.set(bot.pid, { ws: null, countryId, countryIdx: getIdx(countryId), lastSeen: Date.now(), isBot: true });
+  countryPxCount[countryId] = countryPxCount[countryId] || 0;
+  console.log(`[Bot] Spawned ${countryId} as pid ${bot.pid}`);
+}
 
-// ── HTTP + WebSocket server ────────────────────────────────────────
-const server = http.createServer((req, res) => {
-  // Serve the game HTML at /
+// Find pixels on the frontier: own pixels adjacent to non-own
+function getBotFrontier(countryId, limit) {
+  const cidx  = getIdx(countryId);
+  const front = [];
+  const DX = [-1,1,0,0], DY = [0,0,-1,1];
+  for (let i = 0; i < MAP_PX; i++) {
+    if (claimByPixel[i] !== cidx) continue;
+    const x = i % MAP_W, y = (i / MAP_W) | 0;
+    for (let d = 0; d < 4; d++) {
+      const nx = x+DX[d], ny = y+DY[d];
+      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+      const ni = ny*MAP_W+nx;
+      if (!landMask[ni]) continue;
+      if (claimByPixel[ni] !== cidx) { front.push({x:nx,y:ny}); break; }
+    }
+    if (front.length >= limit*4) break;
+  }
+  // Shuffle and return limit
+  for (let i=front.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[front[i],front[j]]=[front[j],front[i]];}
+  return front.slice(0, limit);
+}
+
+// Find pixels inside own geo country held by enemies (defend/reclaim)
+function getBotDefendTargets(countryId, limit) {
+  const cidx = getIdx(countryId);
+  const geoIdx = getGeoForCountry(countryId);
+  const targets = [];
+  for (let i = 0; i < MAP_PX; i++) {
+    if (geoAtPixel[i] !== geoIdx) continue;
+    if (claimByPixel[i] === cidx || claimByPixel[i] < 0) continue;
+    targets.push({ x: i % MAP_W, y: (i / MAP_W) | 0 });
+    if (targets.length >= limit*4) break;
+  }
+  for (let i=targets.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[targets[i],targets[j]]=[targets[j],targets[i]];}
+  return targets.slice(0, limit);
+}
+
+function botTick() {
+  if (!mapReady) return;
+  for (const [countryId, bot] of bots) {
+    if (bot.bucket < BOT_PIXELS_PER_TICK) continue;
+
+    // Priority: defend own territory if under attack, else expand
+    let targets = getBotDefendTargets(countryId, BOT_PIXELS_PER_TICK);
+    if (targets.length < BOT_PIXELS_PER_TICK) {
+      targets = targets.concat(getBotFrontier(countryId, BOT_PIXELS_PER_TICK - targets.length));
+    }
+    if (targets.length === 0) continue;
+
+    bot.bucket -= Math.min(BOT_PIXELS_PER_TICK, targets.length);
+    const { changed, conquests, reversals } = applyPixels(targets, countryId);
+    if (changed.length) queueDelta(changed);
+    conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest', ...c })));
+    reversals.forEach(r => broadcast(JSON.stringify({ type:'reversal', ...r })));
+  }
+}
+
+// Regen bot buckets
+setInterval(() => {
+  for (const bot of bots.values()) {
+    if (bot.bucket < BOT_BUCKET_MAX) bot.bucket++;
+  }
+}, BOT_REGEN_MS);
+
+// Bot tick loop
+setInterval(botTick, BOT_TICK_MS);
+
+// ── Map readiness ─────────────────────────────────────────────────
+let mapReady = false;
+let geoPixelReady = false;
+
+function checkMapReady() {
+  if (geoPixelReady && Object.keys(geoTotal).length > 0) {
+    mapReady = true;
+    console.log('[Map] Ready — initialising bots');
+    BOT_COUNTRIES.forEach(c => botInit(c));
+    broadcastPlayers();
+  }
+}
+
+// ── WebSocket server ──────────────────────────────────────────────
+const httpServer = http.createServer((req, res) => {
   if (req.url === '/' || req.url === '/index.html') {
-    const clientPath = path.join(__dirname, 'pixelworld_mp.html');
-    if (fs.existsSync(clientPath)) {
+    const f = path.join(__dirname, 'pixelworld_v5.html');
+    if (fs.existsSync(f)) {
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      fs.createReadStream(clientPath).pipe(res);
+      fs.createReadStream(f).pipe(res);
     } else {
-      res.writeHead(404);
-      res.end('pixelworld_mp.html not found — copy it to this directory');
+      res.writeHead(404); res.end('pixelworld_v5.html not found');
     }
     return;
   }
-  // Health check
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      players: players.size,
-      conquered: conqueredSet.size,
-      uptime: process.uptime(),
-    }));
+    res.end(JSON.stringify({ players: players.size, bots: bots.size, mapReady, uptime: process.uptime() }));
     return;
   }
   res.writeHead(404); res.end();
 });
 
-const wss = new WebSocket.Server({ server, maxPayload: 1024 * 1024 }); // 1MB max message
+const wss = new WebSocket.Server({ server: httpServer, maxPayload: 4 * 1024 * 1024 });
 
 wss.on('connection', (ws, req) => {
-  const playerId = nextPlayerId++;
-  const ip = req.socket.remoteAddress;
-  console.log(`[+] Player ${playerId} connected from ${ip}`);
+  const pid = nextPid++;
+  const ip  = req.socket.remoteAddress;
+  console.log(`[+] Player ${pid} connected from ${ip}`);
 
-  let player = { ws, countryId: null, countryIdx: -1, lastSeen: Date.now() };
-  players.set(playerId, player);
+  const player = { ws, countryId: null, countryIdx: -1, lastSeen: Date.now(), isBot: false };
+  players.set(pid, player);
 
-  // Keepalive
-  const pingInterval = setInterval(() => {
+  const keepalive = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) ws.ping();
-    if (Date.now() - player.lastSeen > PLAYER_TIMEOUT) {
-      console.log(`[-] Player ${playerId} timed out`);
-      ws.terminate();
-    }
-  }, 10000);
+    if (Date.now() - player.lastSeen > TIMEOUT_MS) { console.log(`[-] Player ${pid} timed out`); ws.terminate(); }
+  }, PING_MS);
 
   ws.on('pong', () => { player.lastSeen = Date.now(); });
 
-  ws.on('message', (raw) => {
+  ws.on('message', raw => {
     player.lastSeen = Date.now();
     let msg;
-    try { msg = JSON.parse(raw); }
-    catch { return; }
+    try { msg = JSON.parse(raw); } catch { return; }
 
     switch (msg.type) {
 
@@ -348,105 +359,89 @@ wss.on('connection', (ws, req) => {
       case 'join': {
         if (!msg.countryId) return;
         player.countryId  = String(msg.countryId);
-        player.countryIdx = getOrCreateIndex(player.countryId);
-        console.log(`  Player ${playerId} joined as country ${player.countryId}`);
+        player.countryIdx = getIdx(player.countryId);
+        console.log(`  Player ${pid} → country ${player.countryId}`);
 
-        // Accept geoTotal snapshot from first client (bootstraps server)
-        if (msg.geoTotal && Object.keys(geoTotal).length === 0) {
+        // Bootstrap map data from first client
+        if (msg.geoTotal && !Object.keys(geoTotal).length) {
           Object.assign(geoTotal, msg.geoTotal);
-          console.log(`  Received geoTotal from client: ${Object.keys(geoTotal).length} countries`);
+          console.log(`  geoTotal: ${Object.keys(geoTotal).length} countries`);
         }
-        // Accept geoAtPixel snapshot (compressed as RLE)
-        if (msg.geoPixelRuns && geoAtPixel.every(v => v === -1)) {
-          applyGeoPixelRuns(msg.geoPixelRuns);
-          console.log('  Received geoAtPixel from client');
+        if (msg.geoPixelRuns && !geoPixelReady) {
+          for (const { s, l, g } of msg.geoPixelRuns) {
+            for (let i = s; i < s + l && i < MAP_PX; i++) geoAtPixel[i] = g;
+          }
+          geoPixelReady = true;
+          console.log('  geoAtPixel received');
         }
+        if (msg.landRuns && !landMask.some(v => v)) {
+          for (const { s, l } of msg.landRuns) {
+            for (let i = s; i < s + l && i < MAP_PX; i++) landMask[i] = 1;
+          }
+          console.log('  landMask received');
+        }
+        checkMapReady();
 
-        // Send full state to new player
         ws.send(JSON.stringify({
           type: 'welcome',
-          playerId,
-          state: buildStateSnapshot(),
+          playerId: pid,
+          botIds: [...bots.keys()],
+          state: buildSnapshot(),
         }));
-
         broadcastPlayers();
         break;
       }
 
       case 'stroke': {
-        if (!player.countryId) return;
-        if (!Array.isArray(msg.pixels) || msg.pixels.length > MAX_STROKE_PX) return;
-
+        if (!player.countryId || !Array.isArray(msg.pixels)) return;
+        if (msg.pixels.length > MAX_STROKE_PX) return;
         const { changed, conquests, reversals } = applyPixels(msg.pixels, player.countryId);
-
-        if (changed.length > 0) queueDelta(changed);
-        if (conquests.length > 0) {
-          for (const c of conquests) {
-            broadcast(JSON.stringify({ type: 'conquest', ...c }));
-          }
-        }
-        if (reversals.length > 0) {
-          for (const r of reversals) {
-            broadcast(JSON.stringify({ type: 'reversal', ...r }));
-          }
-        }
-        break;
-      }
-
-      case 'fill': {
-        // Client sends the filled pixels after auto-fill completes
-        if (!player.countryId) return;
-        if (!Array.isArray(msg.pixels) || msg.pixels.length > MAX_FILL_PX) return;
-        const { changed, conquests, reversals } = applyPixels(msg.pixels, player.countryId);
-        if (changed.length > 0) queueDelta(changed);
-        conquests.forEach(c => broadcast(JSON.stringify({ type: 'conquest', ...c })));
-        reversals.forEach(r => broadcast(JSON.stringify({ type: 'reversal', ...r })));
+        if (changed.length) queueDelta(changed);
+        conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest',...c })));
+        reversals.forEach(r => broadcast(JSON.stringify({ type:'reversal',...r })));
         break;
       }
 
       case 'bomb': {
         if (!player.countryId) return;
         const { cx, cy, radius } = msg;
-        if (typeof cx !== 'number' || typeof cy !== 'number' || typeof radius !== 'number') return;
-        if (radius > 50) return; // sanity cap
-        const { cleared, reversals } = applyBomb(cx, cy, radius, player.countryId);
-        if (cleared.length > 0) queueDelta(cleared);
-        reversals.forEach(r => broadcast(JSON.stringify({ type: 'reversal', ...r })));
+        if (typeof cx!=='number'||typeof cy!=='number'||typeof radius!=='number') return;
+        if (radius > 30) return;
+        const r2 = radius*radius;
+        const bombed = [];
+        for (let dy=-radius;dy<=radius;dy++) for (let dx=-radius;dx<=radius;dx++) {
+          if (dx*dx+dy*dy>r2) continue;
+          bombed.push({ x: cx+dx, y: cy+dy });
+        }
+        const { changed, conquests, reversals } = applyPixels(bombed, player.countryId);
+        if (changed.length) queueDelta(changed);
+        conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest',...c })));
+        reversals.forEach(r => broadcast(JSON.stringify({ type:'reversal',...r })));
         break;
       }
     }
   });
 
   ws.on('close', () => {
-    clearInterval(pingInterval);
-    players.delete(playerId);
-    console.log(`[-] Player ${playerId} disconnected (${players.size} remaining)`);
+    clearInterval(keepalive);
+    players.delete(pid);
+    console.log(`[-] Player ${pid} disconnected (${players.size - bots.size} real players)`);
     broadcastPlayers();
   });
 
-  ws.on('error', (err) => {
-    console.error(`  Player ${playerId} error:`, err.message);
-  });
+  ws.on('error', err => console.error(`  Player ${pid} error:`, err.message));
 });
 
-function applyGeoPixelRuns(runs) {
-  for (const { s, l, g } of runs) {
-    for (let i = s; i < s + l; i++) {
-      if (i < MAP_PX) geoAtPixel[i] = g;
-    }
-  }
-}
-
-server.listen(PORT, () => {
-  console.log(`\n🌍 PixelWorld server running on http://localhost:${PORT}`);
+httpServer.listen(PORT, () => {
+  console.log(`\n🌍 PixelAnnex server running`);
+  console.log(`   HTTP:      http://localhost:${PORT}`);
   console.log(`   WebSocket: ws://localhost:${PORT}`);
   console.log(`   Health:    http://localhost:${PORT}/health`);
-  console.log(`   Players:   ${players.size}\n`);
+  console.log(`   Bots:      ${BOT_COUNT} (start after first client connects)\n`);
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('Shutting down...');
+  console.log('Shutting down…');
   wss.clients.forEach(c => c.close(1001, 'Server shutting down'));
-  server.close(() => process.exit(0));
+  httpServer.close(() => process.exit(0));
 });
