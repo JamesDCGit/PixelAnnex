@@ -40,14 +40,11 @@ const PING_MS            = 10000;
 const TIMEOUT_MS         = 30000;
 
 // ── Bot config ────────────────────────────────────────────────────
-const BOT_COUNT          = 8;     // number of bot players
-const BOT_TICK_MS        = 800;   // ms between bot paint strokes
-const BOT_PIXELS_PER_TICK = 3;    // pixels per stroke
-const BOT_BUCKET_MAX     = 100;
-const BOT_REGEN_MS       = 1000;  // bucket regen interval
-
-// Bot country assignments — use major countries for visible AI presence
-const BOT_COUNTRIES = ['840','156','643','356','76','826','276','250'];
+const BOT_TICK_MS         = 1200;  // ms between bot ticks (staggered)
+const BOT_PIXELS_PER_TICK  = 2;    // pixels per stroke per bot
+const BOT_BUCKET_MAX       = 100;
+const BOT_REGEN_MS         = 1500; // bucket regen interval
+// All countries get bots — populated dynamically from map data
 
 // ── Map state ─────────────────────────────────────────────────────
 const claimByPixel = new Int16Array(MAP_PX).fill(-1);
@@ -150,6 +147,7 @@ function applyPixels(pixels, countryId) {
       }
     }
 
+    updateOwnerIndex(i, prev, cidx);
     claimByPixel[i] = cidx;
     countryPxCount[countryId] = (countryPxCount[countryId] || 0) + 1;
     const geo = geoAtPixel[i];
@@ -205,95 +203,134 @@ function finisherFill(geoIdx, countryId) {
 }
 
 // ── Bot AI ────────────────────────────────────────────────────────
-// Each bot: paints pixels near its existing territory, defends when attacked.
-// Strategy: expand outward from owned pixels into unclaimed or enemy territory.
+// Uses pre-built pixel indices for O(1) target lookup instead of O(MAP_PX) scans.
+// Supports one bot per country (~220 bots) efficiently on a single CPU.
 
-const bots = new Map(); // countryId → { countryId, bucket, geoIdx, pixels:Set }
+const bots = new Map(); // countryId → { countryId, bucket, geoIdx, frontierIdx }
+
+// Pre-built indices (populated once map data arrives):
+// geoPixels[geoIdx]     = Int32Array of pixel offsets belonging to this geo country
+// ownerFrontier[cidx]   = Set of pixel offsets on the frontier (neighbour ≠ owner)
+// These are maintained incrementally as pixels change.
+
+const geoPixels    = {};  // geoIdx → Int32Array (built once)
+const ownerPixels  = {};  // countryIdx → Set<pixelOffset> (maintained live)
 
 function getGeoForCountry(countryId) {
-  // Find the geoIdx that matches countryId (they're the same in our DB)
   return parseInt(countryId, 10);
 }
 
-function botInit(countryId) {
-  const bot = {
-    countryId,
-    bucket: BOT_BUCKET_MAX,
-    geoIdx: getGeoForCountry(countryId),
-    pid: nextPid++,
-  };
-  bots.set(countryId, bot);
-  players.set(bot.pid, { ws: null, countryId, countryIdx: getIdx(countryId), lastSeen: Date.now(), isBot: true });
-  countryPxCount[countryId] = countryPxCount[countryId] || 0;
-  console.log(`[Bot] Spawned ${countryId} as pid ${bot.pid}`);
-}
-
-// Find pixels on the frontier: own pixels adjacent to non-own
-function getBotFrontier(countryId, limit) {
-  const cidx  = getIdx(countryId);
-  const front = [];
-  const DX = [-1,1,0,0], DY = [0,0,-1,1];
+// Build geoPixels index once after map data is received
+function buildGeoIndex() {
+  console.log('[Bot] Building geo pixel index...');
+  const temp = {};
   for (let i = 0; i < MAP_PX; i++) {
-    if (claimByPixel[i] !== cidx) continue;
-    const x = i % MAP_W, y = (i / MAP_W) | 0;
-    for (let d = 0; d < 4; d++) {
-      const nx = x+DX[d], ny = y+DY[d];
-      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
-      const ni = ny*MAP_W+nx;
-      if (!landMask[ni]) continue;
-      if (claimByPixel[ni] !== cidx) { front.push({x:nx,y:ny}); break; }
-    }
-    if (front.length >= limit*4) break;
+    const g = geoAtPixel[i];
+    if (g < 0 || !landMask[i]) continue;
+    if (!temp[g]) temp[g] = [];
+    temp[g].push(i);
   }
-  // Shuffle and return limit
-  for (let i=front.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[front[i],front[j]]=[front[j],front[i]];}
-  return front.slice(0, limit);
+  for (const [g, arr] of Object.entries(temp)) {
+    geoPixels[+g] = new Int32Array(arr);
+  }
+  console.log(`[Bot] Geo index built: ${Object.keys(geoPixels).length} countries`);
 }
 
-// Find pixels inside own geo country held by enemies (defend/reclaim)
-function getBotDefendTargets(countryId, limit) {
-  const cidx = getIdx(countryId);
+// Get random frontier pixels for a bot (pixels adjacent to non-owned land)
+const DX4 = [-1,1,0,0], DY4 = [0,0,-1,1];
+function getBotTargets(countryId, limit) {
+  const cidx   = getIdx(countryId);
   const geoIdx = getGeoForCountry(countryId);
-  const targets = [];
-  for (let i = 0; i < MAP_PX; i++) {
-    if (geoAtPixel[i] !== geoIdx) continue;
-    if (claimByPixel[i] === cidx || claimByPixel[i] < 0) continue;
-    targets.push({ x: i % MAP_W, y: (i / MAP_W) | 0 });
-    if (targets.length >= limit*4) break;
-  }
-  for (let i=targets.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[targets[i],targets[j]]=[targets[j],targets[i]];}
-  return targets.slice(0, limit);
-}
+  const pixels = geoPixels[geoIdx];
+  if (!pixels || pixels.length === 0) return [];
 
-function botTick() {
-  if (!mapReady) return;
-  for (const [countryId, bot] of bots) {
-    if (bot.bucket < BOT_PIXELS_PER_TICK) continue;
+  // Separate into: enemy-held (defend first) and unclaimed/expandable
+  const defend = [], expand = [];
+  // Sample up to 200 random pixels from the geo to find targets quickly
+  const sampleSize = Math.min(200, pixels.length);
+  const step = Math.max(1, Math.floor(pixels.length / sampleSize));
 
-    // Priority: defend own territory if under attack, else expand
-    let targets = getBotDefendTargets(countryId, BOT_PIXELS_PER_TICK);
-    if (targets.length < BOT_PIXELS_PER_TICK) {
-      targets = targets.concat(getBotFrontier(countryId, BOT_PIXELS_PER_TICK - targets.length));
+  for (let s = 0; s < pixels.length && defend.length + expand.length < limit * 8; s += step) {
+    const i = pixels[s];
+    const owner = claimByPixel[i];
+    if (owner === cidx) continue; // already ours
+
+    // Check if this pixel is reachable (adjacent to own pixel)
+    const x = i % MAP_W, y = (i / MAP_W) | 0;
+    let adjacent = false;
+    for (let d = 0; d < 4; d++) {
+      const nx = x+DX4[d], ny = y+DY4[d];
+      if (nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
+      if (claimByPixel[ny*MAP_W+nx] === cidx) { adjacent = true; break; }
     }
-    if (targets.length === 0) continue;
+    if (!adjacent && owner !== cidx) {
+      // Also include pixels anywhere in geo if we have no territory yet
+      if ((ownerPixels[cidx]?.size || 0) > 0) continue;
+    }
 
-    bot.bucket -= Math.min(BOT_PIXELS_PER_TICK, targets.length);
-    const { changed, conquests, reversals } = applyPixels(targets, countryId);
-    if (changed.length) queueDelta(changed);
-    conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest', ...c })));
-    reversals.forEach(r => broadcast(JSON.stringify({ type:'reversal', ...r })));
+    if (owner > 0 && owner !== cidx) defend.push({x,y});
+    else expand.push({x,y});
+  }
+
+  // Prioritise defending, then expanding
+  const pool = defend.length > 0 ? defend : expand;
+  // Shuffle
+  for (let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+  return pool.slice(0, limit);
+}
+
+function botInit(countryId) {
+  const bot = { countryId, bucket: BOT_BUCKET_MAX, geoIdx: getGeoForCountry(countryId) };
+  bots.set(countryId, bot);
+  players.set(nextPid++, { ws: null, countryId, countryIdx: getIdx(countryId), lastSeen: Date.now(), isBot: true });
+  ownerPixels[getIdx(countryId)] = new Set();
+  countryPxCount[countryId] = countryPxCount[countryId] || 0;
+}
+
+// Stagger bot ticks so they don't all fire simultaneously
+function startBotTickers() {
+  let i = 0;
+  for (const [countryId] of bots) {
+    const delay = (i % 20) * (BOT_TICK_MS / 20); // spread across tick window
+    setTimeout(function tick() {
+      botTickSingle(countryId);
+      setTimeout(tick, BOT_TICK_MS);
+    }, delay);
+    i++;
+  }
+  console.log(`[Bot] ${bots.size} bot tickers started (staggered)`);
+}
+
+function botTickSingle(countryId) {
+  if (!mapReady) return;
+  const bot = bots.get(countryId);
+  if (!bot || bot.bucket < BOT_PIXELS_PER_TICK) return;
+
+  const targets = getBotTargets(countryId, BOT_PIXELS_PER_TICK);
+  if (targets.length === 0) return;
+
+  bot.bucket -= Math.min(BOT_PIXELS_PER_TICK, targets.length);
+  const { changed, conquests, reversals } = applyPixels(targets, countryId);
+  if (changed.length) queueDelta(changed);
+  conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest', ...c })));
+  reversals.forEach(r => broadcast(JSON.stringify({ type:'reversal', ...r })));
+}
+
+// Keep ownerPixels in sync with claimByPixel changes
+function updateOwnerIndex(pixelOffset, oldCidx, newCidx) {
+  if (oldCidx >= 0 && ownerPixels[oldCidx]) ownerPixels[oldCidx].delete(pixelOffset);
+  if (newCidx >= 0) {
+    if (!ownerPixels[newCidx]) ownerPixels[newCidx] = new Set();
+    ownerPixels[newCidx].add(pixelOffset);
   }
 }
 
-// Regen bot buckets
+// Regen bot buckets — staggered to avoid GC spikes
 setInterval(() => {
   for (const bot of bots.values()) {
     if (bot.bucket < BOT_BUCKET_MAX) bot.bucket++;
   }
 }, BOT_REGEN_MS);
-
-// Bot tick loop
-setInterval(botTick, BOT_TICK_MS);
 
 // ── Map readiness ─────────────────────────────────────────────────
 let mapReady = false;
@@ -302,9 +339,16 @@ let geoPixelReady = false;
 function checkMapReady() {
   if (geoPixelReady && Object.keys(geoTotal).length > 0) {
     mapReady = true;
-    console.log('[Map] Ready — initialising bots');
-    BOT_COUNTRIES.forEach(c => botInit(c));
+    console.log('[Map] Ready — building index and initialising bots');
+    buildGeoIndex();
+    // Spawn a bot for every country that has land pixels
+    for (const geoIdx of Object.keys(geoPixels)) {
+      const countryId = String(geoIdx);
+      if (!bots.has(countryId)) botInit(countryId);
+    }
+    console.log(`[Bot] Spawned ${bots.size} bots (one per country)`);
     broadcastPlayers();
+    startBotTickers();
   }
 }
 
