@@ -252,6 +252,27 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #btn-highlight.active{background:#1a2a1a;border-color:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.3);}
 
 
+
+/* ── Discord login HUD ── */
+#login-hud{
+  position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:8px;
+  background:#0f1729;border:1px solid #1e293b;border-radius:8px;
+  padding:6px 12px;font-size:11px;z-index:50;
+}
+#login-hud.logged-in{border-color:rgba(99,102,241,.5);}
+#login-avatar{width:20px;height:20px;border-radius:50%;}
+#login-name{color:#cbd5e1;font-weight:600;}
+#login-rank{color:#818cf8;font-size:10px;}
+#login-btn,#logout-btn{
+  background:#5865f2;border:none;color:white;
+  padding:4px 10px;font-size:10px;font-family:inherit;
+  border-radius:4px;cursor:pointer;font-weight:600;
+}
+#login-btn:hover{background:#4752c4;}
+#logout-btn{background:transparent;color:#64748b;border:1px solid #1e293b;}
+#logout-btn:hover{color:#cbd5e1;border-color:#334155;}
+.discord-icon{width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;}
 /* ── Audio HUD ── */
 #audio-hud{
   display:flex;flex-direction:column;gap:4px;padding:6px;
@@ -398,6 +419,9 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     <canvas id="c-overlay" style="pointer-events:none;"></canvas>
     <canvas id="c-crater" style="pointer-events:none;"></canvas>
     <div id="rank-display"></div>
+    <div id="login-hud">
+      <span id="login-status">Loading…</span>
+    </div>
     <div id="highlight-banner"></div>
     <div id="banner"></div>
     <div id="activity-toast"><div class="toast-title">&#9888; Under Attack</div><div id="activity-body"></div></div>
@@ -1724,6 +1748,9 @@ async function boot(){
   resetView();
   updateBucketHUD();
   mpInit();       // connect to multiplayer server (silent fallback if offline)
+  initAuth();     // Discord OAuth status check
+  // If WebSocket already connected by the time map finished loading, send join now
+  setTimeout(()=>{ if(wsReady) mpSendJoin(); }, 500);
   prerenderAllTracks(); // pre-render music tracks to PCM in background
   // Apply default 110% zoom on boot without advancing the cycle index
   (function applyDefaultZoom(){
@@ -2984,7 +3011,12 @@ function mpConnect() {
 }
 
 function mpSendJoin() {
-  if (!wsReady || !featList.length) return;
+  if (!wsReady) return;
+  // Retry if map not loaded yet
+  if (!featList.length || !landMask || !Object.keys(geoTotal).length) {
+    setTimeout(mpSendJoin, 500);
+    return;
+  }
   const f = featList[currentIdx];
   if (!f) return;
 
@@ -3191,6 +3223,81 @@ function updateServerStatus(online, humanCount, botList){
   } else {
     botDiv.style.display = 'none';
   }
+}
+
+// ── Discord auth client ───────────────────────────────────────────
+let _userProfile = null;
+
+async function checkAuth() {
+  try {
+    const res = await fetch('/auth/me', { credentials: 'include' });
+    const data = await res.json();
+    if (data.loggedIn) {
+      _userProfile = data;
+      renderLoginHUD(data);
+      // If user has a country preference, switch to it
+      if (data.countryMain && featList.length) {
+        const fi = featList.findIndex(f => f.id === String(data.countryMain));
+        if (fi >= 0 && fi !== currentIdx) selectCountry(fi);
+      }
+    } else {
+      _userProfile = null;
+      renderLoginHUD(null);
+    }
+  } catch (e) {
+    console.log('[Auth] Not available (server offline?)', e.message);
+    renderLoginHUD(null);
+  }
+}
+
+function renderLoginHUD(profile) {
+  const hud = document.getElementById('login-hud');
+  if (!hud) return;
+  hud.innerHTML = '';
+  if (profile) {
+    hud.classList.add('logged-in');
+    if (profile.avatar) {
+      const img = document.createElement('img');
+      img.id = 'login-avatar';
+      img.src = profile.avatar;
+      img.alt = profile.username;
+      hud.appendChild(img);
+    }
+    const name = document.createElement('span');
+    name.id = 'login-name';
+    name.textContent = profile.username;
+    hud.appendChild(name);
+    if (profile.rank && profile.rank !== 'Soldier') {
+      const rank = document.createElement('span');
+      rank.id = 'login-rank';
+      rank.textContent = profile.rank;
+      hud.appendChild(rank);
+    }
+    const btn = document.createElement('button');
+    btn.id = 'logout-btn';
+    btn.textContent = 'Sign out';
+    btn.onclick = () => { window.location.href = '/auth/logout'; };
+    hud.appendChild(btn);
+  } else {
+    hud.classList.remove('logged-in');
+    const btn = document.createElement('button');
+    btn.id = 'login-btn';
+    btn.innerHTML = '<svg class="discord-icon" viewBox="0 0 71 55" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M60.1 4.9A58.5 58.5 0 0 0 45.5 0L43.6 3.7a54 54 0 0 0-16.2 0L25.5 0A58.5 58.5 0 0 0 10.9 4.9 61.5 61.5 0 0 0 .5 46.6a58.8 58.8 0 0 0 18 9.1l3.6-5a35.6 35.6 0 0 1-5.6-2.7c.5-.4 1-.7 1.4-1.1a42 42 0 0 0 35.2 0c.4.4.9.7 1.4 1.1a35.6 35.6 0 0 1-5.6 2.7l3.6 5a58.8 58.8 0 0 0 18-9.1A61.6 61.6 0 0 0 60.1 4.9zM23.7 38.3c-3.5 0-6.4-3.2-6.4-7.1s2.8-7.1 6.4-7.1 6.4 3.2 6.4 7.1-2.8 7.1-6.4 7.1zm23.6 0c-3.5 0-6.4-3.2-6.4-7.1s2.8-7.1 6.4-7.1 6.4 3.2 6.4 7.1-2.8 7.1-6.4 7.1z"/></svg>Sign in with Discord';
+    btn.onclick = () => { window.location.href = '/auth/login'; };
+    hud.appendChild(btn);
+  }
+}
+
+// Run auth check after map loads
+function initAuth() {
+  setTimeout(checkAuth, 800);
+  // Re-check periodically (in case rank changes)
+  setInterval(checkAuth, 60000);
+}
+
+// Detect ?login=success in URL and refresh auth
+if (location.search.includes('login=success')) {
+  history.replaceState({}, '', location.pathname);
 }
 // ── Bomb craters ─────────────────────────────────────────────────
 // Each crater fades over CRATER_FADE_MS (10 s).

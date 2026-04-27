@@ -46,6 +46,51 @@ const BOT_BUCKET_MAX       = 100;
 const BOT_REGEN_MS         = 1500; // bucket regen interval
 // All countries get bots — populated dynamically from map data
 
+
+// ── Discord OAuth ─────────────────────────────────────────────────
+const DISCORD_CLIENT_ID     = process.env.DISCORD_CLIENT_ID || '';
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '';
+const DISCORD_REDIRECT_URI  = process.env.DISCORD_REDIRECT_URI || 'http://localhost:3000/auth/callback';
+const DISCORD_GUILD_ID      = process.env.DISCORD_GUILD_ID || '';
+const DISCORD_BOT_TOKEN     = process.env.DISCORD_BOT_TOKEN || '';
+
+// In-memory session store: token → { discordId, username, avatar, expires }
+// In production, replace with Redis or persistent DB
+const sessions = new Map();
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// Player profiles by discord_id (persists across sessions)
+const profiles = new Map();
+// profile = { discordId, username, avatar, countryMain, countryB, countryC, rank, xp, joinedAt }
+
+function generateToken() {
+  return require('crypto').randomBytes(32).toString('hex');
+}
+
+function getSession(token) {
+  const s = sessions.get(token);
+  if (!s) return null;
+  if (s.expires < Date.now()) { sessions.delete(token); return null; }
+  return s;
+}
+
+function getProfile(discordId) {
+  if (!profiles.has(discordId)) {
+    profiles.set(discordId, {
+      discordId,
+      username: null,
+      avatar: null,
+      countryMain: null,
+      countryB: null,
+      countryC: null,
+      rank: 'Soldier',
+      xp: 0,
+      joinedAt: Date.now(),
+    });
+  }
+  return profiles.get(discordId);
+}
+
 // ── Map state ─────────────────────────────────────────────────────
 const claimByPixel = new Int16Array(MAP_PX).fill(-1);
 const geoAtPixel   = new Int16Array(MAP_PX).fill(-1);
@@ -353,8 +398,11 @@ function checkMapReady() {
 }
 
 // ── WebSocket server ──────────────────────────────────────────────
-const httpServer = http.createServer((req, res) => {
-  if (req.url === '/' || req.url === '/index.html') {
+const httpServer = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+
+  // ── Static game file ────────────────────────────────────────────
+  if (url.pathname === '/' || url.pathname === '/index.html') {
     const f = path.join(__dirname, 'pixelworld_v5.html');
     if (fs.existsSync(f)) {
       res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -364,12 +412,161 @@ const httpServer = http.createServer((req, res) => {
     }
     return;
   }
-  if (req.url === '/health') {
+
+  // ── Health endpoint ─────────────────────────────────────────────
+  if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ players: players.size, bots: bots.size, mapReady, uptime: process.uptime() }));
+    res.end(JSON.stringify({
+      players:  players.size,
+      bots:     bots.size,
+      profiles: profiles.size,
+      sessions: sessions.size,
+      mapReady,
+      uptime:   process.uptime(),
+    }));
     return;
   }
-  res.writeHead(404); res.end();
+
+  // ── /auth/login → redirect to Discord OAuth ─────────────────────
+  if (url.pathname === '/auth/login') {
+    if (!DISCORD_CLIENT_ID) {
+      res.writeHead(500); res.end('Discord OAuth not configured (set DISCORD_CLIENT_ID env var)');
+      return;
+    }
+    const state = generateToken().slice(0, 16);
+    const params = new URLSearchParams({
+      client_id:     DISCORD_CLIENT_ID,
+      redirect_uri:  DISCORD_REDIRECT_URI,
+      response_type: 'code',
+      scope:         'identify guilds guilds.members.read',
+      state,
+    });
+    res.writeHead(302, { Location: 'https://discord.com/api/oauth2/authorize?' + params });
+    res.end();
+    return;
+  }
+
+  // ── /auth/callback → exchange code for token, fetch user, create session ──
+  if (url.pathname === '/auth/callback') {
+    const code = url.searchParams.get('code');
+    if (!code) { res.writeHead(400); res.end('Missing code'); return; }
+
+    try {
+      // Exchange code for access token
+      const tokRes = await fetch('https://discord.com/api/oauth2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id:     DISCORD_CLIENT_ID,
+          client_secret: DISCORD_CLIENT_SECRET,
+          grant_type:    'authorization_code',
+          code,
+          redirect_uri:  DISCORD_REDIRECT_URI,
+        }),
+      });
+      const tokData = await tokRes.json();
+      if (!tokData.access_token) {
+        console.error('[OAuth] Token exchange failed:', tokData);
+        res.writeHead(400); res.end('OAuth token exchange failed');
+        return;
+      }
+
+      // Fetch user profile
+      const userRes = await fetch('https://discord.com/api/users/@me', {
+        headers: { Authorization: 'Bearer ' + tokData.access_token },
+      });
+      const user = await userRes.json();
+      if (!user.id) {
+        console.error('[OAuth] User fetch failed:', user);
+        res.writeHead(400); res.end('Failed to fetch user');
+        return;
+      }
+
+      // Optional: verify user is in the PixelAnnex guild
+      let inGuild = true;
+      if (DISCORD_GUILD_ID) {
+        const guildsRes = await fetch('https://discord.com/api/users/@me/guilds', {
+          headers: { Authorization: 'Bearer ' + tokData.access_token },
+        });
+        const guilds = await guildsRes.json();
+        inGuild = Array.isArray(guilds) && guilds.some(g => g.id === DISCORD_GUILD_ID);
+      }
+
+      // Create profile + session
+      const profile = getProfile(user.id);
+      profile.username = user.username + (user.discriminator && user.discriminator !== '0' ? '#' + user.discriminator : '');
+      profile.avatar   = user.avatar
+        ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64`
+        : null;
+      profile.inGuild  = inGuild;
+
+      const token = generateToken();
+      sessions.set(token, {
+        discordId: user.id,
+        username:  profile.username,
+        avatar:    profile.avatar,
+        expires:   Date.now() + SESSION_TTL_MS,
+      });
+
+      console.log(`[OAuth] ${profile.username} (${user.id}) logged in. In guild: ${inGuild}`);
+
+      // Redirect back to game with session token in cookie + URL param
+      res.writeHead(302, {
+        'Set-Cookie': `pa_session=${token}; Path=/; Max-Age=${SESSION_TTL_MS/1000}; SameSite=Lax`,
+        Location: '/?login=success',
+      });
+      res.end();
+      return;
+
+    } catch (err) {
+      console.error('[OAuth] Callback error:', err);
+      res.writeHead(500); res.end('OAuth error');
+      return;
+    }
+  }
+
+  // ── /auth/me → return current user profile (used by client) ────
+  if (url.pathname === '/auth/me') {
+    const cookie = req.headers.cookie || '';
+    const m = cookie.match(/pa_session=([a-f0-9]+)/);
+    const token = m ? m[1] : null;
+    const session = token ? getSession(token) : null;
+    if (!session) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ loggedIn: false }));
+      return;
+    }
+    const profile = getProfile(session.discordId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      loggedIn:   true,
+      discordId:  profile.discordId,
+      username:   profile.username,
+      avatar:     profile.avatar,
+      countryMain:profile.countryMain,
+      countryB:   profile.countryB,
+      countryC:   profile.countryC,
+      rank:       profile.rank,
+      xp:         profile.xp,
+      inGuild:    profile.inGuild,
+    }));
+    return;
+  }
+
+  // ── /auth/logout → clear session ───────────────────────────────
+  if (url.pathname === '/auth/logout') {
+    const cookie = req.headers.cookie || '';
+    const m = cookie.match(/pa_session=([a-f0-9]+)/);
+    if (m) sessions.delete(m[1]);
+    res.writeHead(302, {
+      'Set-Cookie': 'pa_session=; Path=/; Max-Age=0',
+      Location: '/',
+    });
+    res.end();
+    return;
+  }
+
+  res.writeHead(404); res.end('Not found');
 });
 
 const wss = new WebSocket.Server({ server: httpServer, maxPayload: 4 * 1024 * 1024 });
