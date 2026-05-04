@@ -57,6 +57,17 @@ const DISCORD_BOT_TOKEN     = process.env.DISCORD_BOT_TOKEN || '';
 // In-memory session store: token → { discordId, username, avatar, expires }
 // In production, replace with Redis or persistent DB
 const sessions = new Map();
+
+// SSE event streams subscribed by the Discord bot
+const botEventStreams = new Set();
+
+// Broadcast a game event to all connected bots
+function emitBotEvent(event) {
+  const data = 'data: ' + JSON.stringify(event) + '\n\n';
+  for (const stream of botEventStreams) {
+    try { stream.write(data); } catch (e) { botEventStreams.delete(stream); }
+  }
+}
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Player profiles by discord_id (persists across sessions)
@@ -563,6 +574,75 @@ const httpServer = http.createServer(async (req, res) => {
       Location: '/',
     });
     res.end();
+    return;
+  }
+
+
+
+  // ── Bot API: shared-secret authenticated endpoints ──────────────
+  const botSecret = req.headers['x-bot-secret'];
+  const validBot  = botSecret && botSecret === (process.env.BOT_API_SECRET || '');
+
+  // /api/bot/profile — get/update a player's profile by Discord ID
+  if (url.pathname === '/api/bot/profile') {
+    if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
+
+    if (req.method === 'GET') {
+      const did = url.searchParams.get('discord_id');
+      if (!did) { res.writeHead(400); res.end('missing discord_id'); return; }
+      const profile = profiles.get(did);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(profile || null));
+      return;
+    }
+
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => body += chunk);
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          if (!data.discordId) { res.writeHead(400); res.end('missing discordId'); return; }
+          const p = getProfile(data.discordId);
+          if (data.username !== undefined)    p.username    = data.username;
+          if (data.countryMain !== undefined) p.countryMain = String(data.countryMain);
+          if (data.countryB !== undefined)    p.countryB    = data.countryB ? String(data.countryB) : null;
+          if (data.countryC !== undefined)    p.countryC    = data.countryC ? String(data.countryC) : null;
+          console.log(`[Bot] Profile updated: ${p.username} → main=${p.countryMain} b=${p.countryB} c=${p.countryC}`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, profile: p }));
+        } catch (e) {
+          res.writeHead(400); res.end('bad request');
+        }
+      });
+      return;
+    }
+  }
+
+  // /api/bot/countries — list all available countries (for slash command autocomplete)
+  if (url.pathname === '/api/bot/countries') {
+    if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
+    // Returns array of {id, name} from the geo index built when first client connects
+    const list = [];
+    for (const geoIdx of Object.keys(geoPixels || {})) {
+      list.push({ id: geoIdx, name: 'Country ' + geoIdx }); // bot will resolve names from DB
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ countries: list, mapReady }));
+    return;
+  }
+
+  // /api/bot/event — bot subscribes to game events (long-polling or SSE)
+  if (url.pathname === '/api/bot/events') {
+    if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
+    res.writeHead(200, {
+      'Content-Type':  'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection':    'keep-alive',
+    });
+    res.write('data: {"type":"connected"}\n\n');
+    botEventStreams.add(res);
+    req.on('close', () => botEventStreams.delete(res));
     return;
   }
 

@@ -1,17 +1,17 @@
 {
-  "name": "pixelworld-server",
+  "name": "pixelannex",
   "version": "1.0.0",
-  "description": "PixelWorld multiplayer WebSocket server",
+  "description": "PixelAnnex multiplayer game + Discord bot",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "bot": "node bot.js",
+    "register": "node register-commands.js"
   },
   "dependencies": {
     "ws": "^8.18.0",
-    "express": "^4.18.2"
-  },
-  "optionalDependencies": {
-    "ioredis": "^5.3.2"
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5"
   }
 }
