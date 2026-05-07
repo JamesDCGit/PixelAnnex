@@ -564,6 +564,35 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── /auth/update-country → sync user's chosen country back to profile ──
+  if (url.pathname === '/auth/update-country' && req.method === 'POST') {
+    const cookie = req.headers.cookie || '';
+    const m = cookie.match(/pa_session=([a-f0-9]+)/);
+    const token = m ? m[1] : null;
+    const session = token ? getSession(token) : null;
+    if (!session) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, reason: 'not_logged_in' }));
+      return;
+    }
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        if (!data.countryMain) { res.writeHead(400); res.end('missing countryMain'); return; }
+        const profile = getProfile(session.discordId);
+        profile.countryMain = String(data.countryMain);
+        console.log(`[Auth] ${profile.username} → countryMain=${profile.countryMain}`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        res.writeHead(400); res.end('bad request');
+      }
+    });
+    return;
+  }
+
   // ── /auth/logout → clear session ───────────────────────────────
   if (url.pathname === '/auth/logout') {
     const cookie = req.headers.cookie || '';

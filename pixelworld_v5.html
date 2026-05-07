@@ -3227,27 +3227,72 @@ function updateServerStatus(online, humanCount, botList){
 
 // ── Discord auth client ───────────────────────────────────────────
 let _userProfile = null;
+let _autoCountryApplied = false; // ensures we only auto-select once per session
 
 async function checkAuth() {
   try {
     const res = await fetch('/auth/me', { credentials: 'include' });
     const data = await res.json();
     if (data.loggedIn) {
+      const wasLoggedIn = !!_userProfile;
       _userProfile = data;
       renderLoginHUD(data);
-      // If user has a country preference, switch to it
-      if (data.countryMain && featList.length) {
-        const fi = featList.findIndex(f => f.id === String(data.countryMain));
-        if (fi >= 0 && fi !== currentIdx) selectCountry(fi);
+
+      // Auto-apply countryMain — only once per session, only if map is ready
+      if (!_autoCountryApplied && data.countryMain) {
+        await applyUserCountry(data);
+      }
+      // Update rank display whenever profile refreshes
+      if (data.rank && typeof setRankFromServer === 'function') {
+        setRankFromServer(data.rank, data.xp);
       }
     } else {
       _userProfile = null;
+      _autoCountryApplied = false;
       renderLoginHUD(null);
     }
   } catch (e) {
     console.log('[Auth] Not available (server offline?)', e.message);
     renderLoginHUD(null);
   }
+}
+
+async function applyUserCountry(profile){
+  // Wait for featList to be populated (map fully loaded)
+  let waitMs = 0;
+  while ((!featList || !featList.length) && waitMs < 10000) {
+    await new Promise(r => setTimeout(r, 200));
+    waitMs += 200;
+  }
+  if (!featList || !featList.length) {
+    console.warn('[Auth] Map never loaded — skipping country auto-apply');
+    return;
+  }
+  const fi = featList.findIndex(f => f.id === String(profile.countryMain));
+  if (fi < 0) {
+    console.warn('[Auth] Country', profile.countryMain, 'not in featList');
+    return;
+  }
+  if (fi !== currentIdx) {
+    selectCountry(fi);
+    showAuthToast(`🌍 Playing as ${featList[fi].name} (from your Discord profile)`);
+  }
+  _autoCountryApplied = true;
+}
+
+function showAuthToast(msg){
+  // Reuse the conquest toast styling for a quick info popup
+  let toast = document.getElementById('auth-toast');
+  if(!toast){
+    toast = document.createElement('div');
+    toast.id = 'auth-toast';
+    toast.style.cssText = 'position:absolute;top:60px;left:50%;transform:translateX(-50%);background:#0f1729;border:1px solid rgba(99,102,241,.5);border-radius:8px;padding:8px 14px;font-size:11px;color:#cbd5e1;z-index:55;display:none;box-shadow:0 4px 16px rgba(99,102,241,.2);';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.display = 'block';
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { toast.style.display = 'none'; }, 4000);
 }
 
 function renderLoginHUD(profile) {
@@ -4365,6 +4410,29 @@ function selectCountry(idx){
   document.getElementById('csel-label').textContent = f.name;
   document.getElementById('csel-flag').innerHTML = flagSVG(f.id, 2);
   if(wsReady) { ws.send(JSON.stringify({type:'join', countryId:f.id})); }
+  // If logged in via Discord, push country change back to profile
+  // (so /country show in Discord stays in sync with in-game choice)
+  if(_userProfile && _userProfile.loggedIn && _autoCountryApplied){
+    syncCountryToProfile(f.id);
+  }
+}
+
+let _syncTimer = null;
+async function syncCountryToProfile(countryId){
+  // Debounce — user may rapidly cycle through countries; only push final selection
+  if(_syncTimer) clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(async () => {
+    try {
+      await fetch('/auth/update-country', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ countryMain: countryId }),
+      });
+    } catch(e) {
+      // Silent fail — user can continue playing
+    }
+  }, 1500);
 }
 
 function toggleCselDropdown(){
