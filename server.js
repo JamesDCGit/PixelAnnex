@@ -142,6 +142,120 @@ function updateProfileXP(discordId, xpDelta) {
   }
 }
 
+
+// ── Alliance detection ───────────────────────────────────────────
+// An alliance forms when 3+ players share at least one country in their
+// preferences (countryMain, countryB, countryC).
+// Recomputed every 30 seconds from current profiles.
+
+const ALLIANCE_MIN_MEMBERS = 3;
+const ALLIANCE_RECOMPUTE_MS = 30000;
+
+// Active alliances: alliance_key (sorted country IDs joined by '-') → { countries:[], members:[discordIds] }
+const alliances = new Map();
+
+function recomputeAlliances() {
+  if (profiles.size < ALLIANCE_MIN_MEMBERS) return;
+
+  // Build: country_id → Set<discordId> who have this country in any of their slots
+  const countryMembership = new Map();
+  for (const [discordId, profile] of profiles) {
+    const countries = [profile.countryMain, profile.countryB, profile.countryC].filter(Boolean);
+    for (const c of countries) {
+      if (!countryMembership.has(c)) countryMembership.set(c, new Set());
+      countryMembership.get(c).add(discordId);
+    }
+  }
+
+  // Group countries that share members — countries are in same alliance if they
+  // share a member. Use union-find to cluster countries.
+  const parent = {};
+  function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+  function union(a, b) { parent[find(a)] = find(b); }
+
+  for (const c of countryMembership.keys()) parent[c] = c;
+
+  // For each player, union all their selected countries together
+  for (const profile of profiles.values()) {
+    const cs = [profile.countryMain, profile.countryB, profile.countryC].filter(Boolean);
+    for (let i = 1; i < cs.length; i++) union(cs[0], cs[i]);
+  }
+
+  // Group by root
+  const clusters = {};
+  for (const c of countryMembership.keys()) {
+    const root = find(c);
+    if (!clusters[root]) clusters[root] = { countries: new Set(), members: new Set() };
+    clusters[root].countries.add(c);
+    for (const m of countryMembership.get(c)) clusters[root].members.add(m);
+  }
+
+  // Filter clusters with enough members
+  const newAlliances = new Map();
+  for (const cluster of Object.values(clusters)) {
+    if (cluster.members.size < ALLIANCE_MIN_MEMBERS) continue;
+    if (cluster.countries.size < 2) continue; // single country isn't an alliance
+    const key = [...cluster.countries].sort((a,b) => +a - +b).join('-');
+    newAlliances.set(key, {
+      countries: [...cluster.countries].sort((a,b) => +a - +b),
+      members:   [...cluster.members],
+    });
+  }
+
+  // Diff old vs new — emit events for created/dissolved alliances
+  for (const [key, alliance] of newAlliances) {
+    if (!alliances.has(key)) {
+      console.log(`[Alliance] Formed: ${key} (${alliance.members.length} members)`);
+      emitBotEvent({
+        type: 'alliance_formed',
+        key,
+        countries: alliance.countries,
+        members:   alliance.members,
+      });
+    } else {
+      // Check if member list changed
+      const oldMembers = new Set(alliances.get(key).members);
+      const newMembers = new Set(alliance.members);
+      const added   = [...newMembers].filter(m => !oldMembers.has(m));
+      const removed = [...oldMembers].filter(m => !newMembers.has(m));
+      if (added.length || removed.length) {
+        emitBotEvent({
+          type: 'alliance_changed',
+          key,
+          countries: alliance.countries,
+          added,
+          removed,
+          members: alliance.members,
+        });
+      }
+    }
+  }
+  for (const [key, alliance] of alliances) {
+    if (!newAlliances.has(key)) {
+      console.log(`[Alliance] Dissolved: ${key}`);
+      emitBotEvent({
+        type: 'alliance_dissolved',
+        key,
+        countries: alliance.countries,
+      });
+    }
+  }
+
+  alliances.clear();
+  for (const [key, alliance] of newAlliances) alliances.set(key, alliance);
+}
+
+setInterval(recomputeAlliances, ALLIANCE_RECOMPUTE_MS);
+
+// Look up which alliance a country belongs to
+function getAllianceForCountry(countryId) {
+  countryId = String(countryId);
+  for (const [key, alliance] of alliances) {
+    if (alliance.countries.includes(countryId)) return { key, ...alliance };
+  }
+  return null;
+}
+
 // ── Map state ─────────────────────────────────────────────────────
 const claimByPixel = new Int16Array(MAP_PX).fill(-1);
 const geoAtPixel   = new Int16Array(MAP_PX).fill(-1);
@@ -478,6 +592,21 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── /api/alliances (public) — current alliances for client display ──
+  if (url.pathname === '/api/alliances') {
+    const list = [];
+    for (const [key, alliance] of alliances) {
+      list.push({
+        key,
+        countries: alliance.countries,
+        memberCount: alliance.members.length,
+      });
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ alliances: list }));
+    return;
+  }
+
   // ── /auth/login → redirect to Discord OAuth ─────────────────────
   if (url.pathname === '/auth/login') {
     if (!DISCORD_CLIENT_ID) {
@@ -698,6 +827,18 @@ const httpServer = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ countries: list, mapReady }));
+    return;
+  }
+
+  // /api/bot/alliances — read-only list of current alliances
+  if (url.pathname === '/api/bot/alliances') {
+    if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
+    const list = [];
+    for (const [key, alliance] of alliances) {
+      list.push({ key, countries: alliance.countries, members: alliance.members });
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ alliances: list }));
     return;
   }
 

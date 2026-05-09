@@ -384,3 +384,83 @@ Remove old rank roles, add new one, send DM
 
 **Wrong rank assigned** — check the player's actual XP via `/country show` — the bot syncs whatever the server says.
 
+
+---
+
+# Step 5: Alliance detection
+
+When 3+ players share country preferences, an alliance forms automatically. The bot creates a Discord role and announces it in `#general`.
+
+## How it works
+
+**Server-side:** Every 30 seconds, the server scans all profiles and clusters countries that share members (using union-find). Any cluster with 2+ countries and 3+ players becomes an alliance.
+
+**Bot-side:** Receives `alliance_formed`, `alliance_changed`, `alliance_dissolved` events via SSE. Creates/updates/deletes a Discord role named `Alliance: USA-Canada-Mexico`, assigns it to all members.
+
+**Game-side:** Polls `/api/alliances` every 30s. Countries in alliances show 🤝 in the territory panel.
+
+## Threshold
+
+Default: **3+ players** sharing **2+ countries** = alliance.
+
+To change, edit `server.js`:
+```js
+const ALLIANCE_MIN_MEMBERS = 3;  // bump to 5 once you have more players
+```
+
+## Optional: separate channel for alliances
+
+By default alliances announce in the same channel as promotions (`#general` or `PROMOTION_CHANNEL`). For a dedicated channel, add to `.env`:
+
+```
+ALLIANCE_CHANNEL=alliances
+```
+
+## Deploy
+
+```bash
+# Local
+git add server.js bot.js pixelworld_v5.html DISCORD_SETUP.md
+git commit -m "Step 5: alliance detection"
+git push
+
+# Server
+cd /var/www/PixelAnnex
+git checkout server.js  # discard any local changes
+git pull
+pm2 restart pixelannex
+pm2 restart pixelannex-bot
+```
+
+## Test
+
+You need 3 different Discord users to test alliance formation. The simplest test:
+
+1. User A — `/country set main:USA allegiance_b:Canada`
+2. User B — `/country set main:Canada allegiance_b:USA`
+3. User C — `/country set main:Mexico allegiance_b:USA`
+
+Within 30 seconds, the bot will:
+- Create role `Alliance: USA-Canada-Mexico` (or similar)
+- Assign it to all three users
+- Announce in `#general`: "🤝 New alliance formed! USA + Canada + Mexico — 3 members united."
+
+If User D joins with USA in their preferences, the alliance grows:
+- "🌱 Alliance growing — Now 4 members strong."
+
+If users `/country clear` and the alliance drops below 3:
+- Role deleted
+- "💔 Alliance dissolved — Member count fell below threshold."
+
+## In-game
+
+Open the game while logged in. Countries that are part of an alliance show 🤝 next to their pixel count in the Territory panel. Hover for details.
+
+## Troubleshooting
+
+**Alliance not forming** — check `pm2 logs pixelannex` for `[Alliance] Formed:` messages. The recompute runs every 30s. If you don't see it, check that all test users have set countries via `/country set`.
+
+**Role not assigned** — the bot's role must be ABOVE alliance roles in server settings (same as rank role hierarchy issue).
+
+**Alliance role mentions everyone** — alliance roles are created with `mentionable: true` so they can be pinged in the war reporter (Step 6). If you don't want this, edit `bot.js` and set `mentionable: false`.
+

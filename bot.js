@@ -297,6 +297,121 @@ async function syncMemberRank(discordId, newRank) {
   }
 }
 
+
+// ── Alliance role management ─────────────────────────────────────
+// Alliance roles are dynamically created/deleted as alliances form/dissolve.
+// Naming: "Alliance: USA-Canada" (countries joined alphabetically by name).
+
+const _allianceRoleCache = {}; // alliance_key → role ID
+
+function buildAllianceName(countryIds) {
+  const names = countryIds.map(id => COUNTRY_BY_ID[id] || ('Country ' + id));
+  // Cap displayed name to 3 countries for readability — show count if more
+  if (names.length <= 3) return 'Alliance: ' + names.join('-');
+  return 'Alliance: ' + names.slice(0, 3).join('-') + ' +' + (names.length - 3);
+}
+
+async function createOrUpdateAllianceRole(guild, key, countryIds, members) {
+  const roleName = buildAllianceName(countryIds);
+
+  // Find existing role by stored ID, or by name
+  let role = _allianceRoleCache[key]
+    ? guild.roles.cache.get(_allianceRoleCache[key])
+    : guild.roles.cache.find(r => r.name === roleName);
+
+  if (!role) {
+    try {
+      role = await guild.roles.create({
+        name:   roleName,
+        color:  0x6366f1, // indigo — distinctive from rank colours
+        hoist:  false,
+        mentionable: true,
+        reason: 'PixelAnnex auto-created alliance role',
+      });
+      console.log(`[Alliance] Created role: ${roleName}`);
+    } catch (e) {
+      console.error('[Alliance] Failed to create role:', e.message);
+      return null;
+    }
+  } else if (role.name !== roleName) {
+    try {
+      await role.setName(roleName, 'PixelAnnex alliance update');
+      console.log(`[Alliance] Renamed role to: ${roleName}`);
+    } catch (e) {
+      console.error('[Alliance] Failed to rename:', e.message);
+    }
+  }
+
+  _allianceRoleCache[key] = role.id;
+
+  // Sync members — add the role to all alliance members
+  for (const memberId of members) {
+    try {
+      const m = await guild.members.fetch(memberId).catch(() => null);
+      if (m && !m.roles.cache.has(role.id)) {
+        await m.roles.add(role.id, 'PixelAnnex alliance membership');
+      }
+    } catch (e) { /* member may have left — silent */ }
+  }
+
+  // Remove the role from anyone who has it but isn't a member
+  const memberSet = new Set(members);
+  for (const m of role.members.values()) {
+    if (!memberSet.has(m.id)) {
+      try {
+        await m.roles.remove(role.id, 'PixelAnnex alliance update');
+      } catch (e) { /* silent */ }
+    }
+  }
+
+  return role;
+}
+
+async function dissolveAllianceRole(guild, key) {
+  const roleId = _allianceRoleCache[key];
+  if (!roleId) return;
+  const role = guild.roles.cache.get(roleId);
+  if (!role) {
+    delete _allianceRoleCache[key];
+    return;
+  }
+  try {
+    await role.delete('PixelAnnex alliance dissolved');
+    console.log(`[Alliance] Deleted role: ${role.name}`);
+  } catch (e) {
+    console.error('[Alliance] Failed to delete role:', e.message);
+  }
+  delete _allianceRoleCache[key];
+}
+
+async function announceAlliance(guild, type, key, countryIds, extra) {
+  const channelName = process.env.ALLIANCE_CHANNEL || process.env.PROMOTION_CHANNEL || 'general';
+  const channel = guild.channels.cache.find(c => c.name === channelName && c.isTextBased());
+  if (!channel) {
+    console.log(`[Alliance] Channel #${channelName} not found — not announced`);
+    return;
+  }
+  const names = countryIds.map(id => COUNTRY_BY_ID[id] || ('Country ' + id));
+  let description, color;
+
+  if (type === 'formed') {
+    description = `🤝 **New alliance formed!**\n${names.join(' + ')}\n${extra.memberCount} members united.`;
+    color = 0x22c55e; // green
+  } else if (type === 'dissolved') {
+    description = `💔 **Alliance dissolved**\n${names.join(' + ')}\nMember count fell below threshold.`;
+    color = 0xef4444; // red
+  } else if (type === 'grew') {
+    description = `🌱 **Alliance growing**\n${names.join(' + ')}\nNow ${extra.memberCount} members strong.`;
+    color = 0x3b82f6; // blue
+  } else return;
+
+  try {
+    await channel.send({ embeds: [{ color, description }] });
+  } catch (e) {
+    console.error('[Alliance] Announce failed:', e.message);
+  }
+}
+
 // ── SSE event listener ───────────────────────────────────────────
 let _sseRetryDelay = 1000;
 async function connectEventStream() {
@@ -337,16 +452,43 @@ async function connectEventStream() {
 }
 
 function handleGameEvent(event) {
+  const guild = client.guilds.cache.get(GUILD_ID);
   switch (event.type) {
     case 'connected':
       console.log('[Bot] Event handshake received');
       break;
+
     case 'rank_change':
       console.log(`[Bot] Rank change: ${event.username} ${event.oldRank} → ${event.newRank}`);
       if (event.discordId && event.newRank) {
         syncMemberRank(event.discordId, event.newRank);
       }
       break;
+
+    case 'alliance_formed':
+      if (!guild) return;
+      console.log(`[Bot] Alliance formed: ${event.key}`);
+      createOrUpdateAllianceRole(guild, event.key, event.countries, event.members);
+      announceAlliance(guild, 'formed', event.key, event.countries, { memberCount: event.members.length });
+      break;
+
+    case 'alliance_changed':
+      if (!guild) return;
+      console.log(`[Bot] Alliance changed: ${event.key} +${event.added.length} -${event.removed.length}`);
+      createOrUpdateAllianceRole(guild, event.key, event.countries, event.members);
+      // Only announce if grew, not on shrinks (avoid noise)
+      if (event.added.length > event.removed.length) {
+        announceAlliance(guild, 'grew', event.key, event.countries, { memberCount: event.members.length });
+      }
+      break;
+
+    case 'alliance_dissolved':
+      if (!guild) return;
+      console.log(`[Bot] Alliance dissolved: ${event.key}`);
+      dissolveAllianceRole(guild, event.key);
+      announceAlliance(guild, 'dissolved', event.key, event.countries);
+      break;
+
     // Future: conquest, siege, etc. (Step 6)
   }
 }

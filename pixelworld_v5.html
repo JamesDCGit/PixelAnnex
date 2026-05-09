@@ -237,6 +237,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .csel-opt-name{overflow:hidden;text-overflow:ellipsis;}
 .csel-player-count{margin-left:auto;font-size:9px;color:#475569;white-space:nowrap;padding-left:4px;flex-shrink:0;}
 .leg-player-count{font-size:9px;color:#475569;white-space:nowrap;padding-left:3px;flex-shrink:0;}
+.leg-alliance{font-size:10px;padding-left:3px;cursor:help;flex-shrink:0;}
 
 #activity-toast{
   position:absolute;top:110px;right:14px;
@@ -1749,6 +1750,7 @@ async function boot(){
   updateBucketHUD();
   mpInit();       // connect to multiplayer server (silent fallback if offline)
   initAuth();     // Discord OAuth status check
+  refreshAlliances(); // load active alliances
   // If WebSocket already connected by the time map finished loading, send join now
   setTimeout(()=>{ if(wsReady) mpSendJoin(); }, 500);
   prerenderAllTracks(); // pre-render music tracks to PCM in background
@@ -1876,6 +1878,15 @@ function scheduleLegend(){
       const _ls=document.createElement('span'); _ls.style.color='#e2e8f0'; _ls.textContent=f.name; row.appendChild(_ls);
       const _lp=document.createElement('span'); _lp.className='leg-pct'; _lp.textContent=pct+'%'; row.appendChild(_lp);
       const _lc=document.createElement('span'); _lc.className='leg-cnt'; _lc.textContent='('+cnt.toLocaleString()+')'; row.appendChild(_lc);
+      // Alliance indicator
+      const _alliance = _allianceByCountry[f.id];
+      if(_alliance){
+        const _ai = document.createElement('span');
+        _ai.className = 'leg-alliance';
+        _ai.textContent = '🤝';
+        _ai.title = 'Alliance: ' + _alliance.countries.length + ' countries, ' + _alliance.memberCount + ' members';
+        row.appendChild(_ai);
+      }
       // Player count
       const _pc2 = _playerCountByCountry[f.id] || (+idx===currentIdx ? 1 : 0);
       if(_pc2 > 0){
@@ -3348,6 +3359,44 @@ function initAuth() {
 // Detect ?login=success in URL and refresh auth
 if (location.search.includes('login=success')) {
   history.replaceState({}, '', location.pathname);
+}
+
+// ── Alliance state ────────────────────────────────────────────────
+let _alliances = []; // [{key, countries:[id], memberCount}]
+const _allianceByCountry = {}; // countryId → alliance object
+
+async function refreshAlliances(){
+  try {
+    const res = await fetch('/api/alliances');
+    const data = await res.json();
+    _alliances = data.alliances || [];
+    // Rebuild country → alliance index
+    Object.keys(_allianceByCountry).forEach(k => delete _allianceByCountry[k]);
+    for(const a of _alliances){
+      for(const c of a.countries) _allianceByCountry[c] = a;
+    }
+    scheduleLegend();
+  } catch(e) {
+    // Silent — alliances may be unavailable in single-player
+  }
+}
+
+// Poll alliances every 30s
+setInterval(refreshAlliances, 30000);
+
+// Compute alliance-pooled pixel counts for territory panel
+function getAlliancePixelTotals(){
+  // Map: alliance_key → total pixel count summed across member countries
+  const totals = {};
+  for(const a of _alliances){
+    let sum = 0;
+    for(const cId of a.countries){
+      const fi = featList.findIndex(f => f.id === String(cId));
+      if(fi >= 0) sum += claimerCount[fi] || 0;
+    }
+    totals[a.key] = { sum, alliance: a };
+  }
+  return totals;
 }
 // ── Bomb craters ─────────────────────────────────────────────────
 // Each crater fades over CRATER_FADE_MS (10 s).
