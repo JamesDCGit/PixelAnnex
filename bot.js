@@ -271,16 +271,26 @@ async function syncMemberRank(discordId, newRank) {
     if (newRank !== 'Soldier' && _roleCache[newRank]) {
       await member.roles.add(_roleCache[newRank], 'PixelAnnex rank promotion');
       console.log(`[Rank] ${member.user.username} → ${newRank}`);
-      // Send promotion DM (best effort)
+      // Announce promotion in the configured channel (default: #general)
       try {
-        await member.send({
-          embeds: [{
-            color: RANK_ROLES.find(r => r.name === newRank)?.color || 0x6366f1,
-            title: `🎖️ Promoted to ${newRank}`,
-            description: `Congratulations! You've been promoted in PixelAnnex.`,
-          }],
-        });
-      } catch (e) { /* DMs disabled — silent fail */ }
+        const channelName = process.env.PROMOTION_CHANNEL || 'general';
+        const channel = guild.channels.cache.find(
+          c => c.name === channelName && c.isTextBased()
+        );
+        if (channel) {
+          const rankColor = RANK_ROLES.find(r => r.name === newRank)?.color || 0x6366f1;
+          await channel.send({
+            embeds: [{
+              color: rankColor,
+              description: `🎖️ <@${member.id}> has been promoted to **${newRank}**!`,
+            }],
+          });
+        } else {
+          console.log(`[Rank] Channel #${channelName} not found — promotion not announced`);
+        }
+      } catch (e) {
+        console.error('[Rank] Promotion announce failed:', e.message);
+      }
     }
   } catch (e) {
     console.error('[Rank] Sync failed:', e.message);
