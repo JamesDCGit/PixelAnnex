@@ -3045,6 +3045,8 @@ function mpSendJoin() {
   ws.send(JSON.stringify({
     type: 'join',
     countryId: f.id,
+    discordId: _userProfile && _userProfile.loggedIn ? _userProfile.discordId : null,
+    username:  _userProfile && _userProfile.loggedIn ? _userProfile.username  : null,
     geoTotal: Object.fromEntries(Object.entries(geoTotal)),
     geoPixelRuns,
     landRuns,
@@ -3276,6 +3278,9 @@ async function applyUserCountry(profile){
   if (fi !== currentIdx) {
     selectCountry(fi);
     showAuthToast(`🌍 Playing as ${featList[fi].name} (from your Discord profile)`);
+  } else {
+    // Country already correct, but we still need to bind discordId on the server
+    if (wsReady) mpSendJoin();
   }
   _autoCountryApplied = true;
 }

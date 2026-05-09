@@ -286,3 +286,101 @@ Should return:
 - **Step 4**: Game promotes player → bot assigns Discord rank role
 - **Step 5**: Alliance detection from shared `countryB`/`countryC` preferences
 - **Step 6**: War Reporter — events posted to `#war-room`
+
+---
+
+# Step 4: Rank sync (game ↔ Discord)
+
+When players earn XP in-game, the server promotes them through ranks. The bot mirrors this to Discord automatically by assigning rank roles.
+
+**Ranks:** Soldier (0 XP) → Lieutenant (50) → Captain (150) → General (300) → Admiral (500)
+
+**XP awarded:**
+- 1 XP per pixel painted (only counts pixels that weren't already yours)
+- 50 XP bonus per country conquered
+
+## Setup
+
+The bot creates the four rank roles automatically on startup. Just deploy and restart.
+
+## Deploy
+
+```bash
+# Local — push the updates
+git add server.js bot.js pixelworld_v5.html DISCORD_SETUP.md
+git commit -m "Step 4: rank sync via SSE events"
+git push
+
+# Server
+cd /var/www/PixelAnnex
+git pull
+npm install                  # in case any deps changed
+pm2 restart pixelannex
+pm2 restart pixelannex-bot
+pm2 logs pixelannex-bot --lines 20
+```
+
+You should see in the bot logs:
+```
+[Bot] Logged in as PixelAnnex#1234
+[Bot] Creating rank role: Lieutenant
+[Bot] Creating rank role: Captain
+[Bot] Creating rank role: General
+[Bot] Creating rank role: Admiral
+[Bot] Rank roles ready: Lieutenant, Captain, General, Admiral
+[Bot] Event stream connected
+[Bot] Event handshake received
+```
+
+## Important: bot role hierarchy
+
+For the bot to assign roles, **its own role must be ABOVE** the rank roles in your server.
+
+1. Server Settings → Roles
+2. Find the bot's role (probably named "PixelAnnex" — same as your bot)
+3. Drag it ABOVE Lieutenant, Captain, General, Admiral
+4. Save
+
+If you skip this, the bot will log `[Rank] Sync failed: Missing Permissions` whenever someone gets promoted.
+
+## Test
+
+1. Sign into the game with your Discord account
+2. Run `/country set` to set a country
+3. Paint at least 50 pixels (you'll start as Soldier)
+4. Within a few seconds, the bot will:
+   - Assign the **Lieutenant** role to you in Discord
+   - DM you a "🎖️ Promoted to Lieutenant" message
+5. Continue painting → progress through Captain (150 XP), General (300), Admiral (500)
+
+Check progress via `/country show` — it displays current rank and XP.
+
+## How it works
+
+```
+Player paints pixel
+   ↓
+server.js applyPixels() → returns changed[]
+   ↓
+updateProfileXP(discordId, changed.length)
+   ↓
+If rank crosses threshold:
+   emitBotEvent({ type: 'rank_change', discordId, newRank })
+   ↓
+SSE stream → bot.js handleGameEvent()
+   ↓
+syncMemberRank(discordId, newRank)
+   ↓
+Remove old rank roles, add new one, send DM
+```
+
+## Troubleshooting
+
+**Bot can't assign roles** — check role hierarchy (above). The bot's role must be above the rank roles.
+
+**XP not increasing** — check `pm2 logs pixelannex` for `[Rank]` messages. If absent, the player isn't logged in via Discord (no `discordId` bound to their session).
+
+**Bot disconnects from event stream** — auto-reconnect with exponential backoff is built in. Check logs for `[Bot] Event stream error:` messages.
+
+**Wrong rank assigned** — check the player's actual XP via `/country show` — the bot syncs whatever the server says.
+

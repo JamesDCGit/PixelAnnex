@@ -112,9 +112,17 @@ const client = new Client({
   ],
 });
 
-client.once(Events.ClientReady, c => {
+client.once(Events.ClientReady, async c => {
   console.log(`[Bot] Logged in as ${c.user.tag}`);
   console.log(`[Bot] Watching guild ${GUILD_ID}`);
+  // Bootstrap rank roles
+  const guild = c.guilds.cache.get(GUILD_ID);
+  if (guild) {
+    try { await ensureRankRoles(guild); }
+    catch (e) { console.error('[Bot] Failed to ensure rank roles:', e.message); }
+  }
+  // Connect to game event stream
+  connectEventStream();
 });
 
 // ── Slash command handler ─────────────────────────────────────────
@@ -210,6 +218,127 @@ async function handleAutocomplete(interaction) {
     .slice(0, 25)
     .map(c => ({ name: c.name, value: c.id }));
   await interaction.respond(matches);
+}
+
+
+// ── Rank role configuration ──────────────────────────────────────
+// These roles are auto-created on bot startup if missing.
+const RANK_ROLES = [
+  { name: 'Lieutenant', color: 0x60a5fa, hoist: false },  // light blue
+  { name: 'Captain',    color: 0x34d399, hoist: false },  // green
+  { name: 'General',    color: 0xfbbf24, hoist: false },  // gold
+  { name: 'Admiral',    color: 0xa855f7, hoist: true  },  // purple, hoisted
+];
+
+const _roleCache = {}; // rank name → role ID
+
+async function ensureRankRoles(guild) {
+  const existing = await guild.roles.fetch();
+  for (const rankDef of RANK_ROLES) {
+    let role = existing.find(r => r.name === rankDef.name);
+    if (!role) {
+      console.log(`[Bot] Creating rank role: ${rankDef.name}`);
+      role = await guild.roles.create({
+        name:    rankDef.name,
+        color:   rankDef.color,
+        hoist:   rankDef.hoist,
+        reason:  'PixelAnnex auto-created rank role',
+      });
+    }
+    _roleCache[rankDef.name] = role.id;
+  }
+  console.log(`[Bot] Rank roles ready: ${Object.keys(_roleCache).join(', ')}`);
+}
+
+async function syncMemberRank(discordId, newRank) {
+  try {
+    const guild = client.guilds.cache.get(GUILD_ID);
+    if (!guild) return;
+    const member = await guild.members.fetch(discordId).catch(() => null);
+    if (!member) {
+      console.log(`[Rank] Member ${discordId} not in guild — skipping`);
+      return;
+    }
+    // Remove all rank roles first, then add the new one (if not Soldier)
+    for (const rankDef of RANK_ROLES) {
+      const roleId = _roleCache[rankDef.name];
+      if (!roleId) continue;
+      if (rankDef.name === newRank) continue; // we'll add this one
+      if (member.roles.cache.has(roleId)) {
+        await member.roles.remove(roleId, 'PixelAnnex rank update');
+      }
+    }
+    if (newRank !== 'Soldier' && _roleCache[newRank]) {
+      await member.roles.add(_roleCache[newRank], 'PixelAnnex rank promotion');
+      console.log(`[Rank] ${member.user.username} → ${newRank}`);
+      // Send promotion DM (best effort)
+      try {
+        await member.send({
+          embeds: [{
+            color: RANK_ROLES.find(r => r.name === newRank)?.color || 0x6366f1,
+            title: `🎖️ Promoted to ${newRank}`,
+            description: `Congratulations! You've been promoted in PixelAnnex.`,
+          }],
+        });
+      } catch (e) { /* DMs disabled — silent fail */ }
+    }
+  } catch (e) {
+    console.error('[Rank] Sync failed:', e.message);
+  }
+}
+
+// ── SSE event listener ───────────────────────────────────────────
+let _sseRetryDelay = 1000;
+async function connectEventStream() {
+  try {
+    const res = await fetch(GAME_URL + '/api/bot/events', {
+      headers: { 'X-Bot-Secret': BOT_SECRET },
+    });
+    if (!res.ok) {
+      throw new Error(`SSE connect failed: ${res.status}`);
+    }
+    console.log('[Bot] Event stream connected');
+    _sseRetryDelay = 1000;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop(); // keep incomplete chunk
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          handleGameEvent(event);
+        } catch (e) {
+          console.error('[Bot] Bad event JSON:', line);
+        }
+      }
+    }
+    throw new Error('Stream ended');
+  } catch (e) {
+    console.error('[Bot] Event stream error:', e.message);
+    setTimeout(connectEventStream, _sseRetryDelay);
+    _sseRetryDelay = Math.min(_sseRetryDelay * 2, 30000);
+  }
+}
+
+function handleGameEvent(event) {
+  switch (event.type) {
+    case 'connected':
+      console.log('[Bot] Event handshake received');
+      break;
+    case 'rank_change':
+      console.log(`[Bot] Rank change: ${event.username} ${event.oldRank} → ${event.newRank}`);
+      if (event.discordId && event.newRank) {
+        syncMemberRank(event.discordId, event.newRank);
+      }
+      break;
+    // Future: conquest, siege, etc. (Step 6)
+  }
 }
 
 // ── Login ────────────────────────────────────────────────────────

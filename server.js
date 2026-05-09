@@ -1,3 +1,4 @@
+require('dotenv').config();
 /**
  * PixelAnnex — Multiplayer WebSocket Server
  * ==========================================
@@ -100,6 +101,45 @@ function getProfile(discordId) {
     });
   }
   return profiles.get(discordId);
+}
+
+
+// ── Rank system (mirrors client RANKS array) ─────────────────────
+const RANK_THRESHOLDS = [
+  { name: 'Soldier',    min: 0   },
+  { name: 'Lieutenant', min: 50  },
+  { name: 'Captain',    min: 150 },
+  { name: 'General',    min: 300 },
+  { name: 'Admiral',    min: 500 },
+];
+
+function rankFromXP(xp) {
+  let rank = RANK_THRESHOLDS[0].name;
+  for (const r of RANK_THRESHOLDS) {
+    if (xp >= r.min) rank = r.name;
+  }
+  return rank;
+}
+
+// Update a player's XP and emit rank_change event if rank crosses a threshold
+function updateProfileXP(discordId, xpDelta) {
+  if (!discordId) return;
+  const profile = getProfile(discordId);
+  const oldRank = profile.rank || 'Soldier';
+  profile.xp = (profile.xp || 0) + xpDelta;
+  const newRank = rankFromXP(profile.xp);
+  if (newRank !== oldRank) {
+    profile.rank = newRank;
+    console.log(`[Rank] ${profile.username || discordId}: ${oldRank} → ${newRank} (xp=${profile.xp})`);
+    emitBotEvent({
+      type: 'rank_change',
+      discordId,
+      username: profile.username,
+      oldRank,
+      newRank,
+      xp: profile.xp,
+    });
+  }
 }
 
 // ── Map state ─────────────────────────────────────────────────────
@@ -710,6 +750,15 @@ wss.on('connection', (ws, req) => {
         if (!msg.countryId) return;
         player.countryId  = String(msg.countryId);
         player.countryIdx = getIdx(player.countryId);
+        // Bind discord identity from session cookie if available
+        if (msg.discordId) {
+          player.discordId = String(msg.discordId);
+          // Update profile username if provided
+          if (msg.username) {
+            const p = getProfile(player.discordId);
+            p.username = msg.username;
+          }
+        }
         console.log(`  Player ${pid} → country ${player.countryId}`);
 
         // Bootstrap map data from first client
@@ -747,8 +796,16 @@ wss.on('connection', (ws, req) => {
         if (msg.pixels.length > MAX_STROKE_PX) return;
         const { changed, conquests, reversals } = applyPixels(msg.pixels, player.countryId);
         if (changed.length) queueDelta(changed);
+        // Award XP to logged-in players (1 XP per actual pixel painted that wasn't theirs already)
+        if (player.discordId && changed.length) {
+          updateProfileXP(player.discordId, changed.length);
+        }
         conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest',...c })));
         reversals.forEach(r => broadcast(JSON.stringify({ type:'reversal',...r })));
+        // Bonus XP for conquering a country
+        if (player.discordId && conquests.length) {
+          updateProfileXP(player.discordId, conquests.length * 50);
+        }
         break;
       }
 
