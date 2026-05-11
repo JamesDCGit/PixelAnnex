@@ -578,6 +578,31 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Vendored TopoJSON — served with gzip + 1 year cache ──────
+  if (url.pathname === '/countries-10m.json') {
+    const f = path.join(__dirname, 'countries-10m.json');
+    if (!fs.existsSync(f)) {
+      res.writeHead(404); res.end('countries-10m.json not found on server');
+      return;
+    }
+    const headers = {
+      'Content-Type':  'application/json',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    };
+    // Gzip if client supports it
+    const accept = req.headers['accept-encoding'] || '';
+    if (accept.includes('gzip')) {
+      const zlib = require('zlib');
+      headers['Content-Encoding'] = 'gzip';
+      res.writeHead(200, headers);
+      fs.createReadStream(f).pipe(zlib.createGzip()).pipe(res);
+    } else {
+      res.writeHead(200, headers);
+      fs.createReadStream(f).pipe(res);
+    }
+    return;
+  }
+
   // ── Health endpoint ─────────────────────────────────────────────
   if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
