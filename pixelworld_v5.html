@@ -1777,15 +1777,18 @@ async function boot(){
     const lbl=document.getElementById('font-scale-label');
     if(lbl) lbl.textContent=_fontScales[0].label;
   })();
-  initWaves();
-  buildWaveBase();
-  tickWaves();
-  initSprites();
-  requestAnimationFrame(tickSprites);
-  refreshRankUI();
-  tickHighlightFlash();
-  tickSiegeFlash();
-  console.log("PixelAnnex ready!");
+  // Defer heavy non-critical setup so the map appears immediately
+  setTimeout(()=>{
+    initWaves();
+    buildWaveBase();
+    tickWaves();
+    initSprites();
+    requestAnimationFrame(tickSprites);
+    refreshRankUI();
+    tickHighlightFlash();
+    tickSiegeFlash();
+    console.log("PixelAnnex ready!");
+  }, 50);
 }
 
 // ── Claim pixels ──────────────────────────────────────────────────

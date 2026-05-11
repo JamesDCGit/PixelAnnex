@@ -581,7 +581,8 @@ const httpServer = http.createServer(async (req, res) => {
   // ── Vendored TopoJSON — served with gzip + 1 year cache ──────
   if (url.pathname === '/countries-10m.json') {
     const f = path.join(__dirname, 'countries-10m.json');
-    if (!fs.existsSync(f)) {
+    const fGz = f + '.gz';
+    if (!fs.existsSync(f) && !fs.existsSync(fGz)) {
       res.writeHead(404); res.end('countries-10m.json not found on server');
       return;
     }
@@ -589,13 +590,18 @@ const httpServer = http.createServer(async (req, res) => {
       'Content-Type':  'application/json',
       'Cache-Control': 'public, max-age=31536000, immutable',
     };
-    // Gzip if client supports it
     const accept = req.headers['accept-encoding'] || '';
     if (accept.includes('gzip')) {
-      const zlib = require('zlib');
       headers['Content-Encoding'] = 'gzip';
-      res.writeHead(200, headers);
-      fs.createReadStream(f).pipe(zlib.createGzip()).pipe(res);
+      // Prefer pre-compressed file (avoids gzip CPU per request)
+      if (fs.existsSync(fGz)) {
+        res.writeHead(200, headers);
+        fs.createReadStream(fGz).pipe(res);
+      } else {
+        const zlib = require('zlib');
+        res.writeHead(200, headers);
+        fs.createReadStream(f).pipe(zlib.createGzip({ level: 9 })).pipe(res);
+      }
     } else {
       res.writeHead(200, headers);
       fs.createReadStream(f).pipe(res);
