@@ -1406,7 +1406,7 @@ async function boot(){
 
   prog(20,"Loading biome texture…");await sleep(2);
 
-  prog(20,"Decoding country geometries…");await sleep(8);
+  prog(20,"Decoding country geometries…");
 
   // Decode TopoJSON → plain GeoJSON features using our own decoder
   const rawFeats=topoFeatures(topo);
@@ -1428,43 +1428,54 @@ async function boot(){
 
 
   // ── Render base map on main canvas ───────────────────────────
+  // Use shared offscreen Path2D-style fill: paint mask first (we need it anyway),
+  // then derive the visual base from the mask data — single geometry pass instead of two.
   prog(25,"Rendering base map…");
   bctx.fillStyle="#004b85"; bctx.fillRect(0,0,MAP_W,MAP_H);
-
+  // Use the SAME canvas with stored fill colour pre-computed per country
+  const _baseColours = new Array(featList.length);
+  for(let i=0;i<featList.length;i++){
+    const [r,g,b]=hexRgb(featList[i].color);
+    _baseColours[i] = "rgb("+Math.floor(r*.22+28)+","+Math.floor(g*.22+36)+","+Math.floor(b*.22+24)+")";
+  }
   for(let i=0;i<featList.length;i++){
     const f=featList[i];
     if(!f.geometry)continue;
-    const [r,g,b]=hexRgb(f.color);
-    bctx.fillStyle="rgb("+Math.floor(r*.22+28)+","+Math.floor(g*.22+36)+","+Math.floor(b*.22+24)+")";
+    bctx.fillStyle=_baseColours[i];
     bctx.beginPath();
     drawGeometry(bctx,f.geometry);
     bctx.fill("evenodd");
-    if(i%20===0){prog(25+Math.floor(i/featList.length*27),"Rendering countries… "+(i+1)+"/"+featList.length);await sleep(1);}
+    if(i%40===0){prog(25+Math.floor(i/featList.length*27),"Rendering countries… "+(i+1)+"/"+featList.length);}
   }
   console.log("Base map rendered");
 
   // ── Build pixel-country mask on offscreen canvas ──────────────
   // Encode feat index as: R=hi byte, G=lo byte, B=200 (land marker)
-  prog(54,"Building country mask…"); await sleep(8);
+  prog(54,"Building country mask…"); 
   const mc=document.createElement("canvas"); mc.width=MAP_W; mc.height=MAP_H;
   const mctx=mc.getContext("2d",{willReadFrequently:true});
   if(!mctx) throw new Error("Failed to get offscreen canvas context");
   mctx.imageSmoothingEnabled=false;
   mctx.fillStyle="#000000"; mctx.fillRect(0,0,MAP_W,MAP_H);
 
+  // Pre-compute fillStyle strings
+  const _maskStyles = new Array(featList.length);
+  for(let i=0;i<featList.length;i++){
+    _maskStyles[i] = "rgb("+((i>>8)&0xFF)+","+(i&0xFF)+",200)";
+  }
   for(let i=0;i<featList.length;i++){
     const f=featList[i];
     if(!f.geometry)continue;
-    mctx.fillStyle="rgb("+((i>>8)&0xFF)+","+(i&0xFF)+",200)";
+    mctx.fillStyle=_maskStyles[i];
     mctx.beginPath();
     drawGeometry(mctx,f.geometry);
     mctx.fill("evenodd");
-    if(i%20===0){prog(54+Math.floor(i/featList.length*18),"Building mask… "+(i+1)+"/"+featList.length);await sleep(1);}
+    if(i%40===0){prog(54+Math.floor(i/featList.length*18),"Building mask… "+(i+1)+"/"+featList.length);}
   }
   console.log("Mask rendered");
 
   // ── Extract mask pixels → typed arrays ───────────────────────
-  prog(74,"Extracting pixel data…"); await sleep(8);
+  prog(74,"Extracting pixel data…"); 
   const raw=mctx.getImageData(0,0,MAP_W,MAP_H).data;
   featByPixel =new Int16Array(MAP_PX).fill(-1);
   claimByPixel=new Int16Array(MAP_PX).fill(-1);
@@ -1490,7 +1501,7 @@ async function boot(){
   // ── Remove Antarctica (lat < -60°) ────────────────────────────────────────
   // Antarctica is not a playable territory. Zero it out so it renders as ocean.
   // lat=-60 → y = (90+60)/180 * MAP_H = 1707
-  prog(83,"Removing Antarctica…"); await sleep(3);
+  prog(83,"Removing Antarctica…"); 
   {
     const ANT_Y = Math.round((90+60)/180*MAP_H);
     let antRemoved=0;
@@ -1511,7 +1522,7 @@ async function boot(){
   // Catches bounding arcs that slipped through geometry filters.
   // A horizontal "run" of >150px where the country doesn't appear
   // in the row above AND below is an artifact.
-  prog(84,"Removing horizontal line artifacts…"); await sleep(3);
+  prog(84,"Removing horizontal line artifacts…"); 
   {
     let removed=0;
     for(let y=1;y<MAP_H-1;y++){
@@ -1549,7 +1560,7 @@ async function boot(){
   // ── Remove micro-islands (<10 connected pixels) ───────────────────────────
   // Flood-fill each connected land component. Any component with <50 pixels
   // gets removed from landMask and featByPixel (treated as ocean).
-  prog(84,"Removing micro-islands…"); await sleep(5);
+  prog(84,"Removing micro-islands…"); 
   {
     const visited=new Uint8Array(MAP_PX);
     const DX2=[-1,1,0,0],DY2=[0,0,-1,1];
@@ -1592,7 +1603,7 @@ async function boot(){
 // ── Rebuild base map pixel-perfect from mask — no antialiased edges ──
   // Replace every canvas-drawn pixel with an exact colour from featByPixel.
   // Canvas fill() always antialiases polygon edges; this step eliminates that.
-  prog(87,"Culling antialiased edge pixels…"); await sleep(5);
+  prog(87,"Culling antialiased edge pixels…"); 
   {
     const cleanImg=bctx.createImageData(MAP_W,MAP_H);
     const cd=cleanImg.data;
@@ -1693,11 +1704,11 @@ async function boot(){
     console.log("Base map rebuilt pixel-perfect, totalLandPx="+totalLandPx);
   }
 
-  prog(86,"Drawing country borders…"); await sleep(5);
+  prog(86,"Drawing country borders…"); 
 
   // Hard pixel borders: scan mask data, mark boundary pixels solid white.
   // No canvas stroke, no antialiasing. Writing both sides of each edge = 2px thick.
-  prog(86,"Drawing pixel-perfect borders…"); await sleep(5);
+  prog(86,"Drawing pixel-perfect borders…"); 
 
   const borderImg=bordCtx.createImageData(MAP_W,MAP_H);
   const bd=borderImg.data;
