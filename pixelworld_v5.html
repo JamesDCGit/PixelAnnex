@@ -2981,10 +2981,15 @@ let wsReady = false;
 let _localPlayerId = null;
 
 const WS_URL = (() => {
-  // Auto-detect: same host, port 3000, or override via ?server=ws://...
+  // Auto-detect: same host, or override via ?server=ws://...
   const params = new URLSearchParams(window.location.search);
   if (params.get('server')) return params.get('server');
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  // On https: use same origin (Nginx proxies to localhost:3000)
+  // On http: connect directly to port 3000
+  if (location.protocol === 'https:') {
+    return proto + '//' + location.host;
+  }
   return proto + '//' + location.hostname + ':3000';
 })();
 
