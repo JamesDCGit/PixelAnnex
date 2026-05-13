@@ -73,6 +73,38 @@ const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Player profiles by discord_id (persists across sessions)
 const profiles = new Map();
+const PROFILES_FILE = path.join(__dirname, 'profiles.json');
+
+// Load existing profiles on startup
+try {
+  if (fs.existsSync(PROFILES_FILE)) {
+    const raw = JSON.parse(fs.readFileSync(PROFILES_FILE, 'utf8'));
+    for (const p of raw) {
+      if (p.discordId) profiles.set(p.discordId, p);
+    }
+    console.log(`[Profiles] Loaded ${profiles.size} profiles from disk`);
+  }
+} catch (e) {
+  console.error('[Profiles] Failed to load:', e.message);
+}
+
+// Save profiles periodically (every 60s) and on shutdown
+let _profilesDirty = false;
+function markProfilesDirty() { _profilesDirty = true; }
+function saveProfiles() {
+  if (!_profilesDirty) return;
+  _profilesDirty = false;
+  try {
+    const arr = [...profiles.values()];
+    fs.writeFileSync(PROFILES_FILE, JSON.stringify(arr), 'utf8');
+  } catch (e) {
+    console.error('[Profiles] Failed to save:', e.message);
+    _profilesDirty = true; // retry on next tick
+  }
+}
+setInterval(saveProfiles, 60 * 1000);
+process.on('SIGTERM', () => { saveProfiles(); });
+process.on('SIGINT',  () => { saveProfiles(); process.exit(0); });
 // profile = { discordId, username, avatar, countryMain, countryB, countryC, rank, xp, joinedAt }
 
 function generateToken() {
@@ -97,10 +129,26 @@ function getProfile(discordId) {
       countryC: null,
       rank: 'Soldier',
       xp: 0,
-      joinedAt: Date.now(),
+      // Stats
+      points:            0,    // total points (currently = total pixels placed)
+      pixelsPlaced:      0,    // total pixels painted (lifetime)
+      conquestsMade:     0,    // countries conquered by this player
+      countriesLost:     0,    // times someone conquered a country you held
+      bombsDeployed:     0,    // bombs detonated
+      topCountries:      {},   // countryId → pixel count painted there
+      lastSeen:          Date.now(),
+      joinedAt:          Date.now(),
     });
   }
-  return profiles.get(discordId);
+  const p = profiles.get(discordId);
+  // Backfill any missing fields (for profiles from before stats existed)
+  if (typeof p.points         !== 'number') p.points         = p.xp || 0;
+  if (typeof p.pixelsPlaced   !== 'number') p.pixelsPlaced   = 0;
+  if (typeof p.conquestsMade  !== 'number') p.conquestsMade  = 0;
+  if (typeof p.countriesLost  !== 'number') p.countriesLost  = 0;
+  if (typeof p.bombsDeployed  !== 'number') p.bombsDeployed  = 0;
+  if (!p.topCountries) p.topCountries = {};
+  return p;
 }
 
 
@@ -736,6 +784,63 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── /api/stats/me — current user's stats (cookie auth) ──
+  if (url.pathname === '/api/stats/me') {
+    const cookie = req.headers.cookie || '';
+    const m = cookie.match(/pa_session=([a-f0-9]+)/);
+    const token = m ? m[1] : null;
+    const session = token ? getSession(token) : null;
+    if (!session) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ loggedIn: false }));
+      return;
+    }
+    const profile = getProfile(session.discordId);
+    // Build top countries (top 5 by pixels)
+    const topCountries = Object.entries(profile.topCountries || {})
+      .sort(([,a],[,b]) => b - a)
+      .slice(0, 5)
+      .map(([id, count]) => ({ id, count, name: countryNames[id] || ('Country ' + id) }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      loggedIn:      true,
+      discordId:     profile.discordId,
+      username:      profile.username,
+      avatar:        profile.avatar,
+      rank:          profile.rank,
+      xp:            profile.xp,
+      points:        profile.points,
+      pixelsPlaced:  profile.pixelsPlaced,
+      conquestsMade: profile.conquestsMade,
+      countriesLost: profile.countriesLost,
+      bombsDeployed: profile.bombsDeployed,
+      topCountries,
+      joinedAt:      profile.joinedAt,
+    }));
+    return;
+  }
+
+  // ── /api/stats/leaderboard — top 20 by points (public) ──
+  if (url.pathname === '/api/stats/leaderboard') {
+    const sorted = [...profiles.values()]
+      .filter(p => p.username && p.points > 0)
+      .sort((a, b) => (b.points || 0) - (a.points || 0))
+      .slice(0, 20)
+      .map((p, i) => ({
+        rank:          i + 1,
+        username:      p.username,
+        avatar:        p.avatar,
+        points:        p.points || 0,
+        gameRank:      p.rank,
+        conquestsMade: p.conquestsMade || 0,
+        countryMain:   p.countryMain,
+        countryMainName: p.countryMain ? (countryNames[p.countryMain] || ('Country ' + p.countryMain)) : null,
+      }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ leaderboard: sorted, totalPlayers: profiles.size }));
+    return;
+  }
+
   // ── /api/alliances (public) — current alliances for client display ──
   if (url.pathname === '/api/alliances') {
     const list = [];
@@ -973,6 +1078,27 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // /api/bot/leaderboard — top N players by points (for /leaderboard slash command)
+  if (url.pathname === '/api/bot/leaderboard') {
+    if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
+    const limit = parseInt(url.searchParams.get('limit') || '20', 10);
+    const sorted = [...profiles.values()]
+      .filter(p => p.username && p.points > 0)
+      .sort((a, b) => (b.points || 0) - (a.points || 0))
+      .slice(0, limit)
+      .map((p, i) => ({
+        rank: i + 1,
+        username: p.username,
+        points: p.points || 0,
+        gameRank: p.rank,
+        conquestsMade: p.conquestsMade || 0,
+        countryMain: p.countryMain,
+      }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ leaderboard: sorted, totalPlayers: profiles.size }));
+    return;
+  }
+
   // /api/bot/alliances — read-only list of current alliances
   if (url.pathname === '/api/bot/alliances') {
     if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
@@ -1100,15 +1226,33 @@ wss.on('connection', (ws, req) => {
         if (msg.pixels.length > MAX_STROKE_PX) return;
         const { changed, conquests, reversals } = applyPixels(msg.pixels, player.countryId);
         if (changed.length) queueDelta(changed);
-        // Award XP to logged-in players (1 XP per actual pixel painted that wasn't theirs already)
+        // Award XP and stats to logged-in players
         if (player.discordId && changed.length) {
           updateProfileXP(player.discordId, changed.length);
+          // Track stats
+          const profile = getProfile(player.discordId);
+          profile.points       += changed.length;
+          profile.pixelsPlaced += changed.length;
+          profile.lastSeen     =  Date.now();
+          // Per-country pixel painting count
+          for (const px of changed) {
+            const geo = geoAtPixel[px.y * MAP_W + px.x];
+            if (geo >= 0) {
+              const cid = String(geo);
+              profile.topCountries[cid] = (profile.topCountries[cid] || 0) + 1;
+            }
+          }
+          markProfilesDirty();
         }
         conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest',...c })));
         reversals.forEach(r => broadcast(JSON.stringify({ type:'reversal',...r })));
-        // Bonus XP for conquering a country
+        // Conquest stats
         if (player.discordId && conquests.length) {
           updateProfileXP(player.discordId, conquests.length * 50);
+          const profile = getProfile(player.discordId);
+          profile.conquestsMade += conquests.length;
+          profile.points        += conquests.length * 50;
+          markProfilesDirty();
         }
         break;
       }
@@ -1139,6 +1283,12 @@ wss.on('connection', (ws, req) => {
           if (gi >= 0) defenderId = geoToId(gi);
         }
         // Skip events where attacker == defender (bombing own territory)
+        // Track bomb in profile stats
+        if (player.discordId) {
+          const profile = getProfile(player.discordId);
+          profile.bombsDeployed = (profile.bombsDeployed || 0) + 1;
+          markProfilesDirty();
+        }
         if (defenderId !== player.countryId) {
           emitBotEvent({
             type:        'war_bomb',

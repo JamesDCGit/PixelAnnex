@@ -571,3 +571,62 @@ If an attacker or defender belongs to an alliance (from Step 5), their alliance 
 
 **Missing permissions** — the bot needs `Mention @everyone` permission for Tier 3 events. If missing, the embed posts but the everyone ping silently fails.
 
+
+---
+
+# QoL Group A: Stats & Player Identity
+
+Adds a points system, stats tracking, in-game stats screen, and Discord leaderboard.
+
+## What's new
+
+**Server tracks per-player stats** (persists to `profiles.json` on disk):
+- `points` — total points (1 per pixel placed + 50 per conquest)
+- `pixelsPlaced` — lifetime pixel count
+- `conquestsMade` — countries conquered
+- `bombsDeployed` — bombs used
+- `topCountries` — pixel count per country painted
+
+**New in-game UI** — 📊 button in toolbar opens a modal with:
+- **My Stats** tab — your stats card + top 5 painted countries with progress bars
+- **Leaderboard** tab — top 20 players globally with gold/silver/bronze medals
+
+**New Discord slash commands:**
+- `/me` — your stats card (private)
+- `/leaderboard` — top 20 players (public)
+
+## Deploy
+
+```bash
+# Local
+git add server.js bot.js register-commands.js pixelworld_v5.html .gitignore DISCORD_SETUP.md
+git commit -m "QoL Group A: stats system + Discord leaderboard"
+git push
+
+# Server
+cd /var/www/PixelAnnex
+git checkout server.js
+git pull
+node register-commands.js   # registers /me and /leaderboard
+pm2 restart pixelannex
+pm2 restart pixelannex-bot
+```
+
+## Testing
+
+1. Reload the game, sign in via Discord, paint some pixels
+2. Click 📊 in the toolbar → see your stats and the leaderboard
+3. In Discord, try `/me` → your stats appear
+4. Try `/leaderboard` → top 20 players appear
+
+## Data persistence
+
+Profiles save to `/var/www/PixelAnnex/profiles.json` every 60 seconds and on graceful shutdown. The file is gitignored (per-server data, not source code).
+
+To reset all stats:
+```bash
+pm2 stop pixelannex
+rm /var/www/PixelAnnex/profiles.json
+pm2 start pixelannex
+```
+

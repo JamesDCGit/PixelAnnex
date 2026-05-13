@@ -254,6 +254,61 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 
 
 
+
+/* ── Stats modal ── */
+#stats-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;
+  display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);
+}
+#stats-overlay.open{display:flex;}
+#stats-modal{
+  background:#0c1526;border:1px solid #1e293b;border-radius:12px;
+  width:min(720px, 92vw);max-height:88vh;overflow-y:auto;
+  padding:24px;font-family:'Courier New',monospace;color:#cbd5e1;
+  box-shadow:0 12px 48px rgba(0,0,0,0.6);
+}
+#stats-modal h2{font-size:18px;color:#fff;margin-bottom:16px;letter-spacing:.05em;
+  border-bottom:1px solid #1e293b;padding-bottom:12px;display:flex;justify-content:space-between;align-items:center;}
+#stats-close{
+  background:transparent;border:1px solid #1e293b;color:#64748b;
+  padding:4px 10px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px;
+}
+#stats-close:hover{color:#fff;border-color:#334155;}
+.stats-tabs{display:flex;gap:0;margin-bottom:18px;border-bottom:1px solid #1e293b;}
+.stats-tab{
+  flex:1;padding:8px;background:transparent;border:none;border-bottom:2px solid transparent;
+  color:#64748b;cursor:pointer;font-family:inherit;font-size:11px;letter-spacing:.05em;
+  transition:all .15s;
+}
+.stats-tab:hover{color:#94a3b8;}
+.stats-tab.active{color:#818cf8;border-bottom-color:#818cf8;}
+.stats-panel{display:none;}
+.stats-panel.active{display:block;}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px;}
+.stat-card{
+  background:#0f1729;border:1px solid #1e293b;border-radius:8px;padding:12px;
+}
+.stat-label{font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;}
+.stat-value{font-size:22px;color:#fff;font-weight:600;}
+.stat-sub{font-size:9px;color:#64748b;margin-top:2px;}
+.lb-row{
+  display:flex;align-items:center;gap:10px;padding:8px 6px;
+  border-bottom:1px solid rgba(30,41,59,0.5);font-size:11px;
+}
+.lb-row:hover{background:rgba(30,41,59,0.3);}
+.lb-rank{width:24px;color:#64748b;font-weight:600;text-align:right;}
+.lb-rank.gold{color:#fbbf24;}
+.lb-rank.silver{color:#cbd5e1;}
+.lb-rank.bronze{color:#d97706;}
+.lb-avatar{width:22px;height:22px;border-radius:50%;}
+.lb-avatar-placeholder{width:22px;height:22px;border-radius:50%;background:#1e293b;display:inline-block;}
+.lb-name{flex:1;color:#e2e8f0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.lb-country{font-size:9px;color:#64748b;margin-right:6px;}
+.lb-points{color:#818cf8;font-weight:600;}
+.lb-empty{text-align:center;padding:40px;color:#475569;}
+.top-country-row{display:flex;align-items:center;gap:8px;padding:6px;font-size:11px;}
+.top-country-bar{flex:1;height:8px;background:#1e293b;border-radius:4px;overflow:hidden;}
+.top-country-fill{height:100%;background:linear-gradient(90deg,#6366f1,#818cf8);}
 /* ── Discord login HUD ── */
 #login-hud{
   position:absolute;top:14px;left:50%;transform:translateX(-50%);
@@ -359,6 +414,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 <div id="app">
   <div id="toolbar">
     <h1>Pixel<span>Annex</span></h1>
+    <button class="z-btn" id="btn-stats" onclick="openStats()" title="Stats &amp; Leaderboard" style="margin-left:6px;font-size:9px;padding:2px 6px;">📊</button>
     <button class="z-btn" id="btn-font-scale" onclick="cycleFontScale()" title="Font Scale: Normal / Mid / Large" style="margin-left:6px;font-size:9px;padding:2px 6px;">Aa</button>
     <span id="font-scale-label" style="font-size:9px;color:#475569;margin-left:2px;margin-right:2px">Normal</span>
     <div class="sep"></div>
@@ -3445,6 +3501,110 @@ function getAlliancePixelTotals(){
   }
   return totals;
 }
+
+// ── Stats modal ───────────────────────────────────────────────────
+async function openStats() {
+  document.getElementById('stats-overlay').classList.add('open');
+  loadStatsMe();
+  loadStatsLeaderboard();
+}
+function closeStats() {
+  document.getElementById('stats-overlay').classList.remove('open');
+}
+function switchStatsTab(panel) {
+  document.querySelectorAll('.stats-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.panel === panel);
+  });
+  document.querySelectorAll('.stats-panel').forEach(p => {
+    p.classList.toggle('active', p.id === 'stats-panel-' + panel);
+  });
+  if (panel === 'lb') loadStatsLeaderboard();
+}
+
+async function loadStatsMe() {
+  const el = document.getElementById('stats-me-content');
+  try {
+    const res = await fetch('/api/stats/me', { credentials: 'include' });
+    const data = await res.json();
+    if (!data.loggedIn) {
+      el.innerHTML = '<div class="lb-empty">Sign in with Discord to see your stats.<br><br><button onclick="window.location.href=\'/auth/login\'" style="background:#5865f2;border:none;color:white;padding:8px 14px;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;">Sign in with Discord</button></div>';
+      return;
+    }
+    const topPaintedRows = (data.topCountries || []).map(c => {
+      const max = data.topCountries[0].count;
+      const pct = max > 0 ? (c.count / max * 100) : 0;
+      return '<div class="top-country-row">' +
+        '<span style="min-width:120px;color:#cbd5e1;">' + escapeHtml(c.name) + '</span>' +
+        '<div class="top-country-bar"><div class="top-country-fill" style="width:' + pct + '%"></div></div>' +
+        '<span style="color:#818cf8;font-weight:600;">' + c.count.toLocaleString() + 'px</span>' +
+        '</div>';
+    }).join('');
+
+    const joinedDate = new Date(data.joinedAt).toLocaleDateString();
+
+    el.innerHTML =
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">' +
+        (data.avatar ? '<img src="' + data.avatar + '" style="width:44px;height:44px;border-radius:50%">' : '') +
+        '<div>' +
+          '<div style="font-size:14px;color:#fff;font-weight:600">' + escapeHtml(data.username) + '</div>' +
+          '<div style="font-size:10px;color:#818cf8">' + escapeHtml(data.rank) + ' · joined ' + joinedDate + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="stats-grid">' +
+        '<div class="stat-card"><div class="stat-label">Points</div><div class="stat-value">' + data.points.toLocaleString() + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Pixels Placed</div><div class="stat-value">' + data.pixelsPlaced.toLocaleString() + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Conquests</div><div class="stat-value">' + data.conquestsMade.toLocaleString() + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Bombs Used</div><div class="stat-value">' + data.bombsDeployed.toLocaleString() + '</div></div>' +
+      '</div>' +
+      (topPaintedRows ? '<h3 style="font-size:11px;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin:18px 0 8px;">Top Countries Painted</h3>' + topPaintedRows : '');
+  } catch (e) {
+    el.innerHTML = '<div class="lb-empty">Could not load stats: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function loadStatsLeaderboard() {
+  const el = document.getElementById('stats-lb-content');
+  try {
+    const res = await fetch('/api/stats/leaderboard');
+    const data = await res.json();
+    if (!data.leaderboard || data.leaderboard.length === 0) {
+      el.innerHTML = '<div class="lb-empty">No ranked players yet — be the first!</div>';
+      return;
+    }
+    const rows = data.leaderboard.map(p => {
+      let rankClass = '';
+      if (p.rank === 1) rankClass = ' gold';
+      else if (p.rank === 2) rankClass = ' silver';
+      else if (p.rank === 3) rankClass = ' bronze';
+      return '<div class="lb-row">' +
+        '<span class="lb-rank' + rankClass + '">#' + p.rank + '</span>' +
+        (p.avatar ? '<img class="lb-avatar" src="' + p.avatar + '">' : '<span class="lb-avatar-placeholder"></span>') +
+        '<span class="lb-name">' + escapeHtml(p.username) + '</span>' +
+        (p.countryMainName ? '<span class="lb-country">' + escapeHtml(p.countryMainName) + '</span>' : '') +
+        '<span class="lb-points">' + p.points.toLocaleString() + ' pts</span>' +
+        '</div>';
+    }).join('');
+    el.innerHTML = rows + '<div style="text-align:center;color:#475569;font-size:10px;margin-top:14px;">' + data.totalPlayers + ' total players</div>';
+  } catch (e) {
+    el.innerHTML = '<div class="lb-empty">Could not load leaderboard.</div>';
+  }
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+// Close on Escape or clicking outside modal
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeStats();
+});
+document.addEventListener('DOMContentLoaded', () => {
+  const overlay = document.getElementById('stats-overlay');
+  if (overlay) overlay.addEventListener('click', e => {
+    if (e.target.id === 'stats-overlay') closeStats();
+  });
+});
 // ── Bomb craters ─────────────────────────────────────────────────
 // Each crater fades over CRATER_FADE_MS (10 s).
 // Drawn on c-overlay using a radial gradient: dark centre → orange rim → transparent.
@@ -4846,5 +5006,24 @@ document.getElementById('dbg-close').addEventListener('click',()=>{
   p.style.display=p.style.display==='none'?'flex':'none';
 });
 </script>
+
+<div id="stats-overlay">
+  <div id="stats-modal">
+    <h2>
+      <span>📊 Stats &amp; Leaderboard</span>
+      <button id="stats-close" onclick="closeStats()">Close ✕</button>
+    </h2>
+    <div class="stats-tabs">
+      <button class="stats-tab active" data-panel="me" onclick="switchStatsTab('me')">My Stats</button>
+      <button class="stats-tab" data-panel="lb" onclick="switchStatsTab('lb')">Leaderboard</button>
+    </div>
+    <div class="stats-panel active" id="stats-panel-me">
+      <div id="stats-me-content">Loading…</div>
+    </div>
+    <div class="stats-panel" id="stats-panel-lb">
+      <div id="stats-lb-content">Loading…</div>
+    </div>
+  </div>
+</div>
 </body>
 </html>

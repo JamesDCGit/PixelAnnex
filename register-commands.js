@@ -53,6 +53,16 @@ const commands = [
       .setName('clear')
       .setDescription('Clear all country preferences'))
     .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('me')
+    .setDescription('Show your PixelAnnex stats — points, rank, conquests')
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('leaderboard')
+    .setDescription('Show the top 20 PixelAnnex players by points')
+    .toJSON(),
 ];
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);

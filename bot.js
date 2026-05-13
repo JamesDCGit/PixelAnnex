@@ -249,6 +249,9 @@ client.on(Events.InteractionCreate, async interaction => {
     if (interaction.isAutocomplete()) return handleAutocomplete(interaction);
     return;
   }
+  // Dispatch by command name
+  if (interaction.commandName === 'me')          return handleMeCommand(interaction);
+  if (interaction.commandName === 'leaderboard') return handleLeaderboardCommand(interaction);
   if (interaction.commandName !== 'country') return;
 
   const sub = interaction.options.getSubcommand();
@@ -326,6 +329,83 @@ client.on(Events.InteractionCreate, async interaction => {
     await interaction.reply({ content: '❌ Error updating preferences. Is the game server running?', ephemeral: true });
   }
 });
+
+
+// ── /me — show user's stats ───────────────────────────────────────
+async function handleMeCommand(interaction) {
+  try {
+    const profile = await getProfile(interaction.user.id);
+    if (!profile || !profile.discordId) {
+      await interaction.reply({
+        content: 'You haven\'t played yet! Sign in at the game and place some pixels to start earning points.',
+        flags: 64, // ephemeral
+      });
+      return;
+    }
+
+    // Build top countries field
+    const topCountries = Object.entries(profile.topCountries || {})
+      .sort(([,a],[,b]) => b - a)
+      .slice(0, 3)
+      .map(([id, count]) => `${COUNTRY_BY_ID[id] || 'Country ' + id}: ${count.toLocaleString()}px`)
+      .join('\n') || '_None yet_';
+
+    const mainName = profile.countryMain ? (COUNTRY_BY_ID[profile.countryMain] || 'Country ' + profile.countryMain) : '_Not set_';
+
+    const embed = {
+      color: 0x6366f1,
+      title: `📊 ${profile.username || 'Unknown'}'s Stats`,
+      thumbnail: profile.avatar ? { url: profile.avatar } : undefined,
+      fields: [
+        { name: '🎖️ Rank',          value: profile.rank || 'Soldier',                          inline: true },
+        { name: '⭐ Points',         value: (profile.points || 0).toLocaleString(),             inline: true },
+        { name: '🎨 Pixels',         value: (profile.pixelsPlaced || 0).toLocaleString(),       inline: true },
+        { name: '⚔️ Conquests',      value: (profile.conquestsMade || 0).toLocaleString(),      inline: true },
+        { name: '💥 Bombs',          value: (profile.bombsDeployed || 0).toLocaleString(),      inline: true },
+        { name: '🏠 Main Country',   value: mainName,                                            inline: true },
+        { name: '🌍 Top Painted',    value: topCountries,                                        inline: false },
+      ],
+      footer: { text: 'PixelAnnex · play at pixelannex.com' },
+    };
+
+    await interaction.reply({ embeds: [embed], flags: 64 });
+  } catch (e) {
+    console.error('[/me] Error:', e);
+    await interaction.reply({ content: '❌ Failed to load stats. Is the game server running?', flags: 64 });
+  }
+}
+
+// ── /leaderboard — top 20 players ──────────────────────────────────
+async function handleLeaderboardCommand(interaction) {
+  try {
+    const data = await gameFetch('/api/bot/leaderboard?limit=20');
+    if (!data.leaderboard || data.leaderboard.length === 0) {
+      await interaction.reply({
+        content: 'No ranked players yet — be the first! 🏆',
+        flags: 64,
+      });
+      return;
+    }
+
+    const rows = data.leaderboard.map(p => {
+      const medal = p.rank === 1 ? '🥇' : p.rank === 2 ? '🥈' : p.rank === 3 ? '🥉' : `#${p.rank}`;
+      const country = p.countryMain ? ` · ${COUNTRY_BY_ID[p.countryMain] || 'Country ' + p.countryMain}` : '';
+      return `${medal.padEnd(3)} **${p.username}** — ${p.points.toLocaleString()} pts (${p.gameRank}${country})`;
+    }).join('\n');
+
+    const embed = {
+      color: 0xfbbf24,
+      title: '🏆 PixelAnnex Leaderboard',
+      description: rows,
+      footer: { text: `${data.totalPlayers} total players · play at pixelannex.com` },
+    };
+
+    await interaction.reply({ embeds: [embed] });
+  } catch (e) {
+    console.error('[/leaderboard] Error:', e);
+    await interaction.reply({ content: '❌ Failed to load leaderboard. Is the game server running?', flags: 64 });
+  }
+}
 
 // ── Autocomplete handler — fuzzy search through countries ────────
 async function handleAutocomplete(interaction) {
