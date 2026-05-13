@@ -628,7 +628,14 @@ function checkMapReady() {
 
 // ── WebSocket server ──────────────────────────────────────────────
 const httpServer = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  let url;
+  try {
+    url = new URL(req.url, `http://${req.headers.host}`);
+  } catch (e) {
+    // Malformed URL from scanner/bot — silently reject
+    res.writeHead(400); res.end();
+    return;
+  }
 
   // ── Static game file ────────────────────────────────────────────
   if (url.pathname === '/' || url.pathname === '/index.html') {
