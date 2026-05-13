@@ -1412,9 +1412,10 @@ async function boot(){
   const rawFeats=topoFeatures(topo);
   console.log("Decoded features:",rawFeats.length);
 
-  // Build featList
+  // Build featList — TopoJSON IDs are zero-padded ("050"); DB keys are unpadded ("50")
   featList=rawFeats.map(f=>{
-    const db=DB[f.id];
+    const dbKey = String(parseInt(f.id, 10));
+    const db=DB[dbKey] || DB[f.id];
     return{id:f.id, name:db?db.n:(f.name||"Territory "+f.id), color:db?db.c:seededColor(f.id), geometry:f.geometry};
   });
 

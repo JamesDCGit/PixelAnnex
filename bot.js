@@ -85,10 +85,13 @@ async function refreshCountryNames() {
     if (data.countries && data.countries.length) {
       let added = 0;
       for (const c of data.countries) {
-        if (c.name && !c.name.startsWith('Country ')) {
-          if (!COUNTRY_BY_ID[c.id]) added++;
-          COUNTRY_BY_ID[c.id] = c.name;
-        }
+        if (!c.name || c.name.startsWith('Country ') || c.name.startsWith('Territory ')) continue;
+        // Store under both original ID (may be padded) and unpadded form
+        const padded   = String(c.id);
+        const unpadded = String(parseInt(padded, 10));
+        if (!COUNTRY_BY_ID[padded])   { added++; }
+        COUNTRY_BY_ID[padded]   = c.name;
+        COUNTRY_BY_ID[unpadded] = c.name;
       }
       console.log(`[Bot] Country names refreshed (${Object.keys(COUNTRY_BY_ID).length} total, +${added} new)`);
     }
@@ -496,7 +499,10 @@ let _warTimer = null;
 let _warChannel = null; // cached channel ref
 
 function getCountryName(id) {
-  return COUNTRY_BY_ID[id] || ('Country ' + id);
+  // TopoJSON IDs are zero-padded ("050"); try unpadded as fallback ("50")
+  const idStr = String(id);
+  const unpadded = String(parseInt(idStr, 10));
+  return COUNTRY_BY_ID[idStr] || COUNTRY_BY_ID[unpadded] || ('Country ' + idStr);
 }
 
 function getCountryMention(id, guild) {
