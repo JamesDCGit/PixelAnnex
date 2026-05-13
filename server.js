@@ -495,6 +495,8 @@ function getGeoForCountry(countryId) {
 // Build geoPixels index once after map data is received
 function buildGeoIndex() {
   console.log('[Bot] Building geo pixel index...');
+  // Clear existing index (must be wiped before rebuild — stale country IDs would persist otherwise)
+  for (const k of Object.keys(geoPixels)) delete geoPixels[k];
   const temp = {};
   for (let i = 0; i < MAP_PX; i++) {
     const g = geoAtPixel[i];
@@ -1014,15 +1016,22 @@ wss.on('connection', (ws, req) => {
           console.log(`  indexToId: ${Object.keys(indexToId).length} index→ID mappings cached`);
         }
         if (msg.geoPixelRuns) {
+          // Reset geoAtPixel first — stale featList-index data must not mix with new country-ID data
+          geoAtPixel.fill(-1);
           for (const { s, l, g } of msg.geoPixelRuns) {
             for (let i = s; i < s + l && i < MAP_PX; i++) geoAtPixel[i] = g;
           }
           if (!geoPixelReady) {
             geoPixelReady = true;
             console.log('  geoAtPixel received');
+          } else {
+            console.log('  geoAtPixel refreshed');
           }
+          // Force rebuild of geoPixels index since data changed
+          if (mapReady) buildGeoIndex();
         }
         if (msg.landRuns) {
+          landMask.fill(0);
           for (const { s, l } of msg.landRuns) {
             for (let i = s; i < s + l && i < MAP_PX; i++) landMask[i] = 1;
           }
