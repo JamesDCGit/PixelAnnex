@@ -451,6 +451,154 @@ async function connectEventStream() {
   }
 }
 
+
+// ── War Reporter ──────────────────────────────────────────────────
+// Receives war events from the game server via SSE and posts to #war-room.
+//
+// Tiers:
+//   1 = channel only (siege end, mortar)
+//   2 = role ping     (conquest, siege start, MOAB)
+//   3 = @everyone + future Twitter (nuke, full alliance collapse)
+//
+// Batching: events queued and flushed every 3s to respect Discord's
+// 5 msg/s/channel rate limit.
+
+const WAR_CHANNEL_NAME = process.env.WAR_CHANNEL || 'war-room';
+const WAR_BATCH_INTERVAL_MS = 3000;
+const WAR_MAX_PER_BATCH = 5;
+
+let _warQueue = [];
+let _warTimer = null;
+let _warChannel = null; // cached channel ref
+
+function getCountryName(id) {
+  return COUNTRY_BY_ID[id] || ('Country ' + id);
+}
+
+function getCountryMention(id, guild) {
+  // Returns a Discord role mention for the country's alliance, or just the name
+  if (!guild) return '**' + getCountryName(id) + '**';
+  // Check if this country belongs to an alliance role
+  for (const [allianceKey, roleId] of Object.entries(_allianceRoleCache)) {
+    if (allianceKey.split('-').includes(String(id))) {
+      const role = guild.roles.cache.get(roleId);
+      if (role) return '<@&' + role.id + '> (' + getCountryName(id) + ')';
+    }
+  }
+  return '**' + getCountryName(id) + '**';
+}
+
+function queueWarEvent(event) {
+  _warQueue.push(event);
+  if (!_warTimer) {
+    _warTimer = setTimeout(flushWarQueue, WAR_BATCH_INTERVAL_MS);
+  }
+}
+
+async function flushWarQueue() {
+  _warTimer = null;
+  if (_warQueue.length === 0) return;
+
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (!guild) { _warQueue = []; return; }
+
+  // Find/cache the war channel
+  if (!_warChannel || !guild.channels.cache.has(_warChannel.id)) {
+    _warChannel = guild.channels.cache.find(c => c.name === WAR_CHANNEL_NAME && c.isTextBased());
+    if (!_warChannel) {
+      console.log(`[War] Channel #${WAR_CHANNEL_NAME} not found — events dropped`);
+      _warQueue = [];
+      return;
+    }
+  }
+
+  // Deduplicate: if same attacker→defender event repeats within batch, keep only highest tier
+  const dedup = new Map();
+  for (const e of _warQueue) {
+    const key = e.type + ':' + (e.attackerId || '') + ':' + (e.defenderId || '');
+    const existing = dedup.get(key);
+    if (!existing || (e.tier || 0) > (existing.tier || 0)) {
+      dedup.set(key, e);
+    }
+  }
+  const events = [...dedup.values()].slice(0, WAR_MAX_PER_BATCH);
+  _warQueue = [];
+
+  for (const event of events) {
+    try {
+      await postWarEvent(guild, event);
+    } catch (e) {
+      console.error('[War] Post failed:', e.message);
+    }
+    // Throttle: ~600ms between posts (5/s limit with safety margin)
+    await new Promise(r => setTimeout(r, 600));
+  }
+}
+
+async function postWarEvent(guild, event) {
+  const attacker = event.attackerId ? getCountryMention(event.attackerId, guild) : null;
+  const defender = event.defenderId ? getCountryMention(event.defenderId, guild) : null;
+
+  let content = '';
+  let color   = 0x6366f1;
+  let title   = '';
+
+  switch (event.type) {
+    case 'war_conquest':
+      title   = '⚔️ Country Conquered';
+      content = `${attacker} has conquered ${defender}!`;
+      color   = 0xef4444; // red
+      break;
+
+    case 'war_siege_start':
+      title   = '🚨 Country Under Siege';
+      content = `${attacker} has ${event.ratio}% of ${defender}'s territory!`;
+      color   = 0xf59e0b; // amber
+      break;
+
+    case 'war_siege_end':
+      title   = '🛡️ Siege Lifted';
+      content = `${defender} has reclaimed enough territory to break the siege.`;
+      color   = 0x10b981; // green
+      break;
+
+    case 'war_bomb':
+      const emojis = { 1: '💥', 2: '🔥', 3: '☢️' };
+      title   = `${emojis[event.tier] || '💥'} ${event.bombName} Deployed`;
+      content = defender
+        ? `${attacker} dropped a ${event.bombName} on ${defender}!`
+        : `${attacker} dropped a ${event.bombName}!`;
+      color   = event.tier === 3 ? 0x8b5cf6 : (event.tier === 2 ? 0xef4444 : 0xf59e0b);
+      break;
+
+    default:
+      return;
+  }
+
+  // Tier 3 events ping @everyone (use sparingly!)
+  const allowedMentions = { roles: [] };
+  let mentionPrefix = '';
+  if (event.tier >= 3) {
+    mentionPrefix = '@everyone ';
+    allowedMentions.parse = ['everyone', 'roles'];
+  } else if (event.tier >= 2) {
+    // Tier 2: allow role mentions (alliance pings)
+    allowedMentions.parse = ['roles'];
+  }
+  // Tier 1: silent — no mentions parsed
+
+  await _warChannel.send({
+    content: mentionPrefix || undefined,
+    embeds: [{
+      color,
+      title,
+      description: content,
+      timestamp: new Date(event.timestamp).toISOString(),
+    }],
+    allowedMentions,
+  });
+}
+
 function handleGameEvent(event) {
   const guild = client.guilds.cache.get(GUILD_ID);
   switch (event.type) {
@@ -489,7 +637,12 @@ function handleGameEvent(event) {
       announceAlliance(guild, 'dissolved', event.key, event.countries);
       break;
 
-    // Future: conquest, siege, etc. (Step 6)
+    case 'war_conquest':
+    case 'war_siege_start':
+    case 'war_siege_end':
+    case 'war_bomb':
+      queueWarEvent(event);
+      break;
   }
 }
 

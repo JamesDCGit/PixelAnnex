@@ -143,6 +143,47 @@ function updateProfileXP(discordId, xpDelta) {
 }
 
 
+// ── Siege tracking ───────────────────────────────────────────────
+// A country enters "siege" when an enemy holds >50% of its territory.
+// Used to push siege_start / siege_end events to the war reporter bot.
+const SIEGE_THRESHOLD = 0.50;
+const siegedSet = new Set(); // geoIdx values currently in siege state
+
+function checkSiegeState(geoIdx) {
+  const total = geoTotal[geoIdx] || 0;
+  if (!total) return;
+  let dominantEnemy = null;
+  let maxEnemy = 0;
+  if (geoClaimCnt[geoIdx]) {
+    for (const [cId, cnt] of Object.entries(geoClaimCnt[geoIdx])) {
+      if (cId === String(geoIdx)) continue;
+      if (cnt > maxEnemy) { maxEnemy = cnt; dominantEnemy = cId; }
+    }
+  }
+  const ratio = maxEnemy / total;
+  const wasSieged = siegedSet.has(geoIdx);
+
+  if (ratio >= SIEGE_THRESHOLD && !wasSieged) {
+    siegedSet.add(geoIdx);
+    emitBotEvent({
+      type:        'war_siege_start',
+      tier:        2,
+      attackerId:  dominantEnemy,
+      defenderId:  String(geoIdx),
+      ratio:       Math.round(ratio * 100),
+      timestamp:   Date.now(),
+    });
+  } else if (ratio < SIEGE_THRESHOLD && wasSieged) {
+    siegedSet.delete(geoIdx);
+    emitBotEvent({
+      type:        'war_siege_end',
+      tier:        1,
+      defenderId:  String(geoIdx),
+      timestamp:   Date.now(),
+    });
+  }
+}
+
 // ── Alliance detection ───────────────────────────────────────────
 // An alliance forms when 3+ players share at least one country in their
 // preferences (countryMain, countryB, countryC).
@@ -379,6 +420,14 @@ function applyPixels(pixels, countryId) {
       conqueredSet.add(key);
       conquests.push({ geoIdx: geo, countryId });
       changed.push(...finisherFill(geo, countryId));
+      // War reporter event — Tier 2 (role ping)
+      emitBotEvent({
+        type:        'war_conquest',
+        tier:        2,
+        attackerId:  countryId,
+        defenderId:  String(geo),
+        timestamp:   Date.now(),
+      });
     }
     for (const [cId, cnt] of Object.entries(geoClaimCnt[geo] || {})) {
       const rk = geo + ':' + cId;
@@ -387,6 +436,7 @@ function applyPixels(pixels, countryId) {
         reversals.push({ geoIdx: geo, countryId: cId });
       }
     }
+    checkSiegeState(geo);
   }
   return { changed, conquests, reversals };
 }
@@ -996,6 +1046,25 @@ wss.on('connection', (ws, req) => {
         if (changed.length) queueDelta(changed);
         conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest',...c })));
         reversals.forEach(r => broadcast(JSON.stringify({ type:'reversal',...r })));
+        // War reporter: bomb event
+        // Tier: Mortar(r<10)=1, MOAB(r<20)=2, Nuke(r>=20)=3
+        const bombTier = radius < 10 ? 1 : radius < 20 ? 2 : 3;
+        const bombName = radius < 10 ? 'Mortar' : radius < 20 ? 'MOAB' : 'Nuke';
+        // Find primary defender — country at the bomb centre
+        let defenderId = null;
+        if (cx >= 0 && cx < MAP_W && cy >= 0 && cy < MAP_H) {
+          const gi = geoAtPixel[cy * MAP_W + cx];
+          if (gi >= 0) defenderId = String(gi);
+        }
+        emitBotEvent({
+          type:        'war_bomb',
+          tier:        bombTier,
+          bombName,
+          attackerId:  player.countryId,
+          defenderId,
+          radius,
+          timestamp:   Date.now(),
+        });
         break;
       }
     }

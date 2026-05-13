@@ -464,3 +464,110 @@ Open the game while logged in. Countries that are part of an alliance show 🤝 
 
 **Alliance role mentions everyone** — alliance roles are created with `mentionable: true` so they can be pinged in the war reporter (Step 6). If you don't want this, edit `bot.js` and set `mentionable: false`.
 
+
+---
+
+# Step 6: War Reporter
+
+The bot now posts game events to a `#war-room` channel with tiered importance:
+
+| Tier | Trigger | Behaviour |
+|------|---------|-----------|
+| **1** | Mortar dropped, siege lifted | Silent embed in channel |
+| **2** | Country conquered, siege starts (50%), MOAB | Embed + alliance role ping |
+| **3** | Nuke deployed | Embed + `@everyone` ping |
+
+## Setup
+
+### 1. Create the war-room channel
+
+In your Discord server:
+1. Right-click the channel list → Create Channel
+2. Name: `war-room` (lowercase, no spaces)
+3. Type: Text channel
+4. Create
+
+The bot needs `Send Messages`, `Embed Links`, and `Mention @everyone` permissions in this channel.
+
+### 2. Optional: configure a different channel name
+
+```bash
+nano /var/www/PixelAnnex/.env
+```
+
+Add:
+```
+WAR_CHANNEL=war-room
+```
+
+Default is `war-room` if not set.
+
+### 3. Deploy
+
+```bash
+# Local
+git add server.js bot.js DISCORD_SETUP.md
+git commit -m "Step 6: war reporter"
+git push
+
+# Server
+cd /var/www/PixelAnnex
+git checkout server.js   # discard any local changes
+git pull
+pm2 restart pixelannex
+pm2 restart pixelannex-bot
+```
+
+## Event types
+
+**war_conquest** — when a country crosses the 80% ownership threshold
+```
+⚔️ Country Conquered
+Russia has conquered Ukraine!
+```
+
+**war_siege_start** — when an enemy holds >50% of a country's territory
+```
+🚨 Country Under Siege
+China has 53% of India's territory!
+```
+
+**war_siege_end** — siege lifts (drops below 50%)
+```
+🛡️ Siege Lifted
+India has reclaimed enough territory to break the siege.
+```
+
+**war_bomb** — Mortar/MOAB/Nuke deployed
+```
+☢️ Nuke Deployed
+USA dropped a Nuke on China!
+```
+(Mortar = 💥, MOAB = 🔥, Nuke = ☢️)
+
+## Batching & rate limits
+
+- **Event batching:** events collected for 3 seconds before posting
+- **Deduplication:** same attacker→defender event in a batch keeps only highest tier
+- **Throttle:** 600ms between posts (well under Discord's 5/s/channel limit)
+- **Max 5 events per batch:** prevents spam in big battles
+
+## Alliance role pings
+
+If an attacker or defender belongs to an alliance (from Step 5), their alliance role is mentioned instead of just the country name:
+
+```
+⚔️ Country Conquered
+@Alliance: USA-Canada-Mexico (USA) has conquered @Alliance: Russia-Belarus (Russia)!
+```
+
+## Troubleshooting
+
+**No events posting** — check `pm2 logs pixelannex-bot --lines 30`. If you don't see `[War]` messages, the SSE connection may have dropped. Restart the bot.
+
+**Channel not found** — `[War] Channel #war-room not found — events dropped`. Create the channel with that exact name, or set `WAR_CHANNEL` in `.env`.
+
+**Too many @everyone pings** — only Tier 3 (Nuke) events trigger this. To require admin rank, the player needs Admiral (500 XP). Adjust thresholds in `server.js` if you want this rarer.
+
+**Missing permissions** — the bot needs `Mention @everyone` permission for Tier 3 events. If missing, the embed posts but the everyone ping silently fails.
+
