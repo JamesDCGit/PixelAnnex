@@ -561,18 +561,32 @@ function botInit(countryId) {
   countryPxCount[countryId] = countryPxCount[countryId] || 0;
 }
 
-// Stagger bot ticks so they don't all fire simultaneously
+// Stagger bot ticks so they don't all fire simultaneously.
+// Tickers are self-terminating: if the bot disappears from the map, the ticker stops.
+let _tickersStarted = false;
 function startBotTickers() {
+  if (_tickersStarted) return; // already running — no need to start more
+  _tickersStarted = true;
   let i = 0;
   for (const [countryId] of bots) {
     const delay = (i % 20) * (BOT_TICK_MS / 20); // spread across tick window
     setTimeout(function tick() {
+      if (!bots.has(countryId)) return; // bot was removed — stop this ticker
       botTickSingle(countryId);
       setTimeout(tick, BOT_TICK_MS);
     }, delay);
     i++;
   }
   console.log(`[Bot] ${bots.size} bot tickers started (staggered)`);
+}
+
+// When new bots are added later, start their tickers individually
+function startTickerFor(countryId) {
+  setTimeout(function tick() {
+    if (!bots.has(countryId)) return;
+    botTickSingle(countryId);
+    setTimeout(tick, BOT_TICK_MS);
+  }, Math.random() * BOT_TICK_MS);
 }
 
 function botTickSingle(countryId) {
@@ -611,19 +625,48 @@ let mapReady = false;
 let geoPixelReady = false;
 
 function checkMapReady() {
-  if (geoPixelReady && Object.keys(geoTotal).length > 0) {
-    mapReady = true;
-    console.log('[Map] Ready — building index and initialising bots');
-    buildGeoIndex();
-    // Spawn a bot for every country that has land pixels
-    for (const geoIdx of Object.keys(geoPixels)) {
-      const countryId = String(geoIdx);
-      if (!bots.has(countryId)) botInit(countryId);
+  if (!geoPixelReady || Object.keys(geoTotal).length === 0) return;
+
+  const wasReady = mapReady;
+  mapReady = true;
+  console.log(wasReady
+    ? '[Map] Refreshing bot roster after data update'
+    : '[Map] Ready — building index and initialising bots');
+
+  buildGeoIndex();
+
+  // Reconcile bots: remove any bot whose country no longer exists in geoPixels
+  const validCountries = new Set(Object.keys(geoPixels).map(String));
+  let removed = 0;
+  for (const countryId of [...bots.keys()]) {
+    if (!validCountries.has(countryId)) {
+      bots.delete(countryId);
+      // Also remove from players map
+      for (const [pid, p] of players) {
+        if (p.isBot && p.countryId === countryId) {
+          players.delete(pid);
+          break;
+        }
+      }
+      removed++;
     }
-    console.log(`[Bot] Spawned ${bots.size} bots (one per country)`);
-    broadcastPlayers();
-    startBotTickers();
   }
+
+  // Spawn bots for any country missing one
+  let added = 0;
+  for (const geoIdx of Object.keys(geoPixels)) {
+    const countryId = String(geoIdx);
+    if (!bots.has(countryId)) {
+      botInit(countryId);
+      added++;
+      if (wasReady) startTickerFor(countryId); // start ticker individually after initial batch
+    }
+  }
+
+  console.log(`[Bot] Roster: ${bots.size} bots total (${added} added, ${removed} removed)`);
+  broadcastPlayers();
+
+  if (!wasReady) startBotTickers();
 }
 
 // ── WebSocket server ──────────────────────────────────────────────
@@ -1034,8 +1077,6 @@ wss.on('connection', (ws, req) => {
           } else {
             console.log('  geoAtPixel refreshed');
           }
-          // Force rebuild of geoPixels index since data changed
-          if (mapReady) buildGeoIndex();
         }
         if (msg.landRuns) {
           landMask.fill(0);
