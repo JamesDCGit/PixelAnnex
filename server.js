@@ -308,11 +308,10 @@ const countryPxCount = {}; // countryId → pixel count
 const countryNames   = {}; // countryId → display name (populated from client bootstrap)
 const indexToId      = {}; // featList index → real country ID (geoAtPixel stores indices)
 
-// Helper: convert a geoAtPixel value back to country ID for events.
-// As of this version, geoAtPixel stores country IDs directly (sent by client),
-// so this is just a string conversion. indexToId is kept for backwards compat.
+// geoAtPixel stores country IDs directly (not featList indices) since the
+// client now sends real IDs in geoPixelRuns. geoToId is just a string conversion.
 function geoToId(geoVal) {
-  return indexToId[geoVal] || String(geoVal);
+  return String(geoVal);
 }
 
 // ── Country index mapping ─────────────────────────────────────────

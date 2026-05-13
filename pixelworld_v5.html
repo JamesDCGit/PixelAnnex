@@ -3087,12 +3087,23 @@ function mpSendJoin() {
     }
   }
 
+  // Convert geoTotal (keyed by featList index) → keyed by country ID
+  // so it matches the country IDs in geoPixelRuns / geoAtPixel
+  const geoTotalById = {};
+  for (const [idx, count] of Object.entries(geoTotal)) {
+    const fi = featList[+idx];
+    if (fi && fi.id) {
+      const cid = parseInt(fi.id, 10);
+      geoTotalById[cid] = (geoTotalById[cid] || 0) + count;
+    }
+  }
+
   ws.send(JSON.stringify({
     type: 'join',
     countryId: f.id,
     discordId: _userProfile && _userProfile.loggedIn ? _userProfile.discordId : null,
     username:  _userProfile && _userProfile.loggedIn ? _userProfile.username  : null,
-    geoTotal: Object.fromEntries(Object.entries(geoTotal)),
+    geoTotal: geoTotalById,
     geoNames,
     indexToId,
     geoPixelRuns,
