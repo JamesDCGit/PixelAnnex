@@ -146,8 +146,15 @@ client.once(Events.ClientReady, async c => {
   }
   // Refresh country names from game server (so war reporter shows real names)
   refreshCountryNames();
-  // Re-fetch every 5 min in case the map changed
-  setInterval(refreshCountryNames, 5 * 60 * 1000);
+  // Retry every 30s — if first client hasn't connected yet, names won't be ready
+  // After we have 100+ names, slow down to every 5 minutes
+  const fastRefresh = setInterval(() => {
+    refreshCountryNames();
+    if (Object.keys(COUNTRY_BY_ID).length > 100) {
+      clearInterval(fastRefresh);
+      setInterval(refreshCountryNames, 5 * 60 * 1000);
+    }
+  }, 30 * 1000);
   // Connect to game event stream
   connectEventStream();
 });
@@ -240,10 +247,17 @@ client.on(Events.InteractionCreate, async interaction => {
 async function handleAutocomplete(interaction) {
   if (interaction.commandName !== 'country') return;
   const focused = interaction.options.getFocused().toLowerCase();
-  const matches = COUNTRIES
-    .filter(c => c.name.toLowerCase().includes(focused))
-    .slice(0, 25)
-    .map(c => ({ name: c.name, value: c.id }));
+  // Build list from COUNTRY_BY_ID (populated from server). De-duplicate so
+  // padded/unpadded variants don't both appear.
+  const seen = new Set();
+  const matches = [];
+  for (const [id, name] of Object.entries(COUNTRY_BY_ID)) {
+    if (seen.has(name)) continue;
+    if (!name.toLowerCase().includes(focused)) continue;
+    seen.add(name);
+    matches.push({ name, value: String(parseInt(id, 10)) }); // value uses unpadded form
+    if (matches.length >= 25) break;
+  }
   await interaction.respond(matches);
 }
 
