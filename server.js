@@ -305,6 +305,7 @@ const geoClaimCnt  = {};   // geoIdx → { countryId → count }
 const geoTotal     = {};   // geoIdx → total land pixels
 const conqueredSet = new Set();
 const countryPxCount = {}; // countryId → pixel count
+const countryNames   = {}; // countryId → display name (populated from client bootstrap)
 
 // ── Country index mapping ─────────────────────────────────────────
 const idToIdx = new Map();
@@ -421,13 +422,16 @@ function applyPixels(pixels, countryId) {
       conquests.push({ geoIdx: geo, countryId });
       changed.push(...finisherFill(geo, countryId));
       // War reporter event — Tier 2 (role ping)
-      emitBotEvent({
-        type:        'war_conquest',
-        tier:        2,
-        attackerId:  countryId,
-        defenderId:  String(geo),
-        timestamp:   Date.now(),
-      });
+      // Skip self-conquest (country reclaiming its own native territory)
+      if (countryId !== String(geo)) {
+        emitBotEvent({
+          type:        'war_conquest',
+          tier:        2,
+          attackerId:  countryId,
+          defenderId:  String(geo),
+          timestamp:   Date.now(),
+        });
+      }
     }
     for (const [cId, cnt] of Object.entries(geoClaimCnt[geo] || {})) {
       const rk = geo + ':' + cId;
@@ -901,10 +905,9 @@ const httpServer = http.createServer(async (req, res) => {
   // /api/bot/countries — list all available countries (for slash command autocomplete)
   if (url.pathname === '/api/bot/countries') {
     if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
-    // Returns array of {id, name} from the geo index built when first client connects
     const list = [];
     for (const geoIdx of Object.keys(geoPixels || {})) {
-      list.push({ id: geoIdx, name: 'Country ' + geoIdx }); // bot will resolve names from DB
+      list.push({ id: geoIdx, name: countryNames[geoIdx] || ('Country ' + geoIdx) });
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ countries: list, mapReady }));
@@ -988,6 +991,11 @@ wss.on('connection', (ws, req) => {
           Object.assign(geoTotal, msg.geoTotal);
           console.log(`  geoTotal: ${Object.keys(geoTotal).length} countries`);
         }
+        // Country names from client (used by bot war reporter)
+        if (msg.geoNames && Object.keys(countryNames).length === 0) {
+          Object.assign(countryNames, msg.geoNames);
+          console.log(`  geoNames: ${Object.keys(countryNames).length} country names cached`);
+        }
         if (msg.geoPixelRuns && !geoPixelReady) {
           for (const { s, l, g } of msg.geoPixelRuns) {
             for (let i = s; i < s + l && i < MAP_PX; i++) geoAtPixel[i] = g;
@@ -1056,15 +1064,18 @@ wss.on('connection', (ws, req) => {
           const gi = geoAtPixel[cy * MAP_W + cx];
           if (gi >= 0) defenderId = String(gi);
         }
-        emitBotEvent({
-          type:        'war_bomb',
-          tier:        bombTier,
-          bombName,
-          attackerId:  player.countryId,
-          defenderId,
-          radius,
-          timestamp:   Date.now(),
-        });
+        // Skip events where attacker == defender (bombing own territory)
+        if (defenderId !== player.countryId) {
+          emitBotEvent({
+            type:        'war_bomb',
+            tier:        bombTier,
+            bombName,
+            attackerId:  player.countryId,
+            defenderId,
+            radius,
+            timestamp:   Date.now(),
+          });
+        }
         break;
       }
     }

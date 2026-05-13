@@ -75,7 +75,27 @@ const COUNTRIES = [
   { id: '862', name: 'Venezuela' },   { id: '704', name: 'Vietnam' },
 ];
 
+// Mutable map: starts with hardcoded fallback, gets updated from server with full list
 const COUNTRY_BY_ID = Object.fromEntries(COUNTRIES.map(c => [c.id, c.name]));
+
+// Fetch full country list from game server (called on startup + on demand)
+async function refreshCountryNames() {
+  try {
+    const data = await gameFetch('/api/bot/countries');
+    if (data.countries && data.countries.length) {
+      let added = 0;
+      for (const c of data.countries) {
+        if (c.name && !c.name.startsWith('Country ')) {
+          if (!COUNTRY_BY_ID[c.id]) added++;
+          COUNTRY_BY_ID[c.id] = c.name;
+        }
+      }
+      console.log(`[Bot] Country names refreshed (${Object.keys(COUNTRY_BY_ID).length} total, +${added} new)`);
+    }
+  } catch (e) {
+    console.log('[Bot] Country names refresh failed:', e.message);
+  }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────
 async function gameFetch(path, opts = {}) {
@@ -121,6 +141,10 @@ client.once(Events.ClientReady, async c => {
     try { await ensureRankRoles(guild); }
     catch (e) { console.error('[Bot] Failed to ensure rank roles:', e.message); }
   }
+  // Refresh country names from game server (so war reporter shows real names)
+  refreshCountryNames();
+  // Re-fetch every 5 min in case the map changed
+  setInterval(refreshCountryNames, 5 * 60 * 1000);
   // Connect to game event stream
   connectEventStream();
 });

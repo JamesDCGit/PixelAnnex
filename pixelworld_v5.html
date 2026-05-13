@@ -3072,12 +3072,19 @@ function mpSendJoin() {
     }
   }
 
+  // Build country name map (id → display name) for bot war reporter
+  const geoNames = {};
+  for (const f of featList) {
+    if (f && f.id && f.name) geoNames[f.id] = f.name;
+  }
+
   ws.send(JSON.stringify({
     type: 'join',
     countryId: f.id,
     discordId: _userProfile && _userProfile.loggedIn ? _userProfile.discordId : null,
     username:  _userProfile && _userProfile.loggedIn ? _userProfile.username  : null,
     geoTotal: Object.fromEntries(Object.entries(geoTotal)),
+    geoNames,
     geoPixelRuns,
     landRuns,
   }));
