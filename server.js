@@ -1013,18 +1013,19 @@ wss.on('connection', (ws, req) => {
           Object.assign(indexToId, msg.indexToId);
           console.log(`  indexToId: ${Object.keys(indexToId).length} index→ID mappings cached`);
         }
-        if (msg.geoPixelRuns && !geoPixelReady) {
+        if (msg.geoPixelRuns) {
           for (const { s, l, g } of msg.geoPixelRuns) {
             for (let i = s; i < s + l && i < MAP_PX; i++) geoAtPixel[i] = g;
           }
-          geoPixelReady = true;
-          console.log('  geoAtPixel received');
+          if (!geoPixelReady) {
+            geoPixelReady = true;
+            console.log('  geoAtPixel received');
+          }
         }
-        if (msg.landRuns && !landMask.some(v => v)) {
+        if (msg.landRuns) {
           for (const { s, l } of msg.landRuns) {
             for (let i = s; i < s + l && i < MAP_PX; i++) landMask[i] = 1;
           }
-          console.log('  landMask received');
         }
         checkMapReady();
 
