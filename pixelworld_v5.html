@@ -3051,11 +3051,13 @@ function mpSendJoin() {
   const f = featList[currentIdx];
   if (!f) return;
 
-  // Build compressed geoAtPixel runs (send once to bootstrap server)
+  // Build compressed geoAtPixel runs (send country IDs, not featList indices)
   const geoPixelRuns = [];
   let rs = -1, rg = -99;
   for (let i = 0; i <= MAP_PX; i++) {
-    const g = i < MAP_PX ? featByPixel[i] : -999;
+    const fi = i < MAP_PX ? featByPixel[i] : -999;
+    // Convert featList index → country ID, fallback to fi itself
+    const g = fi >= 0 && featList[fi] && featList[fi].id ? parseInt(featList[fi].id, 10) : fi;
     if (g !== rg) {
       if (rg >= 0 && rs >= 0) geoPixelRuns.push({ s: rs, l: i - rs, g: rg });
       rs = i; rg = g;
@@ -3075,8 +3077,14 @@ function mpSendJoin() {
 
   // Build country name map (id → display name) for bot war reporter
   const geoNames = {};
-  for (const f of featList) {
-    if (f && f.id && f.name) geoNames[f.id] = f.name;
+  // Also send featList index → country ID mapping, since geoPixelRuns uses indices
+  const indexToId = {};
+  for (let i = 0; i < featList.length; i++) {
+    const fi = featList[i];
+    if (fi && fi.id) {
+      indexToId[i] = fi.id;
+      if (fi.name) geoNames[fi.id] = fi.name;
+    }
   }
 
   ws.send(JSON.stringify({
@@ -3086,6 +3094,7 @@ function mpSendJoin() {
     username:  _userProfile && _userProfile.loggedIn ? _userProfile.username  : null,
     geoTotal: Object.fromEntries(Object.entries(geoTotal)),
     geoNames,
+    indexToId,
     geoPixelRuns,
     landRuns,
   }));

@@ -308,9 +308,11 @@ const countryPxCount = {}; // countryId → pixel count
 const countryNames   = {}; // countryId → display name (populated from client bootstrap)
 const indexToId      = {}; // featList index → real country ID (geoAtPixel stores indices)
 
-// Helper: convert a geoAtPixel index back to its real country ID for events
-function geoToId(geoIdx) {
-  return indexToId[geoIdx] || String(geoIdx);
+// Helper: convert a geoAtPixel value back to country ID for events.
+// As of this version, geoAtPixel stores country IDs directly (sent by client),
+// so this is just a string conversion. indexToId is kept for backwards compat.
+function geoToId(geoVal) {
+  return indexToId[geoVal] || String(geoVal);
 }
 
 // ── Country index mapping ─────────────────────────────────────────
@@ -992,33 +994,24 @@ wss.on('connection', (ws, req) => {
         }
         console.log(`  Player ${pid} → country ${player.countryId}`);
 
-        // Bootstrap map data from first client
-        if (msg.geoTotal && Object.keys(msg.geoTotal).length >= Object.keys(geoTotal).length) {
+        // Bootstrap map data from client — always accept the latest (clients are deterministic)
+        if (msg.geoTotal && Object.keys(msg.geoTotal).length > 0) {
           for (const k of Object.keys(geoTotal)) delete geoTotal[k];
           Object.assign(geoTotal, msg.geoTotal);
-          console.log(`  geoTotal: ${Object.keys(geoTotal).length} countries`);
         }
         // Country names from client (used by bot war reporter)
-        if (msg.geoNames && Object.keys(msg.geoNames).length >= Object.keys(countryNames).length) {
+        if (msg.geoNames && Object.keys(msg.geoNames).length > 0) {
           for (const k of Object.keys(countryNames)) delete countryNames[k];
           Object.assign(countryNames, msg.geoNames);
           console.log(`  geoNames: ${Object.keys(countryNames).length} country names cached`);
         }
         // featList index → real country ID mapping (geoAtPixel stores indices, not IDs)
         // featList index → real country ID mapping (geoAtPixel stores indices, not IDs)
-        // Update on every join — the most recent client's mapping is authoritative
-        if (msg.indexToId && typeof msg.indexToId === 'object') {
-          const newCount = Object.keys(msg.indexToId).length;
-          const oldCount = Object.keys(indexToId).length;
-          // Only update if the new data has at least as many entries
-          if (newCount >= oldCount) {
-            // Clear and re-fill (in case a country ID changed)
-            for (const k of Object.keys(indexToId)) delete indexToId[k];
-            Object.assign(indexToId, msg.indexToId);
-            if (oldCount === 0 || newCount !== oldCount) {
-              console.log(`  indexToId: ${newCount} index→ID mappings cached`);
-            }
-          }
+        // Always overwrite — clients are deterministic so latest = correct
+        if (msg.indexToId && typeof msg.indexToId === 'object' && Object.keys(msg.indexToId).length > 0) {
+          for (const k of Object.keys(indexToId)) delete indexToId[k];
+          Object.assign(indexToId, msg.indexToId);
+          console.log(`  indexToId: ${Object.keys(indexToId).length} index→ID mappings cached`);
         }
         if (msg.geoPixelRuns && !geoPixelReady) {
           for (const { s, l, g } of msg.geoPixelRuns) {
