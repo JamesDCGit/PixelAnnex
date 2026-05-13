@@ -156,7 +156,7 @@ function checkSiegeState(geoIdx) {
   let maxEnemy = 0;
   if (geoClaimCnt[geoIdx]) {
     for (const [cId, cnt] of Object.entries(geoClaimCnt[geoIdx])) {
-      if (cId === String(geoIdx)) continue;
+      if (cId === geoToId(geoIdx)) continue;
       if (cnt > maxEnemy) { maxEnemy = cnt; dominantEnemy = cId; }
     }
   }
@@ -169,7 +169,7 @@ function checkSiegeState(geoIdx) {
       type:        'war_siege_start',
       tier:        2,
       attackerId:  dominantEnemy,
-      defenderId:  String(geoIdx),
+      defenderId:  geoToId(geoIdx),
       ratio:       Math.round(ratio * 100),
       timestamp:   Date.now(),
     });
@@ -178,7 +178,7 @@ function checkSiegeState(geoIdx) {
     emitBotEvent({
       type:        'war_siege_end',
       tier:        1,
-      defenderId:  String(geoIdx),
+      defenderId:  geoToId(geoIdx),
       timestamp:   Date.now(),
     });
   }
@@ -306,6 +306,12 @@ const geoTotal     = {};   // geoIdx → total land pixels
 const conqueredSet = new Set();
 const countryPxCount = {}; // countryId → pixel count
 const countryNames   = {}; // countryId → display name (populated from client bootstrap)
+const indexToId      = {}; // featList index → real country ID (geoAtPixel stores indices)
+
+// Helper: convert a geoAtPixel index back to its real country ID for events
+function geoToId(geoIdx) {
+  return indexToId[geoIdx] || String(geoIdx);
+}
 
 // ── Country index mapping ─────────────────────────────────────────
 const idToIdx = new Map();
@@ -423,12 +429,12 @@ function applyPixels(pixels, countryId) {
       changed.push(...finisherFill(geo, countryId));
       // War reporter event — Tier 2 (role ping)
       // Skip self-conquest (country reclaiming its own native territory)
-      if (countryId !== String(geo)) {
+      if (countryId !== geoToId(geo)) {
         emitBotEvent({
           type:        'war_conquest',
           tier:        2,
           attackerId:  countryId,
-          defenderId:  String(geo),
+          defenderId:  geoToId(geo),
           timestamp:   Date.now(),
         });
       }
@@ -987,14 +993,32 @@ wss.on('connection', (ws, req) => {
         console.log(`  Player ${pid} → country ${player.countryId}`);
 
         // Bootstrap map data from first client
-        if (msg.geoTotal && !Object.keys(geoTotal).length) {
+        if (msg.geoTotal && Object.keys(msg.geoTotal).length >= Object.keys(geoTotal).length) {
+          for (const k of Object.keys(geoTotal)) delete geoTotal[k];
           Object.assign(geoTotal, msg.geoTotal);
           console.log(`  geoTotal: ${Object.keys(geoTotal).length} countries`);
         }
         // Country names from client (used by bot war reporter)
-        if (msg.geoNames && Object.keys(countryNames).length === 0) {
+        if (msg.geoNames && Object.keys(msg.geoNames).length >= Object.keys(countryNames).length) {
+          for (const k of Object.keys(countryNames)) delete countryNames[k];
           Object.assign(countryNames, msg.geoNames);
           console.log(`  geoNames: ${Object.keys(countryNames).length} country names cached`);
+        }
+        // featList index → real country ID mapping (geoAtPixel stores indices, not IDs)
+        // featList index → real country ID mapping (geoAtPixel stores indices, not IDs)
+        // Update on every join — the most recent client's mapping is authoritative
+        if (msg.indexToId && typeof msg.indexToId === 'object') {
+          const newCount = Object.keys(msg.indexToId).length;
+          const oldCount = Object.keys(indexToId).length;
+          // Only update if the new data has at least as many entries
+          if (newCount >= oldCount) {
+            // Clear and re-fill (in case a country ID changed)
+            for (const k of Object.keys(indexToId)) delete indexToId[k];
+            Object.assign(indexToId, msg.indexToId);
+            if (oldCount === 0 || newCount !== oldCount) {
+              console.log(`  indexToId: ${newCount} index→ID mappings cached`);
+            }
+          }
         }
         if (msg.geoPixelRuns && !geoPixelReady) {
           for (const { s, l, g } of msg.geoPixelRuns) {
@@ -1062,7 +1086,7 @@ wss.on('connection', (ws, req) => {
         let defenderId = null;
         if (cx >= 0 && cx < MAP_W && cy >= 0 && cy < MAP_H) {
           const gi = geoAtPixel[cy * MAP_W + cx];
-          if (gi >= 0) defenderId = String(gi);
+          if (gi >= 0) defenderId = geoToId(gi);
         }
         // Skip events where attacker == defender (bombing own territory)
         if (defenderId !== player.countryId) {
