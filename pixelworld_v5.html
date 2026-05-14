@@ -596,6 +596,62 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
         }
         finisherFill(currentIdx,currentIdx);
       ">&#9660; Flood fill country</button>
+    </div>
+
+    <div class="dbg-section">
+      <div class="dbg-label">Gameplay (Group D)</div>
+      <button class="dbg-btn" style="color:#818cf8;border-color:rgba(129,140,248,.3)" onclick="showTutorial()">Show tutorial</button>
+      <button class="dbg-btn" onclick="localStorage.removeItem('pa_tutorial_seen');location.reload()">Reset tutorial flag &amp; reload</button>
+      <button class="dbg-btn" style="color:#fbbf24;border-color:rgba(251,191,36,.3)" onclick="
+        // Trigger daily bonus toast manually with fake data
+        showDailyBonusToast({granted:50,streakDays:1,streakBonus:0});
+      ">Show daily bonus toast</button>
+      <button class="dbg-btn" style="color:#fbbf24;border-color:rgba(251,191,36,.3)" onclick="
+        showDailyBonusToast({granted:150,streakDays:7,streakBonus:100});
+      ">Show 7-day streak toast</button>
+      <button class="dbg-btn" onclick="
+        // Force fight-back: simulate >70% of our country being enemy-held
+        if(currentIdx<0||!geoTotal[currentIdx])return;
+        const total=geoTotal[currentIdx];
+        if(!geoClaimCnt[currentIdx])geoClaimCnt[currentIdx]={};
+        // Pick a different country idx as the 'enemy'
+        const enemyIdx=(currentIdx+1)%featList.length;
+        geoClaimCnt[currentIdx][enemyIdx]=Math.ceil(total*0.85);
+        updateFightBackBanner();
+      ">Trigger fight-back (85% lost)</button>
+      <button class="dbg-btn" onclick="
+        if(currentIdx<0||!geoTotal[currentIdx])return;
+        const total=geoTotal[currentIdx];
+        if(!geoClaimCnt[currentIdx])geoClaimCnt[currentIdx]={};
+        const enemyIdx=(currentIdx+1)%featList.length;
+        geoClaimCnt[currentIdx][enemyIdx]=Math.ceil(total*0.95);
+        updateFightBackBanner();
+      ">Trigger fight-back (95% lost · 5×5 brush)</button>
+      <button class="dbg-btn dbg-green" onclick="
+        // Clear enemy claims to exit fight-back
+        if(currentIdx>=0&&geoClaimCnt[currentIdx]){
+          for(const k of Object.keys(geoClaimCnt[currentIdx])){
+            if(+k!==currentIdx) delete geoClaimCnt[currentIdx][k];
+          }
+        }
+        updateFightBackBanner();
+      ">Exit fight-back mode</button>
+      <button class="dbg-btn" onclick="
+        // Show what explosive level you're at right now
+        if(currentIdx<0||!geoTotal[currentIdx]){alert('No country selected');return;}
+        const total=geoTotal[currentIdx];
+        let enemy=0;
+        for(const [cid,cnt] of Object.entries(geoClaimCnt[currentIdx]||{})){
+          if(+cid!==currentIdx) enemy+=cnt;
+        }
+        const frac=enemy/total;
+        const lvl=getExplosiveLevel(frac);
+        alert('Loss: '+Math.round(frac*100)+'%\\nExplosive level: '+lvl+'\\nBrush: '+(lvl===0?'normal':lvl===1?'1×1':lvl===2?'3×3':'5×5'));
+      ">Check fight-back status</button>
+    </div>
+
+    <div class="dbg-section">
+      <div class="dbg-label">Power actions</div>
       <button class="dbg-btn" style="background:#1a1020;border-color:rgba(255,215,0,0.4);color:#ffd700;" onclick="
         if(!featList||featList.length===0)return;
         (async()=>{
