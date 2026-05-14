@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PixelAnnex</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23070d1a'/%3E%3Crect x='6' y='8' width='4' height='4' fill='%2360a5fa'/%3E%3Crect x='12' y='6' width='4' height='4' fill='%23818cf8'/%3E%3Crect x='18' y='8' width='4' height='4' fill='%23a78bfa'/%3E%3Crect x='4' y='14' width='4' height='4' fill='%2334d399'/%3E%3Crect x='10' y='14' width='4' height='4' fill='%23fbbf24'/%3E%3Crect x='16' y='14' width='4' height='4' fill='%23f87171'/%3E%3Crect x='22' y='14' width='4' height='4' fill='%23fb923c'/%3E%3Crect x='6' y='20' width='4' height='4' fill='%23ec4899'/%3E%3Crect x='12' y='20' width='4' height='4' fill='%2306b6d4'/%3E%3Crect x='18' y='20' width='4' height='4' fill='%2384cc16'/%3E%3C/svg%3E"/>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
@@ -460,11 +461,13 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <h2>Loading World</h2>
       <p id="load-msg">Starting…</p>
       <div id="prog-bar"><div id="prog-fill"></div></div>
+      <div id="loading-tip" style="margin-top:20px;font-size:11px;color:#64748b;font-style:italic;max-width:340px;text-align:center;line-height:1.5;opacity:0;transition:opacity 0.5s;"></div>
       <div id="err-box"></div>
       <button id="retry-btn" onclick="location.reload()">Retry</button>
     </div>
     <div id="bomb-flash"></div>
     <canvas id="c-base"></canvas>
+    <canvas id="c-grid" style="pointer-events:none;opacity:0;"></canvas>
     <canvas id="c-waves" style="pointer-events:none"></canvas>
     <canvas id="c-sprites" style="pointer-events:none"></canvas>
     <canvas id="c-claim"></canvas>
@@ -1054,6 +1057,9 @@ const conqueredSet=new Set();
 
 const vp=document.getElementById("viewport");
 const cBase=document.getElementById("c-base");
+const cGrid=document.getElementById("c-grid");
+const gridCtx=cGrid.getContext("2d");
+gridCtx.imageSmoothingEnabled=false;
 const cClaim=document.getElementById("c-claim");
 const cBorder=document.getElementById("c-border");
 const bctx=cBase.getContext("2d");
@@ -1082,7 +1088,7 @@ siegeCtx.imageSmoothingEnabled=false;
 const cCrater=document.getElementById("c-crater");
 const craterCtx=cCrater.getContext("2d");
 craterCtx.imageSmoothingEnabled=false;
-[cBase,cWaves,cSprites,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
+[cBase,cGrid,cWaves,cSprites,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
 
 // ── Helpers ───────────────────────────────────────────────────────
 const $=id=>document.getElementById(id);
@@ -1814,6 +1820,7 @@ async function boot(){
     markOutlineDirty();
   }
   $("loading").style.display="none";
+  stopLoadingTips();
   resetView();
   updateBucketHUD();
   mpInit();       // connect to multiplayer server (silent fallback if offline)
@@ -1972,7 +1979,7 @@ function scheduleLegend(){
 }
 
 // ── View ─────────────────────────────────────────────────────────
-function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cWaves,cSprites,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege].forEach(c=>c.style.transform=t);}
+function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cGrid,cWaves,cSprites,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege].forEach(c=>c.style.transform=t);}
 function clamp(){const cw=vp.clientWidth,ch=vp.clientHeight;ox=Math.max(Math.min(0,cw-MAP_W*scale),Math.min(0,ox));oy=Math.max(Math.min(0,ch-MAP_H*scale),Math.min(0,oy));}
 function resetView(){const cw=vp.clientWidth,ch=vp.clientHeight;scale=Math.min(cw/MAP_W,ch/MAP_H)*.98;ox=(cw-MAP_W*scale)/2;oy=(ch-MAP_H*scale)/2;applyT();}
 function doZoom(f,cx,cy){const ns=Math.max(.25,Math.min(40,scale*f));ox=cx-(cx-ox)*(ns/scale);oy=cy-(cy-oy)*(ns/scale);scale=ns;clamp();applyT();}
@@ -3605,6 +3612,195 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'stats-overlay') closeStats();
   });
 });
+
+// ── Loading screen tips ───────────────────────────────────────────
+const LOADING_TIPS = [
+  "💡 Click and drag to pan. Scroll to zoom.",
+  "🎨 You can paint pixels in any country, but conquest requires 80% ownership.",
+  "💥 Promotions unlock bombs: Captain → Mortar, General → MOAB, Admiral → Nuke.",
+  "🤝 Set 3 country preferences in Discord with /country to form alliances.",
+  "⚔️ When your country is >70% lost, fight-back mode gives you 5× pixel bonus.",
+  "🏆 Check the leaderboard via the 📊 button in the toolbar.",
+  "🌊 The ocean covers 71% of Earth's surface — but in PixelAnnex it's pure pixels.",
+  "📊 1 pixel placed = 1 point. Conquering a country = 50 bonus points.",
+  "🎖️ Climb 5 ranks: Soldier → Lieutenant → Captain → General → Admiral.",
+  "🚨 Countries flash red when under siege (>50% enemy-held and being attacked).",
+  "🤖 Every country has an AI bot defending it. They get smarter at higher player counts.",
+  "🌐 The map has ~2.4 million paintable pixels across 240+ countries.",
+  "🎵 Three music tracks: chiptune, classical, and military. Toggle in the audio HUD.",
+  "👥 Sign in with Discord to save your progress and earn rank promotions.",
+  "🏴 The smallest country on the map is Vatican City — just a few pixels!",
+  "💬 War events, conquests, and alliances all post to your Discord server.",
+];
+
+let _loadingTipTimer = null;
+function startLoadingTips() {
+  const el = document.getElementById('loading-tip');
+  if (!el) return;
+  let i = Math.floor(Math.random() * LOADING_TIPS.length);
+  const showNext = () => {
+    el.style.opacity = '0';
+    setTimeout(() => {
+      el.textContent = LOADING_TIPS[i % LOADING_TIPS.length];
+      el.style.opacity = '1';
+      i++;
+    }, 400);
+  };
+  showNext();
+  _loadingTipTimer = setInterval(showNext, 4500);
+}
+function stopLoadingTips() {
+  if (_loadingTipTimer) clearInterval(_loadingTipTimer);
+  _loadingTipTimer = null;
+}
+// Start tips ASAP
+if (document.readyState !== 'loading') startLoadingTips();
+else document.addEventListener('DOMContentLoaded', startLoadingTips);
+
+// ── Coordinate display in tooltip ─────────────────────────────────
+// Hook into the existing tip-sub builder to append "x,y" coords.
+// We patch by enhancing the tip after it's shown.
+(function setupCoordDisplay() {
+  const observer = new MutationObserver(() => {
+    const tip = document.getElementById('tip');
+    const sub = document.getElementById('tip-sub');
+    if (!tip || !sub || tip.style.display === 'none') return;
+    const x = tip.dataset.x, y = tip.dataset.y;
+    if (x === undefined) return;
+    // Append coords if not already there
+    if (!sub.querySelector('.tip-coords')) {
+      const coordEl = document.createElement('div');
+      coordEl.className = 'tip-coords';
+      coordEl.style.cssText = 'color:#475569;font-size:9px;margin-top:3px;letter-spacing:.04em;';
+      coordEl.textContent = 'x:' + x + '  y:' + y;
+      sub.appendChild(coordEl);
+    } else {
+      sub.querySelector('.tip-coords').textContent = 'x:' + x + '  y:' + y;
+    }
+  });
+  // Wait for tip element to exist
+  const waitForTip = setInterval(() => {
+    const tip = document.getElementById('tip');
+    if (tip) {
+      clearInterval(waitForTip);
+      observer.observe(tip, { childList: true, subtree: true, attributes: true });
+    }
+  }, 100);
+})();
+
+// ── Grid overlay at high zoom ─────────────────────────────────────
+// Drawn once at MAP_W×MAP_H resolution. CSS opacity controls visibility based on scale.
+function drawGrid() {
+  if (!cGrid || !gridCtx) return;
+  gridCtx.clearRect(0, 0, MAP_W, MAP_H);
+  gridCtx.fillStyle = 'rgba(255,255,255,0.18)';
+  // Draw a single-pixel dot every 8 pixels — only visible at high zoom
+  for (let y = 0; y < MAP_H; y += 8) {
+    for (let x = 0; x < MAP_W; x += 8) {
+      gridCtx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+let _gridDrawn = false;
+function updateGridVisibility() {
+  if (!cGrid) return;
+  if (typeof scale === 'undefined') return;
+  // Show grid only at scale > 8 (high zoom)
+  if (scale > 8) {
+    if (!_gridDrawn) { drawGrid(); _gridDrawn = true; }
+    // Fade in proportionally from scale 8 to scale 16
+    cGrid.style.opacity = Math.min(1, (scale - 8) / 8) * 0.4;
+  } else {
+    cGrid.style.opacity = '0';
+  }
+}
+
+// ── Flag scaling with zoom ────────────────────────────────────────
+// Flags currently render at fixed 17x11 pixels at MAP_W resolution.
+// They appear tiny when zoomed out and huge when zoomed in — already scales naturally with the map.
+// However, to make them MORE legible at medium zoom and not overwhelming at high zoom,
+// we adjust their opacity to fade out at very high zoom (where the country pixels themselves dominate).
+function updateFlagOpacity() {
+  if (!cFlags) return;
+  if (typeof scale === 'undefined') return;
+  // Sweet spot: full visibility at scale 1-4, fade out as zoom approaches max
+  let opacity = 1.0;
+  if (scale > 6)  opacity = 0.7;
+  if (scale > 12) opacity = 0.4;
+  if (scale > 18) opacity = 0.0;  // hide flags at extreme zoom
+  cFlags.style.opacity = opacity;
+}
+
+// Hook into the existing applyT function to update grid + flag opacity after each zoom/pan
+const _origApplyT = typeof applyT !== 'undefined' ? applyT : null;
+if (_origApplyT) {
+  applyT = function() {
+    _origApplyT();
+    updateGridVisibility();
+    updateFlagOpacity();
+  };
+}
+
+// ── Confetti particle system ──────────────────────────────────────
+// Lightweight DOM-based particles that burst from a screen position.
+// Uses absolute-positioned divs with CSS transforms — cheap enough for occasional bursts.
+
+function fireConfetti(screenX, screenY, options = {}) {
+  const count = options.count || 40;
+  const colors = options.colors || ['#fbbf24','#f59e0b','#ef4444','#ec4899','#8b5cf6','#6366f1','#3b82f6','#10b981','#84cc16'];
+  const container = document.body;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    const size = 4 + Math.random() * 6;
+    const angle = Math.random() * Math.PI * 2;
+    const velocity = 200 + Math.random() * 300;
+    const vx = Math.cos(angle) * velocity;
+    const vy = Math.sin(angle) * velocity - 200; // initial upward bias
+    p.style.cssText = `
+      position:fixed;
+      left:${screenX}px;
+      top:${screenY}px;
+      width:${size}px;
+      height:${size}px;
+      background:${colors[Math.floor(Math.random() * colors.length)]};
+      pointer-events:none;
+      z-index:300;
+      border-radius:${Math.random() < 0.5 ? '50%' : '2px'};
+      transform:translate(-50%, -50%);
+      will-change:transform, opacity;
+    `;
+    container.appendChild(p);
+
+    const startTime = performance.now();
+    const duration = 1200 + Math.random() * 800;
+    function animate(now) {
+      const t = (now - startTime) / duration;
+      if (t >= 1) { p.remove(); return; }
+      const x = vx * t;
+      const y = vy * t + 0.5 * 980 * t * t; // gravity
+      const rot = t * 720 * (Math.random() < 0.5 ? 1 : -1);
+      p.style.transform = `translate(${x - size/2}px, ${y - size/2}px) rotate(${rot}deg)`;
+      p.style.opacity = String(1 - t * t);
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+  }
+}
+
+// Fire confetti when YOU conquer a country (not when others do)
+// Hook into the existing showConquestToast — only when YOUR country is the attacker
+const _origShowConquestToast = typeof showConquestToast !== 'undefined' ? showConquestToast : null;
+if (_origShowConquestToast) {
+  showConquestToast = function(geoIdx, fi) {
+    _origShowConquestToast(geoIdx, fi);
+    // Only celebrate if YOU (the current player) made this conquest
+    if (fi === currentIdx) {
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      fireConfetti(cx, cy, { count: 60 });
+    }
+  };
+}
 // ── Bomb craters ─────────────────────────────────────────────────
 // Each crater fades over CRATER_FADE_MS (10 s).
 // Drawn on c-overlay using a radial gradient: dark centre → orange rim → transparent.
@@ -4777,6 +4973,8 @@ vp.addEventListener("mousemove",e=>{
   if(p.x>=0&&p.x<MAP_W&&p.y>=0&&p.y<MAP_H){
     const i=p.y*MAP_W+p.x;
     tip.style.display="block";tip.style.left=(e.clientX+14)+"px";tip.style.top=(e.clientY-40)+"px";
+    // Store coords on the tip for the sub-text builder
+    tip.dataset.x=p.x; tip.dataset.y=p.y;
     const gi=featByPixel[i],ci=claimByPixel[i];
     if(landMask[i]){
       // ── Geographic country name (what country this pixel belongs to) ──

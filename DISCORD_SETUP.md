@@ -630,3 +630,43 @@ rm /var/www/PixelAnnex/profiles.json
 pm2 start pixelannex
 ```
 
+
+---
+
+# QoL Group B: Visual & UX Polish
+
+Pure client-side updates — no server changes.
+
+## What's new
+
+1. **Favicon** — pixel-grid icon in browser tab (inline SVG, no external file)
+2. **Light grid at high zoom** — subtle dot grid appears at scale > 8x for precise pixel placement
+3. **Coordinate display on hover** — `x:1234  y:567` shown at the bottom of the tooltip
+4. **Loading screen tips** — 16 rotating tips (game mechanics, lore, controls) cycle every 4.5s during boot
+5. **Flag scaling with zoom** — flags fade out at extreme zoom (scale > 18) so pixel detail isn't obscured
+6. **Confetti on conquest** — particle burst when YOU conquer a country (not when others do)
+
+## Deploy
+
+```bash
+git add pixelworld_v5.html DISCORD_SETUP.md
+git commit -m "QoL Group B: favicon, grid, coords, tips, flag scaling, confetti"
+git push
+
+# Server
+cd /var/www/PixelAnnex
+git pull
+pm2 restart pixelannex
+```
+
+No bot restart needed. Hard-refresh browser (Ctrl+Shift+R) to see all changes.
+
+## Testing
+
+- **Favicon** — check browser tab icon
+- **Grid** — zoom in heavily (mouse wheel multiple times) until grid dots appear
+- **Coords** — hover over the map, see `x:..  y:..` at bottom of tooltip
+- **Loading tips** — refresh the page, watch tips cycle during load
+- **Flag scaling** — zoom in to max, flags fade out before pixels become unreadable
+- **Confetti** — conquer a country yourself, see the burst from screen centre
+
