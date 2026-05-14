@@ -1851,6 +1851,7 @@ async function boot(){
     refreshRankUI();
     tickHighlightFlash();
     tickSiegeFlash();
+    drawGrid();  // pre-render grid overlay (only shown at high zoom)
     console.log("PixelAnnex ready!");
   }, 50);
 }
@@ -3657,58 +3658,44 @@ function stopLoadingTips() {
 if (document.readyState !== 'loading') startLoadingTips();
 else document.addEventListener('DOMContentLoaded', startLoadingTips);
 
-// ── Coordinate display in tooltip ─────────────────────────────────
-// Hook into the existing tip-sub builder to append "x,y" coords.
-// We patch by enhancing the tip after it's shown.
-(function setupCoordDisplay() {
-  const observer = new MutationObserver(() => {
-    const tip = document.getElementById('tip');
-    const sub = document.getElementById('tip-sub');
-    if (!tip || !sub || tip.style.display === 'none') return;
-    const x = tip.dataset.x, y = tip.dataset.y;
-    if (x === undefined) return;
-    // Append coords if not already there
-    if (!sub.querySelector('.tip-coords')) {
-      const coordEl = document.createElement('div');
-      coordEl.className = 'tip-coords';
-      coordEl.style.cssText = 'color:#475569;font-size:9px;margin-top:3px;letter-spacing:.04em;';
-      coordEl.textContent = 'x:' + x + '  y:' + y;
-      sub.appendChild(coordEl);
-    } else {
-      sub.querySelector('.tip-coords').textContent = 'x:' + x + '  y:' + y;
-    }
-  });
-  // Wait for tip element to exist
-  const waitForTip = setInterval(() => {
-    const tip = document.getElementById('tip');
-    if (tip) {
-      clearInterval(waitForTip);
-      observer.observe(tip, { childList: true, subtree: true, attributes: true });
-    }
-  }, 100);
-})();
+// Coordinate display is now handled inline by the mousemove handler
+// ── Tip coordinate ticker (lightweight, runs only when tip is visible) ──
+setInterval(() => {
+  const tip = document.getElementById('tip');
+  if (!tip || tip.style.display === 'none') return;
+  if (!tip._coords) return;
+  let coordEl = tip.querySelector('.tip-coords');
+  if (!coordEl) {
+    coordEl = document.createElement('div');
+    coordEl.className = 'tip-coords';
+    coordEl.style.cssText = 'color:#475569;font-size:9px;margin-top:3px;letter-spacing:.04em;border-top:1px solid rgba(255,255,255,0.05);padding-top:3px;';
+    tip.appendChild(coordEl);
+  }
+  coordEl.textContent = 'x:' + tip._coords.replace(',', '  y:');
+}, 100);
+
 
 // ── Grid overlay at high zoom ─────────────────────────────────────
 // Drawn once at MAP_W×MAP_H resolution. CSS opacity controls visibility based on scale.
 function drawGrid() {
   if (!cGrid || !gridCtx) return;
-  gridCtx.clearRect(0, 0, MAP_W, MAP_H);
-  gridCtx.fillStyle = 'rgba(255,255,255,0.18)';
-  // Draw a single-pixel dot every 8 pixels — only visible at high zoom
+  // Use ImageData for ~50x speed vs 131k fillRect calls
+  const img = gridCtx.createImageData(MAP_W, MAP_H);
+  const d = img.data;
   for (let y = 0; y < MAP_H; y += 8) {
     for (let x = 0; x < MAP_W; x += 8) {
-      gridCtx.fillRect(x, y, 1, 1);
+      const p = (y * MAP_W + x) * 4;
+      d[p] = 255; d[p+1] = 255; d[p+2] = 255; d[p+3] = 60;
     }
   }
+  gridCtx.putImageData(img, 0, 0);
 }
 let _gridDrawn = false;
 function updateGridVisibility() {
   if (!cGrid) return;
   if (typeof scale === 'undefined') return;
-  // Show grid only at scale > 8 (high zoom)
+  // Show grid only at scale > 8 (high zoom). Grid is pre-rendered at boot.
   if (scale > 8) {
-    if (!_gridDrawn) { drawGrid(); _gridDrawn = true; }
-    // Fade in proportionally from scale 8 to scale 16
     cGrid.style.opacity = Math.min(1, (scale - 8) / 8) * 0.4;
   } else {
     cGrid.style.opacity = '0';
@@ -4973,8 +4960,7 @@ vp.addEventListener("mousemove",e=>{
   if(p.x>=0&&p.x<MAP_W&&p.y>=0&&p.y<MAP_H){
     const i=p.y*MAP_W+p.x;
     tip.style.display="block";tip.style.left=(e.clientX+14)+"px";tip.style.top=(e.clientY-40)+"px";
-    // Store coords on the tip for the sub-text builder
-    tip.dataset.x=p.x; tip.dataset.y=p.y;
+    tip._coords=p.x+","+p.y;
     const gi=featByPixel[i],ci=claimByPixel[i];
     if(landMask[i]){
       // ── Geographic country name (what country this pixel belongs to) ──
