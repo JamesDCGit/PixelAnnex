@@ -241,13 +241,46 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .leg-alliance{font-size:10px;padding-left:3px;cursor:help;flex-shrink:0;}
 
 #activity-toast{
-  position:absolute;top:110px;right:14px;
-  background:#1a0f00;border:1px solid rgba(251,146,60,0.7);border-radius:8px;
-  padding:10px 16px;font-size:12px;color:#fed7aa;
-  display:none;z-index:60;min-width:180px;max-width:260px;
-  box-shadow:0 4px 16px rgba(251,146,60,0.2);
+  position:fixed;top:80px;right:14px;z-index:60;
+  display:flex;flex-direction:column;gap:6px;
+  pointer-events:none;max-width:300px;
 }
-#activity-toast .toast-title{font-weight:700;margin-bottom:3px;color:#fb923c;font-size:11px;}
+.act-card{
+  background:#1a0f00;border:1px solid rgba(251,146,60,0.7);border-radius:8px;
+  padding:8px 12px;font-size:11px;color:#fed7aa;
+  min-width:200px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.4);
+  animation:act-slide-in .3s cubic-bezier(.4,0,.2,1);
+  transition:opacity .6s, transform .6s;
+  pointer-events:auto;
+}
+.act-card.fading{opacity:0;transform:translateX(30px);}
+.act-card .act-title{font-weight:700;margin-bottom:2px;font-size:10px;letter-spacing:.04em;}
+.act-card .act-body{display:flex;align-items:center;gap:5px;}
+.act-card .act-body svg{flex-shrink:0;}
+
+/* Variant: fight-back (green) */
+.act-card.fightback{background:#001a0f;border-color:rgba(34,197,94,0.7);color:#86efac;}
+.act-card.fightback .act-title{color:#4ade80;}
+
+/* Variant: conquest event (red) */
+.act-card.conquest{background:#1a0a0d;border-color:rgba(239,68,68,0.7);color:#fecaca;}
+.act-card.conquest .act-title{color:#f87171;}
+
+/* Variant: self-conquest (green = win) */
+.act-card.win{background:#0a1a12;border-color:rgba(34,197,94,0.7);color:#bbf7d0;}
+.act-card.win .act-title{color:#4ade80;}
+
+/* Variant: alert (orange — under attack) */
+.act-card.alert{background:#1a0f00;border-color:rgba(251,146,60,0.7);color:#fed7aa;}
+.act-card.alert .act-title{color:#fb923c;}
+
+/* Variant: info (blue) */
+.act-card.info{background:#0a121a;border-color:rgba(99,102,241,0.6);color:#c7d2fe;}
+.act-card.info .act-title{color:#818cf8;}
+
+@keyframes act-slide-in{from{opacity:0;transform:translateX(30px);}to{opacity:1;transform:translateX(0);}}
+
 /* ── Highlight button ── */
 #btn-highlight{background:#0f1a0f;border:1px solid rgba(251,191,36,.3);color:#fbbf24;}
 #btn-highlight:hover{background:#1a2a1a;border-color:#fbbf24;}
@@ -256,42 +289,6 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 
 
 
-
-/* ── Mini-map ── */
-#minimap-wrap{
-  position:fixed;bottom:10px;left:10px;z-index:50;
-  background:rgba(7,13,26,0.85);border:1px solid #1e293b;border-radius:6px;
-  padding:4px;backdrop-filter:blur(6px);
-  width:200px;height:100px;cursor:pointer;user-select:none;
-  display:flex;flex-direction:column;
-}
-#minimap-canvas{width:100%;height:100%;display:block;image-rendering:pixelated;border-radius:3px;}
-#minimap-viewport{
-  position:absolute;border:1.5px solid #fbbf24;
-  pointer-events:none;
-  box-shadow:0 0 0 1px rgba(0,0,0,0.6),0 0 8px rgba(251,191,36,0.4);
-  border-radius:1px;
-}
-#minimap-wrap:hover #minimap-viewport{border-color:#fcd34d;}
-
-/* ── Event log ── */
-#event-log{
-  position:fixed;top:70px;right:10px;z-index:50;
-  width:280px;display:flex;flex-direction:column;gap:6px;
-  pointer-events:none;
-}
-.event-item{
-  background:rgba(7,13,26,0.85);border:1px solid #1e293b;border-radius:6px;
-  padding:6px 10px;font-size:10px;color:#cbd5e1;
-  backdrop-filter:blur(6px);
-  animation:event-in .3s ease-out;
-  transition:opacity 0.6s, transform 0.6s;
-  display:flex;align-items:center;gap:6px;
-}
-.event-item.fading{opacity:0;transform:translateX(20px);}
-.event-icon{font-size:14px;}
-.event-text{flex:1;}
-@keyframes event-in{from{opacity:0;transform:translateX(20px);}to{opacity:1;transform:translateX(0);}}
 
 /* ── Attack direction arrow ── */
 #attack-arrow{
@@ -516,11 +513,6 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <button id="retry-btn" onclick="location.reload()">Retry</button>
     </div>
     <div id="bomb-flash"></div>
-    <div id="minimap-wrap" onclick="minimapClick(event)" title="Click to jump · Drag the viewport rectangle">
-      <canvas id="minimap-canvas" width="200" height="100"></canvas>
-      <div id="minimap-viewport"></div>
-    </div>
-    <div id="event-log"></div>
     <svg id="attack-arrow" viewBox="0 0 60 60">
       <path d="M 30 5 L 50 35 L 35 35 L 35 55 L 25 55 L 25 35 L 10 35 Z" fill="#ef4444" stroke="#fff" stroke-width="2" opacity="0.85"/>
     </svg>
@@ -542,7 +534,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     </div>
     <div id="highlight-banner"></div>
     <div id="banner"></div>
-    <div id="activity-toast"><div class="toast-title">&#9888; Under Attack</div><div id="activity-body"></div></div>
+    <div id="activity-toast"></div>
     <div id="bomb-toast"><div class="toast-title">&#128163; Bombing!</div><div class="toast-body" id="bomb-toast-body"></div></div>
     <div id="conquest-toast"><div class="toast-title">&#9873; Country Conquered</div><div class="toast-body" id="toast-body"></div></div>
     <div class="hud" id="legend"><h3>Territory</h3><div id="leg-items"></div>
@@ -2324,31 +2316,88 @@ function recordPixelLoss(geoIdx, painterIdx){
 }
 
 let _activityTimer = null;
-function showActivityToast(geoIdx, fightBack){
-  const f = featList[geoIdx];
-  if(!f) return;
-  const body = document.getElementById('activity-body');
-  const toast = document.getElementById('activity-toast');
-  if(!body || !toast) return;
-  // Update toast title based on context
-  const title = toast.querySelector('.toast-title');
-  if(title) title.textContent = fightBack ? '⚔️ Fighting Back' : '⚠️ Under Attack';
-  // Update border colour: green for fight-back, orange for attack
-  toast.style.borderColor = fightBack ? 'rgba(34,197,94,0.7)' : 'rgba(251,146,60,0.7)';
-  toast.style.background  = fightBack ? '#001a0f' : '#1a0f00';
-  toast.querySelector('.toast-title').style.color = fightBack ? '#4ade80' : '#fb923c';
-  // Build content: flag + country name
-  const flagEl = createFlagEl(f.id, 1);
-  body.innerHTML = '';
-  if(flagEl) body.appendChild(flagEl);
-  const span = document.createElement('span');
-  span.style.cssText = 'margin-left:5px;color:#fdba74;font-weight:600;';
-  span.textContent = fightBack ? f.name + ' is fighting back!' : f.name + ' is being targeted';
-  body.appendChild(span);
-  toast.style.display = 'block';
-  if(_activityTimer) clearTimeout(_activityTimer);
-  _activityTimer = setTimeout(() => { toast.style.display = 'none'; }, 4000);
+// ── Activity card stack ──────────────────────────────────────────
+// Replaces the old single-card activity-toast with a stack of up to 5
+// cards, each lasting 10s. New cards push onto top; oldest get popped.
+const ACT_MAX_CARDS = 5;
+const ACT_CARD_LIFE = 10000; // ms
+let _actCards = [];
+
+function actPushCard(opts) {
+  const wrap = document.getElementById('activity-toast');
+  if (!wrap) return;
+  const card = document.createElement('div');
+  card.className = 'act-card ' + (opts.variant || 'alert');
+
+  const title = document.createElement('div');
+  title.className = 'act-title';
+  title.textContent = opts.title || '';
+
+  const body = document.createElement('div');
+  body.className = 'act-body';
+  if (opts.html) {
+    body.innerHTML = opts.html;
+  } else {
+    body.textContent = opts.text || '';
+  }
+
+  card.appendChild(title);
+  card.appendChild(body);
+
+  // Newest cards on top (prepend)
+  wrap.insertBefore(card, wrap.firstChild);
+  _actCards.unshift({ el: card, born: Date.now() });
+
+  // Cap at ACT_MAX_CARDS — remove oldest (last)
+  while (_actCards.length > ACT_MAX_CARDS) {
+    const old = _actCards.pop();
+    if (old && old.el && old.el.parentNode) old.el.parentNode.removeChild(old.el);
+  }
+
+  // Auto-fade after life expires
+  setTimeout(() => {
+    if (!card.parentNode) return;
+    card.classList.add('fading');
+    setTimeout(() => {
+      if (card.parentNode) card.parentNode.removeChild(card);
+      _actCards = _actCards.filter(c => c.el !== card);
+    }, 600);
+  }, ACT_CARD_LIFE);
+
+  return card;
 }
+
+// Compat shim: existing call sites use showActivityToast(geoIdx, fightBack)
+function showActivityToast(geoIdx, fightBack) {
+  const f = featList[geoIdx];
+  if (!f) return;
+  const flagSrc = createFlagEl(f.id, 1);
+  let flagHtml = '';
+  if (flagSrc) {
+    const tmp = document.createElement('div');
+    tmp.appendChild(flagSrc);
+    flagHtml = tmp.innerHTML;
+  }
+  const span = '<span style="margin-left:5px;font-weight:600;">' +
+    (fightBack ? f.name + ' is fighting back!' : f.name + ' is being targeted') +
+    '</span>';
+  actPushCard({
+    variant: fightBack ? 'fightback' : 'alert',
+    title:   fightBack ? '⚔️ Fighting Back' : '⚠️ Under Attack',
+    html:    flagHtml + span,
+  });
+}
+
+// Compat shim: pushEvent — used by the conquest detector
+function pushEvent(icon, htmlText, options) {
+  const variant = (options && options.variant) || 'info';
+  actPushCard({
+    variant,
+    title: icon + ' ' + (options && options.title ? options.title : 'Event'),
+    html: htmlText,
+  });
+}
+
 
 function sfxUnderAttack(){
   const ctx = getACtx(); if(!ctx) return;
@@ -3303,10 +3352,34 @@ function mpHandleMessage(msg) {
       const { geoIdx, countryId } = msg;
       conqueredSet.add(geoIdx + ':' + countryId);
       const fi = featList.findIndex(f => f.id === String(countryId));
-      // Attack detection: if WE were conquered, show direction arrow
+      // Attack detection: if WE were conquered, show direction arrow + card
       if(geoIdx === currentIdx && fi >= 0 && fi !== currentIdx){
         showAttackArrow(fi);
-        pushEvent('🚨', '<b>' + (featList[fi]?.name || '?') + '</b> conquered your country!');
+        actPushCard({
+          variant: 'conquest',
+          title: '🚨 YOUR COUNTRY FELL',
+          html: '<b>' + (featList[fi]?.name || '?') + '</b> has conquered your country!',
+        });
+      }
+      // General conquest notification (when others conquer)
+      else if(fi >= 0 && fi !== currentIdx && geoIdx !== currentIdx){
+        const conqueror = featList[fi];
+        const target    = featList[geoIdx];
+        if(conqueror && target){
+          actPushCard({
+            variant: 'info',
+            title: '⚔️ Conquest',
+            html: '<b>' + conqueror.name + '</b> conquered <b>' + target.name + '</b>',
+          });
+        }
+      }
+      // YOU conquered someone
+      else if(fi === currentIdx && featList[geoIdx]){
+        actPushCard({
+          variant: 'win',
+          title: '🏆 Victory!',
+          html: 'You conquered <b>' + featList[geoIdx].name + '</b>!',
+        });
       }
       if (fi >= 0) {
         showConquestToast(geoIdx, fi);
@@ -3680,107 +3753,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-// ── Mini-map ──────────────────────────────────────────────────────
-const MINIMAP_W = 200, MINIMAP_H = 100;
-let _minimapCanvas, _minimapCtx, _minimapBaseImage = null;
-let _minimapDirty = false;
-
-function initMinimap(){
-  _minimapCanvas = document.getElementById('minimap-canvas');
-  if(!_minimapCanvas) return;
-  _minimapCtx = _minimapCanvas.getContext('2d');
-  _minimapCtx.imageSmoothingEnabled = false;
-  drawMinimapBase();
-  updateMinimapViewport();
-}
-
-function drawMinimapBase(){
-  if(!_minimapCtx) return;
-  // Draw the base canvas downscaled into minimap
-  _minimapCtx.fillStyle = '#070d1a';
-  _minimapCtx.fillRect(0, 0, MINIMAP_W, MINIMAP_H);
-  // Composite the cBase canvas + cClaim canvas
-  _minimapCtx.drawImage(cBase, 0, 0, MAP_W, MAP_H, 0, 0, MINIMAP_W, MINIMAP_H);
-  if(typeof cClaim !== 'undefined'){
-    _minimapCtx.globalAlpha = 0.85;
-    _minimapCtx.drawImage(cClaim, 0, 0, MAP_W, MAP_H, 0, 0, MINIMAP_W, MINIMAP_H);
-    _minimapCtx.globalAlpha = 1;
-  }
-  _minimapBaseImage = _minimapCtx.getImageData(0, 0, MINIMAP_W, MINIMAP_H);
-}
-
-function updateMinimapViewport(){
-  const vp_el = document.getElementById('minimap-viewport');
-  const wrap = document.getElementById('minimap-wrap');
-  if(!vp_el || !wrap || typeof scale === 'undefined') return;
-  // Calculate visible area of the map in screen coords (vp)
-  const cw = vp.clientWidth, ch = vp.clientHeight;
-  const visX = -ox / scale;
-  const visY = -oy / scale;
-  const visW = cw / scale;
-  const visH = ch / scale;
-  // Map to minimap coordinates (account for padding)
-  const padX = 4, padY = 4;
-  const innerW = MINIMAP_W, innerH = MINIMAP_H;
-  const left = padX + (visX / MAP_W) * innerW;
-  const top  = padY + (visY / MAP_H) * innerH;
-  const w    = Math.max(4, (visW / MAP_W) * innerW);
-  const h    = Math.max(4, (visH / MAP_H) * innerH);
-  vp_el.style.left   = left + 'px';
-  vp_el.style.top    = top + 'px';
-  vp_el.style.width  = w + 'px';
-  vp_el.style.height = h + 'px';
-}
-
-function minimapClick(e){
-  const wrap = e.currentTarget;
-  const rect = wrap.getBoundingClientRect();
-  const padX = 4, padY = 4;
-  const innerW = MINIMAP_W, innerH = MINIMAP_H;
-  const relX = (e.clientX - rect.left - padX) / innerW;
-  const relY = (e.clientY - rect.top - padY) / innerH;
-  if(relX < 0 || relX > 1 || relY < 0 || relY > 1) return;
-  const targetX = relX * MAP_W;
-  const targetY = relY * MAP_H;
-  panToMapPoint(targetX, targetY);
-}
-
-// Pan the viewport so a given map coordinate is centred on screen
-function panToMapPoint(mapX, mapY){
-  const cw = vp.clientWidth, ch = vp.clientHeight;
-  ox = cw / 2 - mapX * scale;
-  oy = ch / 2 - mapY * scale;
-  clamp();
-  applyT();
-  updateMinimapViewport();
-}
-
-// Refresh minimap base when claims change significantly. Throttled.
-let _minimapRefreshTimer = null;
-function scheduleMinimapRefresh(){
-  if(_minimapRefreshTimer) return;
-  _minimapRefreshTimer = setTimeout(()=>{
-    drawMinimapBase();
-    _minimapRefreshTimer = null;
-  }, 1500);
-}
-
-// Hook minimap viewport update into applyT
-const _origApplyT_C = typeof applyT !== 'undefined' ? applyT : null;
-if(_origApplyT_C){
-  applyT = function(){
-    _origApplyT_C();
-    updateMinimapViewport();
-  };
-}
-
-// Initialise minimap after boot
-setTimeout(()=>{
-  if(typeof cBase !== 'undefined') initMinimap();
-}, 200);
-// Re-render minimap base every 30s in case the map changed
-setInterval(()=>{ if(_minimapCtx) drawMinimapBase(); }, 30000);
-
 // ── Jump-to-country (click country in legend) ─────────────────────
 function jumpToCountry(geoIdx){
   const f = featList[geoIdx];
@@ -3823,50 +3795,6 @@ function flashCountryHighlight(geoIdx){
       }
     }, 2000);
   }
-}
-
-// ── Event log (top-right, fading) ─────────────────────────────────
-const EVENT_LOG_MAX = 5;
-const EVENT_LOG_LIFE = 10000; // ms
-let _eventLog = [];
-
-function pushEvent(icon, text, options = {}){
-  const log = document.getElementById('event-log');
-  if(!log) return;
-  const item = document.createElement('div');
-  item.className = 'event-item';
-  item.innerHTML = '<span class="event-icon">' + icon + '</span><span class="event-text">' + text + '</span>';
-  log.insertBefore(item, log.firstChild);
-  _eventLog.unshift({ el: item, born: Date.now() });
-  // Trim if too many
-  while(_eventLog.length > EVENT_LOG_MAX){
-    const old = _eventLog.pop();
-    if(old.el && old.el.parentNode) old.el.parentNode.removeChild(old.el);
-  }
-  // Schedule fade
-  setTimeout(()=>{
-    item.classList.add('fading');
-    setTimeout(()=>{
-      if(item.parentNode) item.parentNode.removeChild(item);
-      _eventLog = _eventLog.filter(e => e.el !== item);
-    }, 600);
-  }, EVENT_LOG_LIFE);
-}
-
-// Hook into existing conquest/bomb events
-const _origShowConquestToast_C = typeof showConquestToast !== 'undefined' ? showConquestToast : null;
-if(_origShowConquestToast_C){
-  showConquestToast = function(geoIdx, fi){
-    _origShowConquestToast_C(geoIdx, fi);
-    const geo = featList[geoIdx], claimer = featList[fi];
-    if(geo && claimer){
-      pushEvent('⚔️', '<b>' + claimer.name + '</b> conquered <b>' + geo.name + '</b>');
-    }
-    if(fi === currentIdx){
-      // (confetti already fires from Group B)
-    }
-    scheduleMinimapRefresh();
-  };
 }
 
 // ── Attack direction arrow ────────────────────────────────────────
