@@ -256,6 +256,56 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 
 
 
+
+/* ── Mini-map ── */
+#minimap-wrap{
+  position:fixed;bottom:10px;left:10px;z-index:50;
+  background:rgba(7,13,26,0.85);border:1px solid #1e293b;border-radius:6px;
+  padding:4px;backdrop-filter:blur(6px);
+  width:200px;height:100px;cursor:pointer;user-select:none;
+  display:flex;flex-direction:column;
+}
+#minimap-canvas{width:100%;height:100%;display:block;image-rendering:pixelated;border-radius:3px;}
+#minimap-viewport{
+  position:absolute;border:1.5px solid #fbbf24;
+  pointer-events:none;
+  box-shadow:0 0 0 1px rgba(0,0,0,0.6),0 0 8px rgba(251,191,36,0.4);
+  border-radius:1px;
+}
+#minimap-wrap:hover #minimap-viewport{border-color:#fcd34d;}
+
+/* ── Event log ── */
+#event-log{
+  position:fixed;top:70px;right:10px;z-index:50;
+  width:280px;display:flex;flex-direction:column;gap:6px;
+  pointer-events:none;
+}
+.event-item{
+  background:rgba(7,13,26,0.85);border:1px solid #1e293b;border-radius:6px;
+  padding:6px 10px;font-size:10px;color:#cbd5e1;
+  backdrop-filter:blur(6px);
+  animation:event-in .3s ease-out;
+  transition:opacity 0.6s, transform 0.6s;
+  display:flex;align-items:center;gap:6px;
+}
+.event-item.fading{opacity:0;transform:translateX(20px);}
+.event-icon{font-size:14px;}
+.event-text{flex:1;}
+@keyframes event-in{from{opacity:0;transform:translateX(20px);}to{opacity:1;transform:translateX(0);}}
+
+/* ── Attack direction arrow ── */
+#attack-arrow{
+  position:fixed;top:50%;left:50%;width:60px;height:60px;
+  transform:translate(-50%,-50%);
+  pointer-events:none;z-index:60;
+  display:none;
+}
+#attack-arrow.active{display:block;animation:attack-pulse 1s infinite;}
+@keyframes attack-pulse{0%,100%{opacity:0.7;}50%{opacity:1;}}
+
+/* ── Legend row hover (jump-to-country) ── */
+.leg-row{cursor:pointer;transition:background .15s;}
+.leg-row:hover{background:rgba(99,102,241,0.12);}
 /* ── Stats modal ── */
 #stats-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;
@@ -466,6 +516,14 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <button id="retry-btn" onclick="location.reload()">Retry</button>
     </div>
     <div id="bomb-flash"></div>
+    <div id="minimap-wrap" onclick="minimapClick(event)" title="Click to jump · Drag the viewport rectangle">
+      <canvas id="minimap-canvas" width="200" height="100"></canvas>
+      <div id="minimap-viewport"></div>
+    </div>
+    <div id="event-log"></div>
+    <svg id="attack-arrow" viewBox="0 0 60 60">
+      <path d="M 30 5 L 50 35 L 35 35 L 35 55 L 25 55 L 25 35 L 10 35 Z" fill="#ef4444" stroke="#fff" stroke-width="2" opacity="0.85"/>
+    </svg>
     <canvas id="c-base"></canvas>
     <canvas id="c-grid" style="pointer-events:none;opacity:0;"></canvas>
     <canvas id="c-waves" style="pointer-events:none"></canvas>
@@ -1952,6 +2010,8 @@ function scheduleLegend(){
       // Blend country colour against land base (#535353) at alpha=215
       // to match exactly how it looks painted on the map canvas
       const row=document.createElement("div");row.className="leg-row";
+      row.onclick=()=>jumpToCountry(+idx);
+      row.title='Click to jump to ' + f.name;
       const _lf=createFlagEl(f.id,1); if(_lf)row.appendChild(_lf);
       const _ld=document.createElement('div'); _ld.className='leg-dot'; _ld.style.cssText='background:'+f.color+';box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4)'; row.appendChild(_ld);
       const _ls=document.createElement('span'); _ls.style.color='#e2e8f0'; _ls.textContent=f.name; row.appendChild(_ls);
@@ -3243,6 +3303,11 @@ function mpHandleMessage(msg) {
       const { geoIdx, countryId } = msg;
       conqueredSet.add(geoIdx + ':' + countryId);
       const fi = featList.findIndex(f => f.id === String(countryId));
+      // Attack detection: if WE were conquered, show direction arrow
+      if(geoIdx === currentIdx && fi >= 0 && fi !== currentIdx){
+        showAttackArrow(fi);
+        pushEvent('🚨', '<b>' + (featList[fi]?.name || '?') + '</b> conquered your country!');
+      }
       if (fi >= 0) {
         showConquestToast(geoIdx, fi);
         placeFlag(geoIdx, fi);
@@ -3613,6 +3678,251 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'stats-overlay') closeStats();
   });
 });
+
+
+// ── Mini-map ──────────────────────────────────────────────────────
+const MINIMAP_W = 200, MINIMAP_H = 100;
+let _minimapCanvas, _minimapCtx, _minimapBaseImage = null;
+let _minimapDirty = false;
+
+function initMinimap(){
+  _minimapCanvas = document.getElementById('minimap-canvas');
+  if(!_minimapCanvas) return;
+  _minimapCtx = _minimapCanvas.getContext('2d');
+  _minimapCtx.imageSmoothingEnabled = false;
+  drawMinimapBase();
+  updateMinimapViewport();
+}
+
+function drawMinimapBase(){
+  if(!_minimapCtx) return;
+  // Draw the base canvas downscaled into minimap
+  _minimapCtx.fillStyle = '#070d1a';
+  _minimapCtx.fillRect(0, 0, MINIMAP_W, MINIMAP_H);
+  // Composite the cBase canvas + cClaim canvas
+  _minimapCtx.drawImage(cBase, 0, 0, MAP_W, MAP_H, 0, 0, MINIMAP_W, MINIMAP_H);
+  if(typeof cClaim !== 'undefined'){
+    _minimapCtx.globalAlpha = 0.85;
+    _minimapCtx.drawImage(cClaim, 0, 0, MAP_W, MAP_H, 0, 0, MINIMAP_W, MINIMAP_H);
+    _minimapCtx.globalAlpha = 1;
+  }
+  _minimapBaseImage = _minimapCtx.getImageData(0, 0, MINIMAP_W, MINIMAP_H);
+}
+
+function updateMinimapViewport(){
+  const vp_el = document.getElementById('minimap-viewport');
+  const wrap = document.getElementById('minimap-wrap');
+  if(!vp_el || !wrap || typeof scale === 'undefined') return;
+  // Calculate visible area of the map in screen coords (vp)
+  const cw = vp.clientWidth, ch = vp.clientHeight;
+  const visX = -ox / scale;
+  const visY = -oy / scale;
+  const visW = cw / scale;
+  const visH = ch / scale;
+  // Map to minimap coordinates (account for padding)
+  const padX = 4, padY = 4;
+  const innerW = MINIMAP_W, innerH = MINIMAP_H;
+  const left = padX + (visX / MAP_W) * innerW;
+  const top  = padY + (visY / MAP_H) * innerH;
+  const w    = Math.max(4, (visW / MAP_W) * innerW);
+  const h    = Math.max(4, (visH / MAP_H) * innerH);
+  vp_el.style.left   = left + 'px';
+  vp_el.style.top    = top + 'px';
+  vp_el.style.width  = w + 'px';
+  vp_el.style.height = h + 'px';
+}
+
+function minimapClick(e){
+  const wrap = e.currentTarget;
+  const rect = wrap.getBoundingClientRect();
+  const padX = 4, padY = 4;
+  const innerW = MINIMAP_W, innerH = MINIMAP_H;
+  const relX = (e.clientX - rect.left - padX) / innerW;
+  const relY = (e.clientY - rect.top - padY) / innerH;
+  if(relX < 0 || relX > 1 || relY < 0 || relY > 1) return;
+  const targetX = relX * MAP_W;
+  const targetY = relY * MAP_H;
+  panToMapPoint(targetX, targetY);
+}
+
+// Pan the viewport so a given map coordinate is centred on screen
+function panToMapPoint(mapX, mapY){
+  const cw = vp.clientWidth, ch = vp.clientHeight;
+  ox = cw / 2 - mapX * scale;
+  oy = ch / 2 - mapY * scale;
+  clamp();
+  applyT();
+  updateMinimapViewport();
+}
+
+// Refresh minimap base when claims change significantly. Throttled.
+let _minimapRefreshTimer = null;
+function scheduleMinimapRefresh(){
+  if(_minimapRefreshTimer) return;
+  _minimapRefreshTimer = setTimeout(()=>{
+    drawMinimapBase();
+    _minimapRefreshTimer = null;
+  }, 1500);
+}
+
+// Hook minimap viewport update into applyT
+const _origApplyT_C = typeof applyT !== 'undefined' ? applyT : null;
+if(_origApplyT_C){
+  applyT = function(){
+    _origApplyT_C();
+    updateMinimapViewport();
+  };
+}
+
+// Initialise minimap after boot
+setTimeout(()=>{
+  if(typeof cBase !== 'undefined') initMinimap();
+}, 200);
+// Re-render minimap base every 30s in case the map changed
+setInterval(()=>{ if(_minimapCtx) drawMinimapBase(); }, 30000);
+
+// ── Jump-to-country (click country in legend) ─────────────────────
+function jumpToCountry(geoIdx){
+  const f = featList[geoIdx];
+  if(!f || !f.geometry) return;
+  // Find centroid by averaging pixel positions in featByPixel
+  let sumX = 0, sumY = 0, count = 0;
+  // Sample every Nth pixel for speed
+  const STEP = 8;
+  for(let i = 0; i < MAP_PX; i += STEP){
+    if(featByPixel[i] === geoIdx){
+      sumX += i % MAP_W;
+      sumY += Math.floor(i / MAP_W);
+      count++;
+    }
+  }
+  if(count === 0) return;
+  const cx = sumX / count, cy = sumY / count;
+  // Zoom in to show the country well (scale 3-6 depending on country size)
+  const targetScale = Math.min(8, Math.max(3, 400 / Math.sqrt(count)));
+  scale = targetScale;
+  panToMapPoint(cx, cy);
+  // Flash highlight
+  flashCountryHighlight(geoIdx);
+}
+
+function flashCountryHighlight(geoIdx){
+  // Brief pulsing border on the country
+  const el = document.getElementById('jumphighlight');
+  // Simple approach: temporarily change the highlighted geo
+  if(typeof highlightedIdx !== 'undefined'){
+    const prev = highlightedIdx;
+    const prevUntil = (typeof highlightUntil !== 'undefined') ? highlightUntil : 0;
+    highlightedIdx = geoIdx;
+    highlightUntil = Date.now() + 2000;
+    // Restore previous after pulse if it was someone else's
+    setTimeout(()=>{
+      if(highlightedIdx === geoIdx && Date.now() >= highlightUntil - 100){
+        highlightedIdx = prev;
+        highlightUntil = prevUntil;
+      }
+    }, 2000);
+  }
+}
+
+// ── Event log (top-right, fading) ─────────────────────────────────
+const EVENT_LOG_MAX = 5;
+const EVENT_LOG_LIFE = 10000; // ms
+let _eventLog = [];
+
+function pushEvent(icon, text, options = {}){
+  const log = document.getElementById('event-log');
+  if(!log) return;
+  const item = document.createElement('div');
+  item.className = 'event-item';
+  item.innerHTML = '<span class="event-icon">' + icon + '</span><span class="event-text">' + text + '</span>';
+  log.insertBefore(item, log.firstChild);
+  _eventLog.unshift({ el: item, born: Date.now() });
+  // Trim if too many
+  while(_eventLog.length > EVENT_LOG_MAX){
+    const old = _eventLog.pop();
+    if(old.el && old.el.parentNode) old.el.parentNode.removeChild(old.el);
+  }
+  // Schedule fade
+  setTimeout(()=>{
+    item.classList.add('fading');
+    setTimeout(()=>{
+      if(item.parentNode) item.parentNode.removeChild(item);
+      _eventLog = _eventLog.filter(e => e.el !== item);
+    }, 600);
+  }, EVENT_LOG_LIFE);
+}
+
+// Hook into existing conquest/bomb events
+const _origShowConquestToast_C = typeof showConquestToast !== 'undefined' ? showConquestToast : null;
+if(_origShowConquestToast_C){
+  showConquestToast = function(geoIdx, fi){
+    _origShowConquestToast_C(geoIdx, fi);
+    const geo = featList[geoIdx], claimer = featList[fi];
+    if(geo && claimer){
+      pushEvent('⚔️', '<b>' + claimer.name + '</b> conquered <b>' + geo.name + '</b>');
+    }
+    if(fi === currentIdx){
+      // (confetti already fires from Group B)
+    }
+    scheduleMinimapRefresh();
+  };
+}
+
+// ── Attack direction arrow ────────────────────────────────────────
+// When YOUR country is being attacked, show an arrow pointing toward
+// the attacker's territory (in screen space).
+let _lastAttackInfo = null;
+let _attackArrowTimer = null;
+
+function showAttackArrow(attackerGeoIdx){
+  if(attackerGeoIdx === currentIdx) return; // attacker is us
+  // Get attacker country centroid
+  let sumX = 0, sumY = 0, count = 0;
+  for(let i = 0; i < MAP_PX; i += 16){
+    if(featByPixel[i] === attackerGeoIdx){
+      sumX += i % MAP_W;
+      sumY += Math.floor(i / MAP_W);
+      count++;
+    }
+  }
+  if(count === 0) return;
+  const targetX = sumX / count, targetY = sumY / count;
+  // Convert to screen space
+  const sx = targetX * scale + ox;
+  const sy = targetY * scale + oy;
+  // Screen centre
+  const cw = vp.clientWidth, ch = vp.clientHeight;
+  const cxs = cw / 2, cys = ch / 2;
+  // Angle from screen centre to attacker
+  const dx = sx - cxs, dy = sy - cys;
+  const angle = Math.atan2(dy, dx);
+  // Position arrow on edge of screen pointing toward attacker
+  const r = Math.min(cw, ch) * 0.35;
+  const ax = cxs + Math.cos(angle) * r;
+  const ay = cys + Math.sin(angle) * r;
+  const arrow = document.getElementById('attack-arrow');
+  if(!arrow) return;
+  // Rotate arrow so up-arrow points outward
+  const rotDeg = (angle * 180 / Math.PI) + 90;
+  arrow.style.left = ax + 'px';
+  arrow.style.top  = ay + 'px';
+  arrow.style.transform = 'translate(-50%,-50%) rotate(' + rotDeg + 'deg)';
+  arrow.classList.add('active');
+  // Auto-hide after 3s
+  if(_attackArrowTimer) clearTimeout(_attackArrowTimer);
+  _attackArrowTimer = setTimeout(()=>{ arrow.classList.remove('active'); }, 3000);
+}
+
+// Detect attacks via the reversal message handler.
+// Original code: msg.type === 'reversal' means a country lost ownership.
+// If the country lost is YOURS, the attacker can be inferred from the conquest event
+// that fires just before. Simpler: listen to mp messages and track recent paints in our country.
+// Hook the conquest handler to detect attacks on us
+const _origConquestHandler = (function(){
+  // Intercept the message handler
+  return null;
+})();
 
 // ── Loading screen tips ───────────────────────────────────────────
 const LOADING_TIPS = [
