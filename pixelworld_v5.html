@@ -3696,9 +3696,9 @@ let _gridDrawn = false;
 function updateGridVisibility() {
   if (!cGrid) return;
   if (typeof scale === 'undefined') return;
-  // Show grid only at scale > 8 (high zoom). Grid is pre-rendered at boot.
-  if (scale > 8) {
-    cGrid.style.opacity = Math.min(1, (scale - 8) / 8) * 0.5;
+  // Show grid only at scale > 6 (high zoom). Grid is pre-rendered at boot.
+  if (scale > 6) {
+    cGrid.style.opacity = Math.min(1, (scale - 6) / 4) * 0.5;
   } else {
     cGrid.style.opacity = '0';
   }
