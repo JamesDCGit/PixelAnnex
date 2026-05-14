@@ -3679,13 +3679,15 @@ setInterval(() => {
 // Drawn once at MAP_W×MAP_H resolution. CSS opacity controls visibility based on scale.
 function drawGrid() {
   if (!cGrid || !gridCtx) return;
-  // Use ImageData for ~50x speed vs 131k fillRect calls
+  // Use ImageData for ~50x speed vs millions of fillRect calls
   const img = gridCtx.createImageData(MAP_W, MAP_H);
   const d = img.data;
-  for (let y = 0; y < MAP_H; y += 8) {
-    for (let x = 0; x < MAP_W; x += 8) {
+  // Dot every 2 pixels in a checkerboard pattern (alternating)
+  for (let y = 0; y < MAP_H; y += 2) {
+    const offset = (y / 2) % 2; // alternate offset per row for checkerboard
+    for (let x = offset; x < MAP_W; x += 2) {
       const p = (y * MAP_W + x) * 4;
-      d[p] = 255; d[p+1] = 255; d[p+2] = 255; d[p+3] = 60;
+      d[p] = 255; d[p+1] = 255; d[p+2] = 255; d[p+3] = 128; // alpha 128/255 ≈ 0.5
     }
   }
   gridCtx.putImageData(img, 0, 0);
@@ -3696,7 +3698,7 @@ function updateGridVisibility() {
   if (typeof scale === 'undefined') return;
   // Show grid only at scale > 8 (high zoom). Grid is pre-rendered at boot.
   if (scale > 8) {
-    cGrid.style.opacity = Math.min(1, (scale - 8) / 8) * 0.4;
+    cGrid.style.opacity = Math.min(1, (scale - 8) / 8) * 0.5;
   } else {
     cGrid.style.opacity = '0';
   }
