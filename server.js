@@ -138,6 +138,9 @@ function getProfile(discordId) {
       topCountries:      {},   // countryId → pixel count painted there
       lastSeen:          Date.now(),
       joinedAt:          Date.now(),
+      // Daily login tracking
+      lastLoginDay:      null,  // YYYY-MM-DD string of last login
+      streakDays:        0,     // consecutive days logged in
     });
   }
   const p = profiles.get(discordId);
@@ -148,7 +151,57 @@ function getProfile(discordId) {
   if (typeof p.countriesLost  !== 'number') p.countriesLost  = 0;
   if (typeof p.bombsDeployed  !== 'number') p.bombsDeployed  = 0;
   if (!p.topCountries) p.topCountries = {};
+  if (typeof p.streakDays !== 'number') p.streakDays = 0;
+  if (typeof p.lastLoginDay === 'undefined') p.lastLoginDay = null;
   return p;
+}
+
+// ── Daily login bonus ─────────────────────────────────────────────
+// On first visit each calendar day, grant pixels. Weekly streak gives more.
+const DAILY_BASE_BONUS = 50;     // baseline pixel grant
+const WEEKLY_STREAK_BONUS = 100; // every 7th consecutive day (50 + 100 = 150)
+
+function todayString() {
+  const d = new Date();
+  return d.getUTCFullYear() + '-' +
+    String(d.getUTCMonth()+1).padStart(2,'0') + '-' +
+    String(d.getUTCDate()).padStart(2,'0');
+}
+
+function processDailyLogin(discordId) {
+  const profile = getProfile(discordId);
+  const today = todayString();
+  if (profile.lastLoginDay === today) {
+    return { granted: 0, streakDays: profile.streakDays, alreadyClaimed: true };
+  }
+
+  // Determine streak: was yesterday the last login?
+  let yesterday = new Date();
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const yStr = yesterday.getUTCFullYear() + '-' +
+    String(yesterday.getUTCMonth()+1).padStart(2,'0') + '-' +
+    String(yesterday.getUTCDate()).padStart(2,'0');
+
+  if (profile.lastLoginDay === yStr) {
+    profile.streakDays = (profile.streakDays || 0) + 1;
+  } else {
+    profile.streakDays = 1; // reset
+  }
+  profile.lastLoginDay = today;
+
+  let granted = DAILY_BASE_BONUS;
+  let streakBonus = 0;
+  if (profile.streakDays > 0 && profile.streakDays % 7 === 0) {
+    streakBonus = WEEKLY_STREAK_BONUS;
+    granted += streakBonus;
+  }
+  markProfilesDirty();
+  return {
+    granted,
+    streakBonus,
+    streakDays: profile.streakDays,
+    alreadyClaimed: false,
+  };
 }
 
 
@@ -352,6 +405,10 @@ const landMask     = new Uint8Array(MAP_PX).fill(0);
 const geoClaimCnt  = {};   // geoIdx → { countryId → count }
 const geoTotal     = {};   // geoIdx → total land pixels
 const conqueredSet = new Set();
+// Countries that have been conquered by real players — their resident bots stop reclaiming.
+// Cleared when the country's territory drops below 30% enemy occupation (player let it slip).
+const humanClaimedCountries = new Set();
+const HUMAN_CLAIM_RELEASE_THRESHOLD = 0.30; // bot starts reclaiming again if <30% enemy held
 const countryPxCount = {}; // countryId → pixel count
 const countryNames   = {}; // countryId → display name (populated from client bootstrap)
 const indexToId      = {}; // featList index → real country ID (geoAtPixel stores indices)
@@ -493,6 +550,16 @@ function applyPixels(pixels, countryId) {
       if (cId !== countryId && conqueredSet.has(rk) && (cnt || 0) / total < CONQUEST_THRESHOLD) {
         conqueredSet.delete(rk);
         reversals.push({ geoIdx: geo, countryId: cId });
+      }
+    }
+    // Persistence: release the human-claim if the country's enemy occupation drops below threshold
+    if (humanClaimedCountries.has(String(geo))) {
+      const ownEnemyCnt = Object.entries(geoClaimCnt[geo] || {})
+        .filter(([cid]) => cid !== String(geo))
+        .reduce((s, [, c]) => s + c, 0);
+      if (ownEnemyCnt / total < HUMAN_CLAIM_RELEASE_THRESHOLD) {
+        humanClaimedCountries.delete(String(geo));
+        console.log(`[Persistence] ${geo} released — bot resuming defence`);
       }
     }
     checkSiegeState(geo);
@@ -638,6 +705,9 @@ function startTickerFor(countryId) {
 
 function botTickSingle(countryId) {
   if (!mapReady) return;
+  // Persistence: if this country was conquered by a human, the resident bot dies down
+  // until the country recovers (the human-claim is released elsewhere when occupation drops)
+  if (humanClaimedCountries.has(countryId)) return;
   const bot = bots.get(countryId);
   if (!bot || bot.bucket < BOT_PIXELS_PER_TICK) return;
 
@@ -781,6 +851,23 @@ const httpServer = http.createServer(async (req, res) => {
       mapReady,
       uptime:   process.uptime(),
     }));
+    return;
+  }
+
+  // ── /api/daily-login — grant daily bonus if not yet claimed today ──
+  if (url.pathname === '/api/daily-login') {
+    const cookie = req.headers.cookie || '';
+    const m = cookie.match(/pa_session=([a-f0-9]+)/);
+    const token = m ? m[1] : null;
+    const session = token ? getSession(token) : null;
+    if (!session) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ loggedIn: false }));
+      return;
+    }
+    const result = processDailyLogin(session.discordId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ loggedIn: true, ...result }));
     return;
   }
 

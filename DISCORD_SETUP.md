@@ -670,3 +670,58 @@ No bot restart needed. Hard-refresh browser (Ctrl+Shift+R) to see all changes.
 - **Flag scaling** — zoom in to max, flags fade out before pixels become unreadable
 - **Confetti** — conquer a country yourself, see the burst from screen centre
 
+
+---
+
+# QoL Group D Phase 1: Game balance basics
+
+Adds tutorial overlay, daily login bonuses, conquest persistence, and an enhanced fight-back with UI indicator.
+
+## What's new
+
+### Tutorial overlay (first-visit only)
+3-step walkthrough shown to new visitors:
+1. Controls & basics (pan/zoom/paint)
+2. Conquest mechanics & fight-back
+3. Discord sign-in prompt with `Sign in with Discord` button
+
+Tracked via `localStorage.pa_tutorial_seen`. Once dismissed, never shown again.
+
+### Daily login bonus
+- First Discord login each calendar day grants **+50 pixels** into your bucket
+- Every 7 consecutive days (streak), additional **+100 bonus**
+- Streak resets if you miss a day
+- Visible pop-up toast when bonus is granted
+- Server tracks `lastLoginDay` and `streakDays` per profile
+
+### Conquest persistence
+When a real player conquers a country, that country's resident **bot stops attacking back** until the country recovers. The country stays human-claimed until enemy occupation drops below 30%, at which point the bot resumes defence. This stops the frustrating loop of bots immediately reclaiming what you just took.
+
+### Enhanced fight-back with UI indicator
+- **Banner** appears top-centre when your country is >70% lost: pulsing red ribbon with current loss % and active brush size
+- **Scaling explosive brush** in fight-back mode:
+  - 70-79% lost → standard 1×1 paint per click
+  - 80-89% lost → **3×3 brush** automatically applied
+  - 90%+ lost → **5×5 brush** automatically applied
+- The +4 bucket bonus per stroke still applies on top of the bigger paint area
+
+## Deploy
+
+```bash
+git add server.js pixelworld_v5.html DISCORD_SETUP.md
+git commit -m "QoL Group D phase 1: daily bonus, tutorial, persistence, fight-back UI"
+git push
+
+cd /var/www/PixelAnnex
+git checkout server.js
+git pull
+pm2 restart pixelannex
+```
+
+## Testing
+
+- **Tutorial:** open the site in an incognito window → tutorial appears within 1.2s
+- **Daily bonus:** sign in fresh → +50 px banner appears, bucket grows. Reload — no second grant the same day.
+- **Persistence:** conquer a country → its bot stops painting back. Watch logs: `[Persistence] X conquered Y — marked human-claimed`
+- **Fight-back banner:** let your country drop to <30% owned → red banner appears, paint shows expanded brush
+

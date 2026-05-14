@@ -513,6 +513,20 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <button id="retry-btn" onclick="location.reload()">Retry</button>
     </div>
     <div id="bomb-flash"></div>
+    <div id="tutorial-overlay">
+      <div id="tutorial-box">
+        <div class="tut-dots">
+          <div class="tut-dot active" data-step="1"></div>
+          <div class="tut-dot" data-step="2"></div>
+          <div class="tut-dot" data-step="3"></div>
+        </div>
+        <div id="tutorial-content"></div>
+      </div>
+    </div>
+    <div id="daily-bonus-toast"></div>
+    <div id="fightback-banner">
+      <span class="fb-icon">⚔️</span><span id="fb-text">FIGHT-BACK MODE</span><span class="fb-power" id="fb-power">+4 px/stroke</span>
+    </div>
     <svg id="attack-arrow" viewBox="0 0 60 60">
       <path d="M 30 5 L 50 35 L 35 35 L 35 55 L 25 55 L 25 35 L 10 35 Z" fill="#ef4444" stroke="#fff" stroke-width="2" opacity="0.85"/>
     </svg>
@@ -1955,6 +1969,15 @@ function paintBrush(px,py){
     if(brushSize>3&&dx*dx+dy*dy>rsq)continue;
     claimPixel(px+dx,py+dy);
   }
+  // ── Explosive brush expansion (fight-back mode) ────────────────
+  // When painting in your own country and you're heavily lost, brush footprint grows.
+  // This is added pixels for FREE (no extra bucket cost) — it's the bonus power-up.
+  const explosivePixels = getExplosiveBrushPixels(px, py, half);
+  if (explosivePixels) {
+    for (const p of explosivePixels) {
+      claimPixel(p.x, p.y);
+    }
+  }
   // ── Highlight bonus (adds to bucket) ───────────────────────────
   const hlBonus = strokeBonus();
   if(hlBonus > 0){
@@ -2316,6 +2339,203 @@ function recordPixelLoss(geoIdx, painterIdx){
 }
 
 let _activityTimer = null;
+
+// ── Tutorial overlay ──────────────────────────────────────────────
+const TUTORIAL_STEPS = [
+  {
+    title: 'Welcome to PixelAnnex',
+    sub:   'A multiplayer pixel territory game',
+    body:  'Conquer countries by painting their pixels.<br><br>' +
+           '<b>Drag</b> to pan · <b>Scroll</b> to zoom · <b>Click</b> to paint<br><br>' +
+           'You\'ll start with <b>10 pixels</b> in your bucket and regenerate <code>1 pixel every 60 seconds</code>.',
+  },
+  {
+    title: 'Win by conquering',
+    sub:   'Strategy & combat',
+    body:  'Take <b>80%</b> of a country\'s pixels to conquer it.<br><br>' +
+           'When your own country is <b>>70% lost</b>, <b>fight-back mode</b> activates — every pixel you paint earns +4 bonus!<br><br>' +
+           'Reach <b>Captain</b> rank to unlock <b>bombs</b> (💥 button). Larger bombs unlock at higher ranks.',
+  },
+  {
+    title: 'Sign in with Discord',
+    sub:   'Save progress & join the leaderboard',
+    body:  'Link your Discord to:<br><br>' +
+           '• Save your <b>rank, points, and stats</b> across sessions<br>' +
+           '• Form <b>alliances</b> by sharing country preferences<br>' +
+           '• Earn <b>daily login bonuses</b> (+50 px/day, +100 bonus every 7 days)<br>' +
+           '• See your stats with the 📊 button or Discord <code>/me</code>',
+  },
+];
+let _tutStep = 0;
+
+function showTutorial() {
+  _tutStep = 0;
+  renderTutStep();
+  document.getElementById('tutorial-overlay').classList.add('open');
+}
+function closeTutorial() {
+  document.getElementById('tutorial-overlay').classList.remove('open');
+  localStorage.setItem('pa_tutorial_seen', '1');
+}
+function renderTutStep() {
+  const step = TUTORIAL_STEPS[_tutStep];
+  if (!step) return closeTutorial();
+  document.querySelectorAll('.tut-dot').forEach((d, i) => {
+    d.classList.toggle('active', i === _tutStep);
+  });
+  const el = document.getElementById('tutorial-content');
+  const isLast = _tutStep === TUTORIAL_STEPS.length - 1;
+  const nextLabel = isLast ? 'Start Playing →' : 'Next →';
+  const discordBtn = isLast
+    ? '<button class="tut-btn discord" onclick="window.location.href=\'/auth/login\'">Sign in with Discord</button>'
+    : '';
+  el.innerHTML =
+    '<h1>' + step.title + '</h1>' +
+    '<div class="step-sub">' + step.sub + '</div>' +
+    '<div class="step-body">' + step.body + '</div>' +
+    '<div class="btn-row">' +
+      (_tutStep > 0 ? '<button class="tut-btn" onclick="prevTutStep()">← Back</button>' : '') +
+      discordBtn +
+      '<button class="tut-btn primary" onclick="nextTutStep()">' + nextLabel + '</button>' +
+      '<button class="tut-btn" onclick="closeTutorial()" style="margin-left:auto;color:#475569;">Skip</button>' +
+    '</div>';
+}
+function nextTutStep() {
+  if (_tutStep < TUTORIAL_STEPS.length - 1) {
+    _tutStep++;
+    renderTutStep();
+  } else {
+    closeTutorial();
+  }
+}
+function prevTutStep() {
+  if (_tutStep > 0) {
+    _tutStep--;
+    renderTutStep();
+  }
+}
+// Show tutorial on first visit (no localStorage flag)
+setTimeout(() => {
+  if (!localStorage.getItem('pa_tutorial_seen')) {
+    showTutorial();
+  }
+}, 1200);
+
+// ── Daily login bonus ─────────────────────────────────────────────
+async function checkDailyBonus() {
+  try {
+    const res = await fetch('/api/daily-login', { credentials: 'include' });
+    const data = await res.json();
+    if (!data.loggedIn || data.alreadyClaimed) return;
+    if (data.granted > 0) {
+      // Grant pixels to bucket
+      pixelBucket = Math.min(BUCKET_MAX * 5, pixelBucket + data.granted); // allow temporary overflow
+      updateBucketHUD();
+      // Show toast
+      showDailyBonusToast(data);
+    }
+  } catch (e) { /* silent */ }
+}
+
+function showDailyBonusToast(data) {
+  const toast = document.getElementById('daily-bonus-toast');
+  if (!toast) return;
+  let html =
+    '<div class="dbt-title">🌅 DAILY LOGIN</div>' +
+    '<div class="dbt-amount">+' + data.granted + ' pixels</div>' +
+    '<div class="dbt-streak">Day ' + data.streakDays + ' streak</div>';
+  if (data.streakBonus > 0) {
+    html += '<div class="dbt-bonus">+' + data.streakBonus + ' WEEK STREAK BONUS</div>';
+  }
+  toast.innerHTML = html;
+  toast.classList.add('open');
+  setTimeout(() => toast.classList.remove('open'), 4000);
+}
+
+// Fire daily bonus check after auth is initialised
+const _origInitAuth = typeof initAuth !== 'undefined' ? initAuth : null;
+if (_origInitAuth) {
+  initAuth = async function() {
+    await _origInitAuth.apply(this, arguments);
+    setTimeout(checkDailyBonus, 1500);
+  };
+}
+
+// ── Fight-back banner — shows when active ─────────────────────────
+function updateFightBackBanner() {
+  const banner = document.getElementById('fightback-banner');
+  if (!banner) return;
+  if (currentIdx < 0) { banner.classList.remove('active'); return; }
+  const total = geoTotal[currentIdx] || 0;
+  if (!total) { banner.classList.remove('active'); return; }
+  // Count enemy pixels in our country
+  let enemyPixels = 0;
+  for (const [cid, cnt] of Object.entries(geoClaimCnt[currentIdx] || {})) {
+    if (+cid !== currentIdx) enemyPixels += cnt;
+  }
+  const frac = enemyPixels / total;
+  if (frac >= FIGHTBACK_THRESHOLD) {
+    banner.classList.add('active');
+    // Scaling explosive brush info: heavier loss → bigger paint
+    const pct = Math.round(frac * 100);
+    const fbText = document.getElementById('fb-text');
+    const fbPower = document.getElementById('fb-power');
+    if (fbText)  fbText.textContent  = 'FIGHT-BACK · ' + pct + '% lost';
+    if (fbPower) {
+      // Show effective bonus: base +4 + explosive multiplier hint
+      const explosiveLevel = getExplosiveLevel(frac);
+      const txt = explosiveLevel === 1 ? '+4 px/stroke · 1×1 brush' :
+                  explosiveLevel === 2 ? '+4 px/stroke · 3×3 brush' :
+                                         '+4 px/stroke · 5×5 brush';
+      fbPower.textContent = txt;
+    }
+  } else {
+    banner.classList.remove('active');
+  }
+}
+
+// Run banner check every 2s
+setInterval(updateFightBackBanner, 2000);
+
+// ── Explosive brush scaling ──────────────────────────────────────
+// When in fight-back mode, painting in YOUR country lays down a bigger pixel cluster.
+// Heavier loss → bigger explosion area.
+function getExplosiveLevel(enemyFrac) {
+  if (enemyFrac >= 0.90) return 3; // 5×5 — desperately overrun
+  if (enemyFrac >= 0.80) return 2; // 3×3 — heavily lost
+  if (enemyFrac >= FIGHTBACK_THRESHOLD) return 1; // 1×1 normal
+  return 0;
+}
+
+// Hook into the existing paint logic — wrap the brush so it expands in fight-back mode
+// Find the function that adds a pixel from a brush — we'll add an expansion helper.
+function getExplosiveBrushPixels(cx, cy, baseRadius) {
+  // Returns array of {x,y} pixels for the brush. If in fight-back mode & painting own country,
+  // expand the brush footprint.
+  const fi = cy * MAP_W + cx;
+  const geo = featByPixel[fi];
+  if (geo !== currentIdx) return null; // only expand when painting our own land
+  const total = geoTotal[currentIdx] || 0;
+  if (!total) return null;
+  let enemyPixels = 0;
+  for (const [cid, cnt] of Object.entries(geoClaimCnt[currentIdx] || {})) {
+    if (+cid !== currentIdx) enemyPixels += cnt;
+  }
+  const frac = enemyPixels / total;
+  const level = getExplosiveLevel(frac);
+  if (level === 0) return null;
+  const r = level === 1 ? 0 : (level === 2 ? 1 : 2);
+  const pixels = [];
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+      pixels.push({ x: nx, y: ny });
+    }
+  }
+  return pixels;
+}
+
 // ── Activity card stack ──────────────────────────────────────────
 // Replaces the old single-card activity-toast with a stack of up to 5
 // cards, each lasting 10s. New cards push onto top; oldest get popped.
