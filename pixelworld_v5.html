@@ -4076,16 +4076,11 @@ function mpHandleMessage(msg) {
           // Find featList index for country id o
           const fi = featList.findIndex(f => f.id === String(o));
           if (fi < 0) continue;
-          const [r,g,b] = hexRgb(featList[fi].color);
-          const imgData = claimCtx.createImageData(1,1);
-          imgData.data[0]=r; imgData.data[1]=g; imgData.data[2]=b; imgData.data[3]=215;
           for (let i = s; i < s + l; i++) {
-            const x = i % MAP_W, y = (i / MAP_W) | 0;
             claimByPixel[i] = fi;
-            claimCtx.putImageData(imgData, x, y);
           }
         }
-        // Batch redraw via full image rebuild for performance
+        // Single full-canvas paint — handles native-vs-conquered alpha correctly
         mpRebuildClaimCanvas();
       }
       if (msg.state?.conquered) {
@@ -4119,7 +4114,10 @@ function mpHandleMessage(msg) {
         const [r,g,b] = hexRgb(featList[+fi].color);
         for (const { x, y } of pixels) {
           const id = claimCtx.createImageData(1,1);
-          id.data[0]=r; id.data[1]=g; id.data[2]=b; id.data[3]=215;
+          const idx = y * MAP_W + x;
+          // Native pixel (owner == feat) → faint (26); otherwise full strength (215)
+          const a = (featByPixel && featByPixel[idx] === +fi) ? 26 : 215;
+          id.data[0]=r; id.data[1]=g; id.data[2]=b; id.data[3]=a;
           claimCtx.putImageData(id, x, y);
         }
       }
@@ -4203,7 +4201,10 @@ function mpRebuildClaimCanvas() {
     if (fi < 0 || !featList[fi]) continue;
     const [r,g,b] = hexRgb(featList[fi].color);
     const p = i*4;
-    d[p]=r; d[p+1]=g; d[p+2]=b; d[p+3]=215;
+    d[p]=r; d[p+1]=g; d[p+2]=b;
+    // Native pixel (still owned by its country) → faint fill (26).
+    // Conquered/repainted pixel (owner differs from native) → full strength (215).
+    d[p+3] = (featByPixel && featByPixel[i] === fi) ? 26 : 215;
   }
   claimCtx.putImageData(img, 0, 0);
 }
