@@ -1806,7 +1806,10 @@ async function boot(){
     bctx.beginPath();
     drawGeometry(bctx,f.geometry);
     bctx.fill("evenodd");
-    if(i%40===0){prog(25+Math.floor(i/featList.length*27),"Rendering countries… "+(i+1)+"/"+featList.length);}
+    if(i%40===0){
+      prog(25+Math.floor(i/featList.length*27),"Rendering countries… "+(i+1)+"/"+featList.length);
+      await sleep(0); // yield to main thread → tutorial clicks register
+    }
   }
   console.log("Base map rendered");
 
@@ -1831,7 +1834,10 @@ async function boot(){
     mctx.beginPath();
     drawGeometry(mctx,f.geometry);
     mctx.fill("evenodd");
-    if(i%40===0){prog(54+Math.floor(i/featList.length*18),"Building mask… "+(i+1)+"/"+featList.length);}
+    if(i%40===0){
+      prog(54+Math.floor(i/featList.length*18),"Building mask… "+(i+1)+"/"+featList.length);
+      await sleep(0); // yield
+    }
   }
   console.log("Mask rendered");
 
@@ -1842,7 +1848,7 @@ async function boot(){
   claimByPixel=new Int16Array(MAP_PX).fill(-1);
   landMask    =new Uint8Array(MAP_PX);
 
-  const CHUNK=524288;
+  const CHUNK=131072; // smaller chunks → more frequent yields → tutorial stays responsive
   for(let s=0;s<MAP_PX;s+=CHUNK){
     const end=Math.min(s+CHUNK,MAP_PX);
     for(let i=s;i<end;i++){
@@ -2097,20 +2103,31 @@ async function boot(){
   // ── Prepopulate every land pixel with its native country ──────
   prog(100,'Prepopulating countries…'); await sleep(10);
   {
-    // Build a full-map ImageData for the claim canvas
+    // Build a full-map ImageData for the claim canvas — chunked so the tutorial popup stays responsive
     const prepopImg = claimCtx.createImageData(MAP_W, MAP_H);
     const pd = prepopImg.data;
-    for(let i=0;i<MAP_PX;i++){
-      const geo = featByPixel[i];
-      if(!landMask[i] || geo<0 || !featList[geo]) continue;
-      const [r,g,b] = hexRgb(featList[geo].color);
-      const p=i*4; pd[p]=r;pd[p+1]=g;pd[p+2]=b;pd[p+3]=215;
-      // Update tracking
-      claimByPixel[i]=geo;
-      claimerCount[geo]=(claimerCount[geo]||0)+1;
-      if(!geoClaimCnt[geo])geoClaimCnt[geo]={};
-      geoClaimCnt[geo][geo]=(geoClaimCnt[geo][geo]||0)+1;
-      totalClaimed++;
+    // Pre-compute RGB triples per featList index for speed
+    const _rgbCache = new Array(featList.length);
+    for(let k=0;k<featList.length;k++){
+      if(featList[k]&&featList[k].color){_rgbCache[k]=hexRgb(featList[k].color);}
+    }
+    const PREPOP_CHUNK = 200000; // ~10ms per chunk
+    for(let s=0;s<MAP_PX;s+=PREPOP_CHUNK){
+      const end=Math.min(s+PREPOP_CHUNK,MAP_PX);
+      for(let i=s;i<end;i++){
+        const geo = featByPixel[i];
+        if(!landMask[i] || geo<0) continue;
+        const rgb = _rgbCache[geo]; if(!rgb) continue;
+        const p=i*4; pd[p]=rgb[0];pd[p+1]=rgb[1];pd[p+2]=rgb[2];pd[p+3]=215;
+        claimByPixel[i]=geo;
+        claimerCount[geo]=(claimerCount[geo]||0)+1;
+        if(!geoClaimCnt[geo])geoClaimCnt[geo]={};
+        geoClaimCnt[geo][geo]=(geoClaimCnt[geo][geo]||0)+1;
+        totalClaimed++;
+      }
+      // Yield to browser so input can be processed (tutorial clicks etc.)
+      prog(100,'Prepopulating countries… '+Math.floor(s/MAP_PX*100)+'%');
+      await sleep(1);
     }
     claimCtx.putImageData(prepopImg,0,0);
     totalLandPx = Object.values(geoTotal).reduce((a,b)=>a+b,0);
