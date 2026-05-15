@@ -4109,6 +4109,26 @@ function mpHandleMessage(msg) {
       }
       if (msg.state?.conquered) {
         for (const key of msg.state.conquered) conqueredSet.add(key);
+        // Replay flood-fills for every conquered country so the canvas reflects
+        // the persistent state (server only stores individual paints + conquered set;
+        // the visual flood is a client-side derivative).
+        // Schedule via setTimeout so it doesn't block this message handler.
+        setTimeout(() => {
+          for (const key of conqueredSet) {
+            const parts = String(key).split(':');
+            if (parts.length !== 2) continue;
+            const geoIdx = parseInt(parts[0], 10);
+            const claimerId = parts[1];
+            const claimerFi = featList.findIndex(f => f.id === String(claimerId));
+            if (geoIdx >= 0 && claimerFi >= 0) {
+              finisherFill(geoIdx, claimerFi);
+              // Also restore the flag — placeFlag is cheap
+              if (typeof placeFlag === 'function') placeFlag(geoIdx, claimerFi);
+            }
+          }
+          markOutlineDirty();
+          scheduleLegend();
+        }, 100);
       }
       scheduleLegend();
       break;
