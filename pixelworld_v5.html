@@ -283,8 +283,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 
 /* ── Fight-back indicator banner (persistent under sign-in HUD) ── */
 #fightback-banner{
-  position:fixed;top:120px;left:50%;
-  transform:translateX(-50%) scale(1);
+  position:fixed;top:64px;left:50%;
+  transform:translateX(-50%);
   background:linear-gradient(90deg,#dc2626,#ef4444,#dc2626);
   color:#fff;font-family:'Courier New',monospace;
   padding:12px 28px;border-radius:8px;
@@ -306,12 +306,10 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 }
 @keyframes fb-pulse{
   0%,100%{
-    box-shadow:0 4px 24px rgba(239,68,68,0.6), 0 0 0 1px rgba(255,255,255,0.18) inset;
-    transform:translateX(-50%) scale(1);
+    box-shadow:0 4px 24px rgba(239,68,68,0.5), 0 0 0 1px rgba(255,255,255,0.18) inset;
   }
   50%{
     box-shadow:0 6px 32px rgba(239,68,68,0.9), 0 0 0 2px rgba(255,255,255,0.3) inset;
-    transform:translateX(-50%) scale(1.03);
   }
 }
 
