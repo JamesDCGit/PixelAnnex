@@ -31,8 +31,8 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const MAP_W              = 4096;
-const MAP_H              = 2048;
+const MAP_W              = 2048;
+const MAP_H              = 1024;
 const MAP_PX             = MAP_W * MAP_H;
 const CONQUEST_THRESHOLD = 0.80;
 const MAX_STROKE_PX      = 500;

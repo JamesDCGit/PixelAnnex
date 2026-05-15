@@ -977,7 +977,7 @@ const DB={
 ,"28":{n:"Antigua & Barbuda",c:"#ce1126"},"44":{n:"Bahamas",c:"#00778b"},"48":{n:"Bahrain",c:"#ce1126"},"52":{n:"Barbados",c:"#00267f"},"60":{n:"Bermuda",c:"#cc0001"},"158":{n:"Taiwan",c:"#fe0000"},"175":{n:"Mayotte",c:"#0055a4"},"184":{n:"Cook Islands",c:"#00247d"},"212":{n:"Dominica",c:"#006b3f"},"234":{n:"Faroe Islands",c:"#003897"},"238":{n:"Falkland Islands",c:"#00247d"},"239":{n:"South Georgia",c:"#00247d"},"258":{n:"French Polynesia",c:"#ce1126"},"292":{n:"Gibraltar",c:"#ce1126"},"312":{n:"Guadeloupe",c:"#0055a4"},"316":{n:"Guam",c:"#002868"},"344":{n:"Hong Kong",c:"#de2910"},"438":{n:"Liechtenstein",c:"#002b7f"},"446":{n:"Macao",c:"#00785e"},"474":{n:"Martinique",c:"#0055a4"},"480":{n:"Mauritius",c:"#ea2839"},"492":{n:"Monaco",c:"#ce1126"},"500":{n:"Montserrat",c:"#00247d"},"520":{n:"Nauru",c:"#002b7f"},"531":{n:"Curaçao",c:"#002b7f"},"533":{n:"Aruba",c:"#418fde"},"534":{n:"Sint Maarten",c:"#003087"},"535":{n:"Bonaire",c:"#003087"},"570":{n:"Niue",c:"#ffcd00"},"574":{n:"Norfolk Island",c:"#009f6b"},"580":{n:"N. Mariana Islands",c:"#003f87"},"583":{n:"Micronesia",c:"#75b2dd"},"584":{n:"Marshall Islands",c:"#003893"},"585":{n:"Palau",c:"#4aadd6"},"626":{n:"Timor-Leste",c:"#dc241f"},"638":{n:"Réunion",c:"#0055a4"},"659":{n:"St. Kitts & Nevis",c:"#009e60"},"662":{n:"St. Lucia",c:"#65cfff"},"670":{n:"St. Vincent",c:"#009e60"},"674":{n:"San Marino",c:"#5eb6e4"},"678":{n:"São Tomé & Príncipe",c:"#12ad2b"},"690":{n:"Seychelles",c:"#003f87"},"748":{n:"Eswatini",c:"#3e5eb9"},"776":{n:"Tonga",c:"#c10000"},"798":{n:"Tuvalu",c:"#009fca"},"882":{n:"Samoa",c:"#ce1126"},"896":{n:"Kiribati",c:"#ce1126"}};
 
 // ── Constants ─────────────────────────────────────────────────────
-const MAP_W=4096, MAP_H=2048, MAP_PX=MAP_W*MAP_H;
+const MAP_W=2048, MAP_H=1024, MAP_PX=MAP_W*MAP_H;
 
 // ── Sound engine (Web Audio API — no external files) ─────────────
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -1748,6 +1748,37 @@ function oceanName(lat,lon){
 
 // ── Boot ─────────────────────────────────────────────────────────
 // No external libraries needed at all — just fetch the TopoJSON data.
+
+// ── Inline pixel-processing worker ────────────────────────────────
+function createPixelWorker() {
+  const blob = new Blob([`
+// Pixel-prepopulate worker.
+// Receives: landMask (Uint8Array), featByPixel (Int16Array), rgbPalette (Uint8Array, 3 bytes per featList idx).
+// Returns:  claim ImageData buffer (Uint8ClampedArray), claimByPixel (Int16Array), perCountryCount (Int32Array).
+self.onmessage = function(e) {
+  const { landMask, featByPixel, rgbPalette, mapPx, featCount } = e.data;
+  const claimData = new Uint8ClampedArray(mapPx * 4);
+  const claimByPixel = new Int16Array(mapPx).fill(-1);
+  const perCount = new Int32Array(featCount);
+  for (let i = 0; i < mapPx; i++) {
+    const geo = featByPixel[i];
+    if (!landMask[i] || geo < 0 || geo >= featCount) continue;
+    const cp = geo * 3;
+    const p = i * 4;
+    claimData[p]   = rgbPalette[cp];
+    claimData[p+1] = rgbPalette[cp+1];
+    claimData[p+2] = rgbPalette[cp+2];
+    claimData[p+3] = 215;
+    claimByPixel[i] = geo;
+    perCount[geo]++;
+  }
+  self.postMessage({ claimData, claimByPixel, perCount },
+    [claimData.buffer, claimByPixel.buffer, perCount.buffer]);
+};
+`], { type: 'application/javascript' });
+  return new Worker(URL.createObjectURL(blob));
+}
+
 async function boot(){
   prog(5,"Fetching world map data (~2.3MB)…");
   const dlAnim=animateProgress(5,18,6000,"Downloading Natural Earth 10m countries…");
@@ -1901,7 +1932,7 @@ async function boot(){
           runLen++;
         } else {
           // End of run — check if it's an artifact
-          if(runLen>150&&runGeo>=0){
+          if(runLen>75&&runGeo>=0){
             // Check: does runGeo appear in row above or below at ANY x in this run?
             let found=false;
             for(let rx=runStart;rx<runStart+runLen&&!found;rx++){
@@ -1949,7 +1980,7 @@ async function boot(){
           if(landMask[ni]&&!visited[ni]){visited[ni]=1;q.push(ni);}
         }
       }
-      if(component.length<50){
+      if(component.length<12){
         // Remove this micro-island
         for(const ci of component){
           landMask[ci]=0;
@@ -1974,7 +2005,10 @@ async function boot(){
   {
     const cleanImg=bctx.createImageData(MAP_W,MAP_H);
     const cd=cleanImg.data;
-    for(let i=0;i<MAP_PX;i++){
+    const BIOME_CHUNK = 65536; // ~30ms per chunk on the new 2048×1024 map
+    for(let s=0; s<MAP_PX; s+=BIOME_CHUNK){
+    const end=Math.min(s+BIOME_CHUNK, MAP_PX);
+    for(let i=s;i<end;i++){
       const p=i*4;
       // Hoist lat/lon so both land and ocean branches can use them
       const tx=i%MAP_W, ty=(i/MAP_W)|0;
@@ -2066,6 +2100,9 @@ async function boot(){
       }
       cd[p+3]=255;
     }
+    prog(87+Math.floor(s/MAP_PX*5),"Painting biomes…");
+    await sleep(1);
+    }
     bctx.putImageData(cleanImg,0,0);
     totalLandPx = Object.values(geoTotal).reduce((a,b)=>a+b,0);
     console.log("Base map rebuilt pixel-perfect, totalLandPx="+totalLandPx);
@@ -2103,33 +2140,79 @@ async function boot(){
   // ── Prepopulate every land pixel with its native country ──────
   prog(100,'Prepopulating countries…'); await sleep(10);
   {
-    // Build a full-map ImageData for the claim canvas — chunked so the tutorial popup stays responsive
-    const prepopImg = claimCtx.createImageData(MAP_W, MAP_H);
-    const pd = prepopImg.data;
-    // Pre-compute RGB triples per featList index for speed
-    const _rgbCache = new Array(featList.length);
-    for(let k=0;k<featList.length;k++){
-      if(featList[k]&&featList[k].color){_rgbCache[k]=hexRgb(featList[k].color);}
-    }
-    const PREPOP_CHUNK = 200000; // ~10ms per chunk
-    for(let s=0;s<MAP_PX;s+=PREPOP_CHUNK){
-      const end=Math.min(s+PREPOP_CHUNK,MAP_PX);
-      for(let i=s;i<end;i++){
-        const geo = featByPixel[i];
-        if(!landMask[i] || geo<0) continue;
-        const rgb = _rgbCache[geo]; if(!rgb) continue;
-        const p=i*4; pd[p]=rgb[0];pd[p+1]=rgb[1];pd[p+2]=rgb[2];pd[p+3]=215;
-        claimByPixel[i]=geo;
-        claimerCount[geo]=(claimerCount[geo]||0)+1;
-        if(!geoClaimCnt[geo])geoClaimCnt[geo]={};
-        geoClaimCnt[geo][geo]=(geoClaimCnt[geo][geo]||0)+1;
-        totalClaimed++;
+    // Build RGB palette (3 bytes per featList index) for the worker
+    const featCount = featList.length;
+    const rgbPalette = new Uint8Array(featCount * 3);
+    for(let k=0;k<featCount;k++){
+      if(featList[k]&&featList[k].color){
+        const [r,g,b]=hexRgb(featList[k].color);
+        const o=k*3; rgbPalette[o]=r; rgbPalette[o+1]=g; rgbPalette[o+2]=b;
       }
-      // Yield to browser so input can be processed (tutorial clicks etc.)
-      prog(100,'Prepopulating countries… '+Math.floor(s/MAP_PX*100)+'%');
-      await sleep(1);
     }
-    claimCtx.putImageData(prepopImg,0,0);
+
+    // Try Web Worker first — runs heavy pixel sweep off main thread
+    let prepopDone = false;
+    try {
+      const worker = createPixelWorker();
+      // Clone typed arrays so we don't transfer ownership of the originals
+      const lmCopy = new Uint8Array(landMask);
+      const fpCopy = new Int16Array(featByPixel);
+      const result = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('worker timeout')), 10000);
+        worker.onmessage = e => { clearTimeout(timer); resolve(e.data); };
+        worker.onerror   = e => { clearTimeout(timer); reject(e); };
+        worker.postMessage({
+          landMask: lmCopy, featByPixel: fpCopy, rgbPalette,
+          mapPx: MAP_PX, featCount,
+        }, [lmCopy.buffer, fpCopy.buffer, rgbPalette.buffer]);
+      });
+      worker.terminate();
+
+      // Apply worker results back to main thread state
+      const claimImg = new ImageData(result.claimData, MAP_W, MAP_H);
+      claimCtx.putImageData(claimImg, 0, 0);
+      claimByPixel = result.claimByPixel;
+      // Reconstruct main-thread bookkeeping from per-country counts
+      for(let geo=0; geo<result.perCount.length; geo++){
+        const cnt = result.perCount[geo];
+        if(cnt > 0){
+          claimerCount[geo] = (claimerCount[geo]||0) + cnt;
+          if(!geoClaimCnt[geo]) geoClaimCnt[geo] = {};
+          geoClaimCnt[geo][geo] = (geoClaimCnt[geo][geo]||0) + cnt;
+          totalClaimed += cnt;
+        }
+      }
+      prepopDone = true;
+      console.log('Prepopulate via Web Worker — main thread stayed responsive');
+    } catch(workerErr) {
+      console.warn('Web Worker prepopulate failed, falling back to main thread:', workerErr);
+    }
+
+    // Fallback path: main-thread chunked prepopulate
+    if (!prepopDone) {
+      const prepopImg = claimCtx.createImageData(MAP_W, MAP_H);
+      const pd = prepopImg.data;
+      const PREPOP_CHUNK = 200000;
+      for(let s=0;s<MAP_PX;s+=PREPOP_CHUNK){
+        const end=Math.min(s+PREPOP_CHUNK,MAP_PX);
+        for(let i=s;i<end;i++){
+          const geo = featByPixel[i];
+          if(!landMask[i] || geo<0) continue;
+          const o = geo*3;
+          const p=i*4;
+          pd[p]=rgbPalette[o]; pd[p+1]=rgbPalette[o+1]; pd[p+2]=rgbPalette[o+2]; pd[p+3]=215;
+          claimByPixel[i]=geo;
+          claimerCount[geo]=(claimerCount[geo]||0)+1;
+          if(!geoClaimCnt[geo])geoClaimCnt[geo]={};
+          geoClaimCnt[geo][geo]=(geoClaimCnt[geo][geo]||0)+1;
+          totalClaimed++;
+        }
+        prog(100,'Prepopulating countries… '+Math.floor(s/MAP_PX*100)+'%');
+        await sleep(1);
+      }
+      claimCtx.putImageData(prepopImg,0,0);
+    }
+
     totalLandPx = Object.values(geoTotal).reduce((a,b)=>a+b,0);
     $('px-count').textContent = totalClaimed.toLocaleString();
     markOutlineDirty();
@@ -4619,7 +4702,7 @@ function drawGrid() {
   const d = img.data;
   // Dot every 2 pixels in a checkerboard pattern (alternating)
   for (let y = 0; y < MAP_H; y += 2) {
-    const offset = (y / 2) % 2; // alternate offset per row for checkerboard
+    const offset = y % 4 === 0 ? 0 : 1; // alternate offset per row for checkerboard
     for (let x = offset; x < MAP_W; x += 2) {
       const p = (y * MAP_W + x) * 4;
       d[p] = 255; d[p+1] = 255; d[p+2] = 255; d[p+3] = 128; // alpha 128/255 ≈ 0.5
