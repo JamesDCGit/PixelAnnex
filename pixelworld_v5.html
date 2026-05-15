@@ -334,9 +334,10 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 
 /* ── Tutorial / Welcome overlay ── */
 #tutorial-overlay{
-  position:fixed;inset:0;background:#070d1a;z-index:9999;
+  position:fixed;inset:0;background:rgba(7,13,26,0.78);z-index:9999;
   display:none;align-items:center;justify-content:center;
   font-family:'Courier New',monospace;color:#cbd5e1;
+  backdrop-filter:blur(2px);
 }
 #tutorial-overlay.open{display:flex;}
 #tutorial-box{
@@ -2620,10 +2621,10 @@ function showTutorial() {
   _tutStep = 0;
   document.getElementById('tutorial-overlay').classList.add('open');
   updateTutStep();
-  // Try to populate the country list now or as soon as featList is ready
-  tryPopulateTutCountries();
-  // Live world stats
-  fetchTutWorldStats();
+  // Defer heavier work (country list + stats) until idle
+  const idle = window.requestIdleCallback || (cb => setTimeout(cb, 100));
+  idle(() => { tryPopulateTutCountries(); }, { timeout: 800 });
+  idle(() => { fetchTutWorldStats(); }, { timeout: 1000 });
 }
 
 function closeTutorial() {
@@ -2673,38 +2674,52 @@ function updateTutStep() {
 function tryPopulateTutCountries() {
   if (_tutCountryListBuilt) return;
   if (typeof featList === 'undefined' || !featList || featList.length < 50) {
-    // Map not ready yet — retry shortly
     setTimeout(tryPopulateTutCountries, 500);
     return;
   }
   const list = document.getElementById('tut-country-list');
   if (!list) return;
   list.innerHTML = '';
-  // Build sorted, deduplicated list of countries with land
   const seen = new Set();
   const candidates = [];
   for (let i = 0; i < featList.length; i++) {
     const f = featList[i];
     if (!f || !f.id || !f.name || !f.color || !f.geometry) continue;
     if (seen.has(f.id)) continue;
-    if (!geoTotal[i] || geoTotal[i] < 5) continue; // skip empty/tiny
+    if (!geoTotal[i] || geoTotal[i] < 5) continue;
     seen.add(f.id);
     candidates.push({ id: f.id, name: f.name, color: f.color, idx: i, pixels: geoTotal[i] });
   }
   candidates.sort((a, b) => a.name.localeCompare(b.name));
-  for (const c of candidates) {
-    const row = document.createElement('div');
-    row.className = 'tut-country-row';
-    row.dataset.id = c.id;
-    row.dataset.name = c.name.toLowerCase();
-    row.innerHTML =
-      '<div class="tut-country-color" style="background:' + c.color + '"></div>' +
-      '<div class="tut-country-name">' + escapeHtml(c.name) + '</div>' +
-      '<div class="tut-country-meta">' + c.pixels.toLocaleString() + ' px</div>';
-    row.onclick = () => selectTutCountry(c, row);
-    list.appendChild(row);
-  }
   _tutCountryListBuilt = true;
+
+  // Build in chunks via DocumentFragment + setTimeout to keep map decode responsive
+  const CHUNK = 25;
+  let pos = 0;
+  const buildChunk = () => {
+    if (pos >= candidates.length) return;
+    const frag = document.createDocumentFragment();
+    const end = Math.min(pos + CHUNK, candidates.length);
+    for (let i = pos; i < end; i++) {
+      const c = candidates[i];
+      const row = document.createElement('div');
+      row.className = 'tut-country-row';
+      row.dataset.id = c.id;
+      row.dataset.name = c.name.toLowerCase();
+      row.innerHTML =
+        '<div class="tut-country-color" style="background:' + c.color + '"></div>' +
+        '<div class="tut-country-name">' + escapeHtml(c.name) + '</div>' +
+        '<div class="tut-country-meta">' + c.pixels.toLocaleString() + ' px</div>';
+      row.onclick = () => selectTutCountry(c, row);
+      frag.appendChild(row);
+    }
+    list.appendChild(frag);
+    pos = end;
+    if (pos < candidates.length) {
+      setTimeout(buildChunk, 20); // small yield so map keeps decoding
+    }
+  };
+  buildChunk();
 }
 
 function selectTutCountry(c, rowEl) {
@@ -2788,19 +2803,30 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
 
-// Show tutorial IMMEDIATELY on first visit, before the map loads in earnest.
-// (Map decoding happens async in background.)
+// Show tutorial AFTER the toolbar/HUD has painted, but on top of the map while it loads.
+// Uses requestAnimationFrame to wait for the first browser paint cycle so initial UI renders
+// smoothly without competing with the heavy modal mount on the same frame.
 (function bootTutorial() {
   if (localStorage.getItem('pa_tutorial_seen')) return;
-  // DOM may not yet be ready — wait until tutorial-overlay element exists
-  const tryShow = () => {
-    if (document.getElementById('tutorial-overlay')) {
-      showTutorial();
-    } else {
-      setTimeout(tryShow, 50);
+  const launch = () => {
+    if (!document.getElementById('tutorial-overlay')) {
+      setTimeout(launch, 80);
+      return;
     }
+    // Wait for two animation frames so toolbar/HUDs paint first
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        // Then add a small idle delay so the map decoding gets a head start
+        const idle = window.requestIdleCallback || (cb => setTimeout(cb, 200));
+        idle(() => { showTutorial(); }, { timeout: 600 });
+      });
+    });
   };
-  tryShow();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', launch, { once: true });
+  } else {
+    launch();
+  }
 })();
 
 // ── Daily login bonus ─────────────────────────────────────────────
