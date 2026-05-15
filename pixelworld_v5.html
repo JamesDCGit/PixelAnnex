@@ -4110,20 +4110,21 @@ function mpHandleMessage(msg) {
       if (msg.state?.conquered) {
         for (const key of msg.state.conquered) conqueredSet.add(key);
         // Replay flood-fills for every conquered country so the canvas reflects
-        // the persistent state (server only stores individual paints + conquered set;
-        // the visual flood is a client-side derivative).
-        // Schedule via setTimeout so it doesn't block this message handler.
+        // the persistent state. Server's "geoIdx:countryId" keys actually store COUNTRY IDs
+        // for both halves, so we must map both to featList indices.
         setTimeout(() => {
           for (const key of conqueredSet) {
             const parts = String(key).split(':');
             if (parts.length !== 2) continue;
-            const geoIdx = parseInt(parts[0], 10);
-            const claimerId = parts[1];
-            const claimerFi = featList.findIndex(f => f.id === String(claimerId));
-            if (geoIdx >= 0 && claimerFi >= 0) {
-              finisherFill(geoIdx, claimerFi);
-              // Also restore the flag — placeFlag is cheap
-              if (typeof placeFlag === 'function') placeFlag(geoIdx, claimerFi);
+            const geoCountryId = parts[0];
+            const claimerId    = parts[1];
+            // Skip self-conquests (legacy data from older versions where countries "conquered themselves")
+            if (geoCountryId === claimerId) continue;
+            const geoFi    = featList.findIndex(f => f.id === String(geoCountryId));
+            const claimerFi= featList.findIndex(f => f.id === String(claimerId));
+            if (geoFi >= 0 && claimerFi >= 0) {
+              finisherFill(geoFi, claimerFi);
+              if (typeof placeFlag === 'function') placeFlag(geoFi, claimerFi);
             }
           }
           markOutlineDirty();
@@ -4168,11 +4169,15 @@ function mpHandleMessage(msg) {
     }
 
     case 'conquest': {
-      const { geoIdx, countryId } = msg;
-      conqueredSet.add(geoIdx + ':' + countryId);
+      // Server sends geoIdx and countryId BOTH as country ID strings/numbers.
+      // Convert to featList indices for client-side use.
+      const { geoIdx: geoCountryId, countryId } = msg;
+      conqueredSet.add(geoCountryId + ':' + countryId);
       const fi = featList.findIndex(f => f.id === String(countryId));
+      const targetFi = featList.findIndex(f => f.id === String(geoCountryId));
+      if (targetFi < 0 || fi < 0) { scheduleLegend(); break; }
       // Attack detection: if WE were conquered, show direction arrow + card
-      if(geoIdx === currentIdx && fi >= 0 && fi !== currentIdx){
+      if(targetFi === currentIdx && fi !== currentIdx){
         showAttackArrow(fi);
         actPushCard({
           variant: 'conquest',
@@ -4181,9 +4186,9 @@ function mpHandleMessage(msg) {
         });
       }
       // General conquest notification (when others conquer)
-      else if(fi >= 0 && fi !== currentIdx && geoIdx !== currentIdx){
+      else if(fi !== currentIdx && targetFi !== currentIdx){
         const conqueror = featList[fi];
-        const target    = featList[geoIdx];
+        const target    = featList[targetFi];
         if(conqueror && target){
           actPushCard({
             variant: 'info',
@@ -4193,28 +4198,26 @@ function mpHandleMessage(msg) {
         }
       }
       // YOU conquered someone
-      else if(fi === currentIdx && featList[geoIdx]){
+      else if(fi === currentIdx){
         actPushCard({
           variant: 'win',
           title: '🏆 Victory!',
-          html: 'You conquered <b>' + featList[geoIdx].name + '</b>!',
+          html: 'You conquered <b>' + featList[targetFi].name + '</b>!',
         });
       }
-      if (fi >= 0) {
-        showConquestToast(geoIdx, fi);
-        placeFlag(geoIdx, fi);
-        // Flood-fill the conquered country in the conqueror's colour
-        // (matches the visual feedback the local player gets on their own conquests)
-        finisherFill(geoIdx, fi);
-      }
+      showConquestToast(targetFi, fi);
+      placeFlag(targetFi, fi);
+      // Flood-fill the conquered country in the conqueror's colour
+      finisherFill(targetFi, fi);
       scheduleLegend();
       break;
     }
 
     case 'reversal': {
-      const { geoIdx, countryId } = msg;
-      conqueredSet.delete(geoIdx + ':' + countryId);
-      eraseFlag(geoIdx);
+      const { geoIdx: geoCountryId, countryId } = msg;
+      conqueredSet.delete(geoCountryId + ':' + countryId);
+      const targetFi = featList.findIndex(f => f.id === String(geoCountryId));
+      if (targetFi >= 0) eraseFlag(targetFi);
       scheduleLegend();
       break;
     }
