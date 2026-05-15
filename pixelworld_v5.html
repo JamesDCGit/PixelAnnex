@@ -1768,7 +1768,7 @@ self.onmessage = function(e) {
     claimData[p]   = rgbPalette[cp];
     claimData[p+1] = rgbPalette[cp+1];
     claimData[p+2] = rgbPalette[cp+2];
-    claimData[p+3] = 108; // initial native fill at ~50% — player strokes (alpha 215) stand out clearly
+    claimData[p+3] = 26; // initial native fill at ~10% — player strokes (alpha 215) stand out vividly
     claimByPixel[i] = geo;
     perCount[geo]++;
   }
@@ -2200,7 +2200,7 @@ async function boot(){
           if(!landMask[i] || geo<0) continue;
           const o = geo*3;
           const p=i*4;
-          pd[p]=rgbPalette[o]; pd[p+1]=rgbPalette[o+1]; pd[p+2]=rgbPalette[o+2]; pd[p+3]=108;
+          pd[p]=rgbPalette[o]; pd[p+1]=rgbPalette[o+1]; pd[p+2]=rgbPalette[o+2]; pd[p+3]=26;
           claimByPixel[i]=geo;
           claimerCount[geo]=(claimerCount[geo]||0)+1;
           if(!geoClaimCnt[geo])geoClaimCnt[geo]={};
