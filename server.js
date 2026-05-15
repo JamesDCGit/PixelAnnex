@@ -41,10 +41,10 @@ const PING_MS            = 10000;
 const TIMEOUT_MS         = 30000;
 
 // ── Bot config ────────────────────────────────────────────────────
-const BOT_TICK_MS         = 1200;  // ms between bot ticks (staggered)
-const BOT_PIXELS_PER_TICK  = 2;    // pixels per stroke per bot
-const BOT_BUCKET_MAX       = 100;
-const BOT_REGEN_MS         = 1500; // bucket regen interval
+const BOT_TICK_MS         = 2000;  // ms between bot ticks (staggered) — slowed for smaller map
+const BOT_PIXELS_PER_TICK  = 1;    // pixels per stroke per bot — halved
+const BOT_BUCKET_MAX       = 60;   // smaller cap to prevent burst spikes
+const BOT_REGEN_MS         = 3000; // bucket regen interval — doubled
 // All countries get bots — populated dynamically from map data
 
 
