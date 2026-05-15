@@ -281,36 +281,31 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 
 @keyframes act-slide-in{from{opacity:0;transform:translateX(30px);}to{opacity:1;transform:translateX(0);}}
 
-/* ── Fight-back indicator banner (persistent under sign-in HUD) ── */
+/* ── Fight-back indicator banner (under sign-in HUD, shares viewport positioning) ── */
 #fightback-banner{
-  position:fixed;top:64px;left:50%;
-  transform:translateX(-50%);
+  position:absolute;top:60px;left:50%;transform:translateX(-50%);
   background:linear-gradient(90deg,#dc2626,#ef4444,#dc2626);
   color:#fff;font-family:'Courier New',monospace;
-  padding:12px 28px;border-radius:8px;
-  z-index:150;display:none;
-  font-size:14px;font-weight:700;letter-spacing:.12em;
+  padding:10px 22px;border-radius:8px;
+  z-index:60;display:none;
+  font-size:13px;font-weight:700;letter-spacing:.1em;
   box-shadow:0 4px 24px rgba(239,68,68,0.6), 0 0 0 1px rgba(255,255,255,0.18) inset;
   animation:fb-pulse 1.4s ease-in-out infinite;
   pointer-events:none;
   text-transform:uppercase;
   text-align:center;
-  min-width:240px;
+  min-width:200px;
 }
 #fightback-banner.active{display:block;}
-#fightback-banner .fb-icon{margin-right:8px;font-size:18px;vertical-align:middle;}
+#fightback-banner .fb-icon{margin-right:6px;font-size:15px;vertical-align:middle;}
 #fightback-banner .fb-power{
-  display:block;margin-top:6px;padding:3px 10px;
+  display:block;margin-top:4px;padding:2px 8px;
   background:rgba(0,0,0,0.3);border-radius:4px;
   font-size:10px;letter-spacing:.08em;font-weight:600;
 }
 @keyframes fb-pulse{
-  0%,100%{
-    box-shadow:0 4px 24px rgba(239,68,68,0.5), 0 0 0 1px rgba(255,255,255,0.18) inset;
-  }
-  50%{
-    box-shadow:0 6px 32px rgba(239,68,68,0.9), 0 0 0 2px rgba(255,255,255,0.3) inset;
-  }
+  0%,100%{box-shadow:0 4px 24px rgba(239,68,68,0.5), 0 0 0 1px rgba(255,255,255,0.18) inset;}
+  50%  {box-shadow:0 6px 32px rgba(239,68,68,0.9), 0 0 0 2px rgba(255,255,255,0.3)  inset;}
 }
 
 /* ── Highlight button ── */
@@ -336,6 +331,87 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .leg-row{cursor:pointer;transition:background .15s;}
 .leg-row:hover{background:rgba(99,102,241,0.12);}
 /* ── Stats modal ── */
+
+/* ── Tutorial / Welcome overlay ── */
+#tutorial-overlay{
+  position:fixed;inset:0;background:#070d1a;z-index:9999;
+  display:none;align-items:center;justify-content:center;
+  font-family:'Courier New',monospace;color:#cbd5e1;
+}
+#tutorial-overlay.open{display:flex;}
+#tutorial-box{
+  background:#0c1526;border:1px solid #1e293b;border-radius:12px;
+  width:min(680px, 94vw);max-height:90vh;overflow-y:auto;
+  padding:32px;
+  box-shadow:0 16px 80px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.05) inset;
+}
+#tutorial-box h1{color:#fff;font-size:24px;margin-bottom:6px;text-align:center;letter-spacing:.05em;}
+#tutorial-box .tut-sub{font-size:11px;color:#64748b;letter-spacing:.15em;margin-bottom:24px;text-transform:uppercase;text-align:center;}
+.tut-dots{display:flex;gap:6px;justify-content:center;margin-bottom:22px;}
+.tut-dot{width:10px;height:10px;border-radius:50%;background:#1e293b;transition:all .2s;}
+.tut-dot.active{background:#818cf8;width:22px;border-radius:5px;}
+.tut-section{display:none;}
+.tut-section.active{display:block;}
+.tut-content{font-size:13px;line-height:1.7;margin-bottom:24px;}
+.tut-content b{color:#fff;}
+.tut-content code{background:#1e293b;color:#fbbf24;padding:2px 6px;border-radius:3px;font-size:11px;}
+.tut-content .tut-keypress{display:inline-block;background:#1e293b;border:1px solid #334155;color:#cbd5e1;padding:2px 8px;border-radius:4px;font-size:10px;margin:0 2px;}
+.tut-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:14px 0;}
+.tut-tile{background:#0f1729;border:1px solid #1e293b;border-radius:8px;padding:14px;}
+.tut-tile .tut-tile-icon{font-size:22px;margin-bottom:6px;}
+.tut-tile .tut-tile-title{font-size:12px;color:#fff;font-weight:600;margin-bottom:4px;}
+.tut-tile .tut-tile-desc{font-size:10px;color:#94a3b8;line-height:1.5;}
+
+/* Country picker tab */
+.tut-country-picker{margin-top:8px;}
+.tut-country-search{
+  width:100%;padding:10px 14px;background:#0f1729;border:1px solid #334155;color:#fff;
+  border-radius:8px;font-family:inherit;font-size:12px;margin-bottom:10px;
+}
+.tut-country-search:focus{outline:none;border-color:#818cf8;}
+.tut-country-list{
+  max-height:240px;overflow-y:auto;background:#0a121f;border:1px solid #1e293b;border-radius:6px;
+}
+.tut-country-row{
+  display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;
+  border-bottom:1px solid rgba(30,41,59,0.4);font-size:11px;
+}
+.tut-country-row:hover{background:rgba(99,102,241,.12);}
+.tut-country-row.selected{background:rgba(99,102,241,.22);border-color:#818cf8;}
+.tut-country-row.loading{color:#64748b;cursor:default;font-style:italic;}
+.tut-country-color{width:14px;height:14px;border-radius:2px;flex-shrink:0;}
+.tut-country-name{flex:1;color:#e2e8f0;font-weight:600;}
+.tut-country-meta{font-size:9px;color:#64748b;}
+
+/* World state stats */
+.tut-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0;}
+.tut-stat{background:#0f1729;border:1px solid #1e293b;border-radius:8px;padding:12px;text-align:center;}
+.tut-stat .tut-stat-val{font-size:22px;color:#fff;font-weight:600;}
+.tut-stat .tut-stat-lbl{font-size:9px;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin-top:2px;}
+.tut-loading-bar{
+  height:4px;background:#1e293b;border-radius:2px;margin:14px 0;overflow:hidden;
+}
+.tut-loading-fill{
+  height:100%;background:linear-gradient(90deg,#6366f1,#818cf8);width:0%;
+  transition:width .3s;
+}
+.tut-loading-text{font-size:10px;color:#64748b;text-align:center;letter-spacing:.05em;}
+
+.tut-btn-row{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;}
+.tut-btn{
+  background:transparent;border:1px solid #334155;color:#cbd5e1;
+  padding:9px 22px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;letter-spacing:.05em;
+  transition:all .15s;
+}
+.tut-btn:hover{background:#1e293b;color:#fff;}
+.tut-btn.primary{background:#6366f1;border-color:#818cf8;color:#fff;font-weight:600;}
+.tut-btn.primary:hover{background:#7c3aed;}
+.tut-btn.primary:disabled{background:#475569;border-color:#475569;color:#94a3b8;cursor:not-allowed;}
+.tut-btn.discord{background:#5865f2;border-color:#5865f2;color:#fff;}
+.tut-btn.discord:hover{background:#4752c4;}
+.tut-btn.skip{margin-left:auto;color:#475569;border-color:transparent;}
+.tut-btn.skip:hover{color:#cbd5e1;}
+
 #stats-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;
   display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);
@@ -547,12 +623,93 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     <div id="bomb-flash"></div>
     <div id="tutorial-overlay">
       <div id="tutorial-box">
+        <h1>PixelAnnex</h1>
+        <div class="tut-sub" id="tut-sub-label">Welcome — let's get you set up</div>
         <div class="tut-dots">
-          <div class="tut-dot active" data-step="1"></div>
+          <div class="tut-dot active" data-step="0"></div>
+          <div class="tut-dot" data-step="1"></div>
           <div class="tut-dot" data-step="2"></div>
-          <div class="tut-dot" data-step="3"></div>
         </div>
-        <div id="tutorial-content"></div>
+
+        <!-- Step 1: How to play -->
+        <div class="tut-section active" id="tut-step-0">
+          <div class="tut-content">
+            <div class="tut-grid">
+              <div class="tut-tile">
+                <div class="tut-tile-icon">🎨</div>
+                <div class="tut-tile-title">Paint pixels</div>
+                <div class="tut-tile-desc">Click and drag on the map to paint. Each pixel costs 1 from your bucket.</div>
+              </div>
+              <div class="tut-tile">
+                <div class="tut-tile-icon">⚔️</div>
+                <div class="tut-tile-title">Conquer countries</div>
+                <div class="tut-tile-desc">Hold 80% of a country's pixels to claim it. Larger countries are tougher.</div>
+              </div>
+              <div class="tut-tile">
+                <div class="tut-tile-icon">💥</div>
+                <div class="tut-tile-title">Bombs &amp; ranks</div>
+                <div class="tut-tile-desc">Earn XP per pixel. Higher ranks unlock Mortar, MOAB, and Nuke.</div>
+              </div>
+              <div class="tut-tile">
+                <div class="tut-tile-icon">🛡️</div>
+                <div class="tut-tile-title">Fight back</div>
+                <div class="tut-tile-desc">When your country is &gt;70% lost, painting in your own land grants bonus pixels and a bigger brush.</div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:#64748b;text-align:center;margin-top:14px;">
+              <span class="tut-keypress">Drag</span> to pan ·
+              <span class="tut-keypress">Scroll</span> to zoom ·
+              <span class="tut-keypress">Click</span> to paint
+            </div>
+          </div>
+          <div class="tut-btn-row">
+            <button class="tut-btn skip" onclick="closeTutorial()">Skip</button>
+            <button class="tut-btn primary" onclick="nextTutStep()">Next →</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Choose country -->
+        <div class="tut-section" id="tut-step-1">
+          <div class="tut-content">
+            <div style="text-align:center;margin-bottom:14px;">Pick the country you'll start from. You can change this any time later.</div>
+            <div class="tut-country-picker">
+              <input type="text" class="tut-country-search" id="tut-country-search" placeholder="Search countries…" oninput="filterTutCountries()" />
+              <div class="tut-country-list" id="tut-country-list">
+                <div class="tut-country-row loading">Loading country list…</div>
+              </div>
+            </div>
+          </div>
+          <div class="tut-btn-row">
+            <button class="tut-btn" onclick="prevTutStep()">← Back</button>
+            <button class="tut-btn skip" onclick="closeTutorial()">Skip</button>
+            <button class="tut-btn primary" id="tut-step1-next" onclick="nextTutStep()" disabled>Pick a country</button>
+          </div>
+        </div>
+
+        <!-- Step 3: World state + Discord -->
+        <div class="tut-section" id="tut-step-2">
+          <div class="tut-content">
+            <div style="text-align:center;margin-bottom:6px;">Current world state</div>
+            <div class="tut-stats">
+              <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-players">—</div><div class="tut-stat-lbl">Players</div></div>
+              <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-conquered">—</div><div class="tut-stat-lbl">Conquered</div></div>
+              <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-alliances">—</div><div class="tut-stat-lbl">Alliances</div></div>
+            </div>
+            <div style="margin:20px 0;padding:14px;background:#0f1729;border-radius:8px;border:1px solid #1e293b;">
+              <div style="font-weight:600;color:#fff;margin-bottom:6px;">💬 Connect Discord</div>
+              <div style="font-size:11px;color:#94a3b8;line-height:1.6;">
+                Sign in to save your <b>rank, points, and stats</b>, form <b>alliances</b> by sharing country preferences, and earn <b>daily login bonuses</b>.
+              </div>
+            </div>
+            <div class="tut-loading-bar"><div class="tut-loading-fill" id="tut-load-fill"></div></div>
+            <div class="tut-loading-text" id="tut-load-text">Loading world…</div>
+          </div>
+          <div class="tut-btn-row">
+            <button class="tut-btn" onclick="prevTutStep()">← Back</button>
+            <button class="tut-btn discord" onclick="window.location.href='/auth/login'">Sign in with Discord</button>
+            <button class="tut-btn primary" id="tut-start-btn" onclick="closeTutorial()" disabled>Loading…</button>
+          </div>
+        </div>
       </div>
     </div>
     <div id="daily-bonus-toast"></div>
@@ -2454,86 +2611,197 @@ function dbgCheckFightBack() {
         '\nBrush: ' + brushDesc);
 }
 
-// ── Tutorial overlay ──────────────────────────────────────────────
-const TUTORIAL_STEPS = [
-  {
-    title: 'Welcome to PixelAnnex',
-    sub:   'A multiplayer pixel territory game',
-    body:  'Conquer countries by painting their pixels.<br><br>' +
-           '<b>Drag</b> to pan · <b>Scroll</b> to zoom · <b>Click</b> to paint<br><br>' +
-           'You\'ll start with <b>10 pixels</b> in your bucket and regenerate <code>1 pixel every 60 seconds</code>.',
-  },
-  {
-    title: 'Win by conquering',
-    sub:   'Strategy & combat',
-    body:  'Take <b>80%</b> of a country\'s pixels to conquer it.<br><br>' +
-           'When your own country is <b>>70% lost</b>, <b>fight-back mode</b> activates — every pixel you paint earns +4 bonus!<br><br>' +
-           'Reach <b>Captain</b> rank to unlock <b>bombs</b> (💥 button). Larger bombs unlock at higher ranks.',
-  },
-  {
-    title: 'Sign in with Discord',
-    sub:   'Save progress & join the leaderboard',
-    body:  'Link your Discord to:<br><br>' +
-           '• Save your <b>rank, points, and stats</b> across sessions<br>' +
-           '• Form <b>alliances</b> by sharing country preferences<br>' +
-           '• Earn <b>daily login bonuses</b> (+50 px/day, +100 bonus every 7 days)<br>' +
-           '• See your stats with the 📊 button or Discord <code>/me</code>',
-  },
-];
+// ── Tutorial / Welcome overlay ────────────────────────────────────
 let _tutStep = 0;
+let _tutCountryPicked = null;     // {id, name, color}
+let _tutCountryListBuilt = false;
 
 function showTutorial() {
   _tutStep = 0;
-  renderTutStep();
   document.getElementById('tutorial-overlay').classList.add('open');
+  updateTutStep();
+  // Try to populate the country list now or as soon as featList is ready
+  tryPopulateTutCountries();
+  // Live world stats
+  fetchTutWorldStats();
 }
+
 function closeTutorial() {
   document.getElementById('tutorial-overlay').classList.remove('open');
   localStorage.setItem('pa_tutorial_seen', '1');
+  // If user picked a country, apply it
+  if (_tutCountryPicked && typeof selectCountry === 'function') {
+    selectCountry(_tutCountryPicked.id);
+  }
 }
-function renderTutStep() {
-  const step = TUTORIAL_STEPS[_tutStep];
-  if (!step) return closeTutorial();
-  document.querySelectorAll('.tut-dot').forEach((d, i) => {
-    d.classList.toggle('active', i === _tutStep);
-  });
-  const el = document.getElementById('tutorial-content');
-  const isLast = _tutStep === TUTORIAL_STEPS.length - 1;
-  const nextLabel = isLast ? 'Start Playing →' : 'Next →';
-  const discordBtn = isLast
-    ? '<button class="tut-btn discord" onclick="window.location.href=\'/auth/login\'">Sign in with Discord</button>'
-    : '';
-  el.innerHTML =
-    '<h1>' + step.title + '</h1>' +
-    '<div class="step-sub">' + step.sub + '</div>' +
-    '<div class="step-body">' + step.body + '</div>' +
-    '<div class="btn-row">' +
-      (_tutStep > 0 ? '<button class="tut-btn" onclick="prevTutStep()">← Back</button>' : '') +
-      discordBtn +
-      '<button class="tut-btn primary" onclick="nextTutStep()">' + nextLabel + '</button>' +
-      '<button class="tut-btn" onclick="closeTutorial()" style="margin-left:auto;color:#475569;">Skip</button>' +
-    '</div>';
-}
+
 function nextTutStep() {
-  if (_tutStep < TUTORIAL_STEPS.length - 1) {
+  if (_tutStep < 2) {
     _tutStep++;
-    renderTutStep();
+    updateTutStep();
+    if (_tutStep === 2) {
+      fetchTutWorldStats();
+      // Bind load progress
+      bindTutLoadProgress();
+    }
   } else {
     closeTutorial();
   }
 }
+
 function prevTutStep() {
   if (_tutStep > 0) {
     _tutStep--;
-    renderTutStep();
+    updateTutStep();
   }
 }
-// Show tutorial on first visit (no localStorage flag)
-setTimeout(() => {
-  if (!localStorage.getItem('pa_tutorial_seen')) {
-    showTutorial();
+
+function updateTutStep() {
+  document.querySelectorAll('.tut-dot').forEach((d, i) => {
+    d.classList.toggle('active', i === _tutStep);
+  });
+  document.querySelectorAll('.tut-section').forEach((s, i) => {
+    s.classList.toggle('active', i === _tutStep);
+  });
+  const subLabels = ['Welcome — how to play', 'Choose your starting country', 'World status & sign in'];
+  const sub = document.getElementById('tut-sub-label');
+  if (sub) sub.textContent = subLabels[_tutStep] || '';
+  // Populate country list when entering step 1
+  if (_tutStep === 1) tryPopulateTutCountries();
+}
+
+function tryPopulateTutCountries() {
+  if (_tutCountryListBuilt) return;
+  if (typeof featList === 'undefined' || !featList || featList.length < 50) {
+    // Map not ready yet — retry shortly
+    setTimeout(tryPopulateTutCountries, 500);
+    return;
   }
-}, 1200);
+  const list = document.getElementById('tut-country-list');
+  if (!list) return;
+  list.innerHTML = '';
+  // Build sorted, deduplicated list of countries with land
+  const seen = new Set();
+  const candidates = [];
+  for (let i = 0; i < featList.length; i++) {
+    const f = featList[i];
+    if (!f || !f.id || !f.name || !f.color || !f.geometry) continue;
+    if (seen.has(f.id)) continue;
+    if (!geoTotal[i] || geoTotal[i] < 5) continue; // skip empty/tiny
+    seen.add(f.id);
+    candidates.push({ id: f.id, name: f.name, color: f.color, idx: i, pixels: geoTotal[i] });
+  }
+  candidates.sort((a, b) => a.name.localeCompare(b.name));
+  for (const c of candidates) {
+    const row = document.createElement('div');
+    row.className = 'tut-country-row';
+    row.dataset.id = c.id;
+    row.dataset.name = c.name.toLowerCase();
+    row.innerHTML =
+      '<div class="tut-country-color" style="background:' + c.color + '"></div>' +
+      '<div class="tut-country-name">' + escapeHtml(c.name) + '</div>' +
+      '<div class="tut-country-meta">' + c.pixels.toLocaleString() + ' px</div>';
+    row.onclick = () => selectTutCountry(c, row);
+    list.appendChild(row);
+  }
+  _tutCountryListBuilt = true;
+}
+
+function selectTutCountry(c, rowEl) {
+  _tutCountryPicked = c;
+  document.querySelectorAll('.tut-country-row').forEach(r => r.classList.remove('selected'));
+  if (rowEl) rowEl.classList.add('selected');
+  const next = document.getElementById('tut-step1-next');
+  if (next) {
+    next.disabled = false;
+    next.textContent = 'Continue with ' + c.name + ' →';
+  }
+}
+
+function filterTutCountries() {
+  const q = (document.getElementById('tut-country-search').value || '').toLowerCase().trim();
+  document.querySelectorAll('.tut-country-row').forEach(r => {
+    if (!r.dataset.name) return;
+    r.style.display = !q || r.dataset.name.includes(q) ? '' : 'none';
+  });
+}
+
+async function fetchTutWorldStats() {
+  // Pull live stats from public endpoints
+  try {
+    const [lb, al] = await Promise.all([
+      fetch('/api/stats/leaderboard').then(r => r.json()).catch(() => ({})),
+      fetch('/api/alliances').then(r => r.json()).catch(() => ({})),
+    ]);
+    const playersEl = document.getElementById('tut-stat-players');
+    const conqEl = document.getElementById('tut-stat-conquered');
+    const allEl = document.getElementById('tut-stat-alliances');
+    if (playersEl) playersEl.textContent = (lb && typeof lb.totalPlayers === 'number') ? lb.totalPlayers.toLocaleString() : '0';
+    if (conqEl) {
+      // Count currently conquered countries from client state if available
+      if (typeof conqueredSet !== 'undefined' && conqueredSet.size) {
+        conqEl.textContent = conqueredSet.size.toLocaleString();
+      } else {
+        conqEl.textContent = '—';
+      }
+    }
+    if (allEl) allEl.textContent = (al && al.alliances) ? al.alliances.length.toString() : '0';
+  } catch (e) { /* silent */ }
+}
+
+function bindTutLoadProgress() {
+  // Poll load progress until map is ready
+  const fill = document.getElementById('tut-load-fill');
+  const text = document.getElementById('tut-load-text');
+  const startBtn = document.getElementById('tut-start-btn');
+  const tick = () => {
+    if (!document.getElementById('tutorial-overlay').classList.contains('open')) return;
+    // Read progress from the main loading screen if it's still there
+    const loadProg = document.getElementById('prog-fill');
+    const loadMsg  = document.getElementById('load-msg');
+    let pct = 0;
+    if (loadProg) {
+      const w = loadProg.style.width;
+      pct = parseFloat(w) || 0;
+    }
+    // If main loading element is hidden, treat as 100%
+    const loading = document.getElementById('loading');
+    if (loading && loading.style.display === 'none') pct = 100;
+    if (fill) fill.style.width = pct + '%';
+    if (text) text.textContent = loadMsg ? loadMsg.textContent : ('Loading… ' + pct + '%');
+    if (pct >= 100) {
+      if (text) text.textContent = 'Ready to play!';
+      if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start Playing →';
+      }
+      return;
+    }
+    setTimeout(tick, 200);
+  };
+  tick();
+}
+
+// Helper for the country list
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+// Show tutorial IMMEDIATELY on first visit, before the map loads in earnest.
+// (Map decoding happens async in background.)
+(function bootTutorial() {
+  if (localStorage.getItem('pa_tutorial_seen')) return;
+  // DOM may not yet be ready — wait until tutorial-overlay element exists
+  const tryShow = () => {
+    if (document.getElementById('tutorial-overlay')) {
+      showTutorial();
+    } else {
+      setTimeout(tryShow, 50);
+    }
+  };
+  tryShow();
+})();
 
 // ── Daily login bonus ─────────────────────────────────────────────
 async function checkDailyBonus() {
