@@ -413,6 +413,30 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .tut-btn.skip{margin-left:auto;color:#475569;border-color:transparent;}
 .tut-btn.skip:hover{color:#cbd5e1;}
 
+
+/* Persistent world-state stats inside tutorial (under title) */
+#tut-header-stats{margin:0 0 18px;}
+
+/* Compact world-state bar pinned to bottom-centre of game screen */
+#world-state-bar{
+  position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
+  display:flex;gap:0;align-items:center;
+  background:rgba(7,13,26,0.85);backdrop-filter:blur(6px);
+  border:1px solid #1e293b;border-radius:8px;
+  padding:6px 14px;z-index:50;
+  font-family:'Courier New',monospace;
+  box-shadow:0 4px 12px rgba(0,0,0,0.4);
+  pointer-events:none;
+  white-space:nowrap;
+}
+#world-state-bar .ws-cell{
+  display:flex;align-items:baseline;gap:5px;
+  padding:0 12px;border-right:1px solid #1e293b;
+}
+#world-state-bar .ws-cell:last-child{border-right:none;}
+#world-state-bar .ws-val{font-size:13px;color:#fff;font-weight:600;}
+#world-state-bar .ws-lbl{font-size:9px;color:#64748b;letter-spacing:.08em;text-transform:uppercase;}
+
 #stats-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;
   display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);
@@ -626,6 +650,11 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <div id="tutorial-box">
         <h1>PixelAnnex</h1>
         <div class="tut-sub" id="tut-sub-label">Welcome — let's get you set up</div>
+        <div class="tut-stats" id="tut-header-stats">
+          <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-players">—</div><div class="tut-stat-lbl">Players</div></div>
+          <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-conquered">—</div><div class="tut-stat-lbl">Conquered</div></div>
+          <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-alliances">—</div><div class="tut-stat-lbl">Alliances</div></div>
+        </div>
         <div class="tut-dots">
           <div class="tut-dot active" data-step="0"></div>
           <div class="tut-dot" data-step="1"></div>
@@ -690,13 +719,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
         <!-- Step 3: World state + Discord -->
         <div class="tut-section" id="tut-step-2">
           <div class="tut-content">
-            <div style="text-align:center;margin-bottom:6px;">Current world state</div>
-            <div class="tut-stats">
-              <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-players">—</div><div class="tut-stat-lbl">Players</div></div>
-              <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-conquered">—</div><div class="tut-stat-lbl">Conquered</div></div>
-              <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-alliances">—</div><div class="tut-stat-lbl">Alliances</div></div>
-            </div>
-            <div style="margin:20px 0;padding:14px;background:#0f1729;border-radius:8px;border:1px solid #1e293b;">
+            <div style="margin:0 0 20px;padding:14px;background:#0f1729;border-radius:8px;border:1px solid #1e293b;">
               <div style="font-weight:600;color:#fff;margin-bottom:6px;">💬 Connect Discord</div>
               <div style="font-size:11px;color:#94a3b8;line-height:1.6;">
                 Sign in to save your <b>rank, points, and stats</b>, form <b>alliances</b> by sharing country preferences, and earn <b>daily login bonuses</b>.
@@ -714,6 +737,11 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       </div>
     </div>
     <div id="daily-bonus-toast"></div>
+    <div id="world-state-bar" title="Live world state">
+      <div class="ws-cell"><span class="ws-val" id="ws-players">—</span><span class="ws-lbl">players</span></div>
+      <div class="ws-cell"><span class="ws-val" id="ws-conquered">—</span><span class="ws-lbl">conquered</span></div>
+      <div class="ws-cell"><span class="ws-val" id="ws-alliances">—</span><span class="ws-lbl">alliances</span></div>
+    </div>
     <div id="fightback-banner">
       <span class="fb-icon">⚔️</span><span id="fb-text">FIGHT-BACK MODE</span><span class="fb-power" id="fb-power">+4 px/stroke</span>
     </div>
@@ -2630,9 +2658,9 @@ function showTutorial() {
 function closeTutorial() {
   document.getElementById('tutorial-overlay').classList.remove('open');
   localStorage.setItem('pa_tutorial_seen', '1');
-  // If user picked a country, apply it
-  if (_tutCountryPicked && typeof selectCountry === 'function') {
-    selectCountry(_tutCountryPicked.id);
+  // Apply the picked country — selectCountry takes the featList INDEX, not the ID
+  if (_tutCountryPicked && typeof selectCountry === 'function' && typeof _tutCountryPicked.idx === 'number') {
+    selectCountry(_tutCountryPicked.idx);
   }
 }
 
@@ -2673,53 +2701,56 @@ function updateTutStep() {
 
 function tryPopulateTutCountries() {
   if (_tutCountryListBuilt) return;
-  if (typeof featList === 'undefined' || !featList || featList.length < 50) {
-    setTimeout(tryPopulateTutCountries, 500);
-    return;
-  }
   const list = document.getElementById('tut-country-list');
   if (!list) return;
+  // Wait until map data is fully ready — featList populated AND prepopulate finished.
+  // Signal: the loading screen has been hidden.
+  const loadingEl = document.getElementById('loading');
+  const mapDone = (typeof featList !== 'undefined' && featList && featList.length >= 50)
+    && (loadingEl && loadingEl.style.display === 'none');
+  if (!mapDone) {
+    // Show ongoing status, retry shortly
+    if (!list.dataset.waiting) {
+      list.innerHTML = '<div class="tut-country-row loading">Loading countries… (map is still mounting)</div>';
+      list.dataset.waiting = '1';
+    }
+    setTimeout(tryPopulateTutCountries, 400);
+    return;
+  }
   list.innerHTML = '';
-  const seen = new Set();
-  const candidates = [];
+  delete list.dataset.waiting;
+
+  // Build full list — deduplicated by country ID, keeping the featList index of the one with most pixels
+  const byId = new Map();
   for (let i = 0; i < featList.length; i++) {
     const f = featList[i];
     if (!f || !f.id || !f.name || !f.color || !f.geometry) continue;
-    if (seen.has(f.id)) continue;
-    if (!geoTotal[i] || geoTotal[i] < 5) continue;
-    seen.add(f.id);
-    candidates.push({ id: f.id, name: f.name, color: f.color, idx: i, pixels: geoTotal[i] });
+    const px = geoTotal[i] || 0;
+    if (px < 5) continue;
+    const existing = byId.get(f.id);
+    if (!existing || px > existing.pixels) {
+      byId.set(f.id, { id: f.id, name: f.name, color: f.color, idx: i, pixels: px });
+    }
   }
-  candidates.sort((a, b) => a.name.localeCompare(b.name));
+  const candidates = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
   _tutCountryListBuilt = true;
 
-  // Build in chunks via DocumentFragment + setTimeout to keep map decode responsive
-  const CHUNK = 25;
-  let pos = 0;
-  const buildChunk = () => {
-    if (pos >= candidates.length) return;
-    const frag = document.createDocumentFragment();
-    const end = Math.min(pos + CHUNK, candidates.length);
-    for (let i = pos; i < end; i++) {
-      const c = candidates[i];
-      const row = document.createElement('div');
-      row.className = 'tut-country-row';
-      row.dataset.id = c.id;
-      row.dataset.name = c.name.toLowerCase();
-      row.innerHTML =
-        '<div class="tut-country-color" style="background:' + c.color + '"></div>' +
-        '<div class="tut-country-name">' + escapeHtml(c.name) + '</div>' +
-        '<div class="tut-country-meta">' + c.pixels.toLocaleString() + ' px</div>';
-      row.onclick = () => selectTutCountry(c, row);
-      frag.appendChild(row);
-    }
-    list.appendChild(frag);
-    pos = end;
-    if (pos < candidates.length) {
-      setTimeout(buildChunk, 20); // small yield so map keeps decoding
-    }
-  };
-  buildChunk();
+  // Build whole list synchronously now (map is already loaded, so no lag concern)
+  const frag = document.createDocumentFragment();
+  for (const c of candidates) {
+    const row = document.createElement('div');
+    row.className = 'tut-country-row';
+    row.dataset.id = c.id;
+    row.dataset.idx = c.idx;
+    row.dataset.name = c.name.toLowerCase();
+    row.innerHTML =
+      '<div class="tut-country-color" style="background:' + c.color + '"></div>' +
+      '<div class="tut-country-name">' + escapeHtml(c.name) + '</div>' +
+      '<div class="tut-country-meta">' + c.pixels.toLocaleString() + ' px</div>';
+    row.onclick = () => selectTutCountry(c, row);
+    frag.appendChild(row);
+  }
+  list.appendChild(frag);
 }
 
 function selectTutCountry(c, rowEl) {
@@ -2741,28 +2772,49 @@ function filterTutCountries() {
   });
 }
 
-async function fetchTutWorldStats() {
-  // Pull live stats from public endpoints
+async function fetchWorldStats() {
+  // Pull live stats from public endpoints; update BOTH the tutorial header
+  // and the persistent bottom-centre bar with the same data.
+  let players = 0, alliances = 0, conquered = 0;
   try {
     const [lb, al] = await Promise.all([
       fetch('/api/stats/leaderboard').then(r => r.json()).catch(() => ({})),
       fetch('/api/alliances').then(r => r.json()).catch(() => ({})),
     ]);
-    const playersEl = document.getElementById('tut-stat-players');
-    const conqEl = document.getElementById('tut-stat-conquered');
-    const allEl = document.getElementById('tut-stat-alliances');
-    if (playersEl) playersEl.textContent = (lb && typeof lb.totalPlayers === 'number') ? lb.totalPlayers.toLocaleString() : '0';
-    if (conqEl) {
-      // Count currently conquered countries from client state if available
-      if (typeof conqueredSet !== 'undefined' && conqueredSet.size) {
-        conqEl.textContent = conqueredSet.size.toLocaleString();
-      } else {
-        conqEl.textContent = '—';
-      }
-    }
-    if (allEl) allEl.textContent = (al && al.alliances) ? al.alliances.length.toString() : '0';
+    players   = (lb && typeof lb.totalPlayers === 'number') ? lb.totalPlayers : 0;
+    alliances = (al && al.alliances) ? al.alliances.length : 0;
   } catch (e) { /* silent */ }
+  // Conquered count comes from client-side state — the size of conqueredSet
+  if (typeof conqueredSet !== 'undefined' && conqueredSet.size) {
+    conquered = conqueredSet.size;
+  }
+
+  const playersStr   = players.toLocaleString();
+  const conqueredStr = conquered.toLocaleString();
+  const alliancesStr = alliances.toString();
+
+  // Update tutorial header stats
+  const t1 = document.getElementById('tut-stat-players');
+  const t2 = document.getElementById('tut-stat-conquered');
+  const t3 = document.getElementById('tut-stat-alliances');
+  if (t1) t1.textContent = playersStr;
+  if (t2) t2.textContent = conqueredStr;
+  if (t3) t3.textContent = alliancesStr;
+
+  // Update persistent bottom bar
+  const b1 = document.getElementById('ws-players');
+  const b2 = document.getElementById('ws-conquered');
+  const b3 = document.getElementById('ws-alliances');
+  if (b1) b1.textContent = playersStr;
+  if (b2) b2.textContent = conqueredStr;
+  if (b3) b3.textContent = alliancesStr;
 }
+// Legacy alias for any leftover callers in tutorial code
+const fetchTutWorldStats = fetchWorldStats;
+// Refresh world state every 15s
+setInterval(fetchWorldStats, 15000);
+// Initial fetch after a short delay so the bottom bar populates on load
+setTimeout(fetchWorldStats, 2000);
 
 function bindTutLoadProgress() {
   // Poll load progress until map is ready
