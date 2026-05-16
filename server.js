@@ -1569,36 +1569,6 @@ wss.on('connection', (ws, req) => {
         if (msg.pixels.length > MAX_STROKE_PX) return;
         const { changed, conquests, reversals } = applyPixels(msg.pixels, player.countryId);
         if (changed.length) queueDelta(changed);
-        // Encirclement detection — check if this stroke enclosed any region
-        if (changed.length) {
-          const enc = detectEncirclement(msg.pixels, player.countryId);
-          if (enc) {
-            // Auto-claim the enclosed pixels
-            const encApplied = applyPixels(enc.enclosed, player.countryId);
-            if (encApplied.changed.length) queueDelta(encApplied.changed);
-            // Apply regen bonus
-            const bonus = getEncircleBonus(enc.count);
-            encircleBonuses.set(String(player.countryId), {
-              mult:      bonus.mult,
-              expiresAt: Date.now() + bonus.durationMs,
-            });
-            // Broadcast to the player so they see the bonus + timer
-            try {
-              if (player.ws && player.ws.readyState === 1) {
-                player.ws.send(JSON.stringify({
-                  type:        'encirclement',
-                  countryId:   player.countryId,
-                  enclosed:    enc.count,
-                  mult:        bonus.mult,
-                  durationMs:  bonus.durationMs,
-                  cx:          enc.centerX,
-                  cy:          enc.centerY,
-                }));
-              }
-            } catch (e) { /* silent */ }
-            console.log(`[Encircle] ${player.countryId} enclosed ${enc.count}px → ${bonus.mult}× regen for ${bonus.durationMs/1000}s`);
-          }
-        }
         // Award XP and stats to logged-in players
         if (player.discordId && changed.length) {
           updateProfileXP(player.discordId, changed.length);
@@ -1627,6 +1597,38 @@ wss.on('connection', (ws, req) => {
           profile.points        += conquests.length * 50;
           markProfilesDirty();
         }
+        break;
+      }
+
+      case 'stroke-end': {
+        // Sent by client on mouseup/touchend with the full stroke buffer.
+        // Pixels have ALREADY been applied via per-pixel 'stroke' events.
+        // We only run encirclement detection here.
+        if (!player.countryId || !Array.isArray(msg.pixels)) return;
+        if (msg.pixels.length < 4 || msg.pixels.length > 5000) return;
+        const enc = detectEncirclement(msg.pixels, player.countryId);
+        if (!enc) return;
+        const encApplied = applyPixels(enc.enclosed, player.countryId);
+        if (encApplied.changed.length) queueDelta(encApplied.changed);
+        const bonus = getEncircleBonus(enc.count);
+        encircleBonuses.set(String(player.countryId), {
+          mult:      bonus.mult,
+          expiresAt: Date.now() + bonus.durationMs,
+        });
+        try {
+          if (player.ws && player.ws.readyState === 1) {
+            player.ws.send(JSON.stringify({
+              type:        'encirclement',
+              countryId:   player.countryId,
+              enclosed:    enc.count,
+              mult:        bonus.mult,
+              durationMs:  bonus.durationMs,
+              cx:          enc.centerX,
+              cy:          enc.centerY,
+            }));
+          }
+        } catch (e) { /* silent */ }
+        console.log(`[Encircle] ${player.countryId} enclosed ${enc.count}px → ${bonus.mult}× regen for ${bonus.durationMs/1000}s`);
         break;
       }
 

@@ -4328,37 +4328,38 @@ function mpHandleMessage(msg) {
       // Pixels in state.runs were painted by a player or bot; paint them at full alpha.
       // Pixels NOT in runs keep their faint prepopulate fill.
       if (msg.state?.runs) {
-        // Group runs by featList index for batch painting
-        const byFi = {};
+        // Apply server state — overlay each actively-painted pixel at full alpha.
+        // We paint individually rather than via getImageData bbox to avoid any
+        // partial-rect overwrite bugs. With ~500k typical run pixels, this is ~150ms
+        // which is fine for a once-per-session welcome.
         for (const { s, l, o } of msg.state.runs) {
           const fi = featList.findIndex(f => f.id === String(o));
           if (fi < 0) continue;
-          if (!byFi[fi]) byFi[fi] = [];
-          for (let i = s; i < s + l; i++) {
-            claimByPixel[i] = fi;
-            byFi[fi].push(i);
-          }
-        }
-        // For each owner, build one ImageData covering its painted pixels (full alpha 215)
-        for (const [fi, pixelIdxs] of Object.entries(byFi)) {
-          const [r,g,b] = hexRgb(featList[+fi].color);
-          // Find bounding box of these pixels for tighter putImageData
-          let x0 = MAP_W, y0 = MAP_H, x1 = -1, y1 = -1;
-          for (const i of pixelIdxs) {
-            const x = i % MAP_W, y = (i / MAP_W) | 0;
-            if (x < x0) x0 = x; if (x > x1) x1 = x;
-            if (y < y0) y0 = y; if (y > y1) y1 = y;
-          }
-          if (x1 < x0 || y1 < y0) continue;
-          const w = x1 - x0 + 1, h = y1 - y0 + 1;
-          const img = claimCtx.getImageData(x0, y0, w, h);
+          const [r,g,b] = hexRgb(featList[fi].color);
+          // Build one ImageData buffer for this run (contiguous pixels)
+          const img = claimCtx.createImageData(l, 1);
           const d = img.data;
-          for (const i of pixelIdxs) {
-            const x = (i % MAP_W) - x0, y = ((i / MAP_W) | 0) - y0;
-            const p = (y * w + x) * 4;
+          for (let k = 0; k < l; k++) {
+            const p = k * 4;
             d[p]=r; d[p+1]=g; d[p+2]=b; d[p+3]=215;
           }
-          claimCtx.putImageData(img, x0, y0);
+          // Iterate the run, splitting at row boundaries (since createImageData is row-aligned)
+          let pos = s;
+          while (pos < s + l) {
+            const x = pos % MAP_W;
+            const y = (pos / MAP_W) | 0;
+            const rowRemainder = Math.min(MAP_W - x, (s + l) - pos);
+            // Write rowRemainder pixels starting at (x, y)
+            const slice = new Uint8ClampedArray(rowRemainder * 4);
+            for (let k = 0; k < rowRemainder; k++) {
+              const p = k * 4;
+              slice[p]=r; slice[p+1]=g; slice[p+2]=b; slice[p+3]=215;
+              claimByPixel[pos + k] = fi;
+            }
+            const rowImg = new ImageData(slice, rowRemainder, 1);
+            claimCtx.putImageData(rowImg, x, y);
+            pos += rowRemainder;
+          }
         }
       }
 if (msg.state?.conquered) {
@@ -6391,6 +6392,16 @@ vp.addEventListener("mousemove",e=>{
 window.addEventListener("mouseup",()=>{
   if(isPainting){
     setTimeout(runAutoFill, 10);
+    // Send the full stroke buffer to the server so it can detect encirclement.
+    // (Individual per-pixel strokes don't carry enough info for closed-loop detection.)
+    if (strokePixelBuffer.length >= 4 && wsReady) {
+      try {
+        ws.send(JSON.stringify({
+          type: 'stroke-end',
+          pixels: strokePixelBuffer.slice(),
+        }));
+      } catch (e) { /* ignore */ }
+    }
     strokePixelBuffer=[];
   }
   isPainting=false;isDragging=false;vp.style.cursor="crosshair";
@@ -6485,7 +6496,18 @@ vp.addEventListener("touchmove",e=>{
   if(e.touches.length===2){const d=tdist(e);if(lastDist){const r=vp.getBoundingClientRect();doZoom(d/lastDist,((e.touches[0].clientX+e.touches[1].clientX)/2)-r.left,((e.touches[0].clientY+e.touches[1].clientY)/2)-r.top);}lastDist=d;}
   e.preventDefault();
 },{passive:false});
-vp.addEventListener("touchend",()=>{if(isPainting)setTimeout(runAutoFill,0);isPainting=false;lastDist=null;});
+vp.addEventListener("touchend",()=>{
+  if(isPainting){
+    setTimeout(runAutoFill,0);
+    if (strokePixelBuffer.length >= 4 && wsReady) {
+      try {
+        ws.send(JSON.stringify({ type: 'stroke-end', pixels: strokePixelBuffer.slice() }));
+      } catch (e) {}
+    }
+    strokePixelBuffer = [];
+  }
+  isPainting=false;lastDist=null;
+});
 function tdist(e){return Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}
 
 // ── Procedural fallback ───────────────────────────────────────────
