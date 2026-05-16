@@ -410,6 +410,51 @@ const conqueredSet = new Set();
 const humanClaimedCountries = new Set();
 const HUMAN_CLAIM_RELEASE_THRESHOLD = 0.30; // bot starts reclaiming again if <30% enemy held
 const countryPxCount = {}; // countryId → pixel count
+
+// ── David vs Goliath system ───────────────────────────────────────
+// Small countries (low world share) get bonus regen so they can fight back
+// against neighbours that have spread aggressively.
+//
+// World share = (pixels owned by country) / (total land pixels in the world)
+// Multiplier scale:
+//   share ≤ 0.001 (0.1%) → 5×    — tiny countries get max boost
+//   share ≤ 0.005 (0.5%) → 3×
+//   share ≤ 0.01  (1%)   → 2×
+//   share ≤ 0.05  (5%)   → 1.5×  — slight buff for mid-sized
+//   share >  0.05        → 1×    — no bonus, big countries play normal
+let totalLandPxCached = 0;
+function recomputeTotalLand() {
+  totalLandPxCached = Object.values(geoTotal).reduce((a, b) => a + b, 0);
+}
+function getWorldShare(countryId) {
+  const owned = countryPxCount[countryId] || 0;
+  if (totalLandPxCached <= 0) return 0;
+  return owned / totalLandPxCached;
+}
+function getRegenMultiplier(countryId) {
+  const share = getWorldShare(countryId);
+  if (share <= 0.001) return 5;
+  if (share <= 0.005) return 3;
+  if (share <= 0.01)  return 2;
+  if (share <= 0.05)  return 1.5;
+  return 1;
+}
+
+// Build a snapshot of world shares + multipliers for the client to display.
+// Sent every ~5s as part of the players broadcast.
+function buildDavidSnapshot() {
+  if (totalLandPxCached <= 0) recomputeTotalLand();
+  const out = {};
+  for (const cid of Object.keys(countryPxCount)) {
+    const share = getWorldShare(cid);
+    const mult  = getRegenMultiplier(cid);
+    if (share > 0 || mult > 1) {
+      out[cid] = { share, mult };
+    }
+  }
+  return out;
+}
+
 const countryNames   = {}; // countryId → display name (populated from client bootstrap)
 const indexToId      = {}; // featList index → real country ID (geoAtPixel stores indices)
 
@@ -459,11 +504,12 @@ function broadcast(msg, excludePid = -1) {
 }
 
 function broadcastPlayers() {
+  const davidSnapshot = buildDavidSnapshot();
   const list = [];
   for (const [pid, p] of players) {
     list.push({ id: pid, countryId: p.countryId, pixels: countryPxCount[p.countryId] || 0, isBot: !!p.isBot });
   }
-  broadcast(JSON.stringify({ type: 'players', list }));
+  broadcast(JSON.stringify({ type: 'players', list, david: davidSnapshot }));
 }
 
 // ── State snapshot (RLE compressed) ──────────────────────────────
@@ -766,8 +812,11 @@ function updateOwnerIndex(pixelOffset, oldCidx, newCidx) {
 
 // Regen bot buckets — staggered to avoid GC spikes
 setInterval(() => {
+  // Use David multiplier: small countries regen faster than big ones
   for (const bot of bots.values()) {
-    if (bot.bucket < BOT_BUCKET_MAX) bot.bucket++;
+    if (bot.bucket >= BOT_BUCKET_MAX) continue;
+    const mult = getRegenMultiplier(bot.countryId);
+    bot.bucket = Math.min(BOT_BUCKET_MAX, bot.bucket + mult);
   }
 }, BOT_REGEN_MS);
 
@@ -1296,6 +1345,7 @@ wss.on('connection', (ws, req) => {
         if (msg.geoTotal && Object.keys(msg.geoTotal).length > 0) {
           for (const k of Object.keys(geoTotal)) delete geoTotal[k];
           Object.assign(geoTotal, msg.geoTotal);
+          recomputeTotalLand();
         }
         // Country names from client (used by bot war reporter)
         if (msg.geoNames && Object.keys(msg.geoNames).length > 0) {
@@ -1337,6 +1387,7 @@ wss.on('connection', (ws, req) => {
           playerId: pid,
           botIds: [...bots.keys()],
           state: buildSnapshot(),
+          david: buildDavidSnapshot(),
         }));
         broadcastPlayers();
         break;

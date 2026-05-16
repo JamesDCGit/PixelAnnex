@@ -632,6 +632,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <span id="bucket-count">10</span>
       <span style="color:#334155">px</span>
       <span id="bucket-timer">+1 in 60s</span>
+      <span id="david-badge" style="display:none;margin-left:8px;padding:2px 7px;background:linear-gradient(90deg,rgba(99,102,241,.25),rgba(129,140,248,.18));border:1px solid rgba(129,140,248,.45);border-radius:4px;font-size:10px;color:#a5b4fc;letter-spacing:.04em;white-space:nowrap;"></span>
     </div>
     <div id="stats">4096×2048 · Claimed: <b id="px-count">0</b> px</div>
   </div>
@@ -2359,6 +2360,7 @@ function scheduleLegend(){
       // Blend country colour against land base (#535353) at alpha=215
       // to match exactly how it looks painted on the map canvas
       const row=document.createElement("div");row.className="leg-row";
+      row.dataset.countryId = f.id;
       row.onclick=()=>jumpToCountry(+idx);
       row.title='Click to jump to ' + f.name;
       const _lf=createFlagEl(f.id,1); if(_lf)row.appendChild(_lf);
@@ -2529,16 +2531,20 @@ function updateBucketHUD(){
 
 // Regen ticker: runs every second
 setInterval(()=>{
-  if(document.hidden) return; // don't count ticks while tab is hidden
+  if(document.hidden) return;
   if(pixelBucket>=BUCKET_MAX){ $("bucket-timer").textContent="FULL"; return; }
   regenSecsLeft--;
   if(regenSecsLeft<=0){
-    pixelBucket = Math.min(BUCKET_MAX, pixelBucket+1);
+    // David multiplier: small countries regen faster
+    const mult = getMyMultiplier();
+    pixelBucket = Math.min(BUCKET_MAX, pixelBucket + mult);
     regenSecsLeft = REGEN_INTERVAL;
     updateBucketHUD();
     sfxBucketRegen();
   }
-  $("bucket-timer").textContent = "+1 in "+regenSecsLeft+"s";
+  const mult = getMyMultiplier();
+  const suffix = mult > 1 ? (' +'+mult) : '+1';
+  $("bucket-timer").textContent = suffix+" in "+regenSecsLeft+"s";
 }, 1000);
 
 // ── Bomb functionality ────────────────────────────────────────────
@@ -2639,6 +2645,47 @@ function detonateBomb(mapX, mapY){
 
 // Player count per country id — updated from server 'players' message
 const _playerCountByCountry = {};
+
+// ── David vs Goliath system (client side) ─────────────────────────
+// Server broadcasts world share + regen multiplier per country in 'players' messages.
+// Client uses this to: speed up local bucket regen for low-share countries, and show UI badges.
+const davidByCountry = {}; // countryId → { share, mult }
+
+function getMyMultiplier() {
+  if (currentIdx < 0) return 1;
+  const f = featList[currentIdx];
+  if (!f || !f.id) return 1;
+  const d = davidByCountry[f.id];
+  return (d && d.mult) ? d.mult : 1;
+}
+
+function getMyWorldShare() {
+  if (currentIdx < 0) return 0;
+  const f = featList[currentIdx];
+  if (!f || !f.id) return 0;
+  const d = davidByCountry[f.id];
+  return (d && d.share) ? d.share : 0;
+}
+
+function getCountryMultiplier(countryId) {
+  const d = davidByCountry[String(countryId)];
+  return (d && d.mult) ? d.mult : 1;
+}
+
+function updateDavidHUD() {
+  const el = document.getElementById('david-badge');
+  if (!el) return;
+  const mult = getMyMultiplier();
+  const share = getMyWorldShare();
+  if (mult > 1) {
+    el.style.display = 'inline-block';
+    el.innerHTML = '🛡️ <b>' + mult + 'x</b> regen';
+    el.title = 'David buff: your country has ' + (share * 100).toFixed(2) + '% world share — you regen ' + mult + '× faster.';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
 // Track pixel losses per country in a rolling 10s window.
 // If a country loses >5px/s sustained for 10s → show warning toast.
 const ATTACK_WINDOW_MS  = 10000; // rolling window
@@ -4232,12 +4279,43 @@ function mpHandleMessage(msg) {
         const id = String(p.countryId);
         _playerCountByCountry[id] = (_playerCountByCountry[id]||0) + 1;
       }
+      // David snapshot
+      if (msg.david) {
+        Object.keys(davidByCountry).forEach(k => delete davidByCountry[k]);
+        Object.assign(davidByCountry, msg.david);
+        updateDavidHUD();
+      }
       updateServerStatus(true, humans.length, bots);
       renderCselList(document.getElementById('csel-search')?.value||'');
       break;
     }
   }
 }
+
+
+// Periodic David shield refresh in legend
+setInterval(() => {
+  updateDavidHUD();
+  const legItems = document.getElementById('leg-items');
+  if (!legItems) return;
+  legItems.querySelectorAll('.leg-row').forEach(row => {
+    const countryId = row.dataset.countryId;
+    if (!countryId) return;
+    const d = davidByCountry[countryId];
+    let shield = row.querySelector('.legend-david-shield');
+    if (d && d.mult > 1) {
+      if (!shield) {
+        shield = document.createElement('span');
+        shield.className = 'legend-david-shield';
+        shield.style.cssText = 'margin-left:4px;font-size:9px;color:#a5b4fc;';
+        row.appendChild(shield);
+      }
+      shield.textContent = '🛡️' + d.mult + 'x';
+    } else if (shield) {
+      shield.remove();
+    }
+  });
+}, 3000);
 
 // Batch rebuild claim canvas from claimByPixel state
 function mpRebuildClaimCanvas() {
