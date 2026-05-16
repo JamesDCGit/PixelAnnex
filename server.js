@@ -714,7 +714,12 @@ function detectEncirclement(strokePixels, countryId) {
   }
 
   if (enclosed.length < ENCIRCLE_MIN_PX) return null;
-  return { enclosed, count: enclosed.length };
+  // Compute centroid (average position) of enclosed pixels
+  let sumX = 0, sumY = 0;
+  for (const p of enclosed) { sumX += p.x; sumY += p.y; }
+  const centerX = Math.round(sumX / enclosed.length);
+  const centerY = Math.round(sumY / enclosed.length);
+  return { enclosed, count: enclosed.length, centerX, centerY };
 }
 
 // Map enclosed pixel count → regen multiplier and duration
@@ -1550,6 +1555,8 @@ wss.on('connection', (ws, req) => {
                   enclosed:    enc.count,
                   mult:        bonus.mult,
                   durationMs:  bonus.durationMs,
+                  cx:          enc.centerX,
+                  cy:          enc.centerY,
                 }));
               }
             } catch (e) { /* silent */ }

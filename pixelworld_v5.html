@@ -439,6 +439,59 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 
 
 /* ── Encirclement bonus banner (top-right corner, with timer) ── */
+
+/* ── Encirclement burst effect (centred over enclosed area) ── */
+.encircle-burst{
+  position:absolute;pointer-events:none;
+  font-family:'Courier New',monospace;
+  font-weight:700;color:#fff;
+  z-index:130;
+  text-align:center;
+  text-shadow:
+    0 0 6px rgba(249,115,22,0.9),
+    0 0 14px rgba(249,115,22,0.7),
+    0 2px 4px rgba(0,0,0,0.8);
+  letter-spacing:.05em;
+  animation:encircle-burst-anim 1.6s cubic-bezier(.22,1,.36,1) forwards;
+  white-space:nowrap;
+  user-select:none;
+}
+.encircle-burst .eb-mult{
+  display:block;font-size:30px;line-height:1;
+  color:#fed7aa;
+}
+.encircle-burst .eb-label{
+  display:block;font-size:11px;line-height:1.4;margin-top:4px;
+  color:#fff;letter-spacing:.15em;text-transform:uppercase;
+}
+.encircle-burst .eb-px{
+  display:block;font-size:10px;color:#fdba74;letter-spacing:.08em;margin-top:2px;
+}
+@keyframes encircle-burst-anim{
+  0%   { transform:translate(-50%,-50%) scale(0.4); opacity:0;}
+  20%  { transform:translate(-50%,-50%) scale(1.15); opacity:1;}
+  40%  { transform:translate(-50%,-50%) scale(1.0); opacity:1;}
+  85%  { transform:translate(-50%,-50%) scale(1.0); opacity:1;}
+  100% { transform:translate(-50%,-50%) scale(1.05); opacity:0;}
+}
+
+/* Ring pulse drawn behind the text */
+.encircle-burst-ring{
+  position:absolute;pointer-events:none;
+  border:2px solid rgba(249,115,22,0.85);
+  border-radius:50%;
+  z-index:129;
+  box-shadow:
+    0 0 24px rgba(249,115,22,0.7) inset,
+    0 0 24px rgba(249,115,22,0.7);
+  animation:encircle-ring-anim 1.6s cubic-bezier(.22,1,.36,1) forwards;
+}
+@keyframes encircle-ring-anim{
+  0%   { transform:translate(-50%,-50%) scale(0.2); opacity:0;}
+  30%  { transform:translate(-50%,-50%) scale(1.1); opacity:1;}
+  100% { transform:translate(-50%,-50%) scale(2.2); opacity:0;}
+}
+
 #encircle-banner{
   position:absolute;top:60px;right:14px;
   background:linear-gradient(135deg,#7c2d12,#f97316);
@@ -862,7 +915,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <button class="dbg-btn" onclick="dbgCheckFightBack()">Check fight-back status</button>
       <button class="dbg-btn" style="color:#a5b4fc;border-color:rgba(165,180,252,.3)" onclick="dbgShowDavidState()">Show my David state</button>
       <button class="dbg-btn" style="color:#a5b4fc;border-color:rgba(165,180,252,.3)" onclick="dbgListDavidCountries()">List all David countries</button>
-      <button class="dbg-btn" style="color:#f97316;border-color:rgba(249,115,22,.3)" onclick="applyEncirclementBonus(120, 5, 60000)">Trigger encirclement bonus (×5, 60s)</button>
+      <button class="dbg-btn" style="color:#f97316;border-color:rgba(249,115,22,.3)" onclick="applyEncirclementBonus(120, 5, 60000, MAP_W/2, MAP_H/2)">Trigger encirclement bonus (×5, 60s)</button>
     </div>
 
     <div class="dbg-section">
@@ -2699,10 +2752,51 @@ function getEncircleMultiplierLocal() {
   return _encircleMult;
 }
 
-function applyEncirclementBonus(enclosed, mult, durationMs) {
+
+// Render a brief celebration burst centred at map pixel (cx, cy).
+// Uses the same ox/oy/scale transform as the map canvases.
+function showEncircleBurst(mapCX, mapCY, enclosedCount, mult) {
+  const viewport = document.getElementById('viewport');
+  if (!viewport) return;
+
+  // Convert map coords → viewport-relative pixel
+  const screenX = ox + mapCX * scale;
+  const screenY = oy + mapCY * scale;
+
+  // Ring element behind the text
+  const ring = document.createElement('div');
+  ring.className = 'encircle-burst-ring';
+  // Size the ring proportional to enclosed area (rough √area on-screen)
+  const radius = Math.max(40, Math.min(120, Math.sqrt(enclosedCount) * 4 * Math.max(0.6, Math.min(scale, 3))));
+  ring.style.left   = screenX + 'px';
+  ring.style.top    = screenY + 'px';
+  ring.style.width  = (radius * 2) + 'px';
+  ring.style.height = (radius * 2) + 'px';
+  viewport.appendChild(ring);
+
+  // Text burst
+  const burst = document.createElement('div');
+  burst.className = 'encircle-burst';
+  burst.style.left = screenX + 'px';
+  burst.style.top  = screenY + 'px';
+  burst.innerHTML =
+    '<span class="eb-mult">×' + mult + '</span>' +
+    '<span class="eb-label">ENCIRCLED</span>' +
+    '<span class="eb-px">' + enclosedCount + ' px</span>';
+  viewport.appendChild(burst);
+
+  // Cleanup after animation finishes
+  setTimeout(() => { ring.remove(); burst.remove(); }, 1700);
+}
+
+function applyEncirclementBonus(enclosed, mult, durationMs, cx, cy) {
   _encircleExpiresAt = Date.now() + durationMs;
   _encircleMult      = mult;
   _encircleEnclosed  = enclosed;
+  // Show the brief centred burst over the enclosed region
+  if (typeof cx === 'number' && typeof cy === 'number') {
+    showEncircleBurst(cx, cy, enclosed, mult);
+  }
   const banner = document.getElementById('encircle-banner');
   if (!banner) return;
   banner.classList.add('active');
@@ -4384,7 +4478,7 @@ if (msg.state?.conquered) {
 
     case 'encirclement': {
       // Server confirmed we enclosed a region — apply the regen bonus locally
-      applyEncirclementBonus(msg.enclosed || 0, msg.mult || 1, msg.durationMs || 60_000);
+      applyEncirclementBonus(msg.enclosed || 0, msg.mult || 1, msg.durationMs || 60_000, msg.cx, msg.cy);
       break;
     }
 
