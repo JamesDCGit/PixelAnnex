@@ -631,19 +631,31 @@ function applyPixels(pixels, countryId) {
 // After a stroke, detect any closed region the player has enclosed and
 // auto-claim those pixels. Returns {enclosedCount, enclosedPixels}.
 //
-// Algorithm:
-//   1. Compute bounding box of the stroke, expanded by a buffer
-//   2. Within that bbox, flood-fill from the boundary edges marking
-//      pixels reachable from outside (BFS through any non-painter pixel)
-//   3. Any land pixel in the bbox that is NOT marked AND NOT owned by
-//      the painter is enclosed — auto-claim it.
-//
-// Performance: limited to strokes whose bbox is < 80×80 pixels, and caps
+// Performance: limited to strokes whose bbox is < 150×150 pixels, and caps
 // the enclosed claim count at 500 pixels to prevent runaway claims.
-const ENCIRCLE_MAX_BBOX  = 80;     // ignore strokes with bbox larger than this
-const ENCIRCLE_MIN_PX    = 50;     // need at least this many enclosed pixels for any reward
-const ENCIRCLE_MAX_PX    = 500;    // cap enclosed claims at this many pixels
+const ENCIRCLE_MAX_BBOX  = 150;    // bbox upper limit (was 80; loosened for real-world strokes)
+const ENCIRCLE_MIN_PX    = 50;     // min enclosed pixels for any reward
+const ENCIRCLE_MAX_PX    = 500;    // cap on auto-claimed enclosed pixels
 const ENCIRCLE_BBOX_PAD  = 4;      // buffer around stroke bbox
+
+// Bresenham line between two pixels — used to seal gaps where the mouse
+// moved fast between samples. Returns all pixels on the line.
+function _bresenhamLine(x0, y0, x1, y1) {
+  const out = [];
+  const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+  let x = x0, y = y0;
+  while (true) {
+    out.push({ x, y });
+    if (x === x1 && y === y1) break;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x += sx; }
+    if (e2 <  dx) { err += dx; y += sy; }
+    if (out.length > 1000) break; // safety cap
+  }
+  return out;
+}
 
 function detectEncirclement(strokePixels, countryId) {
   if (!strokePixels || strokePixels.length < 4) return null;
@@ -665,25 +677,47 @@ function detectEncirclement(strokePixels, countryId) {
   const bh = maxY - minY + 1;
   if (bw > ENCIRCLE_MAX_BBOX || bh > ENCIRCLE_MAX_BBOX) return null;
 
-  // 2. BFS flood-fill from bbox edges, marking outside-reachable pixels.
-  //    A pixel is "passable" (can flow through it) if it's NOT owned by the painter.
+  // 2. Build a "wall" mask covering the stroke + interpolated gaps.
+  //    This patches over fast-moving cursor gaps so a near-closed loop
+  //    still seals the BFS.
+  const wall = new Uint8Array(bw * bh);
+  const setWall = (gx, gy) => {
+    const lx = gx - minX, ly = gy - minY;
+    if (lx < 0 || lx >= bw || ly < 0 || ly >= bh) return;
+    wall[ly * bw + lx] = 1;
+  };
+  for (let s = 0; s < strokePixels.length; s++) {
+    const p = strokePixels[s];
+    setWall(p.x, p.y);
+    // Interpolate to previous point — seals gaps from fast mouse moves
+    if (s > 0) {
+      const prev = strokePixels[s - 1];
+      const dx = Math.abs(p.x - prev.x), dy = Math.abs(p.y - prev.y);
+      if (dx > 1 || dy > 1) {
+        const line = _bresenhamLine(prev.x, prev.y, p.x, p.y);
+        for (const pt of line) setWall(pt.x, pt.y);
+      }
+    }
+  }
+
+  // 3. BFS flood-fill from bbox edges, marking outside-reachable pixels.
+  //    Walls block the flood (acts like our painted stroke).
   const visited = new Uint8Array(bw * bh);
   const queue = [];
   const seed = (lx, ly) => {
     if (lx < 0 || lx >= bw || ly < 0 || ly >= bh) return;
     const li = ly * bw + lx;
     if (visited[li]) return;
+    if (wall[li]) return;
     const gi = (minY + ly) * MAP_W + (minX + lx);
-    if (claimByPixel[gi] === cidx) return; // can't flow through our own pixels
+    if (claimByPixel[gi] === cidx) return; // our existing territory also blocks
     visited[li] = 1;
     queue.push(li);
   };
 
-  // Seed all four edges of the bbox
   for (let lx = 0; lx < bw; lx++) { seed(lx, 0); seed(lx, bh - 1); }
   for (let ly = 0; ly < bh; ly++) { seed(0, ly); seed(bw - 1, ly); }
 
-  // BFS — flow through non-painter pixels
   while (queue.length) {
     const li = queue.shift();
     const lx = li % bw, ly = (li / bw) | 0;
@@ -692,6 +726,7 @@ function detectEncirclement(strokePixels, countryId) {
       if (nx < 0 || nx >= bw || ny < 0 || ny >= bh) continue;
       const nli = ny * bw + nx;
       if (visited[nli]) continue;
+      if (wall[nli]) continue;
       const ngi = (minY + ny) * MAP_W + (minX + nx);
       if (claimByPixel[ngi] === cidx) continue;
       visited[nli] = 1;
@@ -699,12 +734,13 @@ function detectEncirclement(strokePixels, countryId) {
     }
   }
 
-  // 3. Collect enclosed pixels: land, not painter-owned, not visited from outside
+  // 4. Collect enclosed pixels: land, not painter-owned, not visited from outside
   const enclosed = [];
   for (let ly = 0; ly < bh && enclosed.length < ENCIRCLE_MAX_PX; ly++) {
     for (let lx = 0; lx < bw && enclosed.length < ENCIRCLE_MAX_PX; lx++) {
       const li = ly * bw + lx;
       if (visited[li]) continue;
+      if (wall[li]) continue; // wall pixels are already painted by us
       const gx = minX + lx, gy = minY + ly;
       const gi = gy * MAP_W + gx;
       if (!landMask[gi]) continue;
