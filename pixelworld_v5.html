@@ -437,6 +437,34 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #world-state-bar .ws-val{font-size:13px;color:#fff;font-weight:600;}
 #world-state-bar .ws-lbl{font-size:9px;color:#64748b;letter-spacing:.08em;text-transform:uppercase;}
 
+
+/* ── Encirclement bonus banner (top-right corner, with timer) ── */
+#encircle-banner{
+  position:absolute;top:60px;right:14px;
+  background:linear-gradient(135deg,#7c2d12,#f97316);
+  color:#fff;font-family:'Courier New',monospace;
+  padding:10px 18px;border-radius:8px;
+  z-index:140;display:none;
+  font-size:12px;font-weight:700;letter-spacing:.08em;
+  box-shadow:0 4px 20px rgba(249,115,22,0.6), 0 0 0 1px rgba(255,255,255,0.18) inset;
+  pointer-events:none;
+  text-align:center;
+  min-width:180px;
+  animation:enc-pop .4s cubic-bezier(.5,1.5,.3,1);
+}
+#encircle-banner.active{display:block;}
+#encircle-banner .enc-icon{margin-right:6px;font-size:15px;vertical-align:middle;}
+#encircle-banner .enc-mult{font-size:18px;color:#fff;font-weight:700;}
+#encircle-banner .enc-timer{
+  display:block;margin-top:6px;padding:2px 8px;
+  background:rgba(0,0,0,0.3);border-radius:4px;
+  font-size:10px;letter-spacing:.06em;font-weight:500;
+}
+@keyframes enc-pop{
+  0%   {transform:scale(0.6);opacity:0;}
+  100% {transform:scale(1);opacity:1;}
+}
+
 #stats-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;
   display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);
@@ -743,6 +771,11 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <div class="ws-cell"><span class="ws-val" id="ws-conquered">—</span><span class="ws-lbl">conquered</span></div>
       <div class="ws-cell"><span class="ws-val" id="ws-alliances">—</span><span class="ws-lbl">alliances</span></div>
     </div>
+    <div id="encircle-banner">
+      <span class="enc-icon">🎯</span>
+      <span>ENCIRCLEMENT <span class="enc-mult" id="enc-mult-text">×2</span> regen</span>
+      <span class="enc-timer" id="enc-timer-text">60s · 50 px enclosed</span>
+    </div>
     <div id="fightback-banner">
       <span class="fb-icon">⚔️</span><span id="fb-text">FIGHT-BACK MODE</span><span class="fb-power" id="fb-power">+4 px/stroke</span>
     </div>
@@ -829,6 +862,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <button class="dbg-btn" onclick="dbgCheckFightBack()">Check fight-back status</button>
       <button class="dbg-btn" style="color:#a5b4fc;border-color:rgba(165,180,252,.3)" onclick="dbgShowDavidState()">Show my David state</button>
       <button class="dbg-btn" style="color:#a5b4fc;border-color:rgba(165,180,252,.3)" onclick="dbgListDavidCountries()">List all David countries</button>
+      <button class="dbg-btn" style="color:#f97316;border-color:rgba(249,115,22,.3)" onclick="applyEncirclementBonus(120, 5, 60000)">Trigger encirclement bonus (×5, 60s)</button>
     </div>
 
     <div class="dbg-section">
@@ -2653,12 +2687,60 @@ const _playerCountByCountry = {};
 // Client uses this to: speed up local bucket regen for low-share countries, and show UI badges.
 const davidByCountry = {}; // countryId → { share, mult }
 
+
+// ── Encirclement bonus tracking ──────────────────────────────────
+let _encircleExpiresAt = 0;
+let _encircleMult      = 1;
+let _encircleEnclosed  = 0;
+let _encircleTickId    = null;
+
+function getEncircleMultiplierLocal() {
+  if (!_encircleExpiresAt || Date.now() > _encircleExpiresAt) return 1;
+  return _encircleMult;
+}
+
+function applyEncirclementBonus(enclosed, mult, durationMs) {
+  _encircleExpiresAt = Date.now() + durationMs;
+  _encircleMult      = mult;
+  _encircleEnclosed  = enclosed;
+  const banner = document.getElementById('encircle-banner');
+  if (!banner) return;
+  banner.classList.add('active');
+  document.getElementById('enc-mult-text').textContent = '×' + mult;
+  // Start ticking the timer
+  if (_encircleTickId) clearInterval(_encircleTickId);
+  const tick = () => {
+    const remain = Math.max(0, _encircleExpiresAt - Date.now());
+    const secs = Math.ceil(remain / 1000);
+    const tEl = document.getElementById('enc-timer-text');
+    if (tEl) tEl.textContent = secs + 's · ' + enclosed + ' px enclosed';
+    if (remain <= 0) {
+      banner.classList.remove('active');
+      clearInterval(_encircleTickId);
+      _encircleTickId = null;
+      _encircleMult = 1;
+      _encircleExpiresAt = 0;
+    }
+  };
+  tick();
+  _encircleTickId = setInterval(tick, 500);
+  // Show a quick activity card too
+  actPushCard({
+    variant: 'win',
+    title:   '🎯 Encirclement!',
+    html:    'You enclosed <b>' + enclosed + 'px</b> — <b>×' + mult + '</b> regen for ' + (durationMs/1000) + 's',
+  });
+  sfxConquest && sfxConquest(); // reuse the conquest sting (if available)
+}
+
 function getMyMultiplier() {
   if (currentIdx < 0) return 1;
   const f = featList[currentIdx];
   if (!f || !f.id) return 1;
   const d = davidByCountry[f.id];
-  return (d && d.mult) ? d.mult : 1;
+  const base = (d && d.mult) ? d.mult : 1;
+  const enc  = getEncircleMultiplierLocal();
+  return base * enc;
 }
 
 function getMyWorldShare() {
@@ -4297,6 +4379,12 @@ if (msg.state?.conquered) {
       const targetFi = featList.findIndex(f => f.id === String(geoCountryId));
       if (targetFi >= 0) eraseFlag(targetFi);
       scheduleLegend();
+      break;
+    }
+
+    case 'encirclement': {
+      // Server confirmed we enclosed a region — apply the regen bonus locally
+      applyEncirclementBonus(msg.enclosed || 0, msg.mult || 1, msg.durationMs || 60_000);
       break;
     }
 

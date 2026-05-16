@@ -451,13 +451,18 @@ function getRegenMultiplier(countryId) {
 function buildDavidSnapshot() {
   if (totalLandPxCached <= 0) recomputeTotalLand();
   const out = {};
-  // Iterate all known countries (via geoTotal) so every country gets a multiplier,
-  // not just ones that have been actively painted.
   for (const geoIdx of Object.keys(geoTotal)) {
     const cid   = String(geoIdx);
     const share = getWorldShare(cid);
     const mult  = getRegenMultiplier(cid);
     out[cid] = { share, mult };
+  }
+  // Layer active encirclement bonuses on top — these stack with David
+  for (const [cid, bonus] of encircleBonuses) {
+    if (Date.now() > bonus.expiresAt) { encircleBonuses.delete(cid); continue; }
+    if (!out[cid]) out[cid] = { share: getWorldShare(cid), mult: 1 };
+    out[cid].encMult = bonus.mult;
+    out[cid].encExpiresAt = bonus.expiresAt;
   }
   return out;
 }
@@ -621,6 +626,122 @@ function applyPixels(pixels, countryId) {
   }
   return { changed, conquests, reversals };
 }
+
+// ── Encirclement detection ────────────────────────────────────────
+// After a stroke, detect any closed region the player has enclosed and
+// auto-claim those pixels. Returns {enclosedCount, enclosedPixels}.
+//
+// Algorithm:
+//   1. Compute bounding box of the stroke, expanded by a buffer
+//   2. Within that bbox, flood-fill from the boundary edges marking
+//      pixels reachable from outside (BFS through any non-painter pixel)
+//   3. Any land pixel in the bbox that is NOT marked AND NOT owned by
+//      the painter is enclosed — auto-claim it.
+//
+// Performance: limited to strokes whose bbox is < 80×80 pixels, and caps
+// the enclosed claim count at 500 pixels to prevent runaway claims.
+const ENCIRCLE_MAX_BBOX  = 80;     // ignore strokes with bbox larger than this
+const ENCIRCLE_MIN_PX    = 50;     // need at least this many enclosed pixels for any reward
+const ENCIRCLE_MAX_PX    = 500;    // cap enclosed claims at this many pixels
+const ENCIRCLE_BBOX_PAD  = 4;      // buffer around stroke bbox
+
+function detectEncirclement(strokePixels, countryId) {
+  if (!strokePixels || strokePixels.length < 4) return null;
+  const cidx = getIdx(countryId);
+
+  // 1. Bounding box of the stroke
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const { x, y } of strokePixels) {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  minX = Math.max(0, minX - ENCIRCLE_BBOX_PAD);
+  minY = Math.max(0, minY - ENCIRCLE_BBOX_PAD);
+  maxX = Math.min(MAP_W - 1, maxX + ENCIRCLE_BBOX_PAD);
+  maxY = Math.min(MAP_H - 1, maxY + ENCIRCLE_BBOX_PAD);
+  const bw = maxX - minX + 1;
+  const bh = maxY - minY + 1;
+  if (bw > ENCIRCLE_MAX_BBOX || bh > ENCIRCLE_MAX_BBOX) return null;
+
+  // 2. BFS flood-fill from bbox edges, marking outside-reachable pixels.
+  //    A pixel is "passable" (can flow through it) if it's NOT owned by the painter.
+  const visited = new Uint8Array(bw * bh);
+  const queue = [];
+  const seed = (lx, ly) => {
+    if (lx < 0 || lx >= bw || ly < 0 || ly >= bh) return;
+    const li = ly * bw + lx;
+    if (visited[li]) return;
+    const gi = (minY + ly) * MAP_W + (minX + lx);
+    if (claimByPixel[gi] === cidx) return; // can't flow through our own pixels
+    visited[li] = 1;
+    queue.push(li);
+  };
+
+  // Seed all four edges of the bbox
+  for (let lx = 0; lx < bw; lx++) { seed(lx, 0); seed(lx, bh - 1); }
+  for (let ly = 0; ly < bh; ly++) { seed(0, ly); seed(bw - 1, ly); }
+
+  // BFS — flow through non-painter pixels
+  while (queue.length) {
+    const li = queue.shift();
+    const lx = li % bw, ly = (li / bw) | 0;
+    for (let d = 0; d < 4; d++) {
+      const nx = lx + DX4[d], ny = ly + DY4[d];
+      if (nx < 0 || nx >= bw || ny < 0 || ny >= bh) continue;
+      const nli = ny * bw + nx;
+      if (visited[nli]) continue;
+      const ngi = (minY + ny) * MAP_W + (minX + nx);
+      if (claimByPixel[ngi] === cidx) continue;
+      visited[nli] = 1;
+      queue.push(nli);
+    }
+  }
+
+  // 3. Collect enclosed pixels: land, not painter-owned, not visited from outside
+  const enclosed = [];
+  for (let ly = 0; ly < bh && enclosed.length < ENCIRCLE_MAX_PX; ly++) {
+    for (let lx = 0; lx < bw && enclosed.length < ENCIRCLE_MAX_PX; lx++) {
+      const li = ly * bw + lx;
+      if (visited[li]) continue;
+      const gx = minX + lx, gy = minY + ly;
+      const gi = gy * MAP_W + gx;
+      if (!landMask[gi]) continue;
+      if (claimByPixel[gi] === cidx) continue;
+      enclosed.push({ x: gx, y: gy });
+    }
+  }
+
+  if (enclosed.length < ENCIRCLE_MIN_PX) return null;
+  return { enclosed, count: enclosed.length };
+}
+
+// Map enclosed pixel count → regen multiplier and duration
+function getEncircleBonus(count) {
+  // Tier scale:
+  //   50–149   → 2×  for 60s
+  //   150–299  → 5×  for 60s
+  //   300–499  → 8×  for 60s
+  //   500+     → 10× for 60s
+  let mult = 2;
+  if (count >= 500) mult = 10;
+  else if (count >= 300) mult = 8;
+  else if (count >= 150) mult = 5;
+  else                    mult = 2;
+  return { mult, durationMs: 60_000 };
+}
+
+// Active encirclement bonuses per country (countryId → { mult, expiresAt })
+const encircleBonuses = new Map();
+
+function getEncircleMultiplier(countryId) {
+  const b = encircleBonuses.get(String(countryId));
+  if (!b) return 1;
+  if (Date.now() > b.expiresAt) { encircleBonuses.delete(String(countryId)); return 1; }
+  return b.mult;
+}
+
 
 function finisherFill(geoIdx, countryId) {
   const cidx = getIdx(countryId);
@@ -819,10 +940,12 @@ function updateOwnerIndex(pixelOffset, oldCidx, newCidx) {
 
 // Regen bot buckets — staggered to avoid GC spikes
 setInterval(() => {
-  // Use David multiplier: small countries regen faster than big ones
+  // Bot regen = David multiplier × Encircle multiplier (both >= 1)
   for (const bot of bots.values()) {
     if (bot.bucket >= BOT_BUCKET_MAX) continue;
-    const mult = getRegenMultiplier(bot.countryId);
+    const m1 = getRegenMultiplier(bot.countryId);
+    const m2 = getEncircleMultiplier(bot.countryId);
+    const mult = m1 * m2;
     bot.bucket = Math.min(BOT_BUCKET_MAX, bot.bucket + mult);
   }
 }, BOT_REGEN_MS);
@@ -1405,6 +1528,34 @@ wss.on('connection', (ws, req) => {
         if (msg.pixels.length > MAX_STROKE_PX) return;
         const { changed, conquests, reversals } = applyPixels(msg.pixels, player.countryId);
         if (changed.length) queueDelta(changed);
+        // Encirclement detection — check if this stroke enclosed any region
+        if (changed.length) {
+          const enc = detectEncirclement(msg.pixels, player.countryId);
+          if (enc) {
+            // Auto-claim the enclosed pixels
+            const encApplied = applyPixels(enc.enclosed, player.countryId);
+            if (encApplied.changed.length) queueDelta(encApplied.changed);
+            // Apply regen bonus
+            const bonus = getEncircleBonus(enc.count);
+            encircleBonuses.set(String(player.countryId), {
+              mult:      bonus.mult,
+              expiresAt: Date.now() + bonus.durationMs,
+            });
+            // Broadcast to the player so they see the bonus + timer
+            try {
+              if (player.ws && player.ws.readyState === 1) {
+                player.ws.send(JSON.stringify({
+                  type:        'encirclement',
+                  countryId:   player.countryId,
+                  enclosed:    enc.count,
+                  mult:        bonus.mult,
+                  durationMs:  bonus.durationMs,
+                }));
+              }
+            } catch (e) { /* silent */ }
+            console.log(`[Encircle] ${player.countryId} enclosed ${enc.count}px → ${bonus.mult}× regen for ${bonus.durationMs/1000}s`);
+          }
+        }
         // Award XP and stats to logged-in players
         if (player.discordId && changed.length) {
           updateProfileXP(player.discordId, changed.length);
