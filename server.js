@@ -629,23 +629,26 @@ function buildGeoIndex() {
 // Get random frontier pixels for a bot (pixels adjacent to non-owned land)
 const DX4 = [-1,1,0,0], DY4 = [0,0,-1,1];
 function getBotTargets(countryId, limit) {
-  const cidx   = getIdx(countryId);
-  const geoIdx = getGeoForCountry(countryId);
-  const pixels = geoPixels[geoIdx];
-  if (!pixels || pixels.length === 0) return [];
+  const cidx       = getIdx(countryId);
+  const geoIdx     = getGeoForCountry(countryId);
+  const homePixels = geoPixels[geoIdx];
+  if (!homePixels || homePixels.length === 0) return [];
 
-  // Separate into: enemy-held (defend first) and unclaimed/expandable
-  const defend = [], expand = [];
-  // Sample up to 200 random pixels from the geo to find targets quickly
-  const sampleSize = Math.min(200, pixels.length);
-  const step = Math.max(1, Math.floor(pixels.length / sampleSize));
+  // Three target pools, scanned in priority order:
+  //   1. defend — enemy-held pixels inside our home country (reclaim our land)
+  //   2. expand — unclaimed pixels inside our home country (grow into vacant land)
+  //   3. attack — pixels in neighbouring countries, adjacent to our existing territory
+  const defend = [], expand = [], attack = [];
 
-  for (let s = 0; s < pixels.length && defend.length + expand.length < limit * 8; s += step) {
-    const i = pixels[s];
+  // ── Phase 1: scan home country ────────────────────────────────
+  const homeSampleSize = Math.min(200, homePixels.length);
+  const homeStep = Math.max(1, Math.floor(homePixels.length / homeSampleSize));
+  let homeOwned = 0;
+  for (let s = 0; s < homePixels.length; s += homeStep) {
+    const i = homePixels[s];
     const owner = claimByPixel[i];
-    if (owner === cidx) continue; // already ours
+    if (owner === cidx) { homeOwned++; continue; }
 
-    // Check if this pixel is reachable (adjacent to own pixel)
     const x = i % MAP_W, y = (i / MAP_W) | 0;
     let adjacent = false;
     for (let d = 0; d < 4; d++) {
@@ -653,18 +656,47 @@ function getBotTargets(countryId, limit) {
       if (nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
       if (claimByPixel[ny*MAP_W+nx] === cidx) { adjacent = true; break; }
     }
-    if (!adjacent && owner !== cidx) {
-      // Also include pixels anywhere in geo if we have no territory yet
+    if (!adjacent) {
+      // No foothold yet → seed anywhere if home is currently empty
       if ((ownerPixels[cidx]?.size || 0) > 0) continue;
     }
-
-    if (owner > 0 && owner !== cidx) defend.push({x,y});
-    else expand.push({x,y});
+    if (owner >= 0 && owner !== cidx) defend.push({x,y});
+    else                              expand.push({x,y});
   }
 
-  // Prioritise defending, then expanding
-  const pool = defend.length > 0 ? defend : expand;
-  // Shuffle
+  // ── Phase 2: hunt for attack targets in adjacent countries ────
+  // Only attack if we have a strong home base — otherwise focus on defending.
+  // Threshold: 70%+ of sampled home pixels owned (we're stable).
+  const homeStableEnough = homeOwned / homeSampleSize >= 0.7;
+  if (homeStableEnough && defend.length === 0 && ownerPixels[cidx]) {
+    // Walk a sample of our owned pixels and look for 4-neighbour enemy land
+    const owned = [...ownerPixels[cidx]];
+    const ownedSample = Math.min(150, owned.length);
+    const ownedStep = Math.max(1, Math.floor(owned.length / ownedSample));
+    for (let s = 0; s < owned.length && attack.length < limit * 4; s += ownedStep) {
+      const i = owned[s];
+      const x = i % MAP_W, y = (i / MAP_W) | 0;
+      for (let d = 0; d < 4; d++) {
+        const nx = x+DX4[d], ny = y+DY4[d];
+        if (nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
+        const ni = ny*MAP_W+nx;
+        if (!landMask[ni]) continue;          // ocean
+        const ngeo = geoAtPixel[ni];
+        if (ngeo === geoIdx) continue;        // still our home — handled above
+        if (claimByPixel[ni] === cidx) continue; // already ours
+        attack.push({ x: nx, y: ny });
+        if (attack.length >= limit * 4) break;
+      }
+    }
+  }
+
+  // Priority: defend > attack > expand
+  // (Attack is now BEFORE expand so bots don't just slowly fill empty home; they push outward)
+  const pool = defend.length > 0 ? defend
+             : attack.length > 0 ? attack
+             : expand;
+
+  // Shuffle to spread paint around so bots don't always hit the same border pixels
   for (let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
   return pool.slice(0, limit);
 }
