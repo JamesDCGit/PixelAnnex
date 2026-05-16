@@ -427,9 +427,14 @@ function recomputeTotalLand() {
   totalLandPxCached = Object.values(geoTotal).reduce((a, b) => a + b, 0);
 }
 function getWorldShare(countryId) {
-  const owned = countryPxCount[countryId] || 0;
+  // World share is based on a country's NATIVE territory size (geoTotal),
+  // not on actively-painted pixels. This makes the David buff geographic
+  // (USA is always Goliath; Vatican is always David) regardless of who's
+  // actively painting where.
   if (totalLandPxCached <= 0) return 0;
-  return owned / totalLandPxCached;
+  const geoIdx = parseInt(countryId, 10);
+  const territory = geoTotal[geoIdx] || 0;
+  return territory / totalLandPxCached;
 }
 function getRegenMultiplier(countryId) {
   const share = getWorldShare(countryId);
@@ -445,12 +450,13 @@ function getRegenMultiplier(countryId) {
 function buildDavidSnapshot() {
   if (totalLandPxCached <= 0) recomputeTotalLand();
   const out = {};
-  for (const cid of Object.keys(countryPxCount)) {
+  // Iterate all known countries (via geoTotal) so every country gets a multiplier,
+  // not just ones that have been actively painted.
+  for (const geoIdx of Object.keys(geoTotal)) {
+    const cid   = String(geoIdx);
     const share = getWorldShare(cid);
     const mult  = getRegenMultiplier(cid);
-    if (share > 0 || mult > 1) {
-      out[cid] = { share, mult };
-    }
+    out[cid] = { share, mult };
   }
   return out;
 }
