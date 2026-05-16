@@ -1428,6 +1428,11 @@ function topoFeatures(topo){
 
 // ── State ─────────────────────────────────────────────────────────
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
+// Code version — bump this every time we change client logic. Used to verify
+// what's actually deployed vs. local. Check via: window.CODE_VERSION
+const CODE_VERSION = '2026-05-17-encircle-batch-v3';
+window.CODE_VERSION = CODE_VERSION;
+console.log('PixelAnnex client', CODE_VERSION);
 let claimerCount={},geoClaimCnt={},geoTotal={};
 // ── Pixel inventory ──────────────────────────────────────────────
 const BUCKET_MAX       = 100;   // max pixels a player can hold
@@ -4323,7 +4328,11 @@ function mpHandleMessage(msg) {
 
     case 'welcome': {
       _localPlayerId = msg.playerId;
-      console.log('[MP] Welcome, player', _localPlayerId);
+      window.SERVER_VERSION = msg.serverVersion || 'unknown';
+      console.log('[MP] Welcome, player', _localPlayerId, '· server', window.SERVER_VERSION, '· client', CODE_VERSION);
+      if (msg.serverVersion && msg.serverVersion !== CODE_VERSION) {
+        console.warn('[MP] Version mismatch — client', CODE_VERSION, 'vs server', msg.serverVersion);
+      }
       // Apply server state — overlay server's actively-painted pixels.
       // Pixels in state.runs were painted by a player or bot; paint them at full alpha.
       // Pixels NOT in runs keep their faint prepopulate fill.
@@ -4336,20 +4345,12 @@ function mpHandleMessage(msg) {
           const fi = featList.findIndex(f => f.id === String(o));
           if (fi < 0) continue;
           const [r,g,b] = hexRgb(featList[fi].color);
-          // Build one ImageData buffer for this run (contiguous pixels)
-          const img = claimCtx.createImageData(l, 1);
-          const d = img.data;
-          for (let k = 0; k < l; k++) {
-            const p = k * 4;
-            d[p]=r; d[p+1]=g; d[p+2]=b; d[p+3]=215;
-          }
-          // Iterate the run, splitting at row boundaries (since createImageData is row-aligned)
+          // Walk the run, split at row boundaries (createImageData is row-aligned)
           let pos = s;
           while (pos < s + l) {
             const x = pos % MAP_W;
             const y = (pos / MAP_W) | 0;
             const rowRemainder = Math.min(MAP_W - x, (s + l) - pos);
-            // Write rowRemainder pixels starting at (x, y)
             const slice = new Uint8ClampedArray(rowRemainder * 4);
             for (let k = 0; k < rowRemainder; k++) {
               const p = k * 4;

@@ -31,6 +31,8 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
+const SERVER_VERSION       = '2026-05-17-encircle-batch-v3';
+console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
 const MAP_PX             = MAP_W * MAP_H;
@@ -1559,6 +1561,7 @@ wss.on('connection', (ws, req) => {
           botIds: [...bots.keys()],
           state: buildSnapshot(),
           david: buildDavidSnapshot(),
+          serverVersion: SERVER_VERSION,
         }));
         broadcastPlayers();
         break;
