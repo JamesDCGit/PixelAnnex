@@ -423,6 +423,21 @@ const countryPxCount = {}; // countryId → pixel count
 //   share ≤ 0.05  (5%)   → 1.5×  — slight buff for mid-sized
 //   share >  0.05        → 1×    — no bonus, big countries play normal
 let totalLandPxCached = 0;
+
+// ── Pixel health for David countries ──────────────────────────────
+// David-tier countries (multiplier > 1) have "tougher" pixels:
+// first enemy hit damages the pixel (marked grey, still native-owned),
+// second hit transfers ownership. Goliath country pixels work as before (1-hit).
+//
+// pixelHealth[i] = 0 (full health) or 1 (damaged — needs one more hit to flip)
+const pixelHealth = new Uint8Array(MAP_PX);
+
+// Quick check: does this geo belong to a David-tier country?
+function isDavidGeo(geoVal) {
+  if (geoVal < 0) return false;
+  return getRegenMultiplier(String(geoVal)) > 1;
+}
+
 function recomputeTotalLand() {
   totalLandPxCached = Object.values(geoTotal).reduce((a, b) => a + b, 0);
 }
@@ -529,8 +544,20 @@ function buildSnapshot() {
       rs = i; ro = o;
     }
   }
+  // Damaged pixel runs — only emit pixels with pixelHealth > 0
+  const damagedRuns = [];
+  let ds = -1;
+  for (let i = 0; i <= MAP_PX; i++) {
+    const v = i < MAP_PX ? pixelHealth[i] : 0;
+    if (v > 0 && ds < 0) ds = i;
+    else if (v === 0 && ds >= 0) {
+      damagedRuns.push({ s: ds, l: i - ds });
+      ds = -1;
+    }
+  }
   return {
     runs,
+    damagedRuns,
     conquered: [...conqueredSet],
     players: [...players.values()].map(p => ({
       countryId: p.countryId,
@@ -551,12 +578,35 @@ function applyPixels(pixels, countryId) {
     const i = y * MAP_W + x;
     if (!landMask[i]) continue;
     const prev = claimByPixel[i];
-    if (prev === cidx) continue;
+    if (prev === cidx) {
+      // Painting our own pixel — heal any damage (acts as a repair)
+      if (pixelHealth[i] !== 0) {
+        pixelHealth[i] = 0;
+        changed.push({ x, y, owner: countryId, health: 0 });
+      }
+      continue;
+    }
+
+    // ─── David shield logic ────────────────────────────────────────
+    // If the target pixel is in a David country AND the attacker isn't
+    // the native country, apply 2-hit logic.
+    const geo = geoAtPixel[i];
+    const isDavid = isDavidGeo(geo);
+    const nativeCountryId = geo >= 0 ? String(geo) : null;
+    const attackerIsForeign = nativeCountryId && countryId !== nativeCountryId;
+
+    if (isDavid && attackerIsForeign && pixelHealth[i] === 0) {
+      // First hit — damage only, don't transfer ownership
+      pixelHealth[i] = 1;
+      changed.push({ x, y, owner: nativeCountryId, health: 1 });
+      continue;
+    }
+    // Second hit (or non-David / native-pixel) — full transfer
+    pixelHealth[i] = 0; // reset on ownership change
 
     if (prev >= 0) {
       const prevId = idxToId[prev];
       countryPxCount[prevId] = Math.max(0, (countryPxCount[prevId] || 1) - 1);
-      const geo = geoAtPixel[i];
       if (geo >= 0 && geoClaimCnt[geo]?.[prevId]) {
         geoClaimCnt[geo][prevId] = Math.max(0, geoClaimCnt[geo][prevId] - 1);
         affected.add(geo);
@@ -566,13 +616,12 @@ function applyPixels(pixels, countryId) {
     updateOwnerIndex(i, prev, cidx);
     claimByPixel[i] = cidx;
     countryPxCount[countryId] = (countryPxCount[countryId] || 0) + 1;
-    const geo = geoAtPixel[i];
     if (geo >= 0) {
       geoClaimCnt[geo] ??= {};
       geoClaimCnt[geo][countryId] = (geoClaimCnt[geo][countryId] || 0) + 1;
       affected.add(geo);
     }
-    changed.push({ x, y, owner: countryId });
+    changed.push({ x, y, owner: countryId, health: 0 });
   }
 
   const conquests = [], reversals = [];
