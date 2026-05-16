@@ -1341,7 +1341,7 @@ let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 let claimerCount={},geoClaimCnt={},geoTotal={};
 // ── Pixel inventory ──────────────────────────────────────────────
 const BUCKET_MAX       = 100;   // max pixels a player can hold
-const REGEN_INTERVAL   = 60;    // seconds between +1 pixel
+const REGEN_INTERVAL   = 5;     // seconds between +1 pixel — TEST MODE (production: 60)
 let   pixelBucket      = 10;    // starting inventory
 let   regenSecsLeft    = REGEN_INTERVAL;
 // ── Bomb mode ───────────────────────────────────────────────────
