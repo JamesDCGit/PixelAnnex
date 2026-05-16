@@ -1340,7 +1340,7 @@ function topoFeatures(topo){
 }
 
 // ── State ─────────────────────────────────────────────────────────
-let featList=[],featByPixel=null,claimByPixel=null,landMask=null,pixelDamaged=null;
+let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 let claimerCount={},geoClaimCnt={},geoTotal={};
 // ── Pixel inventory ──────────────────────────────────────────────
 const BUCKET_MAX       = 100;   // max pixels a player can hold
@@ -1881,7 +1881,6 @@ async function boot(){
   featByPixel =new Int16Array(MAP_PX).fill(-1);
   claimByPixel=new Int16Array(MAP_PX).fill(-1);
   landMask    =new Uint8Array(MAP_PX);
-  pixelDamaged=new Uint8Array(MAP_PX);
 
   const CHUNK=131072; // smaller chunks → more frequent yields → tutorial stays responsive
   for(let s=0;s<MAP_PX;s+=CHUNK){
@@ -4186,26 +4185,7 @@ function mpHandleMessage(msg) {
           claimCtx.putImageData(img, x0, y0);
         }
       }
-      // Replay damaged pixels (David shield in mid-attack state)
-      if (msg.state?.damagedRuns && pixelDamaged) {
-        for (const { s, l } of msg.state.damagedRuns) {
-          for (let i = s; i < s + l && i < MAP_PX; i++) {
-            pixelDamaged[i] = 1;
-            const fi = featByPixel[i];
-            if (fi >= 0 && featList[fi]) {
-              const [r,g,b] = hexRgb(featList[fi].color);
-              const dr = Math.round(r * 0.40 + 128 * 0.60);
-              const dg = Math.round(g * 0.40 + 128 * 0.60);
-              const db = Math.round(b * 0.40 + 128 * 0.60);
-              const id = claimCtx.createImageData(1,1);
-              id.data[0]=dr; id.data[1]=dg; id.data[2]=db; id.data[3]=180;
-              const x = i % MAP_W, y = (i / MAP_W) | 0;
-              claimCtx.putImageData(id, x, y);
-            }
-          }
-        }
-      }
-      if (msg.state?.conquered) {
+if (msg.state?.conquered) {
         for (const key of msg.state.conquered) conqueredSet.add(key);
         // Replay flood-fills for every conquered country so the canvas reflects
         // the persistent state. Server's "geoIdx:countryId" keys actually store COUNTRY IDs
@@ -4235,40 +4215,24 @@ function mpHandleMessage(msg) {
 
     case 'delta': {
       if (!msg.pixels?.length) return;
-      // Group by owner for batch painting; damaged pixels (health=1) get a desaturated tint.
+      // Group by owner for batch putImageData
       const byOwner = {};
-      const damaged = [];   // {x,y,fi} — pixel still owned by 'fi' (native) but damaged
-      const healed  = [];   // {x,y,fi} — restore from grey back to full owner colour
-      for (const { x, y, owner, health } of msg.pixels) {
+      for (const { x, y, owner } of msg.pixels) {
         if (owner === null) {
           // Cleared pixel
           const i = y * MAP_W + x;
           claimByPixel[i] = -1;
-          if (typeof pixelDamaged !== 'undefined') pixelDamaged[i] = 0;
           claimCtx.clearRect(x, y, 1, 1);
           continue;
         }
         const fi = featList.findIndex(f => f.id === String(owner));
         if (fi < 0) continue;
         const i = y * MAP_W + x;
-        if (health === 1) {
-          // Damaged but ownership unchanged — paint grey over native colour
-          if (typeof pixelDamaged !== 'undefined') pixelDamaged[i] = 1;
-          damaged.push({ x, y, fi });
-          continue;
-        }
-        // health === 0 or undefined → normal ownership update
-        const wasDamaged = typeof pixelDamaged !== 'undefined' && pixelDamaged[i];
-        if (wasDamaged) pixelDamaged[i] = 0;
-        if (claimByPixel[i] === fi) {
-          // Just a heal — restore full colour
-          if (wasDamaged) healed.push({ x, y, fi });
-          continue;
-        }
+        if (claimByPixel[i] === fi) continue; // already correct
         claimByPixel[i] = fi;
         (byOwner[fi] ??= []).push({ x, y });
       }
-      // Paint batched ownership changes — full alpha 215
+      // Paint batched pixels — all active paint strokes (player or bot) at full strength
       for (const [fi, pixels] of Object.entries(byOwner)) {
         const [r,g,b] = hexRgb(featList[+fi].color);
         for (const { x, y } of pixels) {
@@ -4276,24 +4240,6 @@ function mpHandleMessage(msg) {
           id.data[0]=r; id.data[1]=g; id.data[2]=b; id.data[3]=215;
           claimCtx.putImageData(id, x, y);
         }
-      }
-      // Paint damaged pixels with a desaturated grey-tinted version of the native colour
-      for (const { x, y, fi } of damaged) {
-        const [r,g,b] = hexRgb(featList[fi].color);
-        // Blend native colour 40% with grey 60% to create the "damaged" look
-        const dr = Math.round(r * 0.40 + 128 * 0.60);
-        const dg = Math.round(g * 0.40 + 128 * 0.60);
-        const db = Math.round(b * 0.40 + 128 * 0.60);
-        const id = claimCtx.createImageData(1,1);
-        id.data[0]=dr; id.data[1]=dg; id.data[2]=db; id.data[3]=180;
-        claimCtx.putImageData(id, x, y);
-      }
-      // Restore healed pixels to full owner colour
-      for (const { x, y, fi } of healed) {
-        const [r,g,b] = hexRgb(featList[fi].color);
-        const id = claimCtx.createImageData(1,1);
-        id.data[0]=r; id.data[1]=g; id.data[2]=b; id.data[3]=215;
-        claimCtx.putImageData(id, x, y);
       }
       markOutlineDirty();
       scheduleLegend();
