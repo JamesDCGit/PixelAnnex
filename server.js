@@ -529,6 +529,8 @@ function applyPixels(pixels, countryId) {
     if (!total) continue;
     const owned = geoClaimCnt[geo]?.[countryId] || 0;
     const key   = geo + ':' + countryId;
+    // Skip self-conquest — a country can't conquer itself
+    if (countryId === geoToId(geo)) continue;
     if (!conqueredSet.has(key) && owned / total >= CONQUEST_THRESHOLD) {
       conqueredSet.add(key);
       conquests.push({ geoIdx: geo, countryId });
