@@ -1430,7 +1430,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-17-encircle-batch-v4';
+const CODE_VERSION = '2026-05-17-free-pan-v5';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 let claimerCount={},geoClaimCnt={},geoTotal={};
@@ -2486,7 +2486,10 @@ function scheduleLegend(){
 
 // ── View ─────────────────────────────────────────────────────────
 function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cGrid,cWaves,cSprites,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege].forEach(c=>c.style.transform=t);}
-function clamp(){const cw=vp.clientWidth,ch=vp.clientHeight;ox=Math.max(Math.min(0,cw-MAP_W*scale),Math.min(0,ox));oy=Math.max(Math.min(0,ch-MAP_H*scale),Math.min(0,oy));}
+// Free panning — clamp is now a no-op so users can move the map anywhere they like.
+// Previous behaviour pinned the map within the viewport bounds; removing this lets
+// users drag the world off-screen, useful for inspecting edges and far-away regions.
+function clamp(){ /* no-op — free panning */ }
 function resetView(){const cw=vp.clientWidth,ch=vp.clientHeight;scale=Math.min(cw/MAP_W,ch/MAP_H)*.98;ox=(cw-MAP_W*scale)/2;oy=(ch-MAP_H*scale)/2;applyT();}
 function doZoom(f,cx,cy){const ns=Math.max(.25,Math.min(40,scale*f));ox=cx-(cx-ox)*(ns/scale);oy=cy-(cy-oy)*(ns/scale);scale=ns;clamp();applyT();}
 function screenToMap(sx,sy){const r=vp.getBoundingClientRect();return{x:Math.floor((sx-r.left-ox)/scale),y:Math.floor((sy-r.top-oy)/scale)};}

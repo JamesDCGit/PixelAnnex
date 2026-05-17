@@ -19,6 +19,9 @@
 
 'use strict';
 
+const BOT_VERSION = '2026-05-17-war-cooldown-v1';
+console.log('PixelAnnex bot', BOT_VERSION);
+
 require('dotenv').config();
 
 const { Client, GatewayIntentBits, Events, EmbedBuilder } = require('discord.js');
@@ -696,7 +699,45 @@ function getCountryMention(id, guild) {
   return '**' + getCountryName(id) + '**';
 }
 
+// Per-pair cooldown: silently drop war events for the same attacker↔defender
+// pair within COOLDOWN_MS of the last successful post. Prevents Discord spam
+// when countries trade pixels rapidly (conquest → reversal → conquest → ...).
+const WAR_PAIR_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
+const _warPairCooldowns = new Map(); // "attackerId|defenderId" → lastPostedAt
+
+function _warPairKey(event) {
+  // Use sorted pair so A→B and B→A share the cooldown (it's the same conflict)
+  const a = String(event.attackerId || '');
+  const b = String(event.defenderId || '');
+  return a < b ? a + '|' + b : b + '|' + a;
+}
+
+function _isPairOnCooldown(event) {
+  if (!event.attackerId || !event.defenderId) return false; // can only cooldown pairs
+  const key = _warPairKey(event);
+  const last = _warPairCooldowns.get(key);
+  if (!last) return false;
+  return Date.now() - last < WAR_PAIR_COOLDOWN_MS;
+}
+
+function _markPairPosted(event) {
+  if (!event.attackerId || !event.defenderId) return;
+  _warPairCooldowns.set(_warPairKey(event), Date.now());
+}
+
+// Periodic cleanup of stale cooldown entries (every 10 min)
+setInterval(() => {
+  const cutoff = Date.now() - WAR_PAIR_COOLDOWN_MS;
+  for (const [k, t] of _warPairCooldowns) {
+    if (t < cutoff) _warPairCooldowns.delete(k);
+  }
+}, 10 * 60 * 1000);
+
 function queueWarEvent(event) {
+  // Drop silently if this pair was just announced
+  if (_isPairOnCooldown(event)) {
+    return;
+  }
   _warQueue.push(event);
   if (!_warTimer) {
     _warTimer = setTimeout(flushWarQueue, WAR_BATCH_INTERVAL_MS);
@@ -735,6 +776,7 @@ async function flushWarQueue() {
   for (const event of events) {
     try {
       await postWarEvent(guild, event);
+      _markPairPosted(event); // start cooldown only after successful post
     } catch (e) {
       console.error('[War] Post failed:', e.message);
     }
