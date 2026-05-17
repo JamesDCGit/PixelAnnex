@@ -932,6 +932,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <button class="dbg-btn" style="color:#a5b4fc;border-color:rgba(165,180,252,.3)" onclick="dbgListDavidCountries()">List all David countries</button>
       <button class="dbg-btn" style="color:#f97316;border-color:rgba(249,115,22,.3)" onclick="applyEncirclementBonus(120, 5, 60000, MAP_W/2, MAP_H/2)">Trigger encirclement bonus (×5, 60s)</button>
       <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="renderLandmarks();updateLandmarksVisibility();">Re-render landmarks</button>
+      <button class="dbg-btn" style="color:#22c55e;border-color:rgba(34,197,94,.3)" onclick="lmCtx.clearRect(0,0,MAP_W,MAP_H);_renderSpriteCount=0;renderProceduralBiomes();">Procedural sprites only</button>
       <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="cLandmarks.style.display=cLandmarks.style.display==='none'?'':'none';">Toggle landmarks visibility</button>
       <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="(function(){const t=_LANDMARKS.map(l=>{const p=_lnglatToPx(l.lng,l.lat);return l.name+' → ('+p.x+','+p.y+')';}).join('\\n');alert('Landmarks:\\n\\n'+t);})()">List all landmarks</button>
     </div>
@@ -1448,7 +1449,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-17-bugfix-rank-territory-v13';
+const CODE_VERSION = '2026-05-17-group-g-option-b-v14';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -4964,6 +4965,233 @@ function _renderSprite(sprite, cx, cy) {
   }
 }
 
+
+// ── Procedural biome sprite scatter (Group G Option B) ───────────
+// Samples a low-density grid across the map. At each candidate,
+// derives a biome from (latitude, hash-noise) and places a small
+// sprite if appropriate. Result: full-map ambient terrain decoration.
+
+// Small variant sprites (3×3 to 5×5) — designed to look ambient/distant
+// vs. the hand-placed 7×7 landmarks which look "important"
+const _SPRITE_SMALL_MOUNTAIN = [
+  [null, 's',  null],
+  ['m2', 'm1', 'm2'],
+  ['m1', 'm1', 'm1'],
+];
+
+const _SPRITE_SMALL_SNOW_MTN = [
+  [null, 'S',  null],
+  ['s',  'm1', 's' ],
+  ['m1', 'm1', 'm1'],
+];
+
+const _SPRITE_SMALL_TREE = [
+  [null, 'f2', null],
+  ['f2', 'f1', 'f2'],
+  [null, 'm1', null],
+];
+
+const _SPRITE_SMALL_TREE_CLUSTER = [
+  [null, 'f2', null, 'f2', null],
+  ['f2', 'f1', 'f2', 'f1', 'f2'],
+  ['f1', 'f1', 'f1', 'f1', 'f1'],
+  [null, 'm1', null, 'm1', null],
+];
+
+const _SPRITE_SMALL_DUNE = [
+  [null, 'd3', null],
+  ['d2', 'd1', 'd2'],
+];
+
+const _SPRITE_SMALL_GRASS = [
+  ['f2', null, 'f3'],
+];
+
+const _SPRITE_SMALL_TUNDRA = [
+  [null, 'c3', null],
+  ['c3', 's',  'c3'],
+];
+
+// Simple hash-based noise — deterministic given (x, y, seed)
+// Returns value in [0, 1)
+function _biomeHash(x, y, seed) {
+  let h = (x * 374761393 + y * 668265263 + seed * 1442695040888963407) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  h = h ^ (h >>> 16);
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+// Smooth noise — averages a 2x2 neighbourhood for less spikey results
+function _smoothNoise(x, y, seed, scale) {
+  const sx = x / scale, sy = y / scale;
+  const ix = Math.floor(sx), iy = Math.floor(sy);
+  const fx = sx - ix, fy = sy - iy;
+  const a = _biomeHash(ix,     iy,     seed);
+  const b = _biomeHash(ix + 1, iy,     seed);
+  const c = _biomeHash(ix,     iy + 1, seed);
+  const d = _biomeHash(ix + 1, iy + 1, seed);
+  // Bilinear interpolation
+  const ab = a + (b - a) * fx;
+  const cd = c + (d - c) * fx;
+  return ab + (cd - ab) * fy;
+}
+
+// Multi-octave fractional Brownian motion for natural-looking biome regions
+function _biomeFbm(x, y, seed) {
+  return (
+    _smoothNoise(x, y, seed,        160) * 0.50 +
+    _smoothNoise(x, y, seed + 13,    80) * 0.25 +
+    _smoothNoise(x, y, seed + 31,    40) * 0.15 +
+    _smoothNoise(x, y, seed + 71,    20) * 0.10
+  );
+}
+
+// Pixel y → latitude in degrees (-90 polar to +90 polar)
+function _pxToLat(py) {
+  return 90 - (py / MAP_H) * 180;
+}
+
+// Determine biome type for a given pixel position.
+// Returns one of: 'snow_mtn', 'mountain', 'desert', 'forest_dense',
+//                 'forest_sparse', 'grass', 'tundra', null (no sprite)
+function _classifyBiome(px, py) {
+  const lat = _pxToLat(py);
+  const absLat = Math.abs(lat);
+
+  // Two noise channels — terrain elevation + vegetation
+  const elev = _biomeFbm(px, py, 1);     // 0..1 — mountain-ish where high
+  const veg  = _biomeFbm(px, py, 2);     // 0..1 — forest-ish where high
+  const arid = _biomeFbm(px, py, 3);     // 0..1 — desert-ish where high
+
+  // Polar bands (>65° N/S) → tundra or snow mountain
+  if (absLat > 70) {
+    if (elev > 0.65) return 'snow_mtn';
+    if (elev > 0.55 && _biomeHash(px, py, 99) < 0.35) return 'tundra';
+    return null;
+  }
+
+  // Sub-polar (55–70°) → boreal forest + some snow mountains
+  if (absLat > 55) {
+    if (elev > 0.7) return 'snow_mtn';
+    if (veg > 0.55 && elev < 0.6) return 'forest_dense';
+    if (veg > 0.4) return 'forest_sparse';
+    return null;
+  }
+
+  // Temperate (30–55°) — mix of mountains, forests, some deserts
+  if (absLat > 30) {
+    if (elev > 0.72) return absLat > 45 ? 'snow_mtn' : 'mountain';
+    if (elev > 0.6) return 'mountain';
+    // Sub-tropical desert belt (~25–35°)
+    if (absLat < 40 && arid > 0.62 && veg < 0.45) return 'desert';
+    if (veg > 0.55) return 'forest_dense';
+    if (veg > 0.4) return 'forest_sparse';
+    return null;
+  }
+
+  // Tropical/equatorial (0–30°)
+  if (elev > 0.72) return 'mountain';
+  // Strong desert belt around 15–30°
+  if (absLat > 15 && arid > 0.6 && veg < 0.4) return 'desert';
+  // Equatorial rainforest (0–15° + high vegetation)
+  if (absLat < 15 && veg > 0.5) return 'forest_dense';
+  if (veg > 0.55) return 'forest_dense';
+  if (veg > 0.4) return 'forest_sparse';
+  return null;
+}
+
+// Map biome → sprite + placement density (0..1, chance per candidate)
+function _spriteForBiome(biome) {
+  switch (biome) {
+    case 'snow_mtn':     return { sprite: _SPRITE_SMALL_SNOW_MTN,    density: 0.55 };
+    case 'mountain':     return { sprite: _SPRITE_SMALL_MOUNTAIN,    density: 0.50 };
+    case 'desert':       return { sprite: _SPRITE_SMALL_DUNE,        density: 0.35 };
+    case 'forest_dense': return { sprite: _SPRITE_SMALL_TREE_CLUSTER,density: 0.55 };
+    case 'forest_sparse':return { sprite: _SPRITE_SMALL_TREE,        density: 0.40 };
+    case 'grass':        return { sprite: _SPRITE_SMALL_GRASS,       density: 0.20 };
+    case 'tundra':       return { sprite: _SPRITE_SMALL_TUNDRA,      density: 0.30 };
+    default:             return null;
+  }
+}
+
+// Track which areas are reserved by hand-placed landmarks so procedural
+// sprites don't draw over them
+let _landmarkReservedMask = null;
+function _buildLandmarkReservedMask() {
+  // 1 byte per cell in a coarse grid; 16×16 px cells
+  const CELL = 16;
+  const cols = Math.ceil(MAP_W / CELL);
+  const rows = Math.ceil(MAP_H / CELL);
+  _landmarkReservedMask = new Uint8Array(cols * rows);
+  for (const lm of _LANDMARKS) {
+    const { x, y } = _lnglatToPx(lm.lng, lm.lat);
+    // Reserve a 2×2 cell radius (32px) around each landmark
+    const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const c = cy + dy, r = cx + dx;
+      if (c < 0 || c >= rows || r < 0 || r >= cols) continue;
+      _landmarkReservedMask[c * cols + r] = 1;
+    }
+  }
+  return { cols, rows, CELL };
+}
+
+function _isReserved(px, py, cellInfo) {
+  const c = Math.floor(py / cellInfo.CELL);
+  const r = Math.floor(px / cellInfo.CELL);
+  if (c < 0 || c >= cellInfo.rows || r < 0 || r >= cellInfo.cols) return false;
+  return !!_landmarkReservedMask[c * cellInfo.cols + r];
+}
+
+// Procedural sprite scatter — call AFTER renderLandmarks so hand-placed
+// landmarks take priority
+function renderProceduralBiomes() {
+  if (!lmCtx || !landMask) {
+    console.warn('[Procedural] Canvas or landMask not ready');
+    return;
+  }
+  const t0 = performance.now();
+  const cellInfo = _buildLandmarkReservedMask();
+
+  // Sample on a jittered grid every ~28px so it doesn't look too uniform
+  const STEP = 28;
+  let candidates = 0;
+  let placed = 0;
+  let painted = 0;
+
+  for (let gy = 0; gy < MAP_H; gy += STEP) {
+    for (let gx = 0; gx < MAP_W; gx += STEP) {
+      candidates++;
+      // Jitter — random offset within the cell for natural placement
+      const jx = gx + Math.floor(_biomeHash(gx, gy, 7) * STEP);
+      const jy = gy + Math.floor(_biomeHash(gx, gy, 11) * STEP);
+      if (jx >= MAP_W || jy >= MAP_H) continue;
+      const i = jy * MAP_W + jx;
+      if (!landMask[i]) continue;
+      if (_isReserved(jx, jy, cellInfo)) continue;
+
+      const biome = _classifyBiome(jx, jy);
+      if (!biome) continue;
+      const info = _spriteForBiome(biome);
+      if (!info) continue;
+
+      // Stochastic placement — density chance
+      if (_biomeHash(jx, jy, 23) >= info.density) continue;
+
+      const before = _renderSpriteCount;
+      _renderSprite(info.sprite, jx, jy);
+      if (_renderSpriteCount > before) {
+        placed++;
+        painted += (_renderSpriteCount - before);
+      }
+    }
+  }
+
+  const t1 = performance.now();
+  console.log('[Procedural] Sampled', candidates, 'cells, placed', placed, 'sprites,',
+              'painted', painted, 'pixels in', (t1 - t0).toFixed(1), 'ms');
+}
+
 function renderLandmarks() {
   if (!lmCtx || !landMask) {
     console.warn('[Landmarks] Cannot render yet — canvas or landMask not ready');
@@ -4984,6 +5212,11 @@ function renderLandmarks() {
     _landmarkRetryDone = true;
     console.log('[Landmarks] Low paint count, retrying in 1.5s…');
     setTimeout(() => renderLandmarks(), 1500);
+    return;
+  }
+  // Procedural biome sprites fill the gaps between hand-placed landmarks
+  if (typeof renderProceduralBiomes === 'function') {
+    try { renderProceduralBiomes(); } catch (e) { console.warn('[Procedural] failed', e); }
   }
 }
 let _renderSpriteCount = 0;
