@@ -9,7 +9,7 @@
  * Version bumped per release so old caches get cleared automatically.
  */
 
-const CACHE_VERSION = 'pixelannex-v2026-05-17-group-g-landmarks-v9';
+const CACHE_VERSION = 'pixelannex-v2026-05-17-group-g-landmarks-v10';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
