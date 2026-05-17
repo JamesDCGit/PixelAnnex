@@ -924,6 +924,9 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <button class="dbg-btn" style="color:#a5b4fc;border-color:rgba(165,180,252,.3)" onclick="dbgShowDavidState()">Show my David state</button>
       <button class="dbg-btn" style="color:#a5b4fc;border-color:rgba(165,180,252,.3)" onclick="dbgListDavidCountries()">List all David countries</button>
       <button class="dbg-btn" style="color:#f97316;border-color:rgba(249,115,22,.3)" onclick="applyEncirclementBonus(120, 5, 60000, MAP_W/2, MAP_H/2)">Trigger encirclement bonus (×5, 60s)</button>
+      <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="renderLandmarks();updateLandmarksVisibility();">Re-render landmarks</button>
+      <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="cSprites.style.display=cSprites.style.display==='none'?'':'none';">Toggle landmarks visibility</button>
+      <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="(function(){const t=_LANDMARKS.map(l=>{const p=_lnglatToPx(l.lng,l.lat);return l.name+' → ('+p.x+','+p.y+')';}).join('\\n');alert('Landmarks:\\n\\n'+t);})()">List all landmarks</button>
     </div>
 
     <div class="dbg-section">
@@ -1438,7 +1441,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-17-group-e-batch2-v7';
+const CODE_VERSION = '2026-05-17-group-g-landmarks-v9';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -2353,6 +2356,11 @@ async function boot(){
     markOutlineDirty();
   }
   $("loading").style.display="none";
+// Render landmarks once the map is fully prepared
+if (typeof renderLandmarks === 'function') {
+  // Defer slightly so any final paint settles first
+  setTimeout(() => { try { renderLandmarks(); updateLandmarksVisibility(); } catch(e){ console.warn('[Landmarks] render failed', e); } }, 200);
+}
   stopLoadingTips();
   resetView();
   updateBucketHUD();
@@ -4659,6 +4667,171 @@ setInterval(() => {
   });
 }, 3000);
 
+
+// ── Pixel-art landmarks (Group G Option A) ───────────────────────
+// Hand-placed sprites for famous mountains, cities, deserts.
+// Rendered once to cSprites canvas during boot. Visibility tied to zoom
+// so they don't clutter the overview view.
+
+// Sprite data encoded as 2D arrays of hex colour strings (or null for transparent).
+// 7-row sprites with variable column width — letters in the grid are colour keys.
+// Designed to be muted/desaturated so player paint still dominates visually.
+
+// Colour palettes
+const _LMC = {
+  // Mountain
+  m1: '#5a4a3a', // dark brown rock
+  m2: '#7a6a5a', // mid brown
+  m3: '#9a8a7a', // light brown highlight
+  s:  '#e5e5e5', // snow cap
+  S:  '#ffffff', // bright snow
+  // City
+  c1: '#3a3a4a', // dark grey concrete
+  c2: '#5a5a6a', // mid grey
+  c3: '#8a8a9a', // light grey
+  cy: '#fbbf24', // window light yellow
+  // Desert
+  d1: '#c4a060', // sandy gold
+  d2: '#a48040', // darker sand
+  d3: '#e4c890', // light dune
+  // Forest (bonus)
+  f1: '#2d5a2d',
+  f2: '#4a7a4a',
+  f3: '#6a9a6a',
+};
+
+// Mountain sprite — 7×7, snow-capped peak with double peak
+const _SPRITE_MOUNTAIN = [
+  [null, null, null, 'S',  null, null, null],
+  [null, null, 's',  'S',  's',  null, null],
+  [null, null, 'm3', 'm2', 'm3', 's',  null],
+  [null, 's',  'm2', 'm1', 'm2', 'm3', null],
+  [null, 'm3', 'm1', 'm2', 'm1', 'm2', 'm3'],
+  ['m2', 'm1', 'm2', 'm1', 'm2', 'm1', 'm2'],
+  ['m1', 'm2', 'm1', 'm2', 'm1', 'm1', 'm1'],
+];
+
+// City sprite — 7×7, building cluster with lit windows
+const _SPRITE_CITY = [
+  [null, null, 'c3', null, null, null, null],
+  [null, 'c3', 'c2', null, 'c3', null, null],
+  ['c3', 'c2', 'c2', 'c3', 'c2', 'c3', null],
+  ['c2', 'cy', 'c2', 'c2', 'cy', 'c2', 'c3'],
+  ['c2', 'c2', 'c2', 'cy', 'c2', 'c2', 'c2'],
+  ['c1', 'cy', 'c2', 'c2', 'cy', 'c2', 'c1'],
+  ['c1', 'c1', 'c1', 'c1', 'c1', 'c1', 'c1'],
+];
+
+// Desert sprite — 5×5, sand dunes
+const _SPRITE_DESERT = [
+  [null, null, 'd3', null, null],
+  [null, 'd3', 'd2', 'd3', null],
+  ['d3', 'd2', 'd1', 'd2', 'd3'],
+  ['d2', 'd1', 'd1', 'd1', 'd2'],
+  ['d1', 'd1', 'd1', 'd1', 'd1'],
+];
+
+// Forest sprite — 5×5, tree cluster (bonus, not used in initial list)
+const _SPRITE_FOREST = [
+  [null, 'f3', 'f2', 'f3', null],
+  ['f3', 'f2', 'f1', 'f2', 'f3'],
+  ['f2', 'f1', 'f1', 'f1', 'f2'],
+  [null, 'f1', 'f1', 'f1', null],
+  [null, null, 'm1', null, null], // brown trunk
+];
+
+// Convert lat/lon (degrees) → map pixel coords (equirectangular)
+function _lnglatToPx(lng, lat) {
+  const x = Math.round(((lng + 180) / 360) * MAP_W);
+  const y = Math.round(((90 - lat) / 180) * MAP_H);
+  return { x, y };
+}
+
+// Hand-placed landmarks. Coords are approximate lng/lat of the feature.
+// Mix of mountains, cities, deserts spread across continents.
+const _LANDMARKS = [
+  // Mountains
+  { name: 'Everest',      sprite: _SPRITE_MOUNTAIN, lng:  86.92, lat:  27.99 },
+  { name: 'Kilimanjaro',  sprite: _SPRITE_MOUNTAIN, lng:  37.36, lat:  -3.07 },
+  { name: 'Mt Fuji',      sprite: _SPRITE_MOUNTAIN, lng: 138.73, lat:  35.36 },
+  { name: 'Aconcagua',    sprite: _SPRITE_MOUNTAIN, lng: -70.00, lat: -32.65 }, // Andes
+  { name: 'Rockies',      sprite: _SPRITE_MOUNTAIN, lng:-115.00, lat:  39.00 },
+  { name: 'Alps',         sprite: _SPRITE_MOUNTAIN, lng:   8.00, lat:  46.50 },
+  { name: 'Caucasus',     sprite: _SPRITE_MOUNTAIN, lng:  43.00, lat:  43.00 },
+  { name: 'Atlas',        sprite: _SPRITE_MOUNTAIN, lng:  -5.00, lat:  31.50 },
+  { name: 'Urals',        sprite: _SPRITE_MOUNTAIN, lng:  60.00, lat:  60.00 },
+  { name: 'Mt Cook',      sprite: _SPRITE_MOUNTAIN, lng: 170.14, lat: -43.59 }, // NZ Alps
+
+  // Cities
+  { name: 'New York',     sprite: _SPRITE_CITY,     lng: -74.00, lat:  40.71 },
+  { name: 'London',       sprite: _SPRITE_CITY,     lng:  -0.13, lat:  51.51 },
+  { name: 'Tokyo',        sprite: _SPRITE_CITY,     lng: 139.69, lat:  35.69 },
+  { name: 'Paris',        sprite: _SPRITE_CITY,     lng:   2.35, lat:  48.86 },
+  { name: 'Sydney',       sprite: _SPRITE_CITY,     lng: 151.21, lat: -33.87 },
+  { name: 'Cairo',        sprite: _SPRITE_CITY,     lng:  31.24, lat:  30.04 },
+  { name: 'Rio',          sprite: _SPRITE_CITY,     lng: -43.18, lat: -22.91 },
+  { name: 'Moscow',       sprite: _SPRITE_CITY,     lng:  37.62, lat:  55.75 },
+
+  // Deserts
+  { name: 'Sahara',       sprite: _SPRITE_DESERT,   lng:  13.00, lat:  23.00 },
+  { name: 'Gobi',         sprite: _SPRITE_DESERT,   lng: 103.00, lat:  42.50 },
+  { name: 'Atacama',      sprite: _SPRITE_DESERT,   lng: -69.50, lat: -24.50 },
+  { name: 'Outback',      sprite: _SPRITE_DESERT,   lng: 134.00, lat: -25.00 },
+];
+
+// Render a single sprite to the sctx canvas at given map coords (centred)
+function _renderSprite(sprite, cx, cy) {
+  const h = sprite.length;
+  const w = sprite[0].length;
+  const halfW = Math.floor(w / 2);
+  const halfH = Math.floor(h / 2);
+  for (let row = 0; row < h; row++) {
+    for (let col = 0; col < w; col++) {
+      const key = sprite[row][col];
+      if (!key) continue;
+      const colour = _LMC[key];
+      if (!colour) continue;
+      const px = cx - halfW + col;
+      const py = cy - halfH + row;
+      if (px < 0 || px >= MAP_W || py < 0 || py >= MAP_H) continue;
+      // Only render on land — sprites in the ocean look weird (except deserts which are already on land)
+      const i = py * MAP_W + px;
+      if (!landMask[i]) continue;
+      sctx.fillStyle = colour;
+      sctx.fillRect(px, py, 1, 1);
+    }
+  }
+}
+
+function renderLandmarks() {
+  if (!sctx || !landMask) {
+    console.warn('[Landmarks] Cannot render yet — canvas or landMask not ready');
+    return;
+  }
+  console.log('[Landmarks] Rendering', _LANDMARKS.length, 'landmarks…');
+  const t0 = performance.now();
+  for (const lm of _LANDMARKS) {
+    const { x, y } = _lnglatToPx(lm.lng, lm.lat);
+    _renderSprite(lm.sprite, x, y);
+  }
+  const t1 = performance.now();
+  console.log('[Landmarks] Rendered in', (t1 - t0).toFixed(1), 'ms');
+}
+
+// Visibility tied to zoom — show only when zoomed in (sprites are 5-7 px,
+// invisible/noisy at lower zoom)
+function updateLandmarksVisibility() {
+  if (!cSprites) return;
+  cSprites.style.display = scale >= 3 ? '' : 'none';
+}
+
+// Hook into applyT to update visibility on zoom change
+const _origApplyT_landmarks = applyT;
+applyT = function() {
+  _origApplyT_landmarks.apply(this, arguments);
+  if (typeof updateLandmarksVisibility === 'function') updateLandmarksVisibility();
+};
+
 // Batch rebuild claim canvas from claimByPixel state
 function mpRebuildClaimCanvas() {
   // Full-canvas rebuild from claimByPixel. Used after large state changes
@@ -6685,6 +6858,10 @@ async function proceduralFallback(){
   refreshRankUI();tickHighlightFlash();
   updateBucketHUD();
   prog(100,"Ready (offline mode)");await sleep(80);$("loading").style.display="none";resetView();
+  // Render landmarks (offline mode)
+  if (typeof renderLandmarks === 'function') {
+    setTimeout(() => { try { renderLandmarks(); updateLandmarksVisibility(); } catch(e){ console.warn('[Landmarks] render failed', e); } }, 200);
+  }
 }
 function mkPerm(){const p=Array.from({length:256},(_,i)=>i);for(let i=255;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]];}return[...p,...p];}
 function mkNoise(pm){

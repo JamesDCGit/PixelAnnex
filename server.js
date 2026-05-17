@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-17-group-e-batch2-v7';
+const SERVER_VERSION       = '2026-05-17-group-g-landmarks-v9';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -406,6 +406,87 @@ const geoAtPixel   = new Int16Array(MAP_PX).fill(-1);
 const landMask     = new Uint8Array(MAP_PX).fill(0);
 const geoClaimCnt  = {};   // geoIdx → { countryId → count }
 const geoTotal     = {};   // geoIdx → total land pixels
+
+// ── Compressed asset cache (Brotli + gzip) ───────────────────────
+// Pre-compress static assets once on startup, cache in memory.
+// Saves CPU per request vs. compressing on-the-fly.
+const _compressedAssets = new Map(); // path → { br, gz, raw, mime }
+
+function _cacheAsset(diskPath, mime) {
+  try {
+    const raw = fs.readFileSync(diskPath);
+    const zlib = require('zlib');
+    const br = zlib.brotliCompressSync(raw, {
+      params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 }, // 9 is a good speed/ratio balance
+    });
+    const gz = zlib.gzipSync(raw, { level: 9 });
+    _compressedAssets.set(diskPath, { raw, br, gz, mime });
+    const savings = (1 - br.length / raw.length) * 100;
+    console.log('[Compress] ' + diskPath + ': raw=' + raw.length +
+      ', gz=' + gz.length + ', br=' + br.length + ' (' + savings.toFixed(1) + '% smaller)');
+  } catch (e) {
+    console.warn('[Compress] Failed for', diskPath, e.message);
+  }
+}
+
+// Serve a cached asset with content negotiation
+function serveCompressedAsset(req, res, diskPath, extraHeaders = {}) {
+  const asset = _compressedAssets.get(diskPath);
+  if (!asset) {
+    res.writeHead(404); res.end();
+    return;
+  }
+  const accept = String(req.headers['accept-encoding'] || '');
+  const headers = { 'Content-Type': asset.mime, ...extraHeaders };
+  let body;
+  if (accept.includes('br')) {
+    headers['Content-Encoding'] = 'br';
+    headers['Vary'] = 'Accept-Encoding';
+    body = asset.br;
+  } else if (accept.includes('gzip')) {
+    headers['Content-Encoding'] = 'gzip';
+    headers['Vary'] = 'Accept-Encoding';
+    body = asset.gz;
+  } else {
+    body = asset.raw;
+  }
+  headers['Content-Length'] = body.length;
+  res.writeHead(200, headers);
+  res.end(body);
+}
+
+// Pre-compress assets on startup. Lazy: only happens once per file.
+function precompressAssets() {
+  const path = require('path');
+  const candidates = [
+    { p: path.join(__dirname, 'pixelworld_v5.html'), mime: 'text/html; charset=utf-8' },
+    { p: path.join(__dirname, 'countries-10m.json'), mime: 'application/json' },
+    { p: path.join(__dirname, 'sw.js'),              mime: 'application/javascript' },
+  ];
+  for (const { p, mime } of candidates) {
+    if (fs.existsSync(p)) _cacheAsset(p, mime);
+  }
+}
+
+// Re-compress when the source HTML/json changes on disk (dev workflow).
+// In production, restart the server to refresh.
+function watchAssetsForChanges() {
+  const path = require('path');
+  const paths = [
+    path.join(__dirname, 'pixelworld_v5.html'),
+    path.join(__dirname, 'sw.js'),
+  ];
+  for (const p of paths) {
+    if (!fs.existsSync(p)) continue;
+    try {
+      fs.watch(p, { persistent: false }, () => {
+        const asset = _compressedAssets.get(p);
+        if (asset) _cacheAsset(p, asset.mime);
+      });
+    } catch (e) { /* ignore watch errors */ }
+  }
+}
+
 const conqueredSet = new Set();
 
 // ── Bomb cooldown — anti-spam ────────────────────────────────────
@@ -549,6 +630,9 @@ function broadcastPlayers() {
 }
 
 // ── State snapshot (RLE compressed) ──────────────────────────────
+precompressAssets();
+watchAssetsForChanges();
+
 function buildSnapshot() {
   const runs = [];
   let rs = -1, ro = -99;
@@ -569,6 +653,51 @@ function buildSnapshot() {
     })),
   };
 }
+
+
+// ── Stroke rate limiting — anti-script/macro abuse ───────────────
+// Token bucket per player. Players get STROKE_BURST_MAX pixels of burst,
+// refilling at STROKE_REFILL_RATE_PS pixels per second.
+// Normal organic play (mouse drag, brush size up to 5x5) stays well under
+// these caps. Macro attacks blasting thousands of pixels/sec get throttled.
+const STROKE_BURST_MAX      = 200;     // max pixels you can submit in one burst
+const STROKE_REFILL_RATE_PS = 20;      // pixels added back per second
+const _strokeBuckets = new Map();      // pid → { tokens, lastRefillAt }
+
+function _refillStrokeBucket(pid) {
+  let b = _strokeBuckets.get(pid);
+  const now = Date.now();
+  if (!b) {
+    b = { tokens: STROKE_BURST_MAX, lastRefillAt: now };
+    _strokeBuckets.set(pid, b);
+    return b;
+  }
+  const elapsedMs = now - b.lastRefillAt;
+  if (elapsedMs > 0) {
+    const refill = (elapsedMs / 1000) * STROKE_REFILL_RATE_PS;
+    b.tokens = Math.min(STROKE_BURST_MAX, b.tokens + refill);
+    b.lastRefillAt = now;
+  }
+  return b;
+}
+
+// Returns the number of pixels the player is allowed to spend.
+// If `requested` is more than available, only that many tokens are deducted
+// and the caller should clamp the actual pixels processed.
+function consumeStrokeTokens(pid, requested) {
+  const b = _refillStrokeBucket(pid);
+  const allowed = Math.min(requested, Math.floor(b.tokens));
+  b.tokens -= allowed;
+  return allowed;
+}
+
+// Cleanup stale buckets every 5 minutes (players disconnect or move on)
+setInterval(() => {
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  for (const [pid, b] of _strokeBuckets) {
+    if (b.lastRefillAt < cutoff) _strokeBuckets.delete(pid);
+  }
+}, 5 * 60 * 1000);
 
 // ── Core pixel logic ──────────────────────────────────────────────
 function applyPixels(pixels, countryId) {
@@ -1085,38 +1214,36 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── Static game file ────────────────────────────────────────────
+  // ── Static game file (cached, compressed) ──────────────────────
   if (url.pathname === '/' || url.pathname === '/index.html') {
     const f = path.join(__dirname, 'pixelworld_v5.html');
-    if (fs.existsSync(f)) {
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      fs.createReadStream(f).pipe(res);
-    } else {
-      res.writeHead(404); res.end('pixelworld_v5.html not found');
-    }
+    serveCompressedAsset(req, res, f, {
+      // HTML changes per deploy; tell browser to revalidate
+      'Cache-Control': 'no-cache, must-revalidate',
+    });
     return;
   }
 
-  // ── Service worker (must be served from root path for scope) ────
+  // ── Service worker (cached, compressed) ────────────────────────
   if (url.pathname === '/sw.js') {
     const f = path.join(__dirname, 'sw.js');
-    if (fs.existsSync(f)) {
-      res.writeHead(200, {
-        'Content-Type': 'application/javascript',
-        // SW files should NOT be cached aggressively — browser needs fresh copies
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Service-Worker-Allowed': '/',
-      });
-      fs.createReadStream(f).pipe(res);
-    } else {
-      res.writeHead(404); res.end('sw.js not found');
-    }
+    serveCompressedAsset(req, res, f, {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Service-Worker-Allowed': '/',
+    });
     return;
   }
 
-  // ── Vendored TopoJSON — served with gzip + 1 year cache ──────
+  // ── Vendored TopoJSON — compressed cache + 1 year browser cache ─
   if (url.pathname === '/countries-10m.json') {
     const f = path.join(__dirname, 'countries-10m.json');
+    if (_compressedAssets.has(f)) {
+      serveCompressedAsset(req, res, f, {
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      });
+      return;
+    }
+    // Fall through to legacy path if not pre-cached (shouldn't happen)
     const fGz = f + '.gz';
     if (!fs.existsSync(f) && !fs.existsSync(fGz)) {
       res.writeHead(404); res.end('countries-10m.json not found on server');
@@ -1619,7 +1746,11 @@ wss.on('connection', (ws, req) => {
       case 'stroke': {
         if (!player.countryId || !Array.isArray(msg.pixels)) return;
         if (msg.pixels.length > MAX_STROKE_PX) return;
-        const { changed, conquests, reversals } = applyPixels(msg.pixels, player.countryId);
+        // Rate limit — clamp pixels to what the player's token bucket allows
+        const allowed = consumeStrokeTokens(pid, msg.pixels.length);
+        if (allowed <= 0) return; // empty bucket — drop entire stroke silently
+        const limitedPixels = allowed < msg.pixels.length ? msg.pixels.slice(0, allowed) : msg.pixels;
+        const { changed, conquests, reversals } = applyPixels(limitedPixels, player.countryId);
         if (changed.length) queueDelta(changed);
         // Award XP and stats to logged-in players
         if (player.discordId && changed.length) {
