@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-17-free-pan-v5';
+const SERVER_VERSION       = '2026-05-17-group-e-batch2-v7';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -407,6 +407,28 @@ const landMask     = new Uint8Array(MAP_PX).fill(0);
 const geoClaimCnt  = {};   // geoIdx → { countryId → count }
 const geoTotal     = {};   // geoIdx → total land pixels
 const conqueredSet = new Set();
+
+// ── Bomb cooldown — anti-spam ────────────────────────────────────
+const BOMB_COOLDOWN_MS = 30_000;
+const _lastBombAt = new Map(); // discordId or countryId → timestamp
+
+// ── Conquest immunity — anti instant-trade-back ──────────────────
+const CONQUEST_IMMUNITY_MS = 20_000;  // 20s no re-conquest after a flip
+const _conquestImmunity = new Map(); // geoCountryId → expiresAt
+// Cleanup stale conquest immunity entries every 60s
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, t] of _conquestImmunity) if (t < now) _conquestImmunity.delete(k);
+}, 60_000);
+
+
+function isBombOnCooldownServer(key) {
+  const last = _lastBombAt.get(key);
+  if (!last) return false;
+  return Date.now() - last < BOMB_COOLDOWN_MS;
+}
+function markBombDeployed(key) { _lastBombAt.set(key, Date.now()); }
+
 // Countries that have been conquered by real players — their resident bots stop reclaiming.
 // Cleared when the country's territory drops below 30% enemy occupation (player let it slip).
 const humanClaimedCountries = new Set();
@@ -591,7 +613,13 @@ function applyPixels(pixels, countryId) {
     const key   = geo + ':' + countryId;
     // Skip self-conquest — a country can't conquer itself
     if (countryId === geoToId(geo)) continue;
+    // Conquest immunity — don't allow flips within IMMUNITY_MS of last conquest
+    const immuneUntil = _conquestImmunity.get(geoToId(geo));
+    if (immuneUntil && Date.now() < immuneUntil) {
+      continue; // territory is still settling after a recent flip
+    }
     if (!conqueredSet.has(key) && owned / total >= CONQUEST_THRESHOLD) {
+      _conquestImmunity.set(geoToId(geo), Date.now() + CONQUEST_IMMUNITY_MS);
       conqueredSet.add(key);
       conquests.push({ geoIdx: geo, countryId });
       changed.push(...finisherFill(geo, countryId));
@@ -1065,6 +1093,23 @@ const httpServer = http.createServer(async (req, res) => {
       fs.createReadStream(f).pipe(res);
     } else {
       res.writeHead(404); res.end('pixelworld_v5.html not found');
+    }
+    return;
+  }
+
+  // ── Service worker (must be served from root path for scope) ────
+  if (url.pathname === '/sw.js') {
+    const f = path.join(__dirname, 'sw.js');
+    if (fs.existsSync(f)) {
+      res.writeHead(200, {
+        'Content-Type': 'application/javascript',
+        // SW files should NOT be cached aggressively — browser needs fresh copies
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Service-Worker-Allowed': '/',
+      });
+      fs.createReadStream(f).pipe(res);
+    } else {
+      res.writeHead(404); res.end('sw.js not found');
     }
     return;
   }
@@ -1641,6 +1686,14 @@ wss.on('connection', (ws, req) => {
 
       case 'bomb': {
         if (!player.countryId) return;
+        // Anti-spam cooldown — keyed by discordId if logged-in, else countryId
+        const cdKey = player.discordId || player.countryId;
+        if (isBombOnCooldownServer(cdKey)) {
+          // Silently drop — client should have rejected this client-side
+          console.log('[Bomb] Cooldown active for', cdKey, '— dropped');
+          return;
+        }
+        markBombDeployed(cdKey);
         const { cx, cy, radius } = msg;
         if (typeof cx!=='number'||typeof cy!=='number'||typeof radius!=='number') return;
         if (radius > 30) return;

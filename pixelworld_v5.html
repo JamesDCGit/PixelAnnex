@@ -66,6 +66,9 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #btn-bomb{background:#1a1020;border:1px solid rgba(239,68,68,0.3);color:#f87171;}
 #btn-bomb:hover{background:#2d1020;border-color:#ef4444;color:#fca5a5;}
 #btn-bomb.active{background:#7f1d1d;border-color:#ef4444;color:#fef2f2;box-shadow:0 0 0 2px rgba(239,68,68,0.3);}
+#btn-bomb.cooldown-flash{animation:bomb-cd-flash .4s ease-out;}
+@keyframes bomb-cd-flash{0%,100%{background:#1a1020;}50%{background:#7f1d1d;box-shadow:0 0 0 3px rgba(239,68,68,0.6);}}
+#btn-bomb.cooldown::after{content:" "attr(data-cooldown)"s";font-size:9px;opacity:.7;}
 
 /* ── Bomb flash overlay ── */
 #bomb-flash{
@@ -311,6 +314,9 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* ── Highlight button ── */
 #btn-highlight{background:#0f1a0f;border:1px solid rgba(251,191,36,.3);color:#fbbf24;}
 #btn-highlight:hover{background:#1a2a1a;border-color:#fbbf24;}
+#btn-ownstroke{background:#0f1a0f;border:1px solid rgba(96,165,250,.3);color:#60a5fa;}
+#btn-ownstroke:hover{background:#1a2a3a;border-color:#60a5fa;color:#93c5fd;}
+#btn-ownstroke.active{background:#1a2a3a;border-color:#60a5fa;box-shadow:0 0 8px rgba(96,165,250,.3);}
 #btn-highlight.active{background:#1a2a1a;border-color:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.3);}
 
 
@@ -707,6 +713,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     <button class="btn" id="btn-bomb">&#128163; Bomb</button>
     <div id="bomb-menu"></div>
     <button class="btn" id="btn-highlight" title="General/Admiral: click to enter highlight mode, then click a country to designate attack target">&#127919; Highlight</button>
+    <button class="btn active" id="btn-ownstroke" title="Toggle visibility of pixels you personally painted">&#9999;&#65039; My pixels</button>
     <div class="sep"></div>
     <div id="bucket-hud">
       <div id="bucket-bar"><div id="bucket-fill"></div></div>
@@ -846,6 +853,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     <canvas id="c-highlight" style="pointer-events:none;"></canvas>
     <canvas id="c-siege" style="pointer-events:none;"></canvas>
     <canvas id="c-overlay" style="pointer-events:none;"></canvas>
+    <canvas id="c-ownstroke" style="pointer-events:none;mix-blend-mode:screen;"></canvas>
     <canvas id="c-crater" style="pointer-events:none;"></canvas>
     <div id="rank-display"></div>
     <div id="login-hud">
@@ -1430,14 +1438,43 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-17-free-pan-v5';
+const CODE_VERSION = '2026-05-17-group-e-batch2-v7';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
+
+// ── Service worker (caches static assets for fast reloads) ────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      console.log('[SW] Registered, scope:', reg.scope);
+    }).catch(err => {
+      console.warn('[SW] Registration failed:', err);
+    });
+  });
+}
+
 let claimerCount={},geoClaimCnt={},geoTotal={};
 // ── Pixel inventory ──────────────────────────────────────────────
 const BUCKET_MAX       = 100;   // max pixels a player can hold
 const REGEN_INTERVAL   = 5;     // seconds between +1 pixel — TEST MODE (production: 60)
 let   pixelBucket      = 10;    // starting inventory
+
+// ── Tab title bucket count (visible in background tabs) ───────────
+let _baseTitle = document.title || 'PixelAnnex';
+function updateTabTitle() {
+  // Only update when document is hidden (tab in background) to avoid distracting
+  // active users with constant title changes
+  if (!document.hidden) {
+    if (document.title !== _baseTitle) document.title = _baseTitle;
+    return;
+  }
+  const next = '(' + pixelBucket + '/' + BUCKET_MAX + ') ' + _baseTitle;
+  if (document.title !== next) document.title = next;
+}
+// Refresh title every 2s while hidden; immediately when tab becomes visible
+setInterval(updateTabTitle, 2000);
+document.addEventListener('visibilitychange', updateTabTitle);
+
 let   regenSecsLeft    = REGEN_INTERVAL;
 // ── Bomb mode ───────────────────────────────────────────────────
 let   bombMode         = false;
@@ -1474,6 +1511,8 @@ const sctx=cSprites.getContext("2d");
 sctx.imageSmoothingEnabled=false;
 const cHighlight=document.getElementById("c-highlight");
 const hlCtx=cHighlight.getContext("2d");
+const cOwnStroke=document.getElementById("c-ownstroke");
+const ownCtx=cOwnStroke.getContext("2d");
 hlCtx.imageSmoothingEnabled=false;
 const cSiege=document.getElementById("c-siege");
 const siegeCtx=cSiege.getContext("2d");
@@ -1481,7 +1520,7 @@ siegeCtx.imageSmoothingEnabled=false;
 const cCrater=document.getElementById("c-crater");
 const craterCtx=cCrater.getContext("2d");
 craterCtx.imageSmoothingEnabled=false;
-[cBase,cGrid,cWaves,cSprites,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
+[cBase,cGrid,cWaves,cSprites,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
 
 // ── Helpers ───────────────────────────────────────────────────────
 const $=id=>document.getElementById(id);
@@ -1973,6 +2012,7 @@ async function boot(){
   featByPixel =new Int16Array(MAP_PX).fill(-1);
   claimByPixel=new Int16Array(MAP_PX).fill(-1);
   landMask    =new Uint8Array(MAP_PX);
+  initOwnStroke();
 
   const CHUNK=131072; // smaller chunks → more frequent yields → tutorial stays responsive
   for(let s=0;s<MAP_PX;s+=CHUNK){
@@ -2350,6 +2390,53 @@ async function boot(){
 }
 
 // ── Claim pixels ──────────────────────────────────────────────────
+
+// ── Own-stroke highlight ──────────────────────────────────────────
+// Track pixels the local player has personally painted (vs country-prepopulate
+// or bot/other-player paints) so we can show them subtly.
+let ownPixels = null; // Uint8Array(MAP_PX) — 1 where local player painted
+let _ownStrokeVisible = true;
+let _ownStrokeQueue = []; // batched pixel paints
+
+function initOwnStroke() {
+  ownPixels = new Uint8Array(MAP_PX);
+}
+
+function markOwnPixel(x, y) {
+  if (!ownPixels) return;
+  if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return;
+  const i = y * MAP_W + x;
+  if (ownPixels[i]) return; // already marked
+  ownPixels[i] = 1;
+  _ownStrokeQueue.push({ x, y });
+}
+
+// Flush queued pixels to the canvas. A small white-tinted dot at low alpha
+// creates a subtle "I painted this" glow that's only really visible when zoomed in.
+function flushOwnStroke() {
+  if (!ownCtx || !_ownStrokeQueue.length) return;
+  for (const { x, y } of _ownStrokeQueue) {
+    const id = ownCtx.createImageData(1, 1);
+    id.data[0] = 255; id.data[1] = 255; id.data[2] = 255; id.data[3] = 90;
+    ownCtx.putImageData(id, x, y);
+  }
+  _ownStrokeQueue = [];
+}
+setInterval(flushOwnStroke, 100);
+
+function toggleOwnStroke() {
+  _ownStrokeVisible = !_ownStrokeVisible;
+  cOwnStroke.style.display = _ownStrokeVisible ? '' : 'none';
+  const btn = document.getElementById('btn-ownstroke');
+  if (btn) btn.classList.toggle('active', _ownStrokeVisible);
+}
+
+// Hide own-stroke layer when zoomed out (visual noise at far zoom)
+function updateOwnStrokeVisibility() {
+  if (!_ownStrokeVisible) { cOwnStroke.style.display = 'none'; return; }
+  cOwnStroke.style.display = scale >= 4 ? '' : 'none';
+}
+
 function claimPixel(px,py){
   if(px<0||px>=MAP_W||py<0||py>=MAP_H)return;
   const i=py*MAP_W+px;
@@ -2367,6 +2454,7 @@ function claimPixel(px,py){
   claimByPixel[i]=currentIdx;
   recordPixelLoss(geo, currentIdx); // track all pixel activity
   strokePixelBuffer.push({x:px,y:py});
+  markOwnPixel(px, py);
   mpSendStroke([{x:px,y:py}]);
   // Track which geo countries this stroke touches (for auto-fill)
   if(geo>=0) strokeGeos.add(geo);
@@ -2485,7 +2573,7 @@ function scheduleLegend(){
 }
 
 // ── View ─────────────────────────────────────────────────────────
-function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cGrid,cWaves,cSprites,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege].forEach(c=>c.style.transform=t);}
+function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cGrid,cWaves,cSprites,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege,cOwnStroke].forEach(c=>c.style.transform=t);}
 // Free panning — clamp is now a no-op so users can move the map anywhere they like.
 // Previous behaviour pinned the map within the viewport bounds; removing this lets
 // users drag the world off-screen, useful for inspecting edges and far-away regions.
@@ -2643,6 +2731,42 @@ setInterval(()=>{
   const suffix = mult > 1 ? (' +'+mult) : '+1';
   $("bucket-timer").textContent = suffix+" in "+regenSecsLeft+"s";
 }, 1000);
+
+
+// ── Bomb cooldown ─────────────────────────────────────────────────
+const BOMB_COOLDOWN_MS = 30_000;  // 30s between bomb deployments
+let _bombCooldownUntil = 0;
+
+function isBombOnCooldown() {
+  return Date.now() < _bombCooldownUntil;
+}
+
+function getBombCooldownSecsLeft() {
+  return Math.max(0, Math.ceil((_bombCooldownUntil - Date.now()) / 1000));
+}
+
+function startBombCooldown() {
+  _bombCooldownUntil = Date.now() + BOMB_COOLDOWN_MS;
+  tickBombCooldownUI();
+}
+
+function tickBombCooldownUI() {
+  const btn = document.getElementById('btn-bomb');
+  if (!btn) return;
+  const secs = getBombCooldownSecsLeft();
+  if (secs > 0) {
+    btn.classList.add('cooldown');
+    btn.dataset.cooldown = secs;
+    btn.style.opacity = '0.5';
+    btn.title = 'Bomb on cooldown: ' + secs + 's remaining';
+    setTimeout(tickBombCooldownUI, 250);
+  } else {
+    btn.classList.remove('cooldown');
+    delete btn.dataset.cooldown;
+    btn.style.opacity = '';
+    btn.title = '';
+  }
+}
 
 // ── Bomb functionality ────────────────────────────────────────────
 // Radius = floor(sqrt(pixelBucket)) so 100px → r=10, 25px → r=5, 4px → r=2
@@ -4564,6 +4688,7 @@ function mpSendStroke(pixels) {
 function mpSendBomb(cx, cy, radius) {
   if (!wsReady) return;
   ws.send(JSON.stringify({ type: 'bomb', cx, cy, radius }));
+  startBombCooldown(); // anti-spam: 30s cooldown between bombs
 }
 
 // Start connection attempt after map loads
@@ -5083,6 +5208,13 @@ function updateFlagOpacity() {
   if (scale > 18) opacity = 0.0;  // hide flags at extreme zoom
   cFlags.style.opacity = opacity;
 }
+
+// Update own-stroke visibility on zoom change
+const _origApplyT_own = applyT;
+applyT = function() {
+  _origApplyT_own.apply(this, arguments);
+  if (typeof updateOwnStrokeVisibility === 'function') updateOwnStrokeVisibility();
+};
 
 // Hook into the existing applyT function to update grid + flag opacity after each zoom/pan
 const _origApplyT = typeof applyT !== 'undefined' ? applyT : null;
@@ -6157,6 +6289,7 @@ function tickHighlightFlash(){
   hlCtx.putImageData(img,x0,y0);
 }
 $("btn-highlight").addEventListener("click",()=>{ sfxUIClick(); enterHighlightMode(); });
+$("btn-ownstroke").addEventListener("click",()=>{ sfxUIClick(); toggleOwnStroke(); });
 
 // ── Custom country picker ─────────────────────────────────────────
 let _cselOpen = false;
@@ -6439,6 +6572,17 @@ $("btn-debug").addEventListener("click",()=>{
 
 $("btn-bomb").addEventListener("click",function(){
   sfxUIClick();
+  if (isBombOnCooldown()) {
+    const btn = this;
+    btn.classList.add('cooldown-flash');
+    setTimeout(()=>btn.classList.remove('cooldown-flash'), 400);
+    actPushCard({
+      variant: 'alert',
+      title: '⏱️ Bomb on cooldown',
+      html: 'Next bomb available in <b>' + getBombCooldownSecsLeft() + 's</b>',
+    });
+    return;
+  }
   const types = getBombTypes();
   if(types.length === 0){
     // Flash to indicate rank too low
@@ -6534,7 +6678,7 @@ async function proceduralFallback(){
   totalLandPx=Object.values(geoTotal).reduce((a,b)=>a+b,0);
   buildCselOptions();
   selectCountry(0);
-  [cBase,cWaves,cSprites,cClaim,cFlags,cBorder,cHighlight,cOverlay].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
+  [cBase,cWaves,cSprites,cClaim,cFlags,cBorder,cHighlight,cOverlay,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
   [bctx,claimCtx,flagCtx,bordCtx,ovCtx,hlCtx].forEach(c=>{c.imageSmoothingEnabled=false;});
   initWaves();buildWaveBase();tickWaves();
   initSprites();requestAnimationFrame(tickSprites);
