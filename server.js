@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-17-encircle-batch-v3';
+const SERVER_VERSION       = '2026-05-17-encircle-batch-v4';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -691,11 +691,15 @@ function detectEncirclement(strokePixels, countryId) {
   for (let s = 0; s < strokePixels.length; s++) {
     const p = strokePixels[s];
     setWall(p.x, p.y);
-    // Interpolate to previous point — seals gaps from fast mouse moves
+    // Interpolate to previous point — seals gaps from fast mouse moves.
+    // BUT only do this for SMALL gaps (≤ 30 pixels). Larger jumps probably
+    // mean the stroke pixels aren't actually consecutive in the drag
+    // (e.g. client packs them in batches or out of order), and drawing
+    // a Bresenham line between them would cut through the interior.
     if (s > 0) {
       const prev = strokePixels[s - 1];
       const dx = Math.abs(p.x - prev.x), dy = Math.abs(p.y - prev.y);
-      if (dx > 1 || dy > 1) {
+      if ((dx > 1 || dy > 1) && dx <= 30 && dy <= 30) {
         const line = _bresenhamLine(prev.x, prev.y, p.x, p.y);
         for (const pt of line) setWall(pt.x, pt.y);
       }
