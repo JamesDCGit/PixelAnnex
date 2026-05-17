@@ -1449,7 +1449,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-17-group-g-option-b-v14';
+const CODE_VERSION = '2026-05-17-balance-nuke-v15';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -1531,6 +1531,81 @@ const cSiege=document.getElementById("c-siege");
 const siegeCtx=cSiege.getContext("2d");
 siegeCtx.imageSmoothingEnabled=false;
 const cCrater=document.getElementById("c-crater");
+
+// ── Nuke lockout zones — no-paint regions for 2 minutes ──────────
+// Server broadcasts these on every nuke detonation. Each zone has a
+// circular geometry (cx, cy, radius) and an expiration timestamp.
+// Pixels inside an active zone cannot be painted by anyone.
+const _nukeZones = []; // { cx, cy, radius, expiresAt }
+
+function _pruneNukeZones() {
+  const now = Date.now();
+  for (let i = _nukeZones.length - 1; i >= 0; i--) {
+    if (_nukeZones[i].expiresAt <= now) _nukeZones.splice(i, 1);
+  }
+}
+
+function isInNukeZone(px, py) {
+  _pruneNukeZones();
+  for (const z of _nukeZones) {
+    const dx = px - z.cx, dy = py - z.cy;
+    if (dx*dx + dy*dy <= z.radius * z.radius) return z;
+  }
+  return null;
+}
+
+function addNukeZone(cx, cy, radius, expiresAt) {
+  _nukeZones.push({ cx, cy, radius, expiresAt });
+  renderNukeZones();
+}
+
+// Render the visual overlay for active nuke zones onto the crater canvas.
+// Dim red haze + pulsing ring so players see clearly where they can't paint.
+function renderNukeZones() {
+  if (!cCrater) return;
+  // We don't clearRect — there might be regular craters on this canvas too.
+  // Instead, render the nuke zones in a way the existing crater system can refresh.
+  // For now: just draw a translucent red disc + outline.
+  // A separate ticker keeps them animated.
+}
+
+let _nukeZoneTickerStarted = false;
+function startNukeZoneTicker() {
+  if (_nukeZoneTickerStarted) return;
+  _nukeZoneTickerStarted = true;
+  setInterval(() => {
+    _pruneNukeZones();
+    drawNukeZoneOverlay();
+  }, 250);
+}
+
+function drawNukeZoneOverlay() {
+  if (!cCrater) return;
+  const ctx = cCrater.getContext('2d');
+  // Persist craters via existing system; just composite the zone outlines on top
+  // We use a saved snapshot approach — store the crater base before drawing zones,
+  // restore each tick. Simpler: draw zones every tick, accept slight overdraw.
+  if (!_nukeZones.length) return;
+  ctx.save();
+  for (const z of _nukeZones) {
+    const remaining = z.expiresAt - Date.now();
+    if (remaining <= 0) continue;
+    const t = remaining / (2 * 60 * 1000); // 1.0 → 0.0
+    // Pulse
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 400);
+    // Filled translucent red
+    ctx.beginPath();
+    ctx.arc(z.cx, z.cy, z.radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(220, 38, 38, ' + (0.15 + 0.10 * pulse) + ')';
+    ctx.fill();
+    // Outline
+    ctx.lineWidth = 0.6;
+    ctx.strokeStyle = 'rgba(255, 100, 80, ' + (0.5 + 0.3 * pulse) + ')';
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 const craterCtx=cCrater.getContext("2d");
 craterCtx.imageSmoothingEnabled=false;
 [cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
@@ -2459,6 +2534,8 @@ function claimPixel(px,py){
   if(px<0||px>=MAP_W||py<0||py>=MAP_H)return;
   const i=py*MAP_W+px;
   if(!landMask[i])return;
+  // Reject paint inside an active nuke lockout zone
+  if (typeof isInNukeZone === 'function' && isInNukeZone(px, py)) return;
   const prev=claimByPixel[i];
   if(prev===currentIdx)return;
   const geo=featByPixel[i];
@@ -2878,7 +2955,7 @@ function detonateBomb(mapX, mapY){
   // Draw crater on overlay
   addCrater(mapX, mapY, radius, bt.key);
   startCraterTicker();
-  mpSendBomb(mapX, mapY, radius);
+  mpSendBomb(mapX, mapY, radius, bt.key);
   bombMode=false;
   $("btn-bomb").classList.remove("active");
   vp.style.cursor="crosshair";
@@ -4479,6 +4556,13 @@ function mpHandleMessage(msg) {
     case 'welcome': {
       _localPlayerId = msg.playerId;
       window.SERVER_VERSION = msg.serverVersion || 'unknown';
+      // Replay any active nuke zones
+      if (Array.isArray(msg.nukeZones)) {
+        for (const z of msg.nukeZones) {
+          addNukeZone(z.cx, z.cy, z.radius, z.expiresAt);
+        }
+        if (msg.nukeZones.length) startNukeZoneTicker();
+      }
       console.log('[MP] Welcome, player', _localPlayerId, '· server', window.SERVER_VERSION, '· client', CODE_VERSION);
       if (msg.serverVersion && msg.serverVersion !== CODE_VERSION) {
         console.warn('[MP] Version mismatch — client', CODE_VERSION, 'vs server', msg.serverVersion);
@@ -4633,6 +4717,19 @@ if (msg.state?.conquered) {
       const targetFi = featList.findIndex(f => f.id === String(geoCountryId));
       if (targetFi >= 0) eraseFlag(targetFi);
       scheduleLegend();
+      break;
+    }
+
+    case 'nuke_zone': {
+      // Server broadcasts when a nuke detonates — { cx, cy, radius, expiresAt }
+      addNukeZone(msg.cx, msg.cy, msg.radius, msg.expiresAt);
+      startNukeZoneTicker();
+      // Activity card
+      actPushCard({
+        variant: 'alert',
+        title: '☢️ Nuclear strike',
+        html: 'No-paint zone active for <b>2 minutes</b> around the blast site',
+      });
       break;
     }
 
@@ -5260,9 +5357,9 @@ function mpSendStroke(pixels) {
 }
 
 // Send bomb to server
-function mpSendBomb(cx, cy, radius) {
+function mpSendBomb(cx, cy, radius, bombKey) {
   if (!wsReady) return;
-  ws.send(JSON.stringify({ type: 'bomb', cx, cy, radius }));
+  ws.send(JSON.stringify({ type: 'bomb', cx, cy, radius, bombKey }));
   startBombCooldown(); // anti-spam: 30s cooldown between bombs
 }
 
@@ -6634,11 +6731,11 @@ document.addEventListener('visibilitychange', () => {
 // ── Rank system ──────────────────────────────────────────────────
 // Ranks are earned by cumulative pixels placed (persists via localStorage).
 const RANKS = [
-  { name:'Soldier',    min:0,   bombType:null,    bombCost:0,  bombRadius:0,   bonus:0, highlightMult:0 },
-  { name:'Lieutenant', min:50,  bombType:null,    bombCost:0,  bombRadius:0,   bonus:0, highlightMult:0 },
-  { name:'Captain',    min:150, bombType:'Mortar', bombCost:10, bombRadius:20,  bonus:0, highlightMult:0 },
-  { name:'General',    min:300, bombType:'MOAB',   bombCost:50, bombRadius:100, bonus:1, highlightMult:2 },
-  { name:'Admiral',    min:500, bombType:'Nuke',   bombCost:100,bombRadius:300, bonus:2, highlightMult:3 },
+  { name:'Soldier',    min:0,    bombType:null,    bombCost:0,  bombRadius:0,   bonus:0, highlightMult:0 },
+  { name:'Lieutenant', min:50,   bombType:null,    bombCost:0,  bombRadius:0,   bonus:0, highlightMult:0 },
+  { name:'Captain',    min:150,  bombType:'Mortar', bombCost:10, bombRadius:20,  bonus:0, highlightMult:0 },
+  { name:'General',    min:500,  bombType:'MOAB',   bombCost:50, bombRadius:100, bonus:1, highlightMult:2 },
+  { name:'Admiral',    min:1500, bombType:'Nuke',   bombCost:100,bombRadius:300, bonus:2, highlightMult:3 },
 ];
 
 // Persistent XP counter
@@ -6728,8 +6825,8 @@ function getBombTypes(){
   // Only show bomb types available at current rank
   const types = [];
   if(ri >= 2) types.push({ key:'mortar', label:'Mortar',  radius:5,   cost:10,  sound:'light'  });
-  if(ri >= 3) types.push({ key:'moab',   label:'MOAB',    radius:12,  cost:50,  sound:'heavy'  });
-  if(ri >= 4) types.push({ key:'nuke',   label:'Nuke',    radius:25,  cost:100, sound:'nuclear'});
+  if(ri >= 3) types.push({ key:'moab',   label:'MOAB',    radius:10,  cost:50,  sound:'heavy'  });
+  if(ri >= 4) types.push({ key:'nuke',   label:'Nuke',    radius:15,  cost:100, sound:'nuclear', clears:true, lockoutMs: 2*60*1000 });
   return types;
 }
 

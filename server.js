@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-17-group-g-option-b-v14';
+const SERVER_VERSION       = '2026-05-17-balance-nuke-v15';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -496,6 +496,56 @@ const _lastBombAt = new Map(); // discordId or countryId → timestamp
 // ── Conquest immunity — anti instant-trade-back ──────────────────
 const CONQUEST_IMMUNITY_MS = 20_000;  // 20s no re-conquest after a flip
 const _conquestImmunity = new Map(); // geoCountryId → expiresAt
+
+// ── Nuke lockout zones — server authoritative ─────────────────────
+// On Nuke detonation, server: (1) clears all pixels in radius (sets to unclaimed),
+// (2) creates a 2-minute lockout zone, (3) rejects any paint inside the zone.
+const NUKE_LOCKOUT_MS = 2 * 60 * 1000;
+const _nukeZones = []; // { cx, cy, radius, expiresAt }
+
+function _pruneServerNukeZones() {
+  const now = Date.now();
+  for (let i = _nukeZones.length - 1; i >= 0; i--) {
+    if (_nukeZones[i].expiresAt <= now) _nukeZones.splice(i, 1);
+  }
+}
+
+function isPixelInNukeZone(px, py) {
+  _pruneServerNukeZones();
+  for (const z of _nukeZones) {
+    const dx = px - z.cx, dy = py - z.cy;
+    if (dx*dx + dy*dy <= z.radius * z.radius) return true;
+  }
+  return false;
+}
+
+// Clear pixels in a radius — set them to unclaimed (-1) and emit clear deltas
+function clearPixelsInRadius(cx, cy, radius) {
+  const r2 = radius * radius;
+  const changed = [];
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (dx*dx + dy*dy > r2) continue;
+      const x = cx + dx, y = cy + dy;
+      if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) continue;
+      const i = y * MAP_W + x;
+      if (!landMask[i]) continue;
+      const prev = claimByPixel[i];
+      if (prev < 0) continue;
+      const prevId = idxToId[prev];
+      countryPxCount[prevId] = Math.max(0, (countryPxCount[prevId] || 1) - 1);
+      const geo = geoAtPixel[i];
+      if (geo >= 0 && geoClaimCnt[geo]?.[prevId]) {
+        geoClaimCnt[geo][prevId] = Math.max(0, geoClaimCnt[geo][prevId] - 1);
+      }
+      updateOwnerIndex(i, prev, -1);
+      claimByPixel[i] = -1;
+      changed.push({ x, y, owner: null });
+    }
+  }
+  return changed;
+}
+
 // Cleanup stale conquest immunity entries every 60s
 setInterval(() => {
   const now = Date.now();
@@ -709,6 +759,8 @@ function applyPixels(pixels, countryId) {
     if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) continue;
     const i = y * MAP_W + x;
     if (!landMask[i]) continue;
+    // Reject paint inside an active nuke lockout zone
+    if (isPixelInNukeZone(x, y)) continue;
     const prev = claimByPixel[i];
     if (prev === cidx) continue;
 
@@ -1738,6 +1790,7 @@ wss.on('connection', (ws, req) => {
           state: buildSnapshot(),
           david: buildDavidSnapshot(),
           serverVersion: SERVER_VERSION,
+          nukeZones: (_pruneServerNukeZones(), _nukeZones.slice()),
         }));
         broadcastPlayers();
         break;
@@ -1817,17 +1870,30 @@ wss.on('connection', (ws, req) => {
 
       case 'bomb': {
         if (!player.countryId) return;
-        // Anti-spam cooldown — keyed by discordId if logged-in, else countryId
         const cdKey = player.discordId || player.countryId;
         if (isBombOnCooldownServer(cdKey)) {
-          // Silently drop — client should have rejected this client-side
           console.log('[Bomb] Cooldown active for', cdKey, '— dropped');
           return;
         }
         markBombDeployed(cdKey);
-        const { cx, cy, radius } = msg;
+        const { cx, cy, radius, bombKey } = msg;
         if (typeof cx!=='number'||typeof cy!=='number'||typeof radius!=='number') return;
         if (radius > 30) return;
+        // Nuke special-case: clear pixels + create lockout zone, do NOT paint with attacker's colour
+        if (bombKey === 'nuke') {
+          const expiresAt = Date.now() + NUKE_LOCKOUT_MS;
+          _nukeZones.push({ cx, cy, radius, expiresAt });
+          const changed = clearPixelsInRadius(cx, cy, radius);
+          if (changed.length) queueDelta(changed);
+          // Broadcast the zone to all clients so they render the overlay + reject local paint
+          broadcast(JSON.stringify({
+            type: 'nuke_zone',
+            cx, cy, radius, expiresAt,
+          }));
+          console.log('[Nuke] cleared', changed.length, 'pixels at', cx, cy, '— lockout until', new Date(expiresAt).toISOString());
+          // Skip the normal apply path
+          break;
+        }
         const r2 = radius*radius;
         const bombed = [];
         for (let dy=-radius;dy<=radius;dy++) for (let dx=-radius;dx<=radius;dx++) {
