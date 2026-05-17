@@ -628,7 +628,13 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 @keyframes bot-pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 .bot-active{animation:bot-pulse 2s ease-in-out infinite;}
 /* ── Rank display ── */
-#rank-display{padding:6px 8px;background:#0a0f1a;border-top:1px solid #1e293b;font-size:10px;}
+#rank-display{
+  position:absolute;top:54px;left:14px;
+  padding:8px 12px;background:rgba(10,15,26,0.92);border:1px solid #1e293b;border-radius:8px;
+  font-size:10px;z-index:90;pointer-events:none;
+  min-width:200px;max-width:320px;
+  box-shadow:0 2px 10px rgba(0,0,0,0.5);
+}
 .rank-name{font-weight:700;letter-spacing:.06em;margin-bottom:3px;font-size:11px;}
 .rank-bar-wrap{height:4px;background:#1e293b;border-radius:2px;margin-bottom:3px;}
 .rank-bar-fill{height:4px;border-radius:2px;transition:width .4s;}
@@ -1442,7 +1448,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-17-group-g-landmarks-v12';
+const CODE_VERSION = '2026-05-17-bugfix-rank-territory-v13';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -2461,7 +2467,12 @@ function claimPixel(px,py){
       geoClaimCnt[geo][prev]=(geoClaimCnt[geo][prev]||1)-1;
       checkConquestReversal(geo,prev);
     }
-  }else{totalClaimed++;$("px-count").textContent=totalClaimed.toLocaleString();awardXP(1);}
+  }else{
+    totalClaimed++;
+    $("px-count").textContent=totalClaimed.toLocaleString();
+  }
+  // Always award XP for any pixel placement (steal OR claim) — rank progress reflects all activity
+  awardXP(1);
   claimByPixel[i]=currentIdx;
   recordPixelLoss(geo, currentIdx); // track all pixel activity
   strokePixelBuffer.push({x:px,y:py});
@@ -4479,9 +4490,13 @@ function mpHandleMessage(msg) {
         // We paint individually rather than via getImageData bbox to avoid any
         // partial-rect overwrite bugs. With ~500k typical run pixels, this is ~150ms
         // which is fine for a once-per-session welcome.
+        // Reset claimerCount before welcome — it'll get rebuilt from runs
+        claimerCount = {};
         for (const { s, l, o } of msg.state.runs) {
           const fi = featList.findIndex(f => f.id === String(o));
           if (fi < 0) continue;
+          // Update claimerCount in bulk for this run
+          claimerCount[fi] = (claimerCount[fi] || 0) + l;
           const [r,g,b] = hexRgb(featList[fi].color);
           // Walk the run, split at row boundaries (createImageData is row-aligned)
           let pos = s;
@@ -4534,17 +4549,21 @@ if (msg.state?.conquered) {
       // Group by owner for batch putImageData
       const byOwner = {};
       for (const { x, y, owner } of msg.pixels) {
+        const i = y * MAP_W + x;
+        const prevFi = claimByPixel[i];
         if (owner === null) {
-          // Cleared pixel
-          const i = y * MAP_W + x;
+          // Cleared pixel — decrement prev owner's claimerCount
+          if (prevFi >= 0) claimerCount[prevFi] = Math.max(0, (claimerCount[prevFi] || 1) - 1);
           claimByPixel[i] = -1;
           claimCtx.clearRect(x, y, 1, 1);
           continue;
         }
         const fi = featList.findIndex(f => f.id === String(owner));
         if (fi < 0) continue;
-        const i = y * MAP_W + x;
-        if (claimByPixel[i] === fi) continue; // already correct
+        if (prevFi === fi) continue; // no ownership change
+        // Update claimerCount to reflect ownership change
+        if (prevFi >= 0) claimerCount[prevFi] = Math.max(0, (claimerCount[prevFi] || 1) - 1);
+        claimerCount[fi] = (claimerCount[fi] || 0) + 1;
         claimByPixel[i] = fi;
         (byOwner[fi] ??= []).push({ x, y });
       }
