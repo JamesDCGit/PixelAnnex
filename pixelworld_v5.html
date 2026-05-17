@@ -846,6 +846,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     <canvas id="c-grid" style="pointer-events:none;opacity:0;"></canvas>
     <canvas id="c-waves" style="pointer-events:none"></canvas>
     <canvas id="c-sprites" style="pointer-events:none"></canvas>
+    <canvas id="c-landmarks" style="pointer-events:none"></canvas>
     <canvas id="c-claim"></canvas>
     <canvas id="c-outline" style="pointer-events:none;"></canvas>
     <canvas id="c-border"></canvas>
@@ -925,7 +926,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <button class="dbg-btn" style="color:#a5b4fc;border-color:rgba(165,180,252,.3)" onclick="dbgListDavidCountries()">List all David countries</button>
       <button class="dbg-btn" style="color:#f97316;border-color:rgba(249,115,22,.3)" onclick="applyEncirclementBonus(120, 5, 60000, MAP_W/2, MAP_H/2)">Trigger encirclement bonus (×5, 60s)</button>
       <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="renderLandmarks();updateLandmarksVisibility();">Re-render landmarks</button>
-      <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="cSprites.style.display=cSprites.style.display==='none'?'':'none';">Toggle landmarks visibility</button>
+      <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="cLandmarks.style.display=cLandmarks.style.display==='none'?'':'none';">Toggle landmarks visibility</button>
       <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="(function(){const t=_LANDMARKS.map(l=>{const p=_lnglatToPx(l.lng,l.lat);return l.name+' → ('+p.x+','+p.y+')';}).join('\\n');alert('Landmarks:\\n\\n'+t);})()">List all landmarks</button>
     </div>
 
@@ -1441,7 +1442,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-17-group-g-landmarks-v10';
+const CODE_VERSION = '2026-05-17-group-g-landmarks-v11';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -1511,6 +1512,8 @@ const wctx=cWaves.getContext("2d");
 wctx.imageSmoothingEnabled=false;
 const cSprites=document.getElementById("c-sprites");
 const sctx=cSprites.getContext("2d");
+const cLandmarks=document.getElementById("c-landmarks");
+const lmCtx=cLandmarks.getContext("2d");
 sctx.imageSmoothingEnabled=false;
 const cHighlight=document.getElementById("c-highlight");
 const hlCtx=cHighlight.getContext("2d");
@@ -1523,7 +1526,7 @@ siegeCtx.imageSmoothingEnabled=false;
 const cCrater=document.getElementById("c-crater");
 const craterCtx=cCrater.getContext("2d");
 craterCtx.imageSmoothingEnabled=false;
-[cBase,cGrid,cWaves,cSprites,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
+[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
 
 // ── Helpers ───────────────────────────────────────────────────────
 const $=id=>document.getElementById(id);
@@ -2581,7 +2584,7 @@ function scheduleLegend(){
 }
 
 // ── View ─────────────────────────────────────────────────────────
-function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cGrid,cWaves,cSprites,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege,cOwnStroke].forEach(c=>c.style.transform=t);}
+function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege,cOwnStroke].forEach(c=>c.style.transform=t);}
 // Free panning — clamp is now a no-op so users can move the map anywhere they like.
 // Previous behaviour pinned the map within the viewport bounds; removing this lets
 // users drag the world off-screen, useful for inspecting edges and far-away regions.
@@ -4779,7 +4782,7 @@ const _LANDMARKS = [
   { name: 'Outback',      sprite: _SPRITE_DESERT,   lng: 134.00, lat: -25.00 },
 ];
 
-// Render a single sprite to the sctx canvas at given map coords (centred)
+// Render a single sprite to the lmCtx canvas at given map coords (centred)
 function _renderSprite(sprite, cx, cy) {
   const h = sprite.length;
   const w = sprite[0].length;
@@ -4797,45 +4800,41 @@ function _renderSprite(sprite, cx, cy) {
       // Only render on land — sprites in the ocean look weird (except deserts which are already on land)
       const i = py * MAP_W + px;
       if (!landMask[i]) continue;
-      sctx.fillStyle = colour;
-      sctx.fillRect(px, py, 1, 1);
+      lmCtx.fillStyle = colour;
+      lmCtx.fillRect(px, py, 1, 1);
       _renderSpriteCount++;
     }
   }
 }
 
 function renderLandmarks() {
-  if (!sctx || !landMask) {
+  if (!lmCtx || !landMask) {
     console.warn('[Landmarks] Cannot render yet — canvas or landMask not ready');
     return;
   }
+  // Clear any previous render first
+  lmCtx.clearRect(0, 0, MAP_W, MAP_H);
   console.log('[Landmarks] Rendering', _LANDMARKS.length, 'landmarks…');
   const t0 = performance.now();
-  let totalPaintedPx = 0;
+  _renderSpriteCount = 0;
   for (const lm of _LANDMARKS) {
     const { x, y } = _lnglatToPx(lm.lng, lm.lat);
-    const before = _renderSpriteCount;
     _renderSprite(lm.sprite, x, y);
-    totalPaintedPx += (_renderSpriteCount - before);
   }
   const t1 = performance.now();
-  console.log('[Landmarks] Rendered', totalPaintedPx, 'pixels in', (t1 - t0).toFixed(1), 'ms');
-  // If rendering produced very few pixels, landMask may not have been fully ready —
-  // retry once after a delay to catch the late-population case
-  if (totalPaintedPx < 200 && !_landmarkRetryDone) {
+  console.log('[Landmarks] Rendered', _renderSpriteCount, 'pixels in', (t1 - t0).toFixed(1), 'ms');
+  if (_renderSpriteCount < 200 && !_landmarkRetryDone) {
     _landmarkRetryDone = true;
     console.log('[Landmarks] Low paint count, retrying in 1.5s…');
-    setTimeout(() => { sctx.clearRect(0, 0, MAP_W, MAP_H); renderLandmarks(); }, 1500);
+    setTimeout(() => renderLandmarks(), 1500);
   }
 }
 let _renderSpriteCount = 0;
 let _landmarkRetryDone = false;
 
-// Visibility tied to zoom — show by default, hide only when very zoomed out
-// (sprites become invisible noise below scale 0.4)
 function updateLandmarksVisibility() {
-  if (!cSprites) return;
-  cSprites.style.display = scale >= 0.4 ? '' : 'none';
+  if (!cLandmarks) return;
+  cLandmarks.style.display = scale >= 0.4 ? '' : 'none';
 }
 
 // Hook into applyT to update visibility on zoom change
@@ -6864,7 +6863,7 @@ async function proceduralFallback(){
   totalLandPx=Object.values(geoTotal).reduce((a,b)=>a+b,0);
   buildCselOptions();
   selectCountry(0);
-  [cBase,cWaves,cSprites,cClaim,cFlags,cBorder,cHighlight,cOverlay,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
+  [cBase,cWaves,cSprites,cLandmarks,cClaim,cFlags,cBorder,cHighlight,cOverlay,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
   [bctx,claimCtx,flagCtx,bordCtx,ovCtx,hlCtx].forEach(c=>{c.imageSmoothingEnabled=false;});
   initWaves();buildWaveBase();tickWaves();
   initSprites();requestAnimationFrame(tickSprites);
