@@ -9,7 +9,7 @@
  * Version bumped per release so old caches get cleared automatically.
  */
 
-const CACHE_VERSION = 'pixelannex-v2026-05-17-balance-nuke-v15';
+const CACHE_VERSION = 'pixelannex-v2026-05-18-nuke-polish-v16';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

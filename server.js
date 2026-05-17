@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-17-balance-nuke-v15';
+const SERVER_VERSION       = '2026-05-18-nuke-polish-v16';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -500,13 +500,25 @@ const _conquestImmunity = new Map(); // geoCountryId → expiresAt
 // ── Nuke lockout zones — server authoritative ─────────────────────
 // On Nuke detonation, server: (1) clears all pixels in radius (sets to unclaimed),
 // (2) creates a 2-minute lockout zone, (3) rejects any paint inside the zone.
-const NUKE_LOCKOUT_MS = 2 * 60 * 1000;
+const NUKE_LOCKOUT_MS = 30 * 1000; // ⚠️ DEBUG: 30s for testing (production = 2 * 60 * 1000)
 const _nukeZones = []; // { cx, cy, radius, expiresAt }
+
+// Run nuke zone expiry every 1s — guarantees timely cleanup even with no traffic
+setInterval(() => { _pruneServerNukeZones(); }, 1000);
+
 
 function _pruneServerNukeZones() {
   const now = Date.now();
   for (let i = _nukeZones.length - 1; i >= 0; i--) {
-    if (_nukeZones[i].expiresAt <= now) _nukeZones.splice(i, 1);
+    const z = _nukeZones[i];
+    if (z.expiresAt <= now) {
+      // Defensive final clear — guarantees no leftover pixels at expiry
+      // (any pixels that snuck in during the lockout would be cleared here)
+      const changed = clearPixelsInRadius(z.cx, z.cy, z.radius);
+      if (changed.length) queueDelta(changed);
+      console.log('[Nuke] zone expired at', z.cx, z.cy, '— final clear of', changed.length, 'leftover pixels');
+      _nukeZones.splice(i, 1);
+    }
   }
 }
 
