@@ -1442,7 +1442,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-17-group-g-landmarks-v11';
+const CODE_VERSION = '2026-05-17-group-g-landmarks-v12';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -4683,24 +4683,29 @@ setInterval(() => {
 // Colour palettes — punched up so sprites stand out against muted base map
 const _LMC = {
   // Mountain — dark brown rock with bright snow cap
-  m1: '#3a2e22', // very dark brown rock (was 5a4a3a)
-  m2: '#6b5a48', // mid brown
-  m3: '#a89580', // light brown highlight
-  s:  '#f0f0f0', // snow
-  S:  '#ffffff', // bright snow peak
-  // City — punchy dark grey with bright yellow windows
-  c1: '#1a1a24', // very dark concrete
-  c2: '#3a3a4a', // mid concrete
-  c3: '#6a6a7a', // light grey
-  cy: '#ffd700', // bright window-light gold (was fbbf24)
+  m1: '#3a2e22', m2: '#6b5a48', m3: '#a89580', s:  '#f0f0f0', S:  '#ffffff',
+  // City — dark grey with bright yellow windows
+  c1: '#1a1a24', c2: '#3a3a4a', c3: '#6a6a7a', cy: '#ffd700',
   // Desert — saturated sand
-  d1: '#d4a040', // saturated sand
-  d2: '#a47020', // darker sand
-  d3: '#f4d480', // bright dune highlight
-  // Forest (unused)
-  f1: '#1d3a1d',
-  f2: '#3a6a3a',
-  f3: '#5a9a5a',
+  d1: '#d4a040', d2: '#a47020', d3: '#f4d480',
+  // Forest — green tree canopy
+  f1: '#1d3a1d', f2: '#3a6a3a', f3: '#5a9a5a',
+  // Volcano — dark rock + orange/red lava cap
+  v1: '#2a2020', // dark volcanic rock (almost black)
+  v2: '#5a3020', // dark reddish-brown
+  vL: '#ff5500', // bright lava orange
+  vG: '#ffaa00', // lava glow yellow
+  // Pyramid / ancient monument — sandstone tan
+  p1: '#8a6a40', // dark sandstone
+  p2: '#c4a070', // mid sandstone
+  p3: '#e4c890', // light sandstone highlight
+  // Tower — slim grey stone with gold tip
+  t1: '#3a3a4a', t2: '#7a7a8a', t3: '#a8a8b8',
+  tG: '#ffd700', // gold tip
+  // Lake — water blue
+  l1: '#1a4480', // deep blue
+  l2: '#3a78cc', // mid blue
+  l3: '#80b0e8', // light blue highlight
 };
 
 // Mountain sprite — 7×7, snow-capped peak with double peak
@@ -4734,7 +4739,46 @@ const _SPRITE_DESERT = [
   ['d1', 'd1', 'd1', 'd1', 'd1'],
 ];
 
-// Forest sprite — 5×5, tree cluster (bonus, not used in initial list)
+
+// Volcano sprite — 7×7, dark mountain with glowing lava crater
+const _SPRITE_VOLCANO = [
+  [null, null, null, 'vL', null, null, null],
+  [null, null, 'vG', 'vL', 'vG', null, null],
+  [null, null, 'v2', 'vL', 'v2', null, null],
+  [null, 'v2', 'v1', 'v2', 'v1', 'v2', null],
+  [null, 'v1', 'v2', 'v1', 'v2', 'v1', null],
+  ['v1', 'v2', 'v1', 'v2', 'v1', 'v2', 'v1'],
+  ['v1', 'v1', 'v1', 'v1', 'v1', 'v1', 'v1'],
+];
+
+// Pyramid sprite — 5×5, classic Egyptian triangle profile
+const _SPRITE_PYRAMID = [
+  [null, null, 'p3', null, null],
+  [null, 'p3', 'p2', 'p2', null],
+  [null, 'p2', 'p1', 'p2', 'p3'],
+  ['p2', 'p1', 'p2', 'p1', 'p2'],
+  ['p1', 'p1', 'p1', 'p1', 'p1'],
+];
+
+// Tower sprite — 5×7, slim spire (Eiffel/Big Ben/Burj-style)
+const _SPRITE_TOWER = [
+  [null, null, 'tG', null, null],
+  [null, null, 't3', null, null],
+  [null, null, 't2', null, null],
+  [null, 't3', 't1', 't3', null],
+  [null, 't2', 't1', 't2', null],
+  ['t1', 't2', 't1', 't2', 't1'],
+  ['t1', 't1', 't1', 't1', 't1'],
+];
+
+// Lake sprite — 5×3 horizontal ripple
+const _SPRITE_LAKE = [
+  ['l3', 'l2', 'l3', 'l2', 'l3'],
+  ['l2', 'l1', 'l2', 'l1', 'l2'],
+  ['l1', 'l2', 'l1', 'l2', 'l1'],
+];
+
+// Forest sprite — 5×5, tree cluster
 const _SPRITE_FOREST = [
   [null, 'f3', 'f2', 'f3', null],
   ['f3', 'f2', 'f1', 'f2', 'f3'],
@@ -4751,35 +4795,129 @@ function _lnglatToPx(lng, lat) {
 }
 
 // Hand-placed landmarks. Coords are approximate lng/lat of the feature.
-// Mix of mountains, cities, deserts spread across continents.
+// Mix of mountains, cities, deserts, volcanoes, monuments, forests, lakes.
 const _LANDMARKS = [
-  // Mountains
-  { name: 'Everest',      sprite: _SPRITE_MOUNTAIN, lng:  86.92, lat:  27.99 },
-  { name: 'Kilimanjaro',  sprite: _SPRITE_MOUNTAIN, lng:  37.36, lat:  -3.07 },
-  { name: 'Mt Fuji',      sprite: _SPRITE_MOUNTAIN, lng: 138.73, lat:  35.36 },
-  { name: 'Aconcagua',    sprite: _SPRITE_MOUNTAIN, lng: -70.00, lat: -32.65 }, // Andes
-  { name: 'Rockies',      sprite: _SPRITE_MOUNTAIN, lng:-115.00, lat:  39.00 },
-  { name: 'Alps',         sprite: _SPRITE_MOUNTAIN, lng:   8.00, lat:  46.50 },
-  { name: 'Caucasus',     sprite: _SPRITE_MOUNTAIN, lng:  43.00, lat:  43.00 },
-  { name: 'Atlas',        sprite: _SPRITE_MOUNTAIN, lng:  -5.00, lat:  31.50 },
-  { name: 'Urals',        sprite: _SPRITE_MOUNTAIN, lng:  60.00, lat:  60.00 },
-  { name: 'Mt Cook',      sprite: _SPRITE_MOUNTAIN, lng: 170.14, lat: -43.59 }, // NZ Alps
+  // ── Mountains (peaks & ranges) ──
+  { name: 'Everest',         sprite: _SPRITE_MOUNTAIN, lng:  86.92, lat:  27.99 },
+  { name: 'K2',              sprite: _SPRITE_MOUNTAIN, lng:  76.51, lat:  35.88 },
+  { name: 'Kilimanjaro',     sprite: _SPRITE_MOUNTAIN, lng:  37.36, lat:  -3.07 },
+  { name: 'Mt Fuji',         sprite: _SPRITE_MOUNTAIN, lng: 138.73, lat:  35.36 },
+  { name: 'Aconcagua',       sprite: _SPRITE_MOUNTAIN, lng: -70.00, lat: -32.65 },
+  { name: 'Denali',          sprite: _SPRITE_MOUNTAIN, lng:-151.00, lat:  63.07 },
+  { name: 'Mt McKinley',     sprite: _SPRITE_MOUNTAIN, lng:-150.50, lat:  62.50 },
+  { name: 'Rockies',         sprite: _SPRITE_MOUNTAIN, lng:-115.00, lat:  39.00 },
+  { name: 'Sierra Nevada',   sprite: _SPRITE_MOUNTAIN, lng:-119.00, lat:  37.50 },
+  { name: 'Appalachians',    sprite: _SPRITE_MOUNTAIN, lng: -82.00, lat:  36.00 },
+  { name: 'Alps',            sprite: _SPRITE_MOUNTAIN, lng:   8.00, lat:  46.50 },
+  { name: 'Matterhorn',      sprite: _SPRITE_MOUNTAIN, lng:   7.66, lat:  45.98 },
+  { name: 'Pyrenees',        sprite: _SPRITE_MOUNTAIN, lng:   0.50, lat:  42.80 },
+  { name: 'Caucasus',        sprite: _SPRITE_MOUNTAIN, lng:  43.00, lat:  43.00 },
+  { name: 'Atlas',           sprite: _SPRITE_MOUNTAIN, lng:  -5.00, lat:  31.50 },
+  { name: 'Urals',           sprite: _SPRITE_MOUNTAIN, lng:  60.00, lat:  60.00 },
+  { name: 'Mt Cook',         sprite: _SPRITE_MOUNTAIN, lng: 170.14, lat: -43.59 },
+  { name: 'Mt Olympus',      sprite: _SPRITE_MOUNTAIN, lng:  22.36, lat:  40.09 },
+  { name: 'Drakensberg',     sprite: _SPRITE_MOUNTAIN, lng:  29.50, lat: -29.50 },
+  { name: 'Tian Shan',       sprite: _SPRITE_MOUNTAIN, lng:  80.00, lat:  42.00 },
 
-  // Cities
-  { name: 'New York',     sprite: _SPRITE_CITY,     lng: -74.00, lat:  40.71 },
-  { name: 'London',       sprite: _SPRITE_CITY,     lng:  -0.13, lat:  51.51 },
-  { name: 'Tokyo',        sprite: _SPRITE_CITY,     lng: 139.69, lat:  35.69 },
-  { name: 'Paris',        sprite: _SPRITE_CITY,     lng:   2.35, lat:  48.86 },
-  { name: 'Sydney',       sprite: _SPRITE_CITY,     lng: 151.21, lat: -33.87 },
-  { name: 'Cairo',        sprite: _SPRITE_CITY,     lng:  31.24, lat:  30.04 },
-  { name: 'Rio',          sprite: _SPRITE_CITY,     lng: -43.18, lat: -22.91 },
-  { name: 'Moscow',       sprite: _SPRITE_CITY,     lng:  37.62, lat:  55.75 },
+  // ── Volcanoes ──
+  { name: 'Vesuvius',        sprite: _SPRITE_VOLCANO,  lng:  14.43, lat:  40.82 },
+  { name: 'Krakatoa',        sprite: _SPRITE_VOLCANO,  lng: 105.42, lat:  -6.10 },
+  { name: 'Yellowstone',     sprite: _SPRITE_VOLCANO,  lng:-110.59, lat:  44.43 },
+  { name: 'Mt Etna',         sprite: _SPRITE_VOLCANO,  lng:  14.99, lat:  37.75 },
+  { name: 'Popocatepetl',    sprite: _SPRITE_VOLCANO,  lng: -98.62, lat:  19.02 },
+  { name: 'Mauna Loa',       sprite: _SPRITE_VOLCANO,  lng:-155.61, lat:  19.48 },
+  { name: 'Stromboli',       sprite: _SPRITE_VOLCANO,  lng:  15.21, lat:  38.79 },
 
-  // Deserts
-  { name: 'Sahara',       sprite: _SPRITE_DESERT,   lng:  13.00, lat:  23.00 },
-  { name: 'Gobi',         sprite: _SPRITE_DESERT,   lng: 103.00, lat:  42.50 },
-  { name: 'Atacama',      sprite: _SPRITE_DESERT,   lng: -69.50, lat: -24.50 },
-  { name: 'Outback',      sprite: _SPRITE_DESERT,   lng: 134.00, lat: -25.00 },
+  // ── Cities ──
+  { name: 'New York',        sprite: _SPRITE_CITY,     lng: -74.00, lat:  40.71 },
+  { name: 'Los Angeles',     sprite: _SPRITE_CITY,     lng:-118.24, lat:  34.05 },
+  { name: 'Chicago',         sprite: _SPRITE_CITY,     lng: -87.65, lat:  41.88 },
+  { name: 'Toronto',         sprite: _SPRITE_CITY,     lng: -79.38, lat:  43.65 },
+  { name: 'Mexico City',     sprite: _SPRITE_CITY,     lng: -99.13, lat:  19.43 },
+  { name: 'São Paulo',       sprite: _SPRITE_CITY,     lng: -46.63, lat: -23.55 },
+  { name: 'Buenos Aires',    sprite: _SPRITE_CITY,     lng: -58.38, lat: -34.61 },
+  { name: 'Rio',             sprite: _SPRITE_CITY,     lng: -43.18, lat: -22.91 },
+  { name: 'London',          sprite: _SPRITE_CITY,     lng:  -0.13, lat:  51.51 },
+  { name: 'Paris',           sprite: _SPRITE_CITY,     lng:   2.35, lat:  48.86 },
+  { name: 'Berlin',          sprite: _SPRITE_CITY,     lng:  13.40, lat:  52.52 },
+  { name: 'Madrid',          sprite: _SPRITE_CITY,     lng:  -3.70, lat:  40.42 },
+  { name: 'Rome',            sprite: _SPRITE_CITY,     lng:  12.50, lat:  41.90 },
+  { name: 'Istanbul',        sprite: _SPRITE_CITY,     lng:  28.98, lat:  41.01 },
+  { name: 'Moscow',          sprite: _SPRITE_CITY,     lng:  37.62, lat:  55.75 },
+  { name: 'Cairo',           sprite: _SPRITE_CITY,     lng:  31.24, lat:  30.04 },
+  { name: 'Lagos',           sprite: _SPRITE_CITY,     lng:   3.39, lat:   6.52 },
+  { name: 'Nairobi',         sprite: _SPRITE_CITY,     lng:  36.82, lat:  -1.29 },
+  { name: 'Johannesburg',    sprite: _SPRITE_CITY,     lng:  28.05, lat: -26.20 },
+  { name: 'Dubai',           sprite: _SPRITE_CITY,     lng:  55.30, lat:  25.20 },
+  { name: 'Mumbai',          sprite: _SPRITE_CITY,     lng:  72.83, lat:  19.08 },
+  { name: 'Delhi',           sprite: _SPRITE_CITY,     lng:  77.21, lat:  28.61 },
+  { name: 'Bangkok',         sprite: _SPRITE_CITY,     lng: 100.50, lat:  13.76 },
+  { name: 'Singapore',       sprite: _SPRITE_CITY,     lng: 103.82, lat:   1.35 },
+  { name: 'Jakarta',         sprite: _SPRITE_CITY,     lng: 106.85, lat:  -6.21 },
+  { name: 'Beijing',         sprite: _SPRITE_CITY,     lng: 116.40, lat:  39.90 },
+  { name: 'Shanghai',        sprite: _SPRITE_CITY,     lng: 121.47, lat:  31.23 },
+  { name: 'Hong Kong',       sprite: _SPRITE_CITY,     lng: 114.17, lat:  22.32 },
+  { name: 'Seoul',           sprite: _SPRITE_CITY,     lng: 126.98, lat:  37.57 },
+  { name: 'Tokyo',           sprite: _SPRITE_CITY,     lng: 139.69, lat:  35.69 },
+  { name: 'Sydney',          sprite: _SPRITE_CITY,     lng: 151.21, lat: -33.87 },
+  { name: 'Melbourne',       sprite: _SPRITE_CITY,     lng: 144.96, lat: -37.81 },
+  { name: 'Auckland',        sprite: _SPRITE_CITY,     lng: 174.76, lat: -36.85 },
+
+  // ── Deserts ──
+  { name: 'Sahara',          sprite: _SPRITE_DESERT,   lng:   5.00, lat:  23.00 },
+  { name: 'Sahara East',     sprite: _SPRITE_DESERT,   lng:  20.00, lat:  22.00 },
+  { name: 'Sahara West',     sprite: _SPRITE_DESERT,   lng:  -5.00, lat:  24.00 },
+  { name: 'Arabian',         sprite: _SPRITE_DESERT,   lng:  48.00, lat:  23.00 },
+  { name: 'Kalahari',        sprite: _SPRITE_DESERT,   lng:  21.00, lat: -24.00 },
+  { name: 'Namib',           sprite: _SPRITE_DESERT,   lng:  14.50, lat: -24.00 },
+  { name: 'Gobi',            sprite: _SPRITE_DESERT,   lng: 103.00, lat:  42.50 },
+  { name: 'Thar',            sprite: _SPRITE_DESERT,   lng:  72.00, lat:  27.00 },
+  { name: 'Taklamakan',      sprite: _SPRITE_DESERT,   lng:  82.00, lat:  39.00 },
+  { name: 'Karakum',         sprite: _SPRITE_DESERT,   lng:  60.00, lat:  39.00 },
+  { name: 'Mojave',          sprite: _SPRITE_DESERT,   lng:-116.00, lat:  35.00 },
+  { name: 'Sonoran',         sprite: _SPRITE_DESERT,   lng:-112.00, lat:  32.00 },
+  { name: 'Atacama',         sprite: _SPRITE_DESERT,   lng: -69.50, lat: -24.50 },
+  { name: 'Patagonia',       sprite: _SPRITE_DESERT,   lng: -69.00, lat: -45.00 },
+  { name: 'Outback',         sprite: _SPRITE_DESERT,   lng: 134.00, lat: -25.00 },
+  { name: 'Great Sandy',     sprite: _SPRITE_DESERT,   lng: 124.00, lat: -20.00 },
+
+  // ── Monuments — Pyramids/Ancient ──
+  { name: 'Giza Pyramids',   sprite: _SPRITE_PYRAMID,  lng:  31.13, lat:  29.98 },
+  { name: 'Stonehenge',      sprite: _SPRITE_PYRAMID,  lng:  -1.83, lat:  51.18 },
+  { name: 'Machu Picchu',    sprite: _SPRITE_PYRAMID,  lng: -72.55, lat: -13.16 },
+  { name: 'Chichen Itza',    sprite: _SPRITE_PYRAMID,  lng: -88.57, lat:  20.68 },
+  { name: 'Petra',           sprite: _SPRITE_PYRAMID,  lng:  35.45, lat:  30.33 },
+  { name: 'Angkor Wat',      sprite: _SPRITE_PYRAMID,  lng: 103.87, lat:  13.41 },
+  { name: 'Taj Mahal',       sprite: _SPRITE_PYRAMID,  lng:  78.04, lat:  27.18 },
+  { name: 'Easter Island',   sprite: _SPRITE_PYRAMID,  lng:-109.37, lat: -27.11 },
+  { name: 'Great Wall',      sprite: _SPRITE_PYRAMID,  lng: 116.50, lat:  40.43 },
+  { name: 'Colosseum',       sprite: _SPRITE_PYRAMID,  lng:  12.49, lat:  41.89 },
+
+  // ── Monuments — Towers ──
+  { name: 'Eiffel Tower',    sprite: _SPRITE_TOWER,    lng:   2.30, lat:  48.86 },
+  { name: 'Big Ben',         sprite: _SPRITE_TOWER,    lng:  -0.12, lat:  51.50 },
+  { name: 'Burj Khalifa',    sprite: _SPRITE_TOWER,    lng:  55.27, lat:  25.20 },
+  { name: 'CN Tower',        sprite: _SPRITE_TOWER,    lng: -79.39, lat:  43.64 },
+  { name: 'Statue of Liberty', sprite: _SPRITE_TOWER,  lng: -74.04, lat:  40.69 },
+  { name: 'Christ Redeemer', sprite: _SPRITE_TOWER,    lng: -43.21, lat: -22.95 },
+  { name: 'Tokyo Tower',     sprite: _SPRITE_TOWER,    lng: 139.75, lat:  35.66 },
+
+  // ── Forests ──
+  { name: 'Amazon',          sprite: _SPRITE_FOREST,   lng: -62.00, lat:  -3.00 },
+  { name: 'Amazon South',    sprite: _SPRITE_FOREST,   lng: -58.00, lat:  -8.00 },
+  { name: 'Congo',           sprite: _SPRITE_FOREST,   lng:  23.00, lat:  -2.00 },
+  { name: 'Boreal (Siberia)',sprite: _SPRITE_FOREST,   lng:  95.00, lat:  60.00 },
+  { name: 'Boreal (Canada)', sprite: _SPRITE_FOREST,   lng:-100.00, lat:  55.00 },
+  { name: 'Taiga (Russia)',  sprite: _SPRITE_FOREST,   lng:  70.00, lat:  58.00 },
+  { name: 'Daintree',        sprite: _SPRITE_FOREST,   lng: 145.00, lat: -16.00 },
+
+  // ── Lakes & water features ──
+  { name: 'Great Lakes',     sprite: _SPRITE_LAKE,     lng: -85.00, lat:  45.00 },
+  { name: 'Lake Victoria',   sprite: _SPRITE_LAKE,     lng:  33.00, lat:  -1.00 },
+  { name: 'Caspian Sea',     sprite: _SPRITE_LAKE,     lng:  50.00, lat:  42.00 },
+  { name: 'Lake Baikal',     sprite: _SPRITE_LAKE,     lng: 108.00, lat:  53.50 },
+  { name: 'Lake Tanganyika', sprite: _SPRITE_LAKE,     lng:  29.50, lat:  -6.00 },
+  { name: 'Aral Sea',        sprite: _SPRITE_LAKE,     lng:  60.00, lat:  45.00 },
 ];
 
 // Render a single sprite to the lmCtx canvas at given map coords (centred)
