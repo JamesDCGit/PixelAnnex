@@ -1450,7 +1450,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-nuke-trefoil-v18';
+const CODE_VERSION = '2026-05-18-nuke-clear-fix-v19';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -4633,13 +4633,27 @@ function mpHandleMessage(msg) {
         // We paint individually rather than via getImageData bbox to avoid any
         // partial-rect overwrite bugs. With ~500k typical run pixels, this is ~150ms
         // which is fine for a once-per-session welcome.
-        // Reset claimerCount before welcome — it'll get rebuilt from runs
+        // Reset claimerCount AND per-geo claim map before welcome — both rebuilt from runs
         claimerCount = {};
+        // Reset per-geo claim counts but preserve geoTotal (intrinsic country size).
+        // For each country, geoClaimCnt[geoFi][geoFi] = geoTotal[geoFi] is the
+        // baseline (native ownership before any conquering).
+        for (const geoFi of Object.keys(geoTotal)) {
+          geoClaimCnt[geoFi] = { [geoFi]: 0 };
+        }
         for (const { s, l, o } of msg.state.runs) {
           const fi = featList.findIndex(f => f.id === String(o));
           if (fi < 0) continue;
           // Update claimerCount in bulk for this run
           claimerCount[fi] = (claimerCount[fi] || 0) + l;
+          // Per-pixel walk to update per-geo counts (each pixel's geo may differ)
+          for (let i = s; i < s + l && i < MAP_PX; i++) {
+            const g = featByPixel[i];
+            if (g >= 0) {
+              if (!geoClaimCnt[g]) geoClaimCnt[g] = {};
+              geoClaimCnt[g][fi] = (geoClaimCnt[g][fi] || 0) + 1;
+            }
+          }
           const [r,g,b] = hexRgb(featList[fi].color);
           // Walk the run, split at row boundaries (createImageData is row-aligned)
           let pos = s;
@@ -4689,24 +4703,38 @@ if (msg.state?.conquered) {
 
     case 'delta': {
       if (!msg.pixels?.length) return;
-      // Group by owner for batch putImageData
       const byOwner = {};
       for (const { x, y, owner } of msg.pixels) {
         const i = y * MAP_W + x;
         const prevFi = claimByPixel[i];
+        const geo = featByPixel[i]; // geographic country this pixel sits in
         if (owner === null) {
-          // Cleared pixel — decrement prev owner's claimerCount
-          if (prevFi >= 0) claimerCount[prevFi] = Math.max(0, (claimerCount[prevFi] || 1) - 1);
+          // Cleared pixel — decrement prev owner's counts (both global + per-geo)
+          if (prevFi >= 0) {
+            claimerCount[prevFi] = Math.max(0, (claimerCount[prevFi] || 1) - 1);
+            if (geo >= 0 && geoClaimCnt[geo]?.[prevFi] !== undefined) {
+              geoClaimCnt[geo][prevFi] = Math.max(0, geoClaimCnt[geo][prevFi] - 1);
+            }
+          }
           claimByPixel[i] = -1;
           claimCtx.clearRect(x, y, 1, 1);
           continue;
         }
         const fi = featList.findIndex(f => f.id === String(owner));
         if (fi < 0) continue;
-        if (prevFi === fi) continue; // no ownership change
-        // Update claimerCount to reflect ownership change
-        if (prevFi >= 0) claimerCount[prevFi] = Math.max(0, (claimerCount[prevFi] || 1) - 1);
+        if (prevFi === fi) continue;
+        // Ownership change — update both global claimerCount AND per-geo geoClaimCnt
+        if (prevFi >= 0) {
+          claimerCount[prevFi] = Math.max(0, (claimerCount[prevFi] || 1) - 1);
+          if (geo >= 0 && geoClaimCnt[geo]?.[prevFi] !== undefined) {
+            geoClaimCnt[geo][prevFi] = Math.max(0, geoClaimCnt[geo][prevFi] - 1);
+          }
+        }
         claimerCount[fi] = (claimerCount[fi] || 0) + 1;
+        if (geo >= 0) {
+          if (!geoClaimCnt[geo]) geoClaimCnt[geo] = {};
+          geoClaimCnt[geo][fi] = (geoClaimCnt[geo][fi] || 0) + 1;
+        }
         claimByPixel[i] = fi;
         (byOwner[fi] ??= []).push({ x, y });
       }

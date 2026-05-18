@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-nuke-trefoil-v18';
+const SERVER_VERSION       = '2026-05-18-nuke-clear-fix-v19';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -545,7 +545,9 @@ function clearPixelsInRadius(cx, cy, radius) {
       const x = cx + dx, y = cy + dy;
       if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) continue;
       const i = y * MAP_W + x;
-      if (!landMask[i]) continue;
+      // Clear regardless of server's landMask state — if a pixel is currently
+      // owned, the nuke wipes it. This handles cases where landMask might be
+      // incomplete or stale on the server side.
       const prev = claimByPixel[i];
       if (prev < 0) continue;
       const prevId = idxToId[prev];
