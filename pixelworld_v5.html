@@ -860,6 +860,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     <canvas id="c-highlight" style="pointer-events:none;"></canvas>
     <canvas id="c-siege" style="pointer-events:none;"></canvas>
     <canvas id="c-overlay" style="pointer-events:none;"></canvas>
+    <canvas id="c-nuke" style="pointer-events:none;"></canvas>
     <canvas id="c-ownstroke" style="pointer-events:none;mix-blend-mode:screen;"></canvas>
     <canvas id="c-crater" style="pointer-events:none;"></canvas>
     <div id="rank-display"></div>
@@ -1449,7 +1450,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-nuke-polish-v16';
+const CODE_VERSION = '2026-05-18-nuke-fix-v17';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -1531,6 +1532,9 @@ const cSiege=document.getElementById("c-siege");
 const siegeCtx=cSiege.getContext("2d");
 siegeCtx.imageSmoothingEnabled=false;
 const cCrater=document.getElementById("c-crater");
+const cNuke=document.getElementById("c-nuke");
+const nukeCtx=cNuke ? cNuke.getContext("2d") : null;
+if (nukeCtx) nukeCtx.imageSmoothingEnabled = false;
 
 // ── Nuke lockout zones — no-paint regions for 2 minutes ──────────
 // Server broadcasts these on every nuke detonation. Each zone has a
@@ -1556,95 +1560,86 @@ function isInNukeZone(px, py) {
 
 function addNukeZone(cx, cy, radius, expiresAt) {
   _nukeZones.push({ cx, cy, radius, expiresAt });
-  renderNukeZones();
-}
-
-// Render the visual overlay for active nuke zones onto the crater canvas.
-// Dim red haze + pulsing ring so players see clearly where they can't paint.
-function renderNukeZones() {
-  if (!cCrater) return;
-  // We don't clearRect — there might be regular craters on this canvas too.
-  // Instead, render the nuke zones in a way the existing crater system can refresh.
-  // For now: just draw a translucent red disc + outline.
-  // A separate ticker keeps them animated.
+  startNukeZoneTicker(); // ensure the pulse + fade animation is running
 }
 
 let _nukeZoneTickerStarted = false;
 function startNukeZoneTicker() {
   if (_nukeZoneTickerStarted) return;
   _nukeZoneTickerStarted = true;
+  // 50ms = 20fps — smooth pulse + responsive fade
   setInterval(() => {
     _pruneNukeZones();
     drawNukeZoneOverlay();
-  }, 250);
+  }, 50);
 }
 
-// 8×8 pixel-art nuclear trefoil — 1 = yellow ring/wedge, 0 = transparent/black centre
-// Classic radiation symbol stylised for pixel art: three wedges around a centre dot.
-const _NUKE_ICON_8x8 = [
+// 8×8 pixel-art international radiation trefoil symbol.
+// Three wedges at 12/4/8 o'clock with gaps between, around a central dot.
+// Drawn on yellow background (the disc itself acts as the yellow field),
+// so the wedges + centre dot are rendered as BLACK pixels.
+// Cells: 1 = black pixel (wedge/dot), 0 = leave yellow background showing through
+const _NUKE_TREFOIL = [
+  [0, 0, 0, 1, 1, 0, 0, 0],  // top wedge (12 o'clock)
   [0, 0, 1, 1, 1, 1, 0, 0],
+  [0, 0, 0, 1, 1, 0, 0, 0],
+  [1, 0, 0, 1, 1, 0, 0, 1],  // centre band with the dot
+  [1, 1, 0, 1, 1, 0, 1, 1],
+  [0, 1, 1, 0, 0, 1, 1, 0],  // lower-left + lower-right wedges
   [0, 1, 1, 0, 0, 1, 1, 0],
-  [1, 1, 0, 2, 2, 0, 1, 1],
-  [1, 0, 2, 2, 2, 2, 0, 1],
-  [1, 0, 2, 2, 2, 2, 0, 1],
-  [1, 1, 0, 2, 2, 0, 1, 1],
-  [0, 1, 1, 0, 0, 1, 1, 0],
-  [0, 0, 1, 1, 1, 1, 0, 0],
+  [0, 0, 1, 0, 0, 1, 0, 0],
 ];
 
 function drawNukeZoneOverlay() {
-  if (!cCrater) return;
-  const ctx = cCrater.getContext('2d');
+  if (!nukeCtx) return;
+  // Clear the nuke layer fully every tick — we own this canvas
+  nukeCtx.clearRect(0, 0, MAP_W, MAP_H);
   if (!_nukeZones.length) return;
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
   const now = Date.now();
+  nukeCtx.save();
+  nukeCtx.imageSmoothingEnabled = false;
+  // Drop any zones whose timer has expired (defensive — the prune ticker handles this too)
+  for (let i = _nukeZones.length - 1; i >= 0; i--) {
+    if (_nukeZones[i].expiresAt <= now) _nukeZones.splice(i, 1);
+  }
   for (const z of _nukeZones) {
     const remaining = z.expiresAt - now;
     if (remaining <= 0) continue;
     // Slow pulse — ~3s period — alpha cycles between 0.30 and 0.60
-    const pulseT = (Math.sin(now / 1500) + 1) / 2; // 0..1 smoothly
+    const pulseT = (Math.sin(now / 1500) + 1) / 2;
     let alpha = 0.30 + (0.60 - 0.30) * pulseT;
-    // Fade out in the last 5 seconds
+    // Fade out smoothly in the last 5 seconds
     if (remaining < 5000) {
-      const fade = remaining / 5000; // 1.0 → 0.0
+      const fade = remaining / 5000;
       alpha *= fade;
     }
-    // Filled translucent yellow-orange disc (radiation warning palette)
-    ctx.beginPath();
-    ctx.arc(z.cx, z.cy, z.radius, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(250, 204, 21, ' + alpha + ')';
-    ctx.fill();
-    // Outline ring (slightly darker / more solid)
-    ctx.lineWidth = 0.8;
-    ctx.strokeStyle = 'rgba(202, 138, 4, ' + Math.min(1, alpha * 1.4) + ')';
-    ctx.stroke();
-    // Pixel-art trefoil icon at centre (8×8). Centred on (cx, cy).
-    const ICON = _NUKE_ICON_8x8;
-    const iconAlpha = Math.min(1, alpha * 1.6);
+    // Translucent yellow disc (radiation warning yellow)
+    nukeCtx.beginPath();
+    nukeCtx.arc(z.cx, z.cy, z.radius, 0, Math.PI * 2);
+    nukeCtx.fillStyle = 'rgba(250, 204, 21, ' + alpha + ')';
+    nukeCtx.fill();
+    // Outline ring
+    nukeCtx.lineWidth = 0.8;
+    nukeCtx.strokeStyle = 'rgba(202, 138, 4, ' + Math.min(1, alpha * 1.6) + ')';
+    nukeCtx.stroke();
+    // Trefoil icon — black pixels on the yellow disc (8×8)
+    const iconAlpha = Math.min(1, alpha * 2.0);
     const offX = z.cx - 4, offY = z.cy - 4;
+    nukeCtx.fillStyle = 'rgba(0, 0, 0, ' + iconAlpha + ')';
     for (let row = 0; row < 8; row++) {
       for (let col = 0; col < 8; col++) {
-        const v = ICON[row][col];
-        if (v === 0) continue;
-        const px = offX + col, py = offY + row;
-        if (v === 1) {
-          // Wedge — yellow
-          ctx.fillStyle = 'rgba(250, 204, 21, ' + iconAlpha + ')';
-        } else {
-          // Centre dot — dark
-          ctx.fillStyle = 'rgba(20, 20, 20, ' + Math.min(1, iconAlpha * 1.2) + ')';
+        if (_NUKE_TREFOIL[row][col]) {
+          nukeCtx.fillRect(offX + col, offY + row, 1, 1);
         }
-        ctx.fillRect(px, py, 1, 1);
       }
     }
   }
-  ctx.restore();
+  nukeCtx.restore();
 }
 
 const craterCtx=cCrater.getContext("2d");
 craterCtx.imageSmoothingEnabled=false;
-[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
+[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
 
 // ── Helpers ───────────────────────────────────────────────────────
 const $=id=>document.getElementById(id);
@@ -2709,7 +2704,7 @@ function scheduleLegend(){
 }
 
 // ── View ─────────────────────────────────────────────────────────
-function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cSiege,cOwnStroke].forEach(c=>c.style.transform=t);}
+function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>c.style.transform=t);}
 // Free panning — clamp is now a no-op so users can move the map anywhere they like.
 // Previous behaviour pinned the map within the viewport bounds; removing this lets
 // users drag the world off-screen, useful for inspecting edges and far-away regions.
@@ -2991,6 +2986,14 @@ function detonateBomb(mapX, mapY){
   // Draw crater on overlay
   addCrater(mapX, mapY, radius, bt.key);
   startCraterTicker();
+  // Nuke special-case: predict the lockout zone immediately for instant visual feedback
+  // (server will broadcast the authoritative zone within ~50ms anyway, but this
+  //  prevents the brief "wait" before the disc appears)
+  if (bt.key === 'nuke') {
+    const lockoutMs = bt.lockoutMs || (2*60*1000);
+    addNukeZone(mapX, mapY, radius, Date.now() + lockoutMs);
+    startNukeZoneTicker();
+  }
   mpSendBomb(mapX, mapY, radius, bt.key);
   bombMode=false;
   $("btn-bomb").classList.remove("active");
@@ -4758,14 +4761,31 @@ if (msg.state?.conquered) {
 
     case 'nuke_zone': {
       // Server broadcasts when a nuke detonates — { cx, cy, radius, expiresAt }
+      // Replace any pending client-side prediction with the authoritative server zone
+      for (let i = _nukeZones.length - 1; i >= 0; i--) {
+        const z = _nukeZones[i];
+        const dx = z.cx - msg.cx, dy = z.cy - msg.cy;
+        if (Math.abs(dx) < 4 && Math.abs(dy) < 4) _nukeZones.splice(i, 1);
+      }
       addNukeZone(msg.cx, msg.cy, msg.radius, msg.expiresAt);
-      startNukeZoneTicker();
-      // Activity card
       actPushCard({
         variant: 'alert',
         title: '☢️ Nuclear strike',
         html: 'No-paint zone active for <b>' + Math.round((msg.expiresAt - Date.now())/1000) + 's</b> around the blast site',
       });
+      break;
+    }
+
+    case 'nuke_zone_expired': {
+      // Server told us a zone expired — remove from local state so the overlay fades immediately
+      for (let i = _nukeZones.length - 1; i >= 0; i--) {
+        const z = _nukeZones[i];
+        const dx = z.cx - msg.cx, dy = z.cy - msg.cy;
+        if (Math.abs(dx) < 4 && Math.abs(dy) < 4) _nukeZones.splice(i, 1);
+      }
+      // Force one final clear so the canvas isn't left with stale pixels
+      if (typeof nukeCtx !== 'undefined' && nukeCtx) nukeCtx.clearRect(0, 0, MAP_W, MAP_H);
+      drawNukeZoneOverlay();
       break;
     }
 
@@ -7386,7 +7406,7 @@ async function proceduralFallback(){
   totalLandPx=Object.values(geoTotal).reduce((a,b)=>a+b,0);
   buildCselOptions();
   selectCountry(0);
-  [cBase,cWaves,cSprites,cLandmarks,cClaim,cFlags,cBorder,cHighlight,cOverlay,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
+  [cBase,cWaves,cSprites,cLandmarks,cClaim,cFlags,cBorder,cHighlight,cOverlay,cNuke,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
   [bctx,claimCtx,flagCtx,bordCtx,ovCtx,hlCtx].forEach(c=>{c.imageSmoothingEnabled=false;});
   initWaves();buildWaveBase();tickWaves();
   initSprites();requestAnimationFrame(tickSprites);

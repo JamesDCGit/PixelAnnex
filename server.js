@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-nuke-polish-v16';
+const SERVER_VERSION       = '2026-05-18-nuke-fix-v17';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -513,9 +513,13 @@ function _pruneServerNukeZones() {
     const z = _nukeZones[i];
     if (z.expiresAt <= now) {
       // Defensive final clear — guarantees no leftover pixels at expiry
-      // (any pixels that snuck in during the lockout would be cleared here)
       const changed = clearPixelsInRadius(z.cx, z.cy, z.radius);
-      if (changed.length) queueDelta(changed);
+      if (changed.length) {
+        queueDelta(changed);
+        if (typeof flushDelta === 'function') flushDelta(); // force immediate broadcast
+      }
+      // Broadcast zone-expired so clients also know to clear their nuke canvas
+      broadcast(JSON.stringify({ type: 'nuke_zone_expired', cx: z.cx, cy: z.cy, radius: z.radius }));
       console.log('[Nuke] zone expired at', z.cx, z.cy, '— final clear of', changed.length, 'leftover pixels');
       _nukeZones.splice(i, 1);
     }
