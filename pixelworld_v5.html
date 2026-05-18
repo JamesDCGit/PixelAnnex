@@ -1450,7 +1450,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-nuke-clear-fix-v19';
+const CODE_VERSION = '2026-05-18-nuke-clean-v20';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -1574,20 +1574,30 @@ function startNukeZoneTicker() {
   }, 50);
 }
 
-// 8×8 pixel-art international radiation trefoil symbol.
-// True ISO design: solid central black blob with three wedges fanning out at
-// 12, 4, and 8 o'clock. Each wedge has a tip near the centre, widening outward.
-// 60° gaps between wedges (visualised here as horizontal yellow strips).
-// Cells: 1 = black pixel, 0 = leave yellow background showing through
+// 16×16 pixel-art international radiation trefoil symbol.
+// Three black wedges at 12, 4, 8 o'clock fanning outward from a central black disc,
+// with equal yellow gaps between them. Cells: 1 = black, 0 = leave yellow showing.
 const _NUKE_TREFOIL = [
-  [0, 1, 1, 1, 1, 1, 1, 0],  // top wedge — widest at the rim
-  [0, 0, 1, 1, 1, 1, 0, 0],  // narrowing
-  [0, 0, 0, 1, 1, 0, 0, 0],  // narrowest before centre
-  [0, 0, 1, 1, 1, 1, 0, 0],  // centre disc band (top half)
-  [0, 0, 1, 1, 1, 1, 0, 0],  // centre disc band (bottom half)
-  [0, 0, 0, 1, 1, 0, 0, 0],  // narrowest before bottom wedges
-  [1, 1, 1, 0, 0, 1, 1, 1],  // bottom-left + bottom-right wedges widen
-  [1, 1, 0, 0, 0, 0, 1, 1],  // wedge tips at lower corners
+  // Row 0..3: TOP wedge — widens from centre outward (this is the OUTER tip)
+  [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+  // Row 4..7: TOP wedge meets CENTRE disc
+  [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+  // Row 8..11: lower wedges START tapering inward to centre
+  [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+  [0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0],
+  [0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0],
+  // Row 12..15: BOTTOM-LEFT + BOTTOM-RIGHT wedges fanning outward
+  [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+  [1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1],
+  [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1],
+  [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1],
 ];
 
 function drawNukeZoneOverlay() {
@@ -1622,12 +1632,12 @@ function drawNukeZoneOverlay() {
     nukeCtx.lineWidth = 0.8;
     nukeCtx.strokeStyle = 'rgba(202, 138, 4, ' + Math.min(1, alpha * 1.6) + ')';
     nukeCtx.stroke();
-    // Trefoil icon — black pixels on the yellow disc (8×8)
+    // Trefoil icon — black pixels on the yellow disc (16×16)
     const iconAlpha = Math.min(1, alpha * 2.0);
-    const offX = z.cx - 4, offY = z.cy - 4;
+    const offX = z.cx - 8, offY = z.cy - 8;
     nukeCtx.fillStyle = 'rgba(0, 0, 0, ' + iconAlpha + ')';
-    for (let row = 0; row < 8; row++) {
-      for (let col = 0; col < 8; col++) {
+    for (let row = 0; row < 16; row++) {
+      for (let col = 0; col < 16; col++) {
         if (_NUKE_TREFOIL[row][col]) {
           nukeCtx.fillRect(offX + col, offY + row, 1, 1);
         }
@@ -3002,13 +3012,13 @@ function detonateBomb(mapX, mapY){
 
   $("px-count").textContent=totalClaimed.toLocaleString();
   scheduleLegend();
-  // Draw crater on overlay
-  addCrater(mapX, mapY, radius, bt.key);
-  startCraterTicker();
-  // Nuke special-case: predict the lockout zone immediately for instant visual feedback
-  // (server will broadcast the authoritative zone within ~50ms anyway, but this
-  //  prevents the brief "wait" before the disc appears)
-  if (bt.key === 'nuke') {
+  // Draw crater for non-nuke bombs (mortar/MOAB leave a residual scar).
+  // Nukes get a fresh clean slate — no crater, just the pulsing zone.
+  if (bt.key !== 'nuke') {
+    addCrater(mapX, mapY, radius, bt.key);
+    startCraterTicker();
+  } else {
+    // Nuke special-case: predict the lockout zone for instant visual feedback
     const lockoutMs = bt.lockoutMs || (2*60*1000);
     addNukeZone(mapX, mapY, radius, Date.now() + lockoutMs);
     startNukeZoneTicker();
