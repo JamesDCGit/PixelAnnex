@@ -1450,7 +1450,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-nuke-fix-v17';
+const CODE_VERSION = '2026-05-18-nuke-trefoil-v18';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -1575,19 +1575,19 @@ function startNukeZoneTicker() {
 }
 
 // 8×8 pixel-art international radiation trefoil symbol.
-// Three wedges at 12/4/8 o'clock with gaps between, around a central dot.
-// Drawn on yellow background (the disc itself acts as the yellow field),
-// so the wedges + centre dot are rendered as BLACK pixels.
-// Cells: 1 = black pixel (wedge/dot), 0 = leave yellow background showing through
+// True ISO design: solid central black blob with three wedges fanning out at
+// 12, 4, and 8 o'clock. Each wedge has a tip near the centre, widening outward.
+// 60° gaps between wedges (visualised here as horizontal yellow strips).
+// Cells: 1 = black pixel, 0 = leave yellow background showing through
 const _NUKE_TREFOIL = [
-  [0, 0, 0, 1, 1, 0, 0, 0],  // top wedge (12 o'clock)
-  [0, 0, 1, 1, 1, 1, 0, 0],
-  [0, 0, 0, 1, 1, 0, 0, 0],
-  [1, 0, 0, 1, 1, 0, 0, 1],  // centre band with the dot
-  [1, 1, 0, 1, 1, 0, 1, 1],
-  [0, 1, 1, 0, 0, 1, 1, 0],  // lower-left + lower-right wedges
-  [0, 1, 1, 0, 0, 1, 1, 0],
-  [0, 0, 1, 0, 0, 1, 0, 0],
+  [0, 1, 1, 1, 1, 1, 1, 0],  // top wedge — widest at the rim
+  [0, 0, 1, 1, 1, 1, 0, 0],  // narrowing
+  [0, 0, 0, 1, 1, 0, 0, 0],  // narrowest before centre
+  [0, 0, 1, 1, 1, 1, 0, 0],  // centre disc band (top half)
+  [0, 0, 1, 1, 1, 1, 0, 0],  // centre disc band (bottom half)
+  [0, 0, 0, 1, 1, 0, 0, 0],  // narrowest before bottom wedges
+  [1, 1, 1, 0, 0, 1, 1, 1],  // bottom-left + bottom-right wedges widen
+  [1, 1, 0, 0, 0, 0, 1, 1],  // wedge tips at lower corners
 ];
 
 function drawNukeZoneOverlay() {
@@ -2919,6 +2919,7 @@ function detonateBomb(mapX, mapY){
 
   const radius = bt.radius;
   const r2 = radius*radius;
+  const isNukeBomb = bt && bt.key === 'nuke';
 
   // Flash + sound
   const flash = document.getElementById("bomb-flash");
@@ -2942,6 +2943,24 @@ function detonateBomb(mapX, mapY){
       const i=y*MAP_W+x;
       if(!landMask[i]) continue;
       const prev=claimByPixel[i];
+      if (isNukeBomb) {
+        // NUKE — clear EVERY pixel in the radius, regardless of owner
+        // (including the attacker's own pixels). Clean slate.
+        if (prev < 0) continue; // already unclaimed
+        claimerCount[prev]=Math.max(0,(claimerCount[prev]||1)-1);
+        const geo=featByPixel[i];
+        if(geo>=0&&geoClaimCnt[geo]&&geoClaimCnt[geo][prev]){
+          geoClaimCnt[geo][prev]=Math.max(0,(geoClaimCnt[geo][prev]||1)-1);
+          checkConquestReversal(geo,prev);
+        }
+        claimByPixel[i] = -1;
+        claimCtx.clearRect(x, y, 1, 1);
+        if (prev === currentIdx) totalClaimed=Math.max(0,totalClaimed-1);
+        if(x<bx0)bx0=x;if(x>bx1)bx1=x;
+        if(y<by0)by0=y;if(y>by1)by1=y;
+        // Don't push to claimed[] — batch paint should skip these
+        continue;
+      }
       if(prev===currentIdx) continue;
       // Transfer from previous owner
       if(prev>=0){
@@ -2969,7 +2988,7 @@ function detonateBomb(mapX, mapY){
     }
   }
 
-  if(claimed.length>0){
+  if(claimed.length>0 && !isNukeBomb){
     const bw=bx1-bx0+1,bh=by1-by0+1;
     const img=claimCtx.getImageData(bx0,by0,bw,bh);
     const d=img.data;
