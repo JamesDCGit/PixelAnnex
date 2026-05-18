@@ -1450,7 +1450,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-nuke-clean-v20';
+const CODE_VERSION = '2026-05-18-nuke-ownstroke-clear-v21';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -2545,6 +2545,17 @@ function markOwnPixel(x, y) {
   _ownStrokeQueue.push({ x, y });
 }
 
+// Clear the own-stroke mark at a given pixel (used when pixels get wiped — e.g. by nukes).
+function clearOwnPixel(x, y) {
+  if (!ownPixels || !ownCtx) return;
+  if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return;
+  const i = y * MAP_W + x;
+  if (!ownPixels[i]) return;
+  ownPixels[i] = 0;
+  ownCtx.clearRect(x, y, 1, 1);
+}
+
+
 // Flush queued pixels to the canvas. A small white-tinted dot at low alpha
 // creates a subtle "I painted this" glow that's only really visible when zoomed in.
 function flushOwnStroke() {
@@ -2956,6 +2967,8 @@ function detonateBomb(mapX, mapY){
       if (isNukeBomb) {
         // NUKE — clear EVERY pixel in the radius, regardless of owner
         // (including the attacker's own pixels). Clean slate.
+        // Also clear the own-stroke overlay so no white residue remains.
+        clearOwnPixel(x, y);
         if (prev < 0) continue; // already unclaimed
         claimerCount[prev]=Math.max(0,(claimerCount[prev]||1)-1);
         const geo=featByPixel[i];
@@ -2968,7 +2981,6 @@ function detonateBomb(mapX, mapY){
         if (prev === currentIdx) totalClaimed=Math.max(0,totalClaimed-1);
         if(x<bx0)bx0=x;if(x>bx1)bx1=x;
         if(y<by0)by0=y;if(y>by1)by1=y;
-        // Don't push to claimed[] — batch paint should skip these
         continue;
       }
       if(prev===currentIdx) continue;
@@ -4728,6 +4740,10 @@ if (msg.state?.conquered) {
           }
           claimByPixel[i] = -1;
           claimCtx.clearRect(x, y, 1, 1);
+          // Also clear own-stroke marks — when pixels get wiped (e.g. by nukes),
+          // the white "my pixels" overlay would otherwise linger and look like
+          // grey residue at high zoom.
+          clearOwnPixel(x, y);
           continue;
         }
         const fi = featList.findIndex(f => f.id === String(owner));
