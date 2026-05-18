@@ -1450,7 +1450,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-nuke-ownstroke-clear-v21';
+const CODE_VERSION = '2026-05-18-nuke-visuals-v22';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -1600,6 +1600,43 @@ const _NUKE_TREFOIL = [
   [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1],
 ];
 
+// Test if a point (px, py) is inside the international radiation trefoil.
+// True ISO geometry: three black wedges of 60° width at 0°, 120°, 240° (rotated
+// so that wedge 1 points UP, wedges 2 & 3 fan down-left and down-right). Plus a
+// central black disc. Three 60° yellow gaps between wedges.
+//
+// cx, cy = sprite centre (map coords)
+// r = overall sprite radius (pixels). Tuning constants below scale with r.
+function _isInTrefoil(px, py, cx, cy, r) {
+  const dx = px - cx, dy = py - cy;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  // Central disc: solid black up to 22% of radius
+  const centerDiscR = r * 0.22;
+  if (dist <= centerDiscR) return true;
+  // Inner gap between centre disc and wedges (yellow ring)
+  const innerWedgeR = r * 0.34;
+  if (dist < innerWedgeR) return false;
+  // Outer edge of wedges
+  const outerWedgeR = r * 0.95;
+  if (dist > outerWedgeR) return false;
+  // Compute angle from centre. In standard atan2: 0 = right, π/2 = down.
+  // We want wedges at "top" (12 o'clock), "lower-right" (4 o'clock), "lower-left" (8 o'clock).
+  // Translate so 0 = up, then mod 120° = 60° wedge.
+  // atan2(-dy, dx) gives angle where 0=right, π/2=up.
+  // Subtracting π/2 puts 0 = up.
+  let angle = Math.atan2(-dy, dx) - Math.PI / 2;
+  // Normalise to [0, 2π)
+  while (angle < 0) angle += 2 * Math.PI;
+  while (angle >= 2 * Math.PI) angle -= 2 * Math.PI;
+  // Three wedges at 0°, 120°, 240°. Within each 120° sector, the wedge spans the
+  // first 60° and the gap is the next 60°.
+  const sector = angle % (2 * Math.PI / 3); // 0..120°
+  const wedgeHalf = (Math.PI / 3) / 2;       // half of 60° wedge
+  // The wedge is centred at 0° within each sector. With the offset above, this
+  // places the first wedge centred on "up" (12 o'clock).
+  return sector <= wedgeHalf || sector >= (2 * Math.PI / 3 - wedgeHalf);
+}
+
 function drawNukeZoneOverlay() {
   if (!nukeCtx) return;
   // Clear the nuke layer fully every tick — we own this canvas
@@ -1608,38 +1645,53 @@ function drawNukeZoneOverlay() {
   const now = Date.now();
   nukeCtx.save();
   nukeCtx.imageSmoothingEnabled = false;
-  // Drop any zones whose timer has expired (defensive — the prune ticker handles this too)
+  // Drop any zones whose timer has expired
   for (let i = _nukeZones.length - 1; i >= 0; i--) {
     if (_nukeZones[i].expiresAt <= now) _nukeZones.splice(i, 1);
   }
   for (const z of _nukeZones) {
     const remaining = z.expiresAt - now;
     if (remaining <= 0) continue;
-    // Slow pulse — ~3s period — alpha cycles between 0.30 and 0.60
-    const pulseT = (Math.sin(now / 1500) + 1) / 2;
-    let alpha = 0.30 + (0.60 - 0.30) * pulseT;
-    // Fade out smoothly in the last 5 seconds
+    // Slow pulse — ~3s period
+    const pulseT = (Math.sin(now / 1500) + 1) / 2; // 0..1
+    // Outline pulses between hard yellow and hard red (no alpha — full 1.0)
+    // pulseT=0 → yellow, pulseT=1 → red
+    const rR = Math.round(250 + (220 - 250) * pulseT); // 250→220
+    const gR = Math.round(204 + ( 38 - 204) * pulseT); // 204→38
+    const bR = Math.round( 21 + ( 38 -  21) * pulseT); //  21→38
+    // Middle fill alpha is fixed at 30% (per spec)
+    let middleAlpha = 0.30;
+    // Fade out smoothly in the last 5 seconds for BOTH outline and fill
+    let outlineAlpha = 1.0;
     if (remaining < 5000) {
-      const fade = remaining / 5000;
-      alpha *= fade;
+      const fade = remaining / 5000; // 1.0 → 0.0
+      outlineAlpha = fade;
+      middleAlpha *= fade;
     }
-    // Translucent yellow disc (radiation warning yellow)
+    // ── 30% alpha yellow middle (constant — no pulse) ──
     nukeCtx.beginPath();
     nukeCtx.arc(z.cx, z.cy, z.radius, 0, Math.PI * 2);
-    nukeCtx.fillStyle = 'rgba(250, 204, 21, ' + alpha + ')';
+    nukeCtx.fillStyle = 'rgba(250, 204, 21, ' + middleAlpha + ')';
     nukeCtx.fill();
-    // Outline ring
-    nukeCtx.lineWidth = 0.8;
-    nukeCtx.strokeStyle = 'rgba(202, 138, 4, ' + Math.min(1, alpha * 1.6) + ')';
+    // ── Hard 1px pulsing yellow ↔ red outline ──
+    // For pixel-art crispness, draw a true 1px outline by stroking with lineWidth=1
+    nukeCtx.lineWidth = 1;
+    nukeCtx.strokeStyle = 'rgba(' + rR + ',' + gR + ',' + bR + ',' + outlineAlpha + ')';
     nukeCtx.stroke();
-    // Trefoil icon — black pixels on the yellow disc (16×16)
-    const iconAlpha = Math.min(1, alpha * 2.0);
-    const offX = z.cx - 8, offY = z.cy - 8;
+    // ── Radiation trefoil — sized to fill the zone ──
+    // Draws true geometric trefoil (ISO 21482-style) instead of a fixed 16×16
+    // bitmap so it scales crisply with the zone radius.
+    const iconAlpha = Math.min(1, outlineAlpha * 0.85);
     nukeCtx.fillStyle = 'rgba(0, 0, 0, ' + iconAlpha + ')';
-    for (let row = 0; row < 16; row++) {
-      for (let col = 0; col < 16; col++) {
-        if (_NUKE_TREFOIL[row][col]) {
-          nukeCtx.fillRect(offX + col, offY + row, 1, 1);
+    const iconR = z.radius - 1; // leave a 1px halo of yellow at the rim
+    const minX = Math.floor(z.cx - iconR);
+    const maxX = Math.ceil(z.cx + iconR);
+    const minY = Math.floor(z.cy - iconR);
+    const maxY = Math.ceil(z.cy + iconR);
+    for (let py = minY; py <= maxY; py++) {
+      for (let px = minX; px <= maxX; px++) {
+        if (_isInTrefoil(px + 0.5, py + 0.5, z.cx, z.cy, iconR)) {
+          nukeCtx.fillRect(px, py, 1, 1);
         }
       }
     }
