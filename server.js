@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-nuke-visuals-v22';
+const SERVER_VERSION       = '2026-05-18-daily-popup-v23';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -160,8 +160,9 @@ function getProfile(discordId) {
 
 // ── Daily login bonus ─────────────────────────────────────────────
 // On first visit each calendar day, grant pixels. Weekly streak gives more.
-const DAILY_BASE_BONUS = 50;     // baseline pixel grant
-const WEEKLY_STREAK_BONUS = 100; // every 7th consecutive day (50 + 100 = 150)
+const DAILY_BASE_BONUS = 10;      // daily login bonus
+const WEEKLY_STREAK_BONUS = 140;  // every 7th consecutive day (10 daily + 140 streak = 150 total)
+const DISCORD_WELCOME_BONUS = 200; // once-off for first Discord login
 
 function todayString() {
   const d = new Date();
@@ -173,34 +174,48 @@ function todayString() {
 function processDailyLogin(discordId) {
   const profile = getProfile(discordId);
   const today = todayString();
-  if (profile.lastLoginDay === today) {
-    return { granted: 0, streakDays: profile.streakDays, alreadyClaimed: true };
+  // One-off Discord welcome bonus — granted the first time the user ever logs in.
+  let discordBonus = 0;
+  if (!profile.discordWelcomeClaimed) {
+    discordBonus = DISCORD_WELCOME_BONUS;
+    profile.discordWelcomeClaimed = true;
   }
-
-  // Determine streak: was yesterday the last login?
+  if (profile.lastLoginDay === today) {
+    // Already claimed today's daily, but might still have the one-off Discord bonus
+    if (discordBonus > 0) markProfilesDirty();
+    return {
+      granted: discordBonus,
+      dailyBonus: 0,
+      streakBonus: 0,
+      discordBonus,
+      streakDays: profile.streakDays,
+      alreadyClaimed: discordBonus === 0,
+    };
+  }
+  // Streak update
   let yesterday = new Date();
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const yStr = yesterday.getUTCFullYear() + '-' +
     String(yesterday.getUTCMonth()+1).padStart(2,'0') + '-' +
     String(yesterday.getUTCDate()).padStart(2,'0');
-
   if (profile.lastLoginDay === yStr) {
     profile.streakDays = (profile.streakDays || 0) + 1;
   } else {
-    profile.streakDays = 1; // reset
+    profile.streakDays = 1;
   }
   profile.lastLoginDay = today;
-
-  let granted = DAILY_BASE_BONUS;
+  let dailyBonus = DAILY_BASE_BONUS;
   let streakBonus = 0;
   if (profile.streakDays > 0 && profile.streakDays % 7 === 0) {
     streakBonus = WEEKLY_STREAK_BONUS;
-    granted += streakBonus;
   }
+  const granted = dailyBonus + streakBonus + discordBonus;
   markProfilesDirty();
   return {
     granted,
+    dailyBonus,
     streakBonus,
+    discordBonus,
     streakDays: profile.streakDays,
     alreadyClaimed: false,
   };
@@ -1352,6 +1367,45 @@ const httpServer = http.createServer(async (req, res) => {
       sessions: sessions.size,
       mapReady,
       uptime:   process.uptime(),
+    }));
+    return;
+  }
+
+
+  // ── /api/world-state — public summary for the welcome popup ──
+  if (url.pathname === '/api/world-state') {
+    // Top 3 countries by total claimed pixel count
+    const topCountries = Object.entries(countryPxCount)
+      .filter(([, cnt]) => cnt > 0)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([id, count]) => ({ id, count, name: countryNames[id] || ('Country ' + id) }));
+    // Conquered country count: size of conqueredSet (each entry = "geoId:ownerId")
+    // Count distinct geographic countries that are currently conquered.
+    const distinctConquered = new Set();
+    for (const key of conqueredSet) {
+      const geoId = String(key).split(':')[0];
+      distinctConquered.add(geoId);
+    }
+    // Top 3 players by points
+    const topPlayers = [...profiles.values()]
+      .filter(p => p.username && p.points > 0)
+      .sort((a, b) => b.points - a.points)
+      .slice(0, 3)
+      .map(p => ({
+        username:    p.username,
+        avatar:      p.avatar,
+        points:      p.points,
+        rank:        p.rank,
+        country:     p.country,
+      }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      topCountries,
+      conqueredCount: distinctConquered.size,
+      topPlayers,
+      totalPlayers:  players.size,
+      totalBots:     bots.size,
     }));
     return;
   }

@@ -339,6 +339,81 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* ── Stats modal ── */
 
 /* ── Tutorial / Welcome overlay ── */
+
+/* ── Daily bonus & world state popup (shown before map loads if tutorial done) ── */
+#daily-popup-overlay{
+  display:none; position:fixed; inset:0;
+  background:rgba(8,12,20,0.92); backdrop-filter:blur(6px);
+  z-index:2000; align-items:center; justify-content:center;
+  font-family:'Courier New', monospace;
+}
+#daily-popup-overlay.open{display:flex;}
+#daily-popup-card{
+  background:linear-gradient(135deg, #0f172a, #1e293b);
+  border:1px solid #334155; border-radius:14px;
+  padding:28px 32px; max-width:520px; min-width:420px;
+  color:#e2e8f0; box-shadow:0 10px 50px rgba(0,0,0,0.6);
+  position:relative;
+  animation:dpop-in .35s cubic-bezier(.5,1.4,.4,1);
+}
+@keyframes dpop-in{
+  0%   { transform:scale(0.85); opacity:0; }
+  100% { transform:scale(1); opacity:1; }
+}
+#daily-popup-card h2{
+  margin:0 0 4px 0; font-size:20px; color:#fbbf24;
+  letter-spacing:.06em; text-transform:uppercase;
+}
+#daily-popup-card .dp-sub{
+  font-size:11px; color:#94a3b8; margin-bottom:18px; letter-spacing:.05em;
+}
+#daily-popup-card .dp-section{
+  margin-bottom:18px; padding:14px 16px;
+  background:rgba(15,23,42,0.6); border:1px solid #1e293b; border-radius:8px;
+}
+#daily-popup-card .dp-section-title{
+  font-size:11px; color:#60a5fa; text-transform:uppercase; letter-spacing:.12em;
+  margin-bottom:10px; font-weight:700;
+}
+.dp-bonus-row{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:6px 0; font-size:13px;
+}
+.dp-bonus-row.gained{ color:#86efac; }
+.dp-bonus-row.skipped{ color:#64748b; }
+.dp-bonus-amt{
+  font-weight:700; font-size:14px;
+}
+.dp-bonus-amt.gained{ color:#22c55e; }
+.dp-bonus-amt.skipped{ color:#475569; }
+.dp-total{
+  text-align:center; padding:10px; margin-top:6px;
+  background:rgba(34, 197, 94, 0.10); border:1px solid rgba(34, 197, 94, 0.30);
+  border-radius:6px; font-size:14px;
+}
+.dp-total .dp-total-amt{
+  font-size:22px; color:#22c55e; font-weight:700;
+}
+.dp-world-row{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:5px 0; font-size:12px;
+}
+.dp-world-row .dp-label{ color:#94a3b8; }
+.dp-world-row .dp-val{ color:#fbbf24; font-weight:700; }
+.dp-rank{ color:#64748b; margin-right:6px; font-weight:700; min-width:18px; display:inline-block; }
+.dp-country-name{ color:#e2e8f0; }
+.dp-pixel-count{ color:#60a5fa; font-size:11px; }
+#daily-popup-card button.dp-close{
+  display:block; width:100%; margin-top:6px; padding:12px;
+  background:linear-gradient(135deg,#3b82f6,#1d4ed8);
+  border:none; color:#fff; font-family:'Courier New', monospace;
+  font-size:14px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+  border-radius:8px; cursor:pointer;
+}
+#daily-popup-card button.dp-close:hover{
+  background:linear-gradient(135deg,#60a5fa,#3b82f6);
+}
+
 #tutorial-overlay{
   position:fixed;inset:0;background:rgba(7,13,26,0.78);z-index:9999;
   display:none;align-items:center;justify-content:center;
@@ -741,7 +816,28 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <button id="retry-btn" onclick="location.reload()">Retry</button>
     </div>
     <div id="bomb-flash"></div>
-    <div id="tutorial-overlay">
+    
+<div id="daily-popup-overlay">
+  <div id="daily-popup-card">
+    <h2>Welcome Back</h2>
+    <div class="dp-sub" id="dp-greeting">PixelAnnex</div>
+    <div class="dp-section">
+      <div class="dp-section-title">Bonuses</div>
+      <div id="dp-bonus-list"></div>
+      <div class="dp-total" id="dp-total" style="display:none;">
+        Total awarded:
+        <span class="dp-total-amt" id="dp-total-amt">+0 px</span>
+      </div>
+    </div>
+    <div class="dp-section">
+      <div class="dp-section-title">World State</div>
+      <div id="dp-world-stats"></div>
+    </div>
+    <button class="dp-close" onclick="closeDailyPopup()">Enter the World</button>
+  </div>
+</div>
+
+<div id="tutorial-overlay">
       <div id="tutorial-box">
         <h1>PixelAnnex</h1>
         <div class="tut-sub" id="tut-sub-label">Welcome — let's get you set up</div>
@@ -1450,7 +1546,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-nuke-visuals-v22';
+const CODE_VERSION = '2026-05-18-daily-popup-v23';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -1467,7 +1563,7 @@ if ('serviceWorker' in navigator) {
 
 let claimerCount={},geoClaimCnt={},geoTotal={};
 // ── Pixel inventory ──────────────────────────────────────────────
-const BUCKET_MAX       = 100;   // max pixels a player can hold
+const BUCKET_MAX       = 1000;  // max pixels a player can hold
 const REGEN_INTERVAL   = 5;     // seconds between +1 pixel — TEST MODE (production: 60)
 let   pixelBucket      = 10;    // starting inventory
 
@@ -3599,20 +3695,126 @@ function escapeHtml(s) {
   }
 })();
 
-// ── Daily login bonus ─────────────────────────────────────────────
+// ── Daily login bonus + world state popup ────────────────────────
+// Shown once per session if tutorial has been done. Combines:
+//   - Discord one-off welcome bonus (200px)
+//   - Daily login bonus (10px)
+//   - Weekly streak bonus (150px on every 7th day)
+//   - Current world state (top countries, conquered count, top players)
 async function checkDailyBonus() {
+  if (!localStorage.getItem('pa_tutorial_seen')) {
+    // Tutorial not yet completed — skip the popup entirely. The user will see
+    // the bonus next time they visit (after going through the tutorial).
+    return;
+  }
+  // Don't show twice in the same session
+  if (sessionStorage.getItem('pa_daily_popup_shown')) return;
   try {
-    const res = await fetch('/api/daily-login', { credentials: 'include' });
-    const data = await res.json();
-    if (!data.loggedIn || data.alreadyClaimed) return;
-    if (data.granted > 0) {
-      // Grant pixels to bucket
-      pixelBucket = Math.min(BUCKET_MAX * 5, pixelBucket + data.granted); // allow temporary overflow
-      updateBucketHUD();
-      // Show toast
-      showDailyBonusToast(data);
+    const [bonusRes, worldRes] = await Promise.all([
+      fetch('/api/daily-login', { credentials: 'include' }).then(r => r.json()).catch(() => null),
+      fetch('/api/world-state').then(r => r.json()).catch(() => null),
+    ]);
+    // Even if Discord auth failed, still show world state.
+    showDailyPopup(bonusRes, worldRes);
+    sessionStorage.setItem('pa_daily_popup_shown', '1');
+  } catch (e) { console.warn('[DailyPopup]', e); }
+}
+
+function showDailyPopup(bonus, world) {
+  const overlay = document.getElementById('daily-popup-overlay');
+  const greeting = document.getElementById('dp-greeting');
+  const bonusList = document.getElementById('dp-bonus-list');
+  const totalEl = document.getElementById('dp-total');
+  const totalAmt = document.getElementById('dp-total-amt');
+  const worldStats = document.getElementById('dp-world-stats');
+  if (!overlay) return;
+
+  // ── Bonuses section ──
+  let totalGranted = 0;
+  const rows = [];
+  if (bonus && bonus.loggedIn) {
+    greeting.textContent = 'Signed in via Discord';
+    const dailyAmt   = bonus.dailyBonus   || 0;
+    const streakAmt  = bonus.streakBonus  || 0;
+    const discordAmt = bonus.discordBonus || 0;
+    if (discordAmt > 0) {
+      rows.push({ label: '🎉 Discord welcome bonus', amt: discordAmt });
+      totalGranted += discordAmt;
     }
-  } catch (e) { /* silent */ }
+    if (dailyAmt > 0) {
+      rows.push({ label: '📅 Daily login', amt: dailyAmt });
+      totalGranted += dailyAmt;
+    } else {
+      rows.push({ label: '📅 Daily login (already claimed today)', amt: 0 });
+    }
+    if (streakAmt > 0) {
+      rows.push({ label: '🔥 Weekly streak bonus (' + bonus.streakDays + ' days)', amt: streakAmt });
+      totalGranted += streakAmt;
+    } else if (bonus.streakDays) {
+      const daysToStreak = 7 - (bonus.streakDays % 7);
+      rows.push({ label: '🔥 Weekly streak (' + daysToStreak + ' days until +150)', amt: 0 });
+    }
+  } else {
+    greeting.textContent = 'Sign in with Discord to earn login bonuses';
+    rows.push({ label: '🎉 Discord welcome bonus (sign in to claim)', amt: 0 });
+    rows.push({ label: '📅 Daily login (sign in to claim)',           amt: 0 });
+    rows.push({ label: '🔥 Weekly streak (sign in to claim)',         amt: 0 });
+  }
+  bonusList.innerHTML = rows.map(r => {
+    const cls = r.amt > 0 ? 'gained' : 'skipped';
+    return '<div class="dp-bonus-row ' + cls + '">' +
+      '<span>' + r.label + '</span>' +
+      '<span class="dp-bonus-amt ' + cls + '">' +
+        (r.amt > 0 ? ('+' + r.amt + ' px') : '—') +
+      '</span>' +
+      '</div>';
+  }).join('');
+  if (totalGranted > 0) {
+    totalEl.style.display = '';
+    totalAmt.textContent = '+' + totalGranted + ' px';
+  } else {
+    totalEl.style.display = 'none';
+  }
+  // Apply bucket bump
+  if (totalGranted > 0) {
+    pixelBucket = Math.min(BUCKET_MAX * 5, pixelBucket + totalGranted); // allow temporary overflow
+    updateBucketHUD();
+  }
+
+  // ── World state section ──
+  if (world) {
+    const lines = [];
+    if (world.topCountries && world.topCountries.length) {
+      lines.push('<div class="dp-world-row"><span class="dp-label">Top countries</span><span class="dp-val">' + (world.totalPlayers + world.totalBots) + ' active</span></div>');
+      world.topCountries.forEach((c, i) => {
+        lines.push('<div class="dp-world-row">' +
+          '<span><span class="dp-rank">#' + (i+1) + '</span><span class="dp-country-name">' + c.name + '</span></span>' +
+          '<span class="dp-pixel-count">' + c.count.toLocaleString() + ' px</span>' +
+        '</div>');
+      });
+    }
+    lines.push('<div class="dp-world-row" style="margin-top:8px;border-top:1px solid #1e293b;padding-top:8px;"><span class="dp-label">⚔️ Conquered countries</span><span class="dp-val">' + (world.conqueredCount || 0) + '</span></div>');
+    if (world.topPlayers && world.topPlayers.length) {
+      lines.push('<div class="dp-world-row" style="margin-top:8px;border-top:1px solid #1e293b;padding-top:8px;"><span class="dp-label">Top players</span><span class="dp-val">' + world.totalPlayers + ' online</span></div>');
+      world.topPlayers.forEach((p, i) => {
+        lines.push('<div class="dp-world-row">' +
+          '<span><span class="dp-rank">#' + (i+1) + '</span><span class="dp-country-name">' + (p.username || 'Anonymous') + '</span></span>' +
+          '<span class="dp-pixel-count">' + (p.points || 0).toLocaleString() + ' pts · ' + (p.rank || 'Soldier') + '</span>' +
+        '</div>');
+      });
+    } else {
+      lines.push('<div class="dp-world-row"><span class="dp-label">Top players</span><span class="dp-val">Be the first!</span></div>');
+    }
+    worldStats.innerHTML = lines.join('');
+  } else {
+    worldStats.innerHTML = '<div class="dp-world-row"><span class="dp-label">World state unavailable</span><span></span></div>';
+  }
+  overlay.classList.add('open');
+}
+
+function closeDailyPopup() {
+  const overlay = document.getElementById('daily-popup-overlay');
+  if (overlay) overlay.classList.remove('open');
 }
 
 function showDailyBonusToast(data) {
