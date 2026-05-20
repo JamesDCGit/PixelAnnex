@@ -9,7 +9,7 @@
  * Version bumped per release so old caches get cleared automatically.
  */
 
-const CACHE_VERSION = 'pixelannex-v2026-05-18-daily-popup-v23';
+const CACHE_VERSION = 'pixelannex-v2026-05-18-i18n-phase1-v25';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

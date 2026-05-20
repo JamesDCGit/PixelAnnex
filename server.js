@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-daily-popup-v23';
+const SERVER_VERSION       = '2026-05-18-i18n-phase1-v25';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -64,6 +64,151 @@ const sessions = new Map();
 // SSE event streams subscribed by the Discord bot
 const botEventStreams = new Set();
 
+// ── Tweet drafts queue ───────────────────────────────────────────
+// Captures notable in-game events as drafted tweets. Surfaced via /admin/tweets
+// for an operator to review, edit, and post manually. Manual posting only —
+// keeps tweet quality curated and avoids X API costs.
+
+const TWEET_QUEUE_FILE = path.join(__dirname, 'tweet_queue.json');
+const TWEETS_MAX_KEEP   = 500;      // total drafts retained
+const TWEETS_DEDUPE_MS  = 5 * 60_000;       // 5 min dedupe window per event signature
+const TWEETS_RATE_LIMIT = 60 * 60_000;      // 1hr min between conquest tweets from same attacker
+const tweetQueue = [];                       // newest first; each: { id, ts, type, text, status }
+const _tweetLastByKey = new Map();           // key → ts (dedupe / throttle)
+let _tweetSaveTimer = null;
+
+function loadTweetQueue() {
+  try {
+    if (fs.existsSync(TWEET_QUEUE_FILE)) {
+      const raw = JSON.parse(fs.readFileSync(TWEET_QUEUE_FILE, 'utf8'));
+      if (Array.isArray(raw)) {
+        for (const t of raw) tweetQueue.push(t);
+        console.log('[Tweets] Loaded', tweetQueue.length, 'drafts from disk');
+      }
+    }
+  } catch (e) { console.error('[Tweets] Failed to load queue:', e.message); }
+}
+
+function saveTweetQueue() {
+  if (_tweetSaveTimer) return;
+  _tweetSaveTimer = setTimeout(() => {
+    _tweetSaveTimer = null;
+    try {
+      const tmp = TWEET_QUEUE_FILE + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(tweetQueue.slice(0, TWEETS_MAX_KEEP)));
+      fs.renameSync(tmp, TWEET_QUEUE_FILE);
+    } catch (e) { console.error('[Tweets] Failed to save:', e.message); }
+  }, 2000);
+}
+
+function pushTweetDraft({ type, text, dedupeKey, throttleKey }) {
+  const now = Date.now();
+  // Dedupe: same event recently? skip.
+  if (dedupeKey) {
+    const last = _tweetLastByKey.get(dedupeKey);
+    if (last && now - last < TWEETS_DEDUPE_MS) return null;
+  }
+  // Throttle: same attacker / event-class recently? skip.
+  if (throttleKey) {
+    const last = _tweetLastByKey.get('throttle:' + throttleKey);
+    if (last && now - last < TWEETS_RATE_LIMIT) return null;
+  }
+  const draft = {
+    id:     Math.random().toString(36).slice(2, 10),
+    ts:     now,
+    type,
+    text:   String(text || '').slice(0, 280),
+    status: 'pending',  // 'pending' | 'posted' | 'dismissed'
+  };
+  tweetQueue.unshift(draft);
+  if (dedupeKey)   _tweetLastByKey.set(dedupeKey, now);
+  if (throttleKey) _tweetLastByKey.set('throttle:' + throttleKey, now);
+  // Prune
+  if (tweetQueue.length > TWEETS_MAX_KEEP) tweetQueue.length = TWEETS_MAX_KEEP;
+  saveTweetQueue();
+  return draft;
+}
+
+// Helpers to format country names with hashtags
+function _countryName(id) { return countryNames[id] || ('Country ' + id); }
+function _countryTag(id) {
+  // ISO 3166-1 numeric → hashtag-safe name (alphanumeric only)
+  const n = _countryName(id).replace(/[^A-Za-z0-9]/g, '');
+  return n ? '#' + n : '';
+}
+
+// ── Tweet template generators ────────────────────────────────────
+function tweetForConquest(attackerId, defenderGeoId) {
+  const a = _countryName(attackerId);
+  const d = _countryName(defenderGeoId);
+  // Count attacker's total conquests
+  let conquestsHeld = 0;
+  for (const key of conqueredSet) {
+    const parts = String(key).split(':');
+    if (parts[1] === String(attackerId)) conquestsHeld++;
+  }
+  const text = `🗡️ ${a} has conquered ${d}! ${a} now controls ${conquestsHeld} ${conquestsHeld === 1 ? 'country' : 'countries'}. Play at pixelannex.com ${_countryTag(attackerId)} ${_countryTag(defenderGeoId)} #PixelAnnex`;
+  return text;
+}
+
+function tweetForReversal(victimId, oppressorId) {
+  const v = _countryName(victimId);
+  const o = _countryName(oppressorId);
+  return `🛡️ ${v} has liberated itself from ${o}! The resistance prevails. ${_countryTag(victimId)} #PixelAnnex pixelannex.com`;
+}
+
+function tweetForNuke(attackerId, cx, cy) {
+  const a = _countryName(attackerId);
+  // Find which geographic country was nuked (look up geoAtPixel)
+  const i = cy * MAP_W + cx;
+  const geoId = (i >= 0 && i < geoAtPixel.length) ? geoAtPixel[i] : -1;
+  const targetName = geoId >= 0 ? _countryName(String(geoId)) : 'open territory';
+  return `☢️ ${a} has launched a nuclear strike on ${targetName}! No-paint zone active for 2 minutes. ${_countryTag(attackerId)} #PixelAnnex pixelannex.com`;
+}
+
+function tweetForDailySummary() {
+  // Top 3 countries by pixels
+  const top = Object.entries(countryPxCount)
+    .filter(([, c]) => c > 0)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 3);
+  if (!top.length) return null;
+  const distinctConquered = new Set();
+  for (const key of conqueredSet) distinctConquered.add(String(key).split(':')[0]);
+  const lines = top.map(([id, c], i) => `${i + 1}. ${_countryName(id)} (${c.toLocaleString()} px)`).join(' · ');
+  return `🌍 World Snapshot · ${lines} · ${distinctConquered.size} countries conquered · Play at pixelannex.com #PixelAnnex`;
+}
+
+function tweetForAdmiralPromotion(username, countryId) {
+  return `🎖️ ${username} has reached ADMIRAL rank in PixelAnnex ${countryId ? '(' + _countryName(countryId) + ')' : ''}! Nukes unlocked. ☢️ Play at pixelannex.com #PixelAnnex`;
+}
+
+// Daily summary scheduler — fires once per UTC day at 12:00 UTC
+function scheduleDailySummary() {
+  const now = new Date();
+  const next = new Date(now);
+  next.setUTCHours(12, 0, 0, 0);
+  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  const msUntil = next - now;
+  setTimeout(() => {
+    const text = tweetForDailySummary();
+    if (text) {
+      pushTweetDraft({
+        type:       'daily_summary',
+        text,
+        dedupeKey: 'daily_summary:' + now.toUTCString().slice(0, 16),
+      });
+      console.log('[Tweets] Daily summary queued at', new Date().toISOString());
+    }
+    scheduleDailySummary(); // schedule next day
+  }, msUntil);
+  console.log('[Tweets] Next daily summary at', next.toISOString());
+}
+
+loadTweetQueue();
+scheduleDailySummary();
+
+
 // Broadcast a game event to all connected bots
 function emitBotEvent(event) {
   const data = 'data: ' + JSON.stringify(event) + '\n\n';
@@ -76,6 +221,211 @@ const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 // Player profiles by discord_id (persists across sessions)
 const profiles = new Map();
 const PROFILES_FILE = path.join(__dirname, 'profiles.json');
+
+const TWEET_ADMIN_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PixelAnnex Tweet Drafts</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body { font-family: ui-monospace, monospace; background:#0f172a; color:#e2e8f0; margin:0; padding:24px; max-width:920px; margin:auto; }
+  h1 { color:#fbbf24; margin:0 0 6px 0; font-size:22px; letter-spacing:.06em; }
+  .sub { color:#94a3b8; font-size:12px; margin-bottom:22px; }
+  .filters { margin-bottom:18px; display:flex; gap:8px; flex-wrap:wrap; }
+  .filters button {
+    background:#1e293b; border:1px solid #334155; color:#cbd5e1;
+    padding:6px 12px; cursor:pointer; border-radius:4px; font-family:inherit; font-size:12px;
+  }
+  .filters button.active { background:#3b82f6; border-color:#60a5fa; color:#fff; }
+  .compose {
+    background:#1e293b; border:1px solid #334155; padding:14px; border-radius:8px;
+    margin-bottom:24px;
+  }
+  .compose textarea { width:100%; height:80px; box-sizing:border-box; background:#0f172a; border:1px solid #334155; color:#e2e8f0; font-family:inherit; padding:10px; border-radius:4px; font-size:13px; resize:vertical; }
+  .compose .row { display:flex; align-items:center; justify-content:space-between; margin-top:8px; }
+  .compose .count { color:#94a3b8; font-size:11px; }
+  .compose button { background:#22c55e; border:none; color:#fff; padding:8px 16px; cursor:pointer; border-radius:4px; font-family:inherit; font-size:13px; }
+  .compose button:disabled { background:#475569; cursor:not-allowed; }
+  .tweet {
+    background:#1e293b; border:1px solid #334155; padding:14px;
+    margin-bottom:12px; border-radius:8px;
+  }
+  .tweet.status-posted    { opacity:.45; border-left:3px solid #22c55e; }
+  .tweet.status-dismissed { opacity:.30; border-left:3px solid #64748b; }
+  .tweet.status-pending   { border-left:3px solid #3b82f6; }
+  .meta { color:#94a3b8; font-size:11px; margin-bottom:8px; display:flex; gap:12px; align-items:center; }
+  .meta .type { background:#0f172a; color:#fbbf24; padding:1px 6px; border-radius:3px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+  .meta .age { font-style:italic; }
+  .text {
+    background:#0f172a; padding:10px; border-radius:4px; border:1px solid #1e293b;
+    font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word;
+    min-height:24px;
+  }
+  .text[contenteditable] { outline:1px solid #3b82f6; }
+  .actions { display:flex; gap:8px; margin-top:10px; align-items:center; }
+  .actions .count { color:#94a3b8; font-size:11px; margin-right:auto; }
+  .actions .count.over { color:#ef4444; font-weight:700; }
+  .actions button { background:#334155; border:none; color:#e2e8f0; padding:6px 12px; cursor:pointer; border-radius:4px; font-family:inherit; font-size:12px; }
+  .actions button:hover { background:#475569; }
+  .actions .btn-post   { background:#1d4ed8; }
+  .actions .btn-post:hover { background:#3b82f6; }
+  .actions .btn-edit   { background:#334155; }
+  .actions .btn-copy   { background:#0891b2; }
+  .actions .btn-copy:hover { background:#06b6d4; }
+  .empty { text-align:center; color:#64748b; padding:50px 20px; font-size:13px; }
+</style>
+</head>
+<body>
+<h1>📰 PixelAnnex Tweet Drafts</h1>
+<div class="sub">Operator queue · Click "Post on X" to open with prefilled text · Then mark as posted</div>
+
+<div class="compose">
+  <textarea id="compose-text" placeholder="Write a custom tweet…" maxlength="280"></textarea>
+  <div class="row">
+    <span class="count" id="compose-count">0 / 280</span>
+    <button id="compose-btn">Add to queue</button>
+  </div>
+</div>
+
+<div class="filters">
+  <button class="filter active" data-filter="pending">Pending</button>
+  <button class="filter" data-filter="posted">Posted</button>
+  <button class="filter" data-filter="dismissed">Dismissed</button>
+  <button class="filter" data-filter="">All</button>
+</div>
+
+<div id="tweets"></div>
+
+<script>
+const KEY = new URLSearchParams(location.search).get('key');
+const headers = { 'Content-Type': 'application/json', 'X-Admin-Key': KEY };
+let activeFilter = 'pending';
+
+function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function ago(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+async function load() {
+  const url = activeFilter ? '/api/tweets?key=' + KEY + '&status=' + activeFilter : '/api/tweets?key=' + KEY;
+  const r = await fetch(url);
+  const d = await r.json();
+  render(d.tweets || []);
+}
+
+function render(tweets) {
+  const root = document.getElementById('tweets');
+  if (!tweets.length) {
+    root.innerHTML = '<div class="empty">No tweets in this category.</div>';
+    return;
+  }
+  root.innerHTML = tweets.map(t => \`
+    <div class="tweet status-\${t.status}" data-id="\${t.id}">
+      <div class="meta">
+        <span class="type">\${t.type}</span>
+        <span class="age">\${ago(t.ts)}</span>
+        <span style="margin-left:auto">\${t.status.toUpperCase()}</span>
+      </div>
+      <div class="text" data-id="\${t.id}">\${escapeHtml(t.text)}</div>
+      <div class="actions">
+        <span class="count \${t.text.length > 280 ? 'over' : ''}">\${t.text.length}/280</span>
+        \${t.status === 'pending' ? \`
+          <button class="btn-edit"   data-act="edit">Edit</button>
+          <button class="btn-copy"   data-act="copy">Copy</button>
+          <button class="btn-post"   data-act="post-on-x">Post on X</button>
+          <button class="btn-post"   data-act="posted">Mark posted</button>
+          <button                    data-act="dismiss">Dismiss</button>
+        \` : ''}
+      </div>
+    </div>
+  \`).join('');
+}
+
+document.addEventListener('click', async (e) => {
+  const filterBtn = e.target.closest('.filter');
+  if (filterBtn) {
+    document.querySelectorAll('.filter').forEach(b => b.classList.remove('active'));
+    filterBtn.classList.add('active');
+    activeFilter = filterBtn.dataset.filter;
+    load();
+    return;
+  }
+  if (e.target.id === 'compose-btn') {
+    const text = document.getElementById('compose-text').value.trim();
+    if (!text) return;
+    await fetch('/api/tweets?key=' + KEY, {
+      method: 'POST', headers, body: JSON.stringify({ text }),
+    });
+    document.getElementById('compose-text').value = '';
+    document.getElementById('compose-count').textContent = '0 / 280';
+    load();
+    return;
+  }
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const tweetEl = btn.closest('.tweet');
+  const id = tweetEl.dataset.id;
+  const act = btn.dataset.act;
+  const textEl = tweetEl.querySelector('.text');
+  if (act === 'edit') {
+    textEl.contentEditable = 'true';
+    textEl.focus();
+    btn.textContent = 'Save';
+    btn.dataset.act = 'save-edit';
+    return;
+  }
+  if (act === 'save-edit') {
+    textEl.contentEditable = 'false';
+    await fetch('/api/tweets/' + id + '/edit?key=' + KEY, {
+      method: 'POST', headers,
+      body: JSON.stringify({ text: textEl.textContent }),
+    });
+    load();
+    return;
+  }
+  if (act === 'copy') {
+    await navigator.clipboard.writeText(textEl.textContent);
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+    return;
+  }
+  if (act === 'post-on-x') {
+    const url = 'https://x.com/intent/post?text=' + encodeURIComponent(textEl.textContent);
+    window.open(url, '_blank');
+    return;
+  }
+  if (act === 'posted') {
+    await fetch('/api/tweets/' + id + '/posted?key=' + KEY, { method: 'POST', headers });
+    load();
+    return;
+  }
+  if (act === 'dismiss') {
+    await fetch('/api/tweets/' + id + '/dismissed?key=' + KEY, { method: 'POST', headers });
+    load();
+    return;
+  }
+});
+
+document.getElementById('compose-text').addEventListener('input', (e) => {
+  const len = e.target.value.length;
+  const el = document.getElementById('compose-count');
+  el.textContent = len + ' / 280';
+  el.style.color = len > 280 ? '#ef4444' : '#94a3b8';
+  document.getElementById('compose-btn').disabled = len === 0 || len > 280;
+});
+
+load();
+setInterval(load, 30_000); // refresh every 30s
+</script>
+</body>
+</html>`;
+
 
 // Load existing profiles on startup
 try {
@@ -847,6 +1197,16 @@ function applyPixels(pixels, countryId) {
           defenderId:  geoToId(geo),
           timestamp:   Date.now(),
         });
+        // Queue a tweet draft for the conquest. Throttle per attacker so a
+        // single dominant country doesn't flood the queue.
+        try {
+          pushTweetDraft({
+            type:        'conquest',
+            text:        tweetForConquest(countryId, geoToId(geo)),
+            dedupeKey:   'conquest:' + countryId + ':' + geoToId(geo),
+            throttleKey: 'conquest_attacker:' + countryId,
+          });
+        } catch (e) { console.warn('[Tweets] conquest draft failed:', e.message); }
       }
     }
     for (const [cId, cnt] of Object.entries(geoClaimCnt[geo] || {})) {
@@ -854,6 +1214,15 @@ function applyPixels(pixels, countryId) {
       if (cId !== countryId && conqueredSet.has(rk) && (cnt || 0) / total < CONQUEST_THRESHOLD) {
         conqueredSet.delete(rk);
         reversals.push({ geoIdx: geo, countryId: cId });
+        // Queue a tweet draft for the reversal (liberation)
+        try {
+          pushTweetDraft({
+            type:        'reversal',
+            text:        tweetForReversal(geoToId(geo), cId),
+            dedupeKey:   'reversal:' + geoToId(geo) + ':' + cId,
+            throttleKey: 'reversal_geo:' + geoToId(geo),
+          });
+        } catch (e) { console.warn('[Tweets] reversal draft failed:', e.message); }
       }
     }
     // Persistence: release the human-claim if the country's enemy occupation drops below threshold
@@ -1371,6 +1740,100 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+
+  // ── /admin/tweets — operator-facing draft queue page ──
+  if (url.pathname === '/admin/tweets') {
+    const expected = process.env.TWEETS_ADMIN_SECRET;
+    const key = url.searchParams.get('key');
+    if (!expected) {
+      res.writeHead(503, { 'Content-Type': 'text/plain' });
+      res.end('Tweet admin disabled — set TWEETS_ADMIN_SECRET in .env');
+      return;
+    }
+    if (key !== expected) {
+      res.writeHead(401, { 'Content-Type': 'text/plain' });
+      res.end('Unauthorized');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(TWEET_ADMIN_HTML);
+    return;
+  }
+
+  // ── /api/tweets — admin-only ──
+  if (url.pathname.startsWith('/api/tweets')) {
+    const expected = process.env.TWEETS_ADMIN_SECRET;
+    if (!expected) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'admin disabled' }));
+      return;
+    }
+    const key = url.searchParams.get('key') || (req.headers['x-admin-key'] || '');
+    if (key !== expected) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'unauthorized' }));
+      return;
+    }
+    if (req.method === 'GET' && url.pathname === '/api/tweets') {
+      const status = url.searchParams.get('status');
+      const filtered = status ? tweetQueue.filter(t => t.status === status) : tweetQueue;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ tweets: filtered }));
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/tweets') {
+      let body = '';
+      req.on('data', c => { body += c.toString(); if (body.length > 8192) req.destroy(); });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}');
+          const text = parsed.text;
+          if (!text || typeof text !== 'string') {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'text required' }));
+            return;
+          }
+          const draft = pushTweetDraft({ type: 'manual', text });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ tweet: draft }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
+    const mutateMatch = url.pathname.match(/^\/api\/tweets\/([a-z0-9]+)\/(posted|dismissed|edit)$/);
+    if (req.method === 'POST' && mutateMatch) {
+      const id = mutateMatch[1], action = mutateMatch[2];
+      let body = '';
+      req.on('data', c => { body += c.toString(); if (body.length > 8192) req.destroy(); });
+      req.on('end', () => {
+        const t = tweetQueue.find(x => x.id === id);
+        if (!t) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'not found' }));
+          return;
+        }
+        try {
+          const data = body ? JSON.parse(body) : {};
+          if (action === 'edit' && data.text) t.text = String(data.text).slice(0, 280);
+          else if (action === 'posted')    t.status = 'posted';
+          else if (action === 'dismissed') t.status = 'dismissed';
+          saveTweetQueue();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ tweet: t }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unknown route' }));
+    return;
+  }
 
   // ── /api/world-state — public summary for the welcome popup ──
   if (url.pathname === '/api/world-state') {
@@ -1963,6 +2426,15 @@ wss.on('connection', (ws, req) => {
             cx, cy, radius, expiresAt,
           }));
           console.log('[Nuke] cleared', changed.length, 'pixels at', cx, cy, '— lockout until', new Date(expiresAt).toISOString());
+          // Queue a tweet draft for the nuke detonation
+          try {
+            pushTweetDraft({
+              type:        'nuke',
+              text:        tweetForNuke(player.countryId, cx, cy),
+              dedupeKey:   'nuke:' + player.countryId + ':' + Math.floor(cx/30) + ':' + Math.floor(cy/30),
+              throttleKey: 'nuke_attacker:' + player.countryId,
+            });
+          } catch (e) { console.warn('[Tweets] nuke draft failed:', e.message); }
           // Skip the normal apply path
           break;
         }

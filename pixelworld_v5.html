@@ -414,6 +414,26 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   background:linear-gradient(135deg,#60a5fa,#3b82f6);
 }
 
+
+/* Language picker (tutorial + in-game) */
+.lang-picker{
+  position:absolute; top:10px; right:14px; z-index:5;
+  display:flex; align-items:center; gap:6px;
+  font-size:11px; color:#94a3b8;
+}
+.lang-picker select{
+  background:#0f172a; color:#e2e8f0;
+  border:1px solid #334155; border-radius:4px;
+  padding:4px 8px; font-family:inherit; font-size:11px;
+  cursor:pointer; min-width:130px;
+}
+.lang-picker select:hover{ border-color:#60a5fa; }
+#lang-picker-game{
+  position:fixed; top:14px; right:14px; z-index:200;
+}
+[dir="rtl"] .lang-picker{ right:auto; left:14px; }
+[dir="rtl"] #lang-picker-game{ right:auto; left:14px; }
+
 #tutorial-overlay{
   position:fixed;inset:0;background:rgba(7,13,26,0.78);z-index:9999;
   display:none;align-items:center;justify-content:center;
@@ -819,32 +839,36 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     
 <div id="daily-popup-overlay">
   <div id="daily-popup-card">
-    <h2>Welcome Back</h2>
+    <h2 data-i18n="daily.heading">Welcome Back</h2>
     <div class="dp-sub" id="dp-greeting">PixelAnnex</div>
     <div class="dp-section">
-      <div class="dp-section-title">Bonuses</div>
+      <div class="dp-section-title" data-i18n="daily.bonuses_section">Bonuses</div>
       <div id="dp-bonus-list"></div>
       <div class="dp-total" id="dp-total" style="display:none;">
-        Total awarded:
+        <span data-i18n="daily.total_awarded">Total awarded:</span>
         <span class="dp-total-amt" id="dp-total-amt">+0 px</span>
       </div>
     </div>
     <div class="dp-section">
-      <div class="dp-section-title">World State</div>
+      <div class="dp-section-title" data-i18n="daily.world_section">World State</div>
       <div id="dp-world-stats"></div>
     </div>
-    <button class="dp-close" onclick="closeDailyPopup()">Enter the World</button>
+    <button class="dp-close" onclick="closeDailyPopup()" data-i18n="daily.enter_world">Enter the World</button>
   </div>
 </div>
 
 <div id="tutorial-overlay">
       <div id="tutorial-box">
+        <div class="lang-picker">
+          <span data-i18n="lang.label">Language</span>
+          <select id="lang-picker-tut" onchange="setLanguage(this.value)"></select>
+        </div>
         <h1>PixelAnnex</h1>
-        <div class="tut-sub" id="tut-sub-label">Welcome — let's get you set up</div>
+        <div class="tut-sub" id="tut-sub-label" data-i18n="tut.welcome_sub">Welcome — let's get you set up</div>
         <div class="tut-stats" id="tut-header-stats">
-          <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-players">—</div><div class="tut-stat-lbl">Players</div></div>
-          <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-conquered">—</div><div class="tut-stat-lbl">Conquered</div></div>
-          <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-alliances">—</div><div class="tut-stat-lbl">Alliances</div></div>
+          <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-players">—</div><div class="tut-stat-lbl" data-i18n="tut.stat_players">Players</div></div>
+          <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-conquered">—</div><div class="tut-stat-lbl" data-i18n="tut.stat_conquered">Conquered</div></div>
+          <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-alliances">—</div><div class="tut-stat-lbl" data-i18n="tut.stat_alliances">Alliances</div></div>
         </div>
         <div class="tut-dots">
           <div class="tut-dot active" data-step="0"></div>
@@ -858,23 +882,23 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
             <div class="tut-grid">
               <div class="tut-tile">
                 <div class="tut-tile-icon">🎨</div>
-                <div class="tut-tile-title">Paint pixels</div>
-                <div class="tut-tile-desc">Click and drag on the map to paint. Each pixel costs 1 from your bucket.</div>
+                <div class="tut-tile-title" data-i18n="tut.tile_paint_title">Paint pixels</div>
+                <div class="tut-tile-desc" data-i18n="tut.tile_paint_desc">Click and drag on the map to paint. Each pixel costs 1 from your bucket.</div>
               </div>
               <div class="tut-tile">
                 <div class="tut-tile-icon">⚔️</div>
-                <div class="tut-tile-title">Conquer countries</div>
-                <div class="tut-tile-desc">Hold 80% of a country's pixels to claim it. Larger countries are tougher.</div>
+                <div class="tut-tile-title" data-i18n="tut.tile_conquer_title">Conquer countries</div>
+                <div class="tut-tile-desc" data-i18n="tut.tile_conquer_desc">Hold 80% of a country's pixels to claim it. Larger countries are tougher.</div>
               </div>
               <div class="tut-tile">
                 <div class="tut-tile-icon">💥</div>
-                <div class="tut-tile-title">Bombs &amp; ranks</div>
-                <div class="tut-tile-desc">Earn XP per pixel. Higher ranks unlock Mortar, MOAB, and Nuke.</div>
+                <div class="tut-tile-title" data-i18n="tut.tile_bombs_title">Bombs &amp; ranks</div>
+                <div class="tut-tile-desc" data-i18n="tut.tile_bombs_desc">Earn XP per pixel. Higher ranks unlock Mortar, MOAB, and Nuke.</div>
               </div>
               <div class="tut-tile">
                 <div class="tut-tile-icon">🛡️</div>
-                <div class="tut-tile-title">Fight back</div>
-                <div class="tut-tile-desc">When your country is &gt;70% lost, painting in your own land grants bonus pixels and a bigger brush.</div>
+                <div class="tut-tile-title" data-i18n="tut.tile_fightback_title">Fight back</div>
+                <div class="tut-tile-desc" data-i18n="tut.tile_fightback_desc">When your country is &gt;70% lost, painting in your own land grants bonus pixels and a bigger brush.</div>
               </div>
             </div>
             <div style="font-size:11px;color:#64748b;text-align:center;margin-top:14px;">
@@ -884,26 +908,26 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
             </div>
           </div>
           <div class="tut-btn-row">
-            <button class="tut-btn skip" onclick="closeTutorial()">Skip</button>
-            <button class="tut-btn primary" onclick="nextTutStep()">Next →</button>
+            <button class="tut-btn skip" onclick="closeTutorial()" data-i18n="tut.btn_skip">Skip</button>
+            <button class="tut-btn primary" onclick="nextTutStep()" data-i18n="tut.btn_next">Next →</button>
           </div>
         </div>
 
         <!-- Step 2: Choose country -->
         <div class="tut-section" id="tut-step-1">
           <div class="tut-content">
-            <div style="text-align:center;margin-bottom:14px;">Pick the country you'll start from. You can change this any time later.</div>
+            <div style="text-align:center;margin-bottom:14px;" data-i18n="tut.country_intro">Pick the country you'll start from. You can change this any time later.</div>
             <div class="tut-country-picker">
-              <input type="text" class="tut-country-search" id="tut-country-search" placeholder="Search countries…" oninput="filterTutCountries()" />
+              <input type="text" class="tut-country-search" id="tut-country-search" placeholder="Search countries…" oninput="filterTutCountries()" data-i18n-attr="tut.country_search|placeholder" />
               <div class="tut-country-list" id="tut-country-list">
-                <div class="tut-country-row loading">Loading country list…</div>
+                <div class="tut-country-row loading" data-i18n="tut.country_loading">Loading country list…</div>
               </div>
             </div>
           </div>
           <div class="tut-btn-row">
-            <button class="tut-btn" onclick="prevTutStep()">← Back</button>
+            <button class="tut-btn" onclick="prevTutStep()" data-i18n="tut.btn_back">← Back</button>
             <button class="tut-btn skip" onclick="closeTutorial()">Skip</button>
-            <button class="tut-btn primary" id="tut-step1-next" onclick="nextTutStep()" disabled>Pick a country</button>
+            <button class="tut-btn primary" id="tut-step1-next" onclick="nextTutStep()" disabled data-i18n="tut.btn_pick_country">Pick a country</button>
           </div>
         </div>
 
@@ -911,31 +935,31 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
         <div class="tut-section" id="tut-step-2">
           <div class="tut-content">
             <div style="margin:0 0 20px;padding:14px;background:#0f1729;border-radius:8px;border:1px solid #1e293b;">
-              <div style="font-weight:600;color:#fff;margin-bottom:6px;">💬 Connect Discord</div>
+              <div style="font-weight:600;color:#fff;margin-bottom:6px;">💬 <span data-i18n="tut.discord_title">Connect Discord</span></div>
               <div style="font-size:11px;color:#94a3b8;line-height:1.6;">
-                Sign in to save your <b>rank, points, and stats</b>, form <b>alliances</b> by sharing country preferences, and earn <b>daily login bonuses</b>.
+                <span data-i18n-html="tut.discord_desc">Sign in to save your <b>rank, points, and stats</b>, form <b>alliances</b> by sharing country preferences, and earn <b>daily login bonuses</b>.</span>
               </div>
             </div>
             <div class="tut-loading-bar"><div class="tut-loading-fill" id="tut-load-fill"></div></div>
-            <div class="tut-loading-text" id="tut-load-text">Loading world…</div>
+            <div class="tut-loading-text" id="tut-load-text" data-i18n="tut.loading_world">Loading world…</div>
           </div>
           <div class="tut-btn-row">
             <button class="tut-btn" onclick="prevTutStep()">← Back</button>
-            <button class="tut-btn discord" onclick="window.location.href='/auth/login'">Sign in with Discord</button>
-            <button class="tut-btn primary" id="tut-start-btn" onclick="closeTutorial()" disabled>Loading…</button>
+            <button class="tut-btn discord" onclick="window.location.href='/auth/login'" data-i18n="tut.discord_btn">Sign in with Discord</button>
+            <button class="tut-btn primary" id="tut-start-btn" onclick="closeTutorial()" disabled data-i18n="tut.start_btn_loading">Loading…</button>
           </div>
         </div>
       </div>
     </div>
     <div id="daily-bonus-toast"></div>
     <div id="world-state-bar" title="Live world state">
-      <div class="ws-cell"><span class="ws-val" id="ws-players">—</span><span class="ws-lbl">players</span></div>
-      <div class="ws-cell"><span class="ws-val" id="ws-conquered">—</span><span class="ws-lbl">conquered</span></div>
-      <div class="ws-cell"><span class="ws-val" id="ws-alliances">—</span><span class="ws-lbl">alliances</span></div>
+      <div class="ws-cell"><span class="ws-val" id="ws-players">—</span><span class="ws-lbl" data-i18n="hud.players">players</span></div>
+      <div class="ws-cell"><span class="ws-val" id="ws-conquered">—</span><span class="ws-lbl" data-i18n="hud.conquered">conquered</span></div>
+      <div class="ws-cell"><span class="ws-val" id="ws-alliances">—</span><span class="ws-lbl" data-i18n="hud.alliances">alliances</span></div>
     </div>
     <div id="encircle-banner">
       <span class="enc-icon">🎯</span>
-      <span>ENCIRCLEMENT <span class="enc-mult" id="enc-mult-text">×2</span> regen</span>
+      <span data-i18n="banner.encirclement_static">ENCIRCLEMENT</span> <span class="enc-mult" id="enc-mult-text">×2</span> <span data-i18n="banner.regen">regen</span>
       <span class="enc-timer" id="enc-timer-text">60s · 50 px enclosed</span>
     </div>
     <div id="fightback-banner">
@@ -965,10 +989,14 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     </div>
     <div id="highlight-banner"></div>
     <div id="banner"></div>
+    
+    <div class="lang-picker" id="lang-picker-game">
+      <select id="lang-picker-main" onchange="setLanguage(this.value)" title="Language"></select>
+    </div>
     <div id="activity-toast"></div>
     <div id="bomb-toast"><div class="toast-title">&#128163; Bombing!</div><div class="toast-body" id="bomb-toast-body"></div></div>
     <div id="conquest-toast"><div class="toast-title">&#9873; Country Conquered</div><div class="toast-body" id="toast-body"></div></div>
-    <div class="hud" id="legend"><h3>Territory</h3><div id="leg-items"></div>
+    <div class="hud" id="legend"><h3 data-i18n="hud.territory">Territory</h3><div id="leg-items"></div>
     <div id="server-status" style="margin-top:6px;padding-top:6px;border-top:1px solid #1e293b;font-size:9px;display:flex;flex-direction:column;gap:3px;">
       <div style="display:flex;align-items:center;gap:5px;">
         <span id="mp-dot" style="width:6px;height:6px;border-radius:50%;background:#334155;flex-shrink:0"></span>
@@ -1132,6 +1160,736 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   </div><!-- /main -->
 </div>
 <script>
+
+// ── i18n runtime ─────────────────────────────────────────────────
+// Top 10 languages embedded. AI-translated; community corrections welcome.
+// Keys use dot.notation, values support {placeholder} interpolation.
+const LANG_META = [
+  { code: 'en', name: 'English',     flag: '🇬🇧', dir: 'ltr' },
+  { code: 'es', name: 'Español',     flag: '🇪🇸', dir: 'ltr' },
+  { code: 'zh', name: '简体中文',     flag: '🇨🇳', dir: 'ltr' },
+  { code: 'hi', name: 'हिन्दी',         flag: '🇮🇳', dir: 'ltr' },
+  { code: 'ar', name: 'العربية',      flag: '🇸🇦', dir: 'rtl' },
+  { code: 'pt', name: 'Português',   flag: '🇧🇷', dir: 'ltr' },
+  { code: 'ru', name: 'Русский',     flag: '🇷🇺', dir: 'ltr' },
+  { code: 'ja', name: '日本語',       flag: '🇯🇵', dir: 'ltr' },
+  { code: 'fr', name: 'Français',    flag: '🇫🇷', dir: 'ltr' },
+  { code: 'de', name: 'Deutsch',     flag: '🇩🇪', dir: 'ltr' },
+];
+
+const LANGS = {
+  en: {
+    'lang.label':            'Language',
+    'tut.title':             'PixelAnnex',
+    'tut.welcome_sub':       "Welcome — let's get you set up",
+    'tut.stat_players':      'Players',
+    'tut.stat_conquered':    'Conquered',
+    'tut.stat_alliances':    'Alliances',
+    'tut.tile_paint_title':  'Paint pixels',
+    'tut.tile_paint_desc':   'Click and drag on the map to paint. Each pixel costs 1 from your bucket.',
+    'tut.tile_conquer_title':'Conquer countries',
+    'tut.tile_conquer_desc': "Hold 80% of a country's pixels to claim it. Larger countries are tougher.",
+    'tut.tile_bombs_title':  'Bombs & ranks',
+    'tut.tile_bombs_desc':   'Earn XP per pixel. Higher ranks unlock Mortar, MOAB, and Nuke.',
+    'tut.tile_fightback_title':'Fight back',
+    'tut.tile_fightback_desc':'When your country is >70% lost, painting in your own land grants bonus pixels and a bigger brush.',
+    'tut.hint_keys':         '{drag} to pan · {scroll} to zoom · {click} to paint',
+    'tut.key_drag':          'Drag',
+    'tut.key_scroll':        'Scroll',
+    'tut.key_click':         'Click',
+    'tut.btn_skip':          'Skip',
+    'tut.btn_next':          'Next →',
+    'tut.btn_back':          '← Back',
+    'tut.btn_pick_country':  'Pick a country',
+    'tut.country_intro':     "Pick the country you'll start from. You can change this any time later.",
+    'tut.country_search':    'Search countries…',
+    'tut.country_loading':   'Loading country list…',
+    'tut.discord_title':     'Connect Discord',
+    'tut.discord_desc':      'Sign in to save your <b>rank, points, and stats</b>, form <b>alliances</b> by sharing country preferences, and earn <b>daily login bonuses</b>.',
+    'tut.discord_btn':       'Sign in with Discord',
+    'tut.loading_world':     'Loading world…',
+    'tut.start_btn':         'Start playing',
+    'tut.start_btn_loading': 'Loading…',
+    'hud.territory':         'Territory',
+    'hud.players':           'players',
+    'hud.conquered':         'conquered',
+    'hud.alliances':         'alliances',
+    'hud.highlight':         'Highlight',
+    'hud.my_pixels':         'My pixels',
+    'hud.bomb_menu':         'Bombs',
+    'hud.bucket':            'Bucket',
+    'hud.max_rank':          'MAX RANK',
+    'hud.next_rank':         'next rank in {n} px',
+    'hud.unlock_captain':    'Unlock Captain rank to use bombs',
+    'hud.sign_in_discord':   'Sign in',
+    'rank.soldier':          'Soldier',
+    'rank.lieutenant':       'Lieutenant',
+    'rank.captain':          'Captain',
+    'rank.general':          'General',
+    'rank.admiral':          'Admiral',
+    'rank.bomb_unlocked':    '{bomb} unlocked',
+    'rank.bonus_stroke':     '+{n} bonus px/stroke when attacking highlighted country',
+    'banner.encirclement':   'ENCIRCLEMENT {mult} regen',
+    'banner.enclosed':       '{seconds}s · {pixels} px enclosed',
+    'banner.fightback':      'FIGHT-BACK MODE',
+    'banner.fightback_power':'+{n} px/stroke',
+    'act.conquest_title':    '⚔️ Country conquered',
+    'act.conquest_text':     '{attacker} conquered {defender}',
+    'act.reversal_title':    '🛡️ Liberation',
+    'act.reversal_text':     '{country} freed from {oppressor}',
+    'act.encircle_title':    '🎯 Encirclement!',
+    'act.encircle_text':     '{count} pixels enclosed · {mult} regen for {seconds}s',
+    'act.fightback_title':   '⚔️ Fight-back mode',
+    'act.fightback_text':    'Your country is under siege. Painting in your own land grants bonuses.',
+    'act.nuke_title':        '☢️ Nuclear strike',
+    'act.nuke_text':         'No-paint zone active for <b>{seconds}s</b> around the blast site',
+    'act.daily_bonus_title': '🎁 Daily bonus',
+    'act.daily_bonus_text':  '+{amount} pixels added to your bucket',
+    'daily.heading':         'Welcome Back',
+    'daily.sub_discord':     'Signed in via Discord',
+    'daily.sub_no_discord':  'Sign in with Discord to earn login bonuses',
+    'daily.bonuses_section': 'Bonuses',
+    'daily.discord_welcome': '🎉 Discord welcome bonus',
+    'daily.discord_welcome_signin':'🎉 Discord welcome bonus (sign in to claim)',
+    'daily.daily_login':     '📅 Daily login',
+    'daily.daily_already':   '📅 Daily login (already claimed today)',
+    'daily.daily_signin':    '📅 Daily login (sign in to claim)',
+    'daily.streak_bonus':    '🔥 Weekly streak bonus ({days} days)',
+    'daily.streak_signin':   '🔥 Weekly streak (sign in to claim)',
+    'daily.streak_progress': '🔥 Weekly streak ({days} days until +150)',
+    'daily.total_awarded':   'Total awarded:',
+    'daily.world_section':   'World State',
+    'daily.top_countries':   'Top countries',
+    'daily.active':          '{n} active',
+    'daily.conquered_label': '⚔️ Conquered countries',
+    'daily.top_players':     'Top players',
+    'daily.online':          '{n} online',
+    'daily.be_first':        'Be the first!',
+    'daily.world_unavail':   'World state unavailable',
+    'daily.enter_world':     'Enter the World',
+    'bomb.mortar':           'Mortar',
+    'bomb.moab':             'MOAB',
+    'bomb.nuke':             'Nuke',
+    'misc.copied':           'Copied!',
+    'hud.logout': 'Sign out',
+    'hud.sign_in_with_discord': 'Sign in with Discord',
+    'rank.next_rank_inline': 'next: <b>{name}</b> at {min}',
+    'rank.pixels_placed': '{n} px placed',
+    'bomb.tooltip': 'Radius {radius}px · costs {cost} pixels',
+    'act.your_country_fell_title': '🚨 YOUR COUNTRY FELL',
+    'act.your_country_fell_text': '<b>{attacker}</b> has conquered your country!',
+    'act.conquest_event_title': '⚔️ Conquest',
+    'act.conquest_event_text': '<b>{attacker}</b> conquered <b>{defender}</b>',
+    'act.victory_title': '🏆 Victory!',
+    'act.victory_text': 'You conquered <b>{defender}</b>!',
+    'act.under_attack_title': '⚠️ Under Attack',
+    'act.fighting_back_title': '⚔️ Fighting Back',
+    'act.being_targeted': '{country} is being targeted',
+    'act.fighting_back_msg': '{country} is fighting back!',
+    'act.bomb_cooldown_title': '⏱️ Bomb on cooldown',
+    'act.bomb_cooldown_text': 'Next bomb available in <b>{seconds}s</b>',
+    'act.encircle_enclosed_html': 'You enclosed <b>{pixels}px</b> — <b>{mult}</b> regen for {seconds}s',
+    'fightback.banner_pct': 'FIGHT-BACK · {pct}% lost',
+    'fightback.power_brush': '+4 px/stroke · {brush} brush',
+    'daily.toast_title': '🌅 DAILY LOGIN',
+    'daily.toast_amount': '+{amount} pixels',
+    'daily.toast_streak': 'Day {days} streak',
+    'daily.toast_week_bonus': '+{n} WEEK STREAK BONUS',
+    'banner.encirclement_static': 'ENCIRCLEMENT',
+    'banner.regen': 'regen',
+    'stats.signin_prompt': 'Entre com Discord para ver suas estatísticas.',
+    'stats.signin_prompt': 'Inicia sesión con Discord para ver tus estadísticas.',
+    'stats.signin_prompt': 'Sign in with Discord to see your stats.',
+  },
+  es: {
+    'lang.label':'Idioma','tut.title':'PixelAnnex','tut.welcome_sub':'Bienvenido — vamos a configurarte','tut.stat_players':'Jugadores','tut.stat_conquered':'Conquistados','tut.stat_alliances':'Alianzas',
+    'tut.tile_paint_title':'Pinta píxeles','tut.tile_paint_desc':'Haz clic y arrastra sobre el mapa para pintar. Cada píxel cuesta 1 de tu cubo.',
+    'tut.tile_conquer_title':'Conquista países','tut.tile_conquer_desc':'Controla el 80% de los píxeles de un país para reclamarlo. Los países grandes son más difíciles.',
+    'tut.tile_bombs_title':'Bombas y rangos','tut.tile_bombs_desc':'Gana XP por píxel. Los rangos altos desbloquean Mortero, MOAB y Bomba Nuclear.',
+    'tut.tile_fightback_title':'Contraataque','tut.tile_fightback_desc':'Cuando tu país pierde más del 70%, pintar en tu propia tierra otorga píxeles extra y un pincel más grande.',
+    'tut.hint_keys':'{drag} para mover · {scroll} para zoom · {click} para pintar','tut.key_drag':'Arrastra','tut.key_scroll':'Rueda','tut.key_click':'Clic',
+    'tut.btn_skip':'Omitir','tut.btn_next':'Siguiente →','tut.btn_back':'← Atrás','tut.btn_pick_country':'Elige un país',
+    'tut.country_intro':'Elige el país desde el que empezarás. Puedes cambiarlo más tarde.','tut.country_search':'Buscar países…','tut.country_loading':'Cargando lista de países…',
+    'tut.discord_title':'Conecta Discord','tut.discord_desc':'Inicia sesión para guardar tu <b>rango, puntos y estadísticas</b>, formar <b>alianzas</b> compartiendo preferencias de país, y ganar <b>bonificaciones diarias</b>.',
+    'tut.discord_btn':'Iniciar sesión con Discord','tut.loading_world':'Cargando mundo…','tut.start_btn':'Empezar a jugar','tut.start_btn_loading':'Cargando…',
+    'hud.territory':'Territorio','hud.players':'jugadores','hud.conquered':'conquistados','hud.alliances':'alianzas','hud.highlight':'Resaltar','hud.my_pixels':'Mis píxeles','hud.bomb_menu':'Bombas','hud.bucket':'Cubo',
+    'hud.max_rank':'RANGO MÁX','hud.next_rank':'siguiente rango en {n} px','hud.unlock_captain':'Desbloquea el rango de Capitán para usar bombas','hud.sign_in_discord':'Iniciar sesión',
+    'rank.soldier':'Soldado','rank.lieutenant':'Teniente','rank.captain':'Capitán','rank.general':'General','rank.admiral':'Almirante',
+    'rank.bomb_unlocked':'{bomb} desbloqueado','rank.bonus_stroke':'+{n} px de bono por trazo al atacar país resaltado',
+    'banner.encirclement':'CERCADO {mult} regen','banner.enclosed':'{seconds}s · {pixels} px encerrados','banner.fightback':'MODO CONTRAATAQUE','banner.fightback_power':'+{n} px/trazo',
+    'act.conquest_title':'⚔️ País conquistado','act.conquest_text':'{attacker} conquistó {defender}','act.reversal_title':'🛡️ Liberación','act.reversal_text':'{country} liberado de {oppressor}',
+    'act.encircle_title':'🎯 ¡Cercado!','act.encircle_text':'{count} píxeles encerrados · {mult} regen por {seconds}s','act.fightback_title':'⚔️ Modo contraataque','act.fightback_text':'Tu país está sitiado. Pintar en tu propia tierra otorga bonos.',
+    'act.nuke_title':'☢️ Ataque nuclear','act.nuke_text':'Zona sin pintura activa por <b>{seconds}s</b> alrededor del impacto','act.daily_bonus_title':'🎁 Bono diario','act.daily_bonus_text':'+{amount} píxeles añadidos a tu cubo',
+    'daily.heading':'Bienvenido de vuelta','daily.sub_discord':'Conectado vía Discord','daily.sub_no_discord':'Inicia sesión con Discord para ganar bonos','daily.bonuses_section':'Bonos',
+    'daily.discord_welcome':'🎉 Bono de bienvenida Discord','daily.discord_welcome_signin':'🎉 Bono de bienvenida Discord (inicia sesión para reclamar)','daily.daily_login':'📅 Inicio diario',
+    'daily.daily_already':'📅 Inicio diario (ya reclamado hoy)','daily.daily_signin':'📅 Inicio diario (inicia sesión para reclamar)','daily.streak_bonus':'🔥 Bono de racha semanal ({days} días)',
+    'daily.streak_signin':'🔥 Racha semanal (inicia sesión para reclamar)','daily.streak_progress':'🔥 Racha semanal ({days} días para +150)','daily.total_awarded':'Total otorgado:',
+    'daily.world_section':'Estado del mundo','daily.top_countries':'Países principales','daily.active':'{n} activos','daily.conquered_label':'⚔️ Países conquistados','daily.top_players':'Jugadores principales',
+    'daily.online':'{n} en línea','daily.be_first':'¡Sé el primero!','daily.world_unavail':'Estado del mundo no disponible','daily.enter_world':'Entrar al mundo',
+    'bomb.mortar':'Mortero','bomb.moab':'MOAB','bomb.nuke':'Bomba Nuclear','misc.copied':'¡Copiado!',
+    'hud.logout': 'Cerrar sesión',
+    'hud.sign_in_with_discord': 'Iniciar sesión con Discord',
+    'rank.next_rank_inline': 'siguiente: <b>{name}</b> a {min}',
+    'rank.pixels_placed': '{n} px colocados',
+    'bomb.tooltip': 'Radio {radius}px · cuesta {cost} píxeles',
+    'act.your_country_fell_title': '🚨 ¡TU PAÍS CAYÓ!',
+    'act.your_country_fell_text': '<b>{attacker}</b> ha conquistado tu país.',
+    'act.conquest_event_title': '⚔️ Conquista',
+    'act.conquest_event_text': '<b>{attacker}</b> conquistó <b>{defender}</b>',
+    'act.victory_title': '🏆 ¡Victoria!',
+    'act.victory_text': '¡Conquistaste <b>{defender}</b>!',
+    'act.under_attack_title': '⚠️ Bajo ataque',
+    'act.fighting_back_title': '⚔️ Contraatacando',
+    'act.being_targeted': '{country} está siendo atacado',
+    'act.fighting_back_msg': '¡{country} está contraatacando!',
+    'act.bomb_cooldown_title': '⏱️ Bomba en recarga',
+    'act.bomb_cooldown_text': 'Próxima bomba en <b>{seconds}s</b>',
+    'act.encircle_enclosed_html': 'Cercaste <b>{pixels}px</b> — <b>{mult}</b> regen por {seconds}s',
+    'fightback.banner_pct': 'CONTRAATAQUE · {pct}% perdido',
+    'fightback.power_brush': '+4 px/trazo · pincel {brush}',
+    'daily.toast_title': '🌅 INICIO DIARIO',
+    'daily.toast_amount': '+{amount} píxeles',
+    'daily.toast_streak': 'Día {days} de racha',
+    'daily.toast_week_bonus': '+{n} BONO DE SEMANA',
+    'banner.encirclement_static': 'CERCADO',
+    'banner.regen': 'regen',
+  },
+  zh: {
+    'lang.label':'语言','tut.title':'PixelAnnex','tut.welcome_sub':'欢迎 — 让我们开始设置','tut.stat_players':'玩家','tut.stat_conquered':'已征服','tut.stat_alliances':'联盟',
+    'tut.tile_paint_title':'绘制像素','tut.tile_paint_desc':'点击并拖动地图进行绘制。每个像素消耗1点桶量。',
+    'tut.tile_conquer_title':'征服国家','tut.tile_conquer_desc':'占领国家80%的像素以宣布主权。大国家更难征服。',
+    'tut.tile_bombs_title':'炸弹与军衔','tut.tile_bombs_desc':'每个像素获得XP。高军衔解锁迫击炮、MOAB和核弹。',
+    'tut.tile_fightback_title':'反击','tut.tile_fightback_desc':'当你的国家被占领超过70%时,在自己的领土上绘画可获得奖励像素和更大画笔。',
+    'tut.hint_keys':'{drag}平移 · {scroll}缩放 · {click}绘画','tut.key_drag':'拖动','tut.key_scroll':'滚动','tut.key_click':'点击',
+    'tut.btn_skip':'跳过','tut.btn_next':'下一步 →','tut.btn_back':'← 返回','tut.btn_pick_country':'选择国家',
+    'tut.country_intro':'选择你的起始国家。之后随时可以更改。','tut.country_search':'搜索国家…','tut.country_loading':'正在加载国家列表…',
+    'tut.discord_title':'连接 Discord','tut.discord_desc':'登录以保存你的<b>军衔、积分和统计</b>,通过分享国家偏好组建<b>联盟</b>,并获得<b>每日登录奖励</b>。',
+    'tut.discord_btn':'使用 Discord 登录','tut.loading_world':'正在加载世界…','tut.start_btn':'开始游戏','tut.start_btn_loading':'加载中…',
+    'hud.territory':'领土','hud.players':'玩家','hud.conquered':'已征服','hud.alliances':'联盟','hud.highlight':'高亮','hud.my_pixels':'我的像素','hud.bomb_menu':'炸弹','hud.bucket':'桶',
+    'hud.max_rank':'最高军衔','hud.next_rank':'下一军衔还需 {n} px','hud.unlock_captain':'解锁上尉军衔以使用炸弹','hud.sign_in_discord':'登录',
+    'rank.soldier':'士兵','rank.lieutenant':'中尉','rank.captain':'上尉','rank.general':'将军','rank.admiral':'海军上将',
+    'rank.bomb_unlocked':'{bomb} 已解锁','rank.bonus_stroke':'攻击高亮国家时每笔+{n}奖励像素',
+    'banner.encirclement':'包围 {mult} 再生','banner.enclosed':'{seconds}秒 · {pixels} 像素被围','banner.fightback':'反击模式','banner.fightback_power':'+{n} 像素/笔',
+    'act.conquest_title':'⚔️ 国家被征服','act.conquest_text':'{attacker} 征服了 {defender}','act.reversal_title':'🛡️ 解放','act.reversal_text':'{country} 从 {oppressor} 解放',
+    'act.encircle_title':'🎯 包围!','act.encircle_text':'{count} 像素被围 · {mult} 再生持续 {seconds}秒','act.fightback_title':'⚔️ 反击模式','act.fightback_text':'你的国家正被围困。在自己领土绘画可获得奖励。',
+    'act.nuke_title':'☢️ 核打击','act.nuke_text':'爆炸区周围 <b>{seconds}秒</b> 禁止绘画','act.daily_bonus_title':'🎁 每日奖励','act.daily_bonus_text':'+{amount} 像素已加入你的桶',
+    'daily.heading':'欢迎回来','daily.sub_discord':'已通过 Discord 登录','daily.sub_no_discord':'使用 Discord 登录以赚取奖励','daily.bonuses_section':'奖励',
+    'daily.discord_welcome':'🎉 Discord 欢迎奖励','daily.discord_welcome_signin':'🎉 Discord 欢迎奖励(登录领取)','daily.daily_login':'📅 每日登录',
+    'daily.daily_already':'📅 每日登录(今日已领)','daily.daily_signin':'📅 每日登录(登录领取)','daily.streak_bonus':'🔥 周连续奖励({days} 天)',
+    'daily.streak_signin':'🔥 周连续(登录领取)','daily.streak_progress':'🔥 周连续(距+150还需 {days} 天)','daily.total_awarded':'总奖励:',
+    'daily.world_section':'世界状态','daily.top_countries':'顶级国家','daily.active':'{n} 活跃','daily.conquered_label':'⚔️ 已征服国家','daily.top_players':'顶级玩家',
+    'daily.online':'{n} 在线','daily.be_first':'成为第一!','daily.world_unavail':'世界状态不可用','daily.enter_world':'进入世界',
+    'bomb.mortar':'迫击炮','bomb.moab':'MOAB','bomb.nuke':'核弹','misc.copied':'已复制!',
+    'hud.logout': '登出',
+    'hud.sign_in_with_discord': '使用 Discord 登录',
+    'rank.next_rank_inline': '下一级: <b>{name}</b> 需 {min}',
+    'rank.pixels_placed': '已放置 {n} px',
+    'bomb.tooltip': '半径 {radius}px · 消耗 {cost} 像素',
+    'act.your_country_fell_title': '🚨 你的国家陷落了',
+    'act.your_country_fell_text': '<b>{attacker}</b> 征服了你的国家!',
+    'act.conquest_event_title': '⚔️ 征服',
+    'act.conquest_event_text': '<b>{attacker}</b> 征服了 <b>{defender}</b>',
+    'act.victory_title': '🏆 胜利!',
+    'act.victory_text': '你征服了 <b>{defender}</b>!',
+    'act.under_attack_title': '⚠️ 遭受攻击',
+    'act.fighting_back_title': '⚔️ 正在反击',
+    'act.being_targeted': '{country} 正被攻击',
+    'act.fighting_back_msg': '{country} 正在反击!',
+    'act.bomb_cooldown_title': '⏱️ 炸弹冷却中',
+    'act.bomb_cooldown_text': '下次可用 <b>{seconds}秒</b>',
+    'act.encircle_enclosed_html': '你包围了 <b>{pixels}px</b> — <b>{mult}</b> 再生持续 {seconds}秒',
+    'fightback.banner_pct': '反击 · 损失 {pct}%',
+    'fightback.power_brush': '+4 px/笔 · {brush} 画笔',
+    'daily.toast_title': '🌅 每日登录',
+    'daily.toast_amount': '+{amount} 像素',
+    'daily.toast_streak': '连续 {days} 天',
+    'daily.toast_week_bonus': '+{n} 周连续奖励',
+    'banner.encirclement_static': '包围',
+    'banner.regen': '再生',
+    'stats.signin_prompt': 'Discordでログインして統計を表示。',
+    'stats.signin_prompt': '使用 Discord 登录以查看您的统计。',
+  },
+  hi: {
+    'lang.label':'भाषा','tut.title':'PixelAnnex','tut.welcome_sub':'स्वागत है — आइए शुरू करें','tut.stat_players':'खिलाड़ी','tut.stat_conquered':'जीते गए','tut.stat_alliances':'गठबंधन',
+    'tut.tile_paint_title':'पिक्सेल रंगें','tut.tile_paint_desc':'मानचित्र पर क्लिक करके खींचें। हर पिक्सेल आपकी बकेट से 1 लेता है।',
+    'tut.tile_conquer_title':'देश जीतें','tut.tile_conquer_desc':'किसी देश को जीतने के लिए उसके 80% पिक्सेल पर कब्जा करें। बड़े देश अधिक कठिन हैं।',
+    'tut.tile_bombs_title':'बम और रैंक','tut.tile_bombs_desc':'प्रति पिक्सेल XP कमाएं। उच्च रैंक मोर्टार, MOAB और परमाणु बम खोलते हैं।',
+    'tut.tile_fightback_title':'पलटवार','tut.tile_fightback_desc':'जब आपका देश 70% से अधिक हार जाए, अपने क्षेत्र में रंगने से बोनस पिक्सेल और बड़ा ब्रश मिलता है।',
+    'tut.hint_keys':'{drag} खींचें · {scroll} ज़ूम · {click} रंगें','tut.key_drag':'खींचें','tut.key_scroll':'स्क्रॉल','tut.key_click':'क्लिक',
+    'tut.btn_skip':'छोड़ें','tut.btn_next':'अगला →','tut.btn_back':'← पिछला','tut.btn_pick_country':'देश चुनें',
+    'tut.country_intro':'अपना शुरुआती देश चुनें। बाद में कभी भी बदल सकते हैं।','tut.country_search':'देश खोजें…','tut.country_loading':'देश सूची लोड हो रही है…',
+    'tut.discord_title':'Discord कनेक्ट करें','tut.discord_desc':'अपनी <b>रैंक, अंक और आँकड़े</b> सहेजने, देश वरीयताएँ साझा करके <b>गठबंधन</b> बनाने, और <b>दैनिक लॉगिन बोनस</b> कमाने के लिए साइन इन करें।',
+    'tut.discord_btn':'Discord से साइन इन करें','tut.loading_world':'दुनिया लोड हो रही है…','tut.start_btn':'खेलना शुरू करें','tut.start_btn_loading':'लोड हो रहा है…',
+    'hud.territory':'क्षेत्र','hud.players':'खिलाड़ी','hud.conquered':'जीते गए','hud.alliances':'गठबंधन','hud.highlight':'हाइलाइट','hud.my_pixels':'मेरे पिक्सेल','hud.bomb_menu':'बम','hud.bucket':'बकेट',
+    'hud.max_rank':'अधिकतम रैंक','hud.next_rank':'अगली रैंक के लिए {n} px','hud.unlock_captain':'बम के लिए कैप्टन रैंक खोलें','hud.sign_in_discord':'साइन इन',
+    'rank.soldier':'सैनिक','rank.lieutenant':'लेफ्टिनेंट','rank.captain':'कैप्टन','rank.general':'जनरल','rank.admiral':'एडमिरल',
+    'rank.bomb_unlocked':'{bomb} खुला','rank.bonus_stroke':'हाइलाइट किए गए देश पर हमला करते समय +{n} बोनस px/स्ट्रोक',
+    'banner.encirclement':'घेराव {mult} रीजन','banner.enclosed':'{seconds}से · {pixels} px घिरे','banner.fightback':'पलटवार मोड','banner.fightback_power':'+{n} px/स्ट्रोक',
+    'act.conquest_title':'⚔️ देश जीता','act.conquest_text':'{attacker} ने {defender} को जीता','act.reversal_title':'🛡️ मुक्ति','act.reversal_text':'{country} {oppressor} से मुक्त',
+    'act.encircle_title':'🎯 घेराव!','act.encircle_text':'{count} पिक्सेल घिरे · {mult} रीजन {seconds}से','act.fightback_title':'⚔️ पलटवार मोड','act.fightback_text':'आपका देश घेर में है। अपने क्षेत्र में रंगने पर बोनस मिलता है।',
+    'act.nuke_title':'☢️ परमाणु हमला','act.nuke_text':'विस्फोट स्थल के चारों ओर <b>{seconds}से</b> रंग नहीं सकते','act.daily_bonus_title':'🎁 दैनिक बोनस','act.daily_bonus_text':'+{amount} पिक्सेल आपकी बकेट में जोड़े गए',
+    'daily.heading':'वापसी पर स्वागत','daily.sub_discord':'Discord से साइन इन','daily.sub_no_discord':'बोनस के लिए Discord से साइन इन करें','daily.bonuses_section':'बोनस',
+    'daily.discord_welcome':'🎉 Discord स्वागत बोनस','daily.discord_welcome_signin':'🎉 Discord स्वागत बोनस (साइन इन करें)','daily.daily_login':'📅 दैनिक लॉगिन',
+    'daily.daily_already':'📅 दैनिक लॉगिन (आज लिया)','daily.daily_signin':'📅 दैनिक लॉगिन (साइन इन करें)','daily.streak_bonus':'🔥 साप्ताहिक स्ट्रीक बोनस ({days} दिन)',
+    'daily.streak_signin':'🔥 साप्ताहिक स्ट्रीक (साइन इन करें)','daily.streak_progress':'🔥 साप्ताहिक स्ट्रीक (+150 तक {days} दिन)','daily.total_awarded':'कुल मिला:',
+    'daily.world_section':'विश्व स्थिति','daily.top_countries':'शीर्ष देश','daily.active':'{n} सक्रिय','daily.conquered_label':'⚔️ जीते गए देश','daily.top_players':'शीर्ष खिलाड़ी',
+    'daily.online':'{n} ऑनलाइन','daily.be_first':'पहले बनें!','daily.world_unavail':'विश्व स्थिति अनुपलब्ध','daily.enter_world':'दुनिया में प्रवेश',
+    'bomb.mortar':'मोर्टार','bomb.moab':'MOAB','bomb.nuke':'परमाणु','misc.copied':'कॉपी हुआ!',
+    'hud.logout': 'साइन आउट',
+    'hud.sign_in_with_discord': 'Discord से साइन इन करें',
+    'rank.next_rank_inline': 'अगला: <b>{name}</b> {min} पर',
+    'rank.pixels_placed': '{n} px रखे',
+    'bomb.tooltip': 'त्रिज्या {radius}px · लागत {cost} पिक्सेल',
+    'act.your_country_fell_title': '🚨 आपका देश गिर गया',
+    'act.your_country_fell_text': '<b>{attacker}</b> ने आपका देश जीत लिया!',
+    'act.conquest_event_title': '⚔️ विजय',
+    'act.conquest_event_text': '<b>{attacker}</b> ने <b>{defender}</b> को जीता',
+    'act.victory_title': '🏆 जीत!',
+    'act.victory_text': 'आपने <b>{defender}</b> को जीता!',
+    'act.under_attack_title': '⚠️ हमले में',
+    'act.fighting_back_title': '⚔️ पलटवार',
+    'act.being_targeted': '{country} पर हमला हो रहा है',
+    'act.fighting_back_msg': '{country} पलटवार कर रहा है!',
+    'act.bomb_cooldown_title': '⏱️ बम कूलडाउन',
+    'act.bomb_cooldown_text': 'अगला बम <b>{seconds}से</b> में',
+    'act.encircle_enclosed_html': 'आपने <b>{pixels}px</b> घेरा — <b>{mult}</b> रीजन {seconds}से के लिए',
+    'fightback.banner_pct': 'पलटवार · {pct}% खोया',
+    'fightback.power_brush': '+4 px/स्ट्रोक · {brush} ब्रश',
+    'daily.toast_title': '🌅 दैनिक लॉगिन',
+    'daily.toast_amount': '+{amount} पिक्सेल',
+    'daily.toast_streak': 'दिन {days} स्ट्रीक',
+    'daily.toast_week_bonus': '+{n} साप्ताहिक बोनस',
+    'banner.encirclement_static': 'घेराव',
+    'banner.regen': 'रीजन',
+    'stats.signin_prompt': 'अपने आँकड़े देखने के लिए Discord से साइन इन करें।',
+  },
+  ar: {
+    'lang.label':'اللغة','tut.title':'PixelAnnex','tut.welcome_sub':'مرحباً — لنبدأ','tut.stat_players':'اللاعبون','tut.stat_conquered':'مفتوحة','tut.stat_alliances':'تحالفات',
+    'tut.tile_paint_title':'ارسم البكسلات','tut.tile_paint_desc':'انقر واسحب على الخريطة للرسم. كل بكسل يكلف 1 من سلتك.',
+    'tut.tile_conquer_title':'افتح البلدان','tut.tile_conquer_desc':'تحكم بـ 80% من بكسلات بلد لضمه. البلدان الكبيرة أصعب.',
+    'tut.tile_bombs_title':'القنابل والرتب','tut.tile_bombs_desc':'احصل على XP لكل بكسل. الرتب الأعلى تفتح الهاون و MOAB والنووية.',
+    'tut.tile_fightback_title':'الرد','tut.tile_fightback_desc':'عندما يفقد بلدك أكثر من 70%، الرسم في أرضك يمنح بكسلات إضافية وفرشاة أكبر.',
+    'tut.hint_keys':'{drag} للتحريك · {scroll} للتكبير · {click} للرسم','tut.key_drag':'اسحب','tut.key_scroll':'مرر','tut.key_click':'انقر',
+    'tut.btn_skip':'تخطّي','tut.btn_next':'التالي →','tut.btn_back':'← السابق','tut.btn_pick_country':'اختر بلداً',
+    'tut.country_intro':'اختر البلد الذي ستبدأ منه. يمكنك تغييره لاحقاً.','tut.country_search':'ابحث عن بلدان…','tut.country_loading':'تحميل قائمة البلدان…',
+    'tut.discord_title':'اتصل بـ Discord','tut.discord_desc':'سجّل الدخول لحفظ <b>الرتبة والنقاط والإحصاءات</b>، وتكوين <b>تحالفات</b>، والحصول على <b>مكافآت تسجيل دخول يومية</b>.',
+    'tut.discord_btn':'تسجيل الدخول عبر Discord','tut.loading_world':'جاري تحميل العالم…','tut.start_btn':'ابدأ اللعب','tut.start_btn_loading':'جاري التحميل…',
+    'hud.territory':'الأراضي','hud.players':'لاعبون','hud.conquered':'مفتوحة','hud.alliances':'تحالفات','hud.highlight':'تمييز','hud.my_pixels':'بكسلاتي','hud.bomb_menu':'قنابل','hud.bucket':'السلة',
+    'hud.max_rank':'أعلى رتبة','hud.next_rank':'الرتبة التالية خلال {n} px','hud.unlock_captain':'افتح رتبة النقيب لاستخدام القنابل','hud.sign_in_discord':'تسجيل الدخول',
+    'rank.soldier':'جندي','rank.lieutenant':'ملازم','rank.captain':'نقيب','rank.general':'جنرال','rank.admiral':'أميرال',
+    'rank.bomb_unlocked':'{bomb} مفتوح','rank.bonus_stroke':'+{n} px/ضربة إضافية عند مهاجمة بلد مميز',
+    'banner.encirclement':'تطويق {mult} استرداد','banner.enclosed':'{seconds}ث · {pixels} px محصور','banner.fightback':'وضع الرد','banner.fightback_power':'+{n} px/ضربة',
+    'act.conquest_title':'⚔️ بلد مفتوح','act.conquest_text':'{attacker} فتح {defender}','act.reversal_title':'🛡️ تحرير','act.reversal_text':'{country} تحرر من {oppressor}',
+    'act.encircle_title':'🎯 تطويق!','act.encircle_text':'{count} بكسل محصور · {mult} استرداد لمدة {seconds}ث','act.fightback_title':'⚔️ وضع الرد','act.fightback_text':'بلدك محاصر. الرسم في أرضك يمنح مكافآت.',
+    'act.nuke_title':'☢️ ضربة نووية','act.nuke_text':'منطقة بلا رسم نشطة لـ <b>{seconds}ث</b> حول موقع الانفجار','act.daily_bonus_title':'🎁 مكافأة يومية','act.daily_bonus_text':'+{amount} بكسل أُضيف إلى سلتك',
+    'daily.heading':'مرحباً بعودتك','daily.sub_discord':'مسجّل عبر Discord','daily.sub_no_discord':'سجّل عبر Discord لكسب مكافآت','daily.bonuses_section':'المكافآت',
+    'daily.discord_welcome':'🎉 مكافأة الترحيب من Discord','daily.discord_welcome_signin':'🎉 مكافأة الترحيب (سجّل للحصول)','daily.daily_login':'📅 تسجيل يومي',
+    'daily.daily_already':'📅 تسجيل يومي (تم اليوم)','daily.daily_signin':'📅 تسجيل يومي (سجّل للحصول)','daily.streak_bonus':'🔥 مكافأة سلسلة أسبوعية ({days} أيام)',
+    'daily.streak_signin':'🔥 سلسلة أسبوعية (سجّل للحصول)','daily.streak_progress':'🔥 سلسلة أسبوعية ({days} أيام حتى +150)','daily.total_awarded':'إجمالي المُمنح:',
+    'daily.world_section':'حالة العالم','daily.top_countries':'أفضل البلدان','daily.active':'{n} نشط','daily.conquered_label':'⚔️ بلدان مفتوحة','daily.top_players':'أفضل اللاعبين',
+    'daily.online':'{n} متصل','daily.be_first':'كن الأول!','daily.world_unavail':'حالة العالم غير متاحة','daily.enter_world':'ادخل العالم',
+    'bomb.mortar':'هاون','bomb.moab':'MOAB','bomb.nuke':'نووي','misc.copied':'تم النسخ!',
+    'hud.logout': 'تسجيل الخروج',
+    'hud.sign_in_with_discord': 'تسجيل الدخول عبر Discord',
+    'rank.next_rank_inline': 'التالية: <b>{name}</b> عند {min}',
+    'rank.pixels_placed': 'تم وضع {n} px',
+    'bomb.tooltip': 'نصف القطر {radius}px · يكلف {cost} بكسل',
+    'act.your_country_fell_title': '🚨 سقط بلدك',
+    'act.your_country_fell_text': 'فتح <b>{attacker}</b> بلدك!',
+    'act.conquest_event_title': '⚔️ فتح',
+    'act.conquest_event_text': '<b>{attacker}</b> فتح <b>{defender}</b>',
+    'act.victory_title': '🏆 نصر!',
+    'act.victory_text': 'لقد فتحت <b>{defender}</b>!',
+    'act.under_attack_title': '⚠️ تحت الهجوم',
+    'act.fighting_back_title': '⚔️ رد فعل',
+    'act.being_targeted': 'يتم استهداف {country}',
+    'act.fighting_back_msg': '{country} يرد!',
+    'act.bomb_cooldown_title': '⏱️ القنبلة في إعادة الشحن',
+    'act.bomb_cooldown_text': 'القنبلة التالية بعد <b>{seconds}ث</b>',
+    'act.encircle_enclosed_html': 'حصرت <b>{pixels}px</b> — <b>{mult}</b> استرداد لمدة {seconds}ث',
+    'fightback.banner_pct': 'الرد · فقد {pct}%',
+    'fightback.power_brush': '+4 px/ضربة · فرشاة {brush}',
+    'daily.toast_title': '🌅 تسجيل يومي',
+    'daily.toast_amount': '+{amount} بكسل',
+    'daily.toast_streak': 'سلسلة {days} يوم',
+    'daily.toast_week_bonus': '+{n} مكافأة أسبوعية',
+    'banner.encirclement_static': 'تطويق',
+    'banner.regen': 'استرداد',
+    'stats.signin_prompt': 'سجّل الدخول عبر Discord لعرض إحصاءاتك.',
+  },
+  pt: {
+    'lang.label':'Idioma','tut.title':'PixelAnnex','tut.welcome_sub':'Bem-vindo — vamos configurar você','tut.stat_players':'Jogadores','tut.stat_conquered':'Conquistados','tut.stat_alliances':'Alianças',
+    'tut.tile_paint_title':'Pinte pixels','tut.tile_paint_desc':'Clique e arraste no mapa para pintar. Cada pixel custa 1 do seu balde.',
+    'tut.tile_conquer_title':'Conquiste países','tut.tile_conquer_desc':'Tenha 80% dos pixels de um país para reivindicá-lo. Países grandes são mais difíceis.',
+    'tut.tile_bombs_title':'Bombas e patentes','tut.tile_bombs_desc':'Ganhe XP por pixel. Patentes altas desbloqueiam Morteiro, MOAB e Bomba Nuclear.',
+    'tut.tile_fightback_title':'Contra-ataque','tut.tile_fightback_desc':'Quando seu país perde mais de 70%, pintar na sua terra dá pixels bônus e pincel maior.',
+    'tut.hint_keys':'{drag} para mover · {scroll} para zoom · {click} para pintar','tut.key_drag':'Arraste','tut.key_scroll':'Role','tut.key_click':'Clique',
+    'tut.btn_skip':'Pular','tut.btn_next':'Próximo →','tut.btn_back':'← Voltar','tut.btn_pick_country':'Escolha um país',
+    'tut.country_intro':'Escolha o país de onde começará. Você pode mudar depois.','tut.country_search':'Buscar países…','tut.country_loading':'Carregando lista de países…',
+    'tut.discord_title':'Conectar Discord','tut.discord_desc':'Entre para salvar <b>patente, pontos e estatísticas</b>, formar <b>alianças</b> compartilhando preferências, e ganhar <b>bônus diários</b>.',
+    'tut.discord_btn':'Entrar com Discord','tut.loading_world':'Carregando mundo…','tut.start_btn':'Começar a jogar','tut.start_btn_loading':'Carregando…',
+    'hud.territory':'Território','hud.players':'jogadores','hud.conquered':'conquistados','hud.alliances':'alianças','hud.highlight':'Destacar','hud.my_pixels':'Meus pixels','hud.bomb_menu':'Bombas','hud.bucket':'Balde',
+    'hud.max_rank':'PATENTE MÁX','hud.next_rank':'próxima patente em {n} px','hud.unlock_captain':'Desbloqueie Capitão para usar bombas','hud.sign_in_discord':'Entrar',
+    'rank.soldier':'Soldado','rank.lieutenant':'Tenente','rank.captain':'Capitão','rank.general':'General','rank.admiral':'Almirante',
+    'rank.bomb_unlocked':'{bomb} desbloqueado','rank.bonus_stroke':'+{n} px de bônus por traço ao atacar país destacado',
+    'banner.encirclement':'CERCO {mult} regen','banner.enclosed':'{seconds}s · {pixels} px cercados','banner.fightback':'MODO CONTRA-ATAQUE','banner.fightback_power':'+{n} px/traço',
+    'act.conquest_title':'⚔️ País conquistado','act.conquest_text':'{attacker} conquistou {defender}','act.reversal_title':'🛡️ Libertação','act.reversal_text':'{country} libertado de {oppressor}',
+    'act.encircle_title':'🎯 Cerco!','act.encircle_text':'{count} pixels cercados · {mult} regen por {seconds}s','act.fightback_title':'⚔️ Modo contra-ataque','act.fightback_text':'Seu país está sob cerco. Pintar na sua terra dá bônus.',
+    'act.nuke_title':'☢️ Ataque nuclear','act.nuke_text':'Zona sem pintura ativa por <b>{seconds}s</b> ao redor do impacto','act.daily_bonus_title':'🎁 Bônus diário','act.daily_bonus_text':'+{amount} pixels adicionados ao balde',
+    'daily.heading':'Bem-vindo de volta','daily.sub_discord':'Conectado via Discord','daily.sub_no_discord':'Entre com Discord para ganhar bônus','daily.bonuses_section':'Bônus',
+    'daily.discord_welcome':'🎉 Bônus boas-vindas Discord','daily.discord_welcome_signin':'🎉 Bônus boas-vindas (entre para receber)','daily.daily_login':'📅 Login diário',
+    'daily.daily_already':'📅 Login diário (já recebido hoje)','daily.daily_signin':'📅 Login diário (entre para receber)','daily.streak_bonus':'🔥 Bônus sequência semanal ({days} dias)',
+    'daily.streak_signin':'🔥 Sequência semanal (entre para receber)','daily.streak_progress':'🔥 Sequência semanal ({days} dias para +150)','daily.total_awarded':'Total concedido:',
+    'daily.world_section':'Estado do Mundo','daily.top_countries':'Top países','daily.active':'{n} ativos','daily.conquered_label':'⚔️ Países conquistados','daily.top_players':'Top jogadores',
+    'daily.online':'{n} online','daily.be_first':'Seja o primeiro!','daily.world_unavail':'Estado do mundo indisponível','daily.enter_world':'Entrar no Mundo',
+    'bomb.mortar':'Morteiro','bomb.moab':'MOAB','bomb.nuke':'Nuclear','misc.copied':'Copiado!',
+    'hud.logout': 'Sair',
+    'hud.sign_in_with_discord': 'Entrar com Discord',
+    'rank.next_rank_inline': 'próxima: <b>{name}</b> em {min}',
+    'rank.pixels_placed': '{n} px colocados',
+    'bomb.tooltip': 'Raio {radius}px · custa {cost} pixels',
+    'act.your_country_fell_title': '🚨 SEU PAÍS CAIU',
+    'act.your_country_fell_text': '<b>{attacker}</b> conquistou seu país!',
+    'act.conquest_event_title': '⚔️ Conquista',
+    'act.conquest_event_text': '<b>{attacker}</b> conquistou <b>{defender}</b>',
+    'act.victory_title': '🏆 Vitória!',
+    'act.victory_text': 'Você conquistou <b>{defender}</b>!',
+    'act.under_attack_title': '⚠️ Sob Ataque',
+    'act.fighting_back_title': '⚔️ Contra-atacando',
+    'act.being_targeted': '{country} está sob ataque',
+    'act.fighting_back_msg': '{country} está contra-atacando!',
+    'act.bomb_cooldown_title': '⏱️ Bomba em recarga',
+    'act.bomb_cooldown_text': 'Próxima bomba em <b>{seconds}s</b>',
+    'act.encircle_enclosed_html': 'Você cercou <b>{pixels}px</b> — <b>{mult}</b> regen por {seconds}s',
+    'fightback.banner_pct': 'CONTRA-ATAQUE · {pct}% perdido',
+    'fightback.power_brush': '+4 px/traço · pincel {brush}',
+    'daily.toast_title': '🌅 LOGIN DIÁRIO',
+    'daily.toast_amount': '+{amount} pixels',
+    'daily.toast_streak': 'Dia {days} de sequência',
+    'daily.toast_week_bonus': '+{n} BÔNUS DE SEMANA',
+    'banner.encirclement_static': 'CERCO',
+    'banner.regen': 'regen',
+  },
+  ru: {
+    'lang.label':'Язык','tut.title':'PixelAnnex','tut.welcome_sub':'Добро пожаловать — давайте настроим','tut.stat_players':'Игроки','tut.stat_conquered':'Завоёвано','tut.stat_alliances':'Альянсы',
+    'tut.tile_paint_title':'Рисуй пиксели','tut.tile_paint_desc':'Кликни и тяни по карте, чтобы рисовать. Каждый пиксель стоит 1 из ведра.',
+    'tut.tile_conquer_title':'Завоёвывай страны','tut.tile_conquer_desc':'Захвати 80% пикселей страны, чтобы её получить. Большие страны сложнее.',
+    'tut.tile_bombs_title':'Бомбы и звания','tut.tile_bombs_desc':'Получай XP за пиксель. Высокие звания открывают Миномёт, MOAB и Ядерную.',
+    'tut.tile_fightback_title':'Контратака','tut.tile_fightback_desc':'Когда страна потеряна >70%, рисование на своей земле даёт бонусные пиксели и большую кисть.',
+    'tut.hint_keys':'{drag} перемещение · {scroll} зум · {click} рисование','tut.key_drag':'Тяни','tut.key_scroll':'Прокрутка','tut.key_click':'Клик',
+    'tut.btn_skip':'Пропустить','tut.btn_next':'Далее →','tut.btn_back':'← Назад','tut.btn_pick_country':'Выбери страну',
+    'tut.country_intro':'Выбери стартовую страну. Можно изменить позже.','tut.country_search':'Поиск стран…','tut.country_loading':'Загрузка списка стран…',
+    'tut.discord_title':'Подключить Discord','tut.discord_desc':'Войдите, чтобы сохранить <b>звание, очки и статистику</b>, создавать <b>альянсы</b>, и получать <b>ежедневные бонусы</b>.',
+    'tut.discord_btn':'Войти через Discord','tut.loading_world':'Загрузка мира…','tut.start_btn':'Начать игру','tut.start_btn_loading':'Загрузка…',
+    'hud.territory':'Территория','hud.players':'игроков','hud.conquered':'завоёвано','hud.alliances':'альянсов','hud.highlight':'Подсветка','hud.my_pixels':'Мои пиксели','hud.bomb_menu':'Бомбы','hud.bucket':'Ведро',
+    'hud.max_rank':'МАКС ЗВАНИЕ','hud.next_rank':'след. звание через {n} px','hud.unlock_captain':'Откройте звание Капитан для бомб','hud.sign_in_discord':'Войти',
+    'rank.soldier':'Солдат','rank.lieutenant':'Лейтенант','rank.captain':'Капитан','rank.general':'Генерал','rank.admiral':'Адмирал',
+    'rank.bomb_unlocked':'{bomb} открыто','rank.bonus_stroke':'+{n} бонусных px/штрих при атаке подсвеченной страны',
+    'banner.encirclement':'ОКРУЖЕНИЕ {mult} регена','banner.enclosed':'{seconds}с · {pixels} px окружено','banner.fightback':'РЕЖИМ КОНТРАТАКИ','banner.fightback_power':'+{n} px/штрих',
+    'act.conquest_title':'⚔️ Страна завоёвана','act.conquest_text':'{attacker} завоевал {defender}','act.reversal_title':'🛡️ Освобождение','act.reversal_text':'{country} освобождён от {oppressor}',
+    'act.encircle_title':'🎯 Окружение!','act.encircle_text':'{count} пикселей окружено · {mult} регена на {seconds}с','act.fightback_title':'⚔️ Режим контратаки','act.fightback_text':'Ваша страна в осаде. Рисование на своей земле даёт бонусы.',
+    'act.nuke_title':'☢️ Ядерный удар','act.nuke_text':'Зона без рисования активна <b>{seconds}с</b> вокруг места взрыва','act.daily_bonus_title':'🎁 Ежедневный бонус','act.daily_bonus_text':'+{amount} пикселей добавлено в ведро',
+    'daily.heading':'С возвращением','daily.sub_discord':'Вошли через Discord','daily.sub_no_discord':'Войдите через Discord для бонусов','daily.bonuses_section':'Бонусы',
+    'daily.discord_welcome':'🎉 Бонус Discord','daily.discord_welcome_signin':'🎉 Бонус Discord (войдите чтобы получить)','daily.daily_login':'📅 Ежедневный вход',
+    'daily.daily_already':'📅 Ежедневный вход (получен сегодня)','daily.daily_signin':'📅 Ежедневный вход (войдите)','daily.streak_bonus':'🔥 Недельный стрик ({days} дней)',
+    'daily.streak_signin':'🔥 Недельный стрик (войдите)','daily.streak_progress':'🔥 Недельный стрик ({days} дней до +150)','daily.total_awarded':'Всего получено:',
+    'daily.world_section':'Состояние мира','daily.top_countries':'Топ стран','daily.active':'{n} активны','daily.conquered_label':'⚔️ Завоёванных стран','daily.top_players':'Топ игроков',
+    'daily.online':'{n} онлайн','daily.be_first':'Будь первым!','daily.world_unavail':'Состояние мира недоступно','daily.enter_world':'Войти в мир',
+    'bomb.mortar':'Миномёт','bomb.moab':'MOAB','bomb.nuke':'Ядерная','misc.copied':'Скопировано!',
+    'hud.logout': 'Выйти',
+    'hud.sign_in_with_discord': 'Войти через Discord',
+    'rank.next_rank_inline': 'след.: <b>{name}</b> на {min}',
+    'rank.pixels_placed': 'размещено {n} px',
+    'bomb.tooltip': 'Радиус {radius}px · стоит {cost} пикселей',
+    'act.your_country_fell_title': '🚨 ВАША СТРАНА ПАЛА',
+    'act.your_country_fell_text': '<b>{attacker}</b> завоевал вашу страну!',
+    'act.conquest_event_title': '⚔️ Завоевание',
+    'act.conquest_event_text': '<b>{attacker}</b> завоевал <b>{defender}</b>',
+    'act.victory_title': '🏆 Победа!',
+    'act.victory_text': 'Вы завоевали <b>{defender}</b>!',
+    'act.under_attack_title': '⚠️ Под атакой',
+    'act.fighting_back_title': '⚔️ Контратака',
+    'act.being_targeted': '{country} под атакой',
+    'act.fighting_back_msg': '{country} контратакует!',
+    'act.bomb_cooldown_title': '⏱️ Бомба на перезарядке',
+    'act.bomb_cooldown_text': 'Следующая бомба через <b>{seconds}с</b>',
+    'act.encircle_enclosed_html': 'Вы окружили <b>{pixels}px</b> — <b>{mult}</b> регена на {seconds}с',
+    'fightback.banner_pct': 'КОНТРАТАКА · {pct}% потеряно',
+    'fightback.power_brush': '+4 px/штрих · кисть {brush}',
+    'daily.toast_title': '🌅 ЕЖЕДНЕВНЫЙ ВХОД',
+    'daily.toast_amount': '+{amount} пикселей',
+    'daily.toast_streak': 'День {days} стрика',
+    'daily.toast_week_bonus': '+{n} НЕДЕЛЬНЫЙ БОНУС',
+    'banner.encirclement_static': 'ОКРУЖЕНИЕ',
+    'banner.regen': 'регена',
+    'stats.signin_prompt': 'Войдите через Discord, чтобы увидеть статистику.',
+  },
+  ja: {
+    'lang.label':'言語','tut.title':'PixelAnnex','tut.welcome_sub':'ようこそ — セットアップしましょう','tut.stat_players':'プレイヤー','tut.stat_conquered':'征服','tut.stat_alliances':'同盟',
+    'tut.tile_paint_title':'ピクセルを塗る','tut.tile_paint_desc':'マップをクリック&ドラッグして塗ります。各ピクセルはバケツから1消費。',
+    'tut.tile_conquer_title':'国を征服','tut.tile_conquer_desc':'国の80%のピクセルを保持して占領。大国ほど困難。',
+    'tut.tile_bombs_title':'爆弾と階級','tut.tile_bombs_desc':'ピクセル毎にXP獲得。高階級で迫撃砲、MOAB、核兵器が解放。',
+    'tut.tile_fightback_title':'反撃','tut.tile_fightback_desc':'自国の70%以上が奪われると、自領土への塗装でボーナスピクセルと大ブラシ。',
+    'tut.hint_keys':'{drag}で移動 · {scroll}でズーム · {click}で塗る','tut.key_drag':'ドラッグ','tut.key_scroll':'スクロール','tut.key_click':'クリック',
+    'tut.btn_skip':'スキップ','tut.btn_next':'次へ →','tut.btn_back':'← 戻る','tut.btn_pick_country':'国を選ぶ',
+    'tut.country_intro':'開始する国を選択。後で変更可能。','tut.country_search':'国を検索…','tut.country_loading':'国リストを読込中…',
+    'tut.discord_title':'Discordを接続','tut.discord_desc':'ログインして<b>階級、ポイント、統計</b>を保存し、国の好みを共有して<b>同盟</b>を結成、<b>毎日のログインボーナス</b>を獲得しましょう。',
+    'tut.discord_btn':'Discordでログイン','tut.loading_world':'世界を読込中…','tut.start_btn':'プレイ開始','tut.start_btn_loading':'読込中…',
+    'hud.territory':'領土','hud.players':'プレイヤー','hud.conquered':'征服','hud.alliances':'同盟','hud.highlight':'ハイライト','hud.my_pixels':'自ピクセル','hud.bomb_menu':'爆弾','hud.bucket':'バケツ',
+    'hud.max_rank':'最大階級','hud.next_rank':'次の階級まで {n} px','hud.unlock_captain':'爆弾使用に大尉階級が必要','hud.sign_in_discord':'ログイン',
+    'rank.soldier':'兵士','rank.lieutenant':'中尉','rank.captain':'大尉','rank.general':'将軍','rank.admiral':'提督',
+    'rank.bomb_unlocked':'{bomb} 解放','rank.bonus_stroke':'ハイライト国攻撃時 +{n} ボーナスpx/ストローク',
+    'banner.encirclement':'包囲 {mult} 再生','banner.enclosed':'{seconds}秒 · {pixels} px 包囲','banner.fightback':'反撃モード','banner.fightback_power':'+{n} px/ストローク',
+    'act.conquest_title':'⚔️ 国征服','act.conquest_text':'{attacker} が {defender} を征服','act.reversal_title':'🛡️ 解放','act.reversal_text':'{country} が {oppressor} から解放',
+    'act.encircle_title':'🎯 包囲!','act.encircle_text':'{count} ピクセル包囲 · {mult} 再生 {seconds}秒','act.fightback_title':'⚔️ 反撃モード','act.fightback_text':'自国が包囲中。自領土塗装でボーナス。',
+    'act.nuke_title':'☢️ 核攻撃','act.nuke_text':'爆心地周辺 <b>{seconds}秒</b> 塗装禁止ゾーン','act.daily_bonus_title':'🎁 デイリーボーナス','act.daily_bonus_text':'+{amount} ピクセルがバケツに追加',
+    'daily.heading':'おかえりなさい','daily.sub_discord':'Discordでログイン中','daily.sub_no_discord':'Discordでログインしてボーナス獲得','daily.bonuses_section':'ボーナス',
+    'daily.discord_welcome':'🎉 Discord歓迎ボーナス','daily.discord_welcome_signin':'🎉 Discord歓迎ボーナス (ログイン)','daily.daily_login':'📅 デイリーログイン',
+    'daily.daily_already':'📅 デイリーログイン (本日獲得済)','daily.daily_signin':'📅 デイリーログイン (ログイン)','daily.streak_bonus':'🔥 週間ストリークボーナス ({days}日)',
+    'daily.streak_signin':'🔥 週間ストリーク (ログイン)','daily.streak_progress':'🔥 週間ストリーク (+150まで{days}日)','daily.total_awarded':'合計獲得:',
+    'daily.world_section':'世界の状態','daily.top_countries':'トップ国','daily.active':'{n} アクティブ','daily.conquered_label':'⚔️ 征服国','daily.top_players':'トッププレイヤー',
+    'daily.online':'{n} オンライン','daily.be_first':'最初の一人に!','daily.world_unavail':'世界状態 利用不可','daily.enter_world':'世界に入る',
+    'bomb.mortar':'迫撃砲','bomb.moab':'MOAB','bomb.nuke':'核','misc.copied':'コピー完了!',
+    'hud.logout': 'ログアウト',
+    'hud.sign_in_with_discord': 'Discordでログイン',
+    'rank.next_rank_inline': '次: <b>{name}</b> ({min}で)',
+    'rank.pixels_placed': '{n} px 配置',
+    'bomb.tooltip': '半径 {radius}px · コスト {cost} ピクセル',
+    'act.your_country_fell_title': '🚨 自国が陥落',
+    'act.your_country_fell_text': '<b>{attacker}</b> が自国を征服!',
+    'act.conquest_event_title': '⚔️ 征服',
+    'act.conquest_event_text': '<b>{attacker}</b> が <b>{defender}</b> を征服',
+    'act.victory_title': '🏆 勝利!',
+    'act.victory_text': '<b>{defender}</b> を征服!',
+    'act.under_attack_title': '⚠️ 攻撃を受けています',
+    'act.fighting_back_title': '⚔️ 反撃中',
+    'act.being_targeted': '{country} が標的になっています',
+    'act.fighting_back_msg': '{country} が反撃中!',
+    'act.bomb_cooldown_title': '⏱️ 爆弾クールダウン中',
+    'act.bomb_cooldown_text': '次の爆弾は <b>{seconds}秒</b> 後',
+    'act.encircle_enclosed_html': '<b>{pixels}px</b> 包囲 — <b>{mult}</b> 再生 {seconds}秒間',
+    'fightback.banner_pct': '反撃 · {pct}% 失った',
+    'fightback.power_brush': '+4 px/ストローク · {brush} ブラシ',
+    'daily.toast_title': '🌅 デイリーログイン',
+    'daily.toast_amount': '+{amount} ピクセル',
+    'daily.toast_streak': '{days}日連続',
+    'daily.toast_week_bonus': '+{n} 週間ストリークボーナス',
+    'banner.encirclement_static': '包囲',
+    'banner.regen': '再生',
+  },
+  fr: {
+    'lang.label':'Langue','tut.title':'PixelAnnex','tut.welcome_sub':'Bienvenue — préparons-vous','tut.stat_players':'Joueurs','tut.stat_conquered':'Conquis','tut.stat_alliances':'Alliances',
+    'tut.tile_paint_title':'Peindre des pixels','tut.tile_paint_desc':'Cliquez et glissez sur la carte pour peindre. Chaque pixel coûte 1 du seau.',
+    'tut.tile_conquer_title':'Conquérir des pays','tut.tile_conquer_desc':"Tenez 80% des pixels d'un pays pour le revendiquer. Les grands pays sont plus durs.",
+    'tut.tile_bombs_title':'Bombes et grades','tut.tile_bombs_desc':"Gagnez de l'XP par pixel. Les hauts grades débloquent Mortier, MOAB et Nuke.",
+    'tut.tile_fightback_title':'Riposte','tut.tile_fightback_desc':'Quand votre pays a perdu >70%, peindre sur votre terre offre des pixels bonus et un pinceau plus grand.',
+    'tut.hint_keys':'{drag} pour déplacer · {scroll} pour zoomer · {click} pour peindre','tut.key_drag':'Glisser','tut.key_scroll':'Molette','tut.key_click':'Clic',
+    'tut.btn_skip':'Passer','tut.btn_next':'Suivant →','tut.btn_back':'← Retour','tut.btn_pick_country':'Choisir un pays',
+    'tut.country_intro':'Choisissez votre pays de départ. Modifiable plus tard.','tut.country_search':'Rechercher des pays…','tut.country_loading':'Chargement de la liste…',
+    'tut.discord_title':'Connecter Discord','tut.discord_desc':"Connectez-vous pour sauvegarder votre <b>grade, points et stats</b>, former des <b>alliances</b>, et gagner des <b>bonus quotidiens</b>.",
+    'tut.discord_btn':'Se connecter avec Discord','tut.loading_world':'Chargement du monde…','tut.start_btn':'Commencer à jouer','tut.start_btn_loading':'Chargement…',
+    'hud.territory':'Territoire','hud.players':'joueurs','hud.conquered':'conquis','hud.alliances':'alliances','hud.highlight':'Surligner','hud.my_pixels':'Mes pixels','hud.bomb_menu':'Bombes','hud.bucket':'Seau',
+    'hud.max_rank':'GRADE MAX','hud.next_rank':'grade suivant dans {n} px','hud.unlock_captain':'Débloquez le grade Capitaine pour les bombes','hud.sign_in_discord':'Connexion',
+    'rank.soldier':'Soldat','rank.lieutenant':'Lieutenant','rank.captain':'Capitaine','rank.general':'Général','rank.admiral':'Amiral',
+    'rank.bomb_unlocked':'{bomb} débloqué','rank.bonus_stroke':'+{n} px bonus par trait sur pays surligné',
+    'banner.encirclement':'ENCERCLEMENT {mult} régen','banner.enclosed':'{seconds}s · {pixels} px enfermés','banner.fightback':'MODE RIPOSTE','banner.fightback_power':'+{n} px/trait',
+    'act.conquest_title':'⚔️ Pays conquis','act.conquest_text':'{attacker} a conquis {defender}','act.reversal_title':'🛡️ Libération','act.reversal_text':'{country} libéré de {oppressor}',
+    'act.encircle_title':'🎯 Encerclement!','act.encircle_text':'{count} pixels enfermés · {mult} régen pendant {seconds}s','act.fightback_title':'⚔️ Mode riposte','act.fightback_text':'Votre pays est assiégé. Peindre sur votre terre donne des bonus.',
+    'act.nuke_title':'☢️ Frappe nucléaire','act.nuke_text':'Zone sans peinture active <b>{seconds}s</b> autour du site','act.daily_bonus_title':'🎁 Bonus quotidien','act.daily_bonus_text':'+{amount} pixels ajoutés au seau',
+    'daily.heading':'Bon retour','daily.sub_discord':'Connecté via Discord','daily.sub_no_discord':'Connectez-vous via Discord pour des bonus','daily.bonuses_section':'Bonus',
+    'daily.discord_welcome':'🎉 Bonus de bienvenue Discord','daily.discord_welcome_signin':'🎉 Bonus bienvenue (connectez-vous)','daily.daily_login':'📅 Connexion quotidienne',
+    'daily.daily_already':'📅 Connexion quotidienne (déjà fait)','daily.daily_signin':'📅 Connexion quotidienne (connectez-vous)','daily.streak_bonus':'🔥 Bonus série hebdo ({days} jours)',
+    'daily.streak_signin':'🔥 Série hebdo (connectez-vous)','daily.streak_progress':'🔥 Série hebdo ({days} jours avant +150)','daily.total_awarded':'Total accordé:',
+    'daily.world_section':'État du Monde','daily.top_countries':'Top pays','daily.active':'{n} actifs','daily.conquered_label':'⚔️ Pays conquis','daily.top_players':'Top joueurs',
+    'daily.online':'{n} en ligne','daily.be_first':'Soyez le premier!','daily.world_unavail':'État du monde indisponible','daily.enter_world':'Entrer dans le Monde',
+    'bomb.mortar':'Mortier','bomb.moab':'MOAB','bomb.nuke':'Nuke','misc.copied':'Copié!',
+    'hud.logout': 'Déconnexion',
+    'hud.sign_in_with_discord': 'Se connecter avec Discord',
+    'rank.next_rank_inline': 'suivant : <b>{name}</b> à {min}',
+    'rank.pixels_placed': '{n} px placés',
+    'bomb.tooltip': 'Rayon {radius}px · coûte {cost} pixels',
+    'act.your_country_fell_title': '🚨 VOTRE PAYS EST TOMBÉ',
+    'act.your_country_fell_text': '<b>{attacker}</b> a conquis votre pays !',
+    'act.conquest_event_title': '⚔️ Conquête',
+    'act.conquest_event_text': '<b>{attacker}</b> a conquis <b>{defender}</b>',
+    'act.victory_title': '🏆 Victoire !',
+    'act.victory_text': 'Vous avez conquis <b>{defender}</b> !',
+    'act.under_attack_title': '⚠️ Sous attaque',
+    'act.fighting_back_title': '⚔️ Riposte',
+    'act.being_targeted': '{country} est ciblé',
+    'act.fighting_back_msg': '{country} riposte !',
+    'act.bomb_cooldown_title': '⏱️ Bombe en recharge',
+    'act.bomb_cooldown_text': 'Prochaine bombe dans <b>{seconds}s</b>',
+    'act.encircle_enclosed_html': 'Vous avez encerclé <b>{pixels}px</b> — <b>{mult}</b> régen pendant {seconds}s',
+    'fightback.banner_pct': 'RIPOSTE · {pct}% perdu',
+    'fightback.power_brush': '+4 px/trait · pinceau {brush}',
+    'daily.toast_title': '🌅 CONNEXION QUOTIDIENNE',
+    'daily.toast_amount': '+{amount} pixels',
+    'daily.toast_streak': 'Jour {days} de série',
+    'daily.toast_week_bonus': '+{n} BONUS HEBDOMADAIRE',
+    'banner.encirclement_static': 'ENCERCLEMENT',
+    'banner.regen': 'régen',
+    'stats.signin_prompt': 'Connectez-vous avec Discord pour voir vos stats.',
+  },
+  de: {
+    'lang.label':'Sprache','tut.title':'PixelAnnex','tut.welcome_sub':'Willkommen — lass uns dich einrichten','tut.stat_players':'Spieler','tut.stat_conquered':'Erobert','tut.stat_alliances':'Allianzen',
+    'tut.tile_paint_title':'Pixel malen','tut.tile_paint_desc':'Klick und zieh über die Karte. Jeder Pixel kostet 1 aus deinem Eimer.',
+    'tut.tile_conquer_title':'Länder erobern','tut.tile_conquer_desc':'Halte 80% der Pixel eines Landes, um es zu erobern. Größere Länder sind schwerer.',
+    'tut.tile_bombs_title':'Bomben & Ränge','tut.tile_bombs_desc':'Sammle XP pro Pixel. Höhere Ränge schalten Mörser, MOAB und Atombombe frei.',
+    'tut.tile_fightback_title':'Gegenwehr','tut.tile_fightback_desc':'Wenn dein Land zu >70% verloren ist, geben Pixel auf eigenem Boden Bonus-Pixel und größeren Pinsel.',
+    'tut.hint_keys':'{drag} zum Schwenken · {scroll} zum Zoomen · {click} zum Malen','tut.key_drag':'Ziehen','tut.key_scroll':'Scrollen','tut.key_click':'Klicken',
+    'tut.btn_skip':'Überspringen','tut.btn_next':'Weiter →','tut.btn_back':'← Zurück','tut.btn_pick_country':'Land wählen',
+    'tut.country_intro':'Wähle dein Startland. Du kannst es später ändern.','tut.country_search':'Länder suchen…','tut.country_loading':'Lade Länderliste…',
+    'tut.discord_title':'Discord verbinden','tut.discord_desc':'Melde dich an, um <b>Rang, Punkte und Statistiken</b> zu speichern, <b>Allianzen</b> zu bilden, und <b>tägliche Boni</b> zu erhalten.',
+    'tut.discord_btn':'Mit Discord anmelden','tut.loading_world':'Lade Welt…','tut.start_btn':'Spielen starten','tut.start_btn_loading':'Lädt…',
+    'hud.territory':'Gebiet','hud.players':'Spieler','hud.conquered':'erobert','hud.alliances':'Allianzen','hud.highlight':'Hervorheben','hud.my_pixels':'Meine Pixel','hud.bomb_menu':'Bomben','hud.bucket':'Eimer',
+    'hud.max_rank':'MAX RANG','hud.next_rank':'nächster Rang in {n} px','hud.unlock_captain':'Schalte Hauptmann-Rang für Bomben frei','hud.sign_in_discord':'Anmelden',
+    'rank.soldier':'Soldat','rank.lieutenant':'Leutnant','rank.captain':'Hauptmann','rank.general':'General','rank.admiral':'Admiral',
+    'rank.bomb_unlocked':'{bomb} freigeschaltet','rank.bonus_stroke':'+{n} Bonus-px/Strich beim Angriff auf hervorgehobenes Land',
+    'banner.encirclement':'EINKREISUNG {mult} Regen','banner.enclosed':'{seconds}s · {pixels} px umzingelt','banner.fightback':'GEGENWEHR-MODUS','banner.fightback_power':'+{n} px/Strich',
+    'act.conquest_title':'⚔️ Land erobert','act.conquest_text':'{attacker} hat {defender} erobert','act.reversal_title':'🛡️ Befreiung','act.reversal_text':'{country} befreit von {oppressor}',
+    'act.encircle_title':'🎯 Einkreisung!','act.encircle_text':'{count} Pixel umzingelt · {mult} Regen für {seconds}s','act.fightback_title':'⚔️ Gegenwehr-Modus','act.fightback_text':'Dein Land ist belagert. Malen auf eigenem Boden gibt Boni.',
+    'act.nuke_title':'☢️ Nuklearschlag','act.nuke_text':'Mal-Sperrzone <b>{seconds}s</b> um den Einschlagsort aktiv','act.daily_bonus_title':'🎁 Täglicher Bonus','act.daily_bonus_text':'+{amount} Pixel zum Eimer hinzugefügt',
+    'daily.heading':'Willkommen zurück','daily.sub_discord':'Über Discord angemeldet','daily.sub_no_discord':'Über Discord anmelden für Boni','daily.bonuses_section':'Boni',
+    'daily.discord_welcome':'🎉 Discord-Willkommensbonus','daily.discord_welcome_signin':'🎉 Discord-Willkommen (anmelden zum Einlösen)','daily.daily_login':'📅 Täglicher Login',
+    'daily.daily_already':'📅 Täglicher Login (heute schon)','daily.daily_signin':'📅 Täglicher Login (anmelden)','daily.streak_bonus':'🔥 Wöchentlicher Streak ({days} Tage)',
+    'daily.streak_signin':'🔥 Wöchentlicher Streak (anmelden)','daily.streak_progress':'🔥 Wöchentlicher Streak (in {days} Tagen +150)','daily.total_awarded':'Insgesamt erhalten:',
+    'daily.world_section':'Weltstatus','daily.top_countries':'Top-Länder','daily.active':'{n} aktiv','daily.conquered_label':'⚔️ Eroberte Länder','daily.top_players':'Top-Spieler',
+    'daily.online':'{n} online','daily.be_first':'Sei der Erste!','daily.world_unavail':'Weltstatus nicht verfügbar','daily.enter_world':'Welt betreten',
+    'bomb.mortar':'Mörser','bomb.moab':'MOAB','bomb.nuke':'Atombombe','misc.copied':'Kopiert!',
+    'hud.logout': 'Abmelden',
+    'hud.sign_in_with_discord': 'Mit Discord anmelden',
+    'rank.next_rank_inline': 'nächster: <b>{name}</b> bei {min}',
+    'rank.pixels_placed': '{n} px platziert',
+    'bomb.tooltip': 'Radius {radius}px · kostet {cost} Pixel',
+    'act.your_country_fell_title': '🚨 DEIN LAND IST GEFALLEN',
+    'act.your_country_fell_text': '<b>{attacker}</b> hat dein Land erobert!',
+    'act.conquest_event_title': '⚔️ Eroberung',
+    'act.conquest_event_text': '<b>{attacker}</b> hat <b>{defender}</b> erobert',
+    'act.victory_title': '🏆 Sieg!',
+    'act.victory_text': 'Du hast <b>{defender}</b> erobert!',
+    'act.under_attack_title': '⚠️ Unter Angriff',
+    'act.fighting_back_title': '⚔️ Gegenwehr',
+    'act.being_targeted': '{country} wird angegriffen',
+    'act.fighting_back_msg': '{country} wehrt sich!',
+    'act.bomb_cooldown_title': '⏱️ Bombe lädt',
+    'act.bomb_cooldown_text': 'Nächste Bombe in <b>{seconds}s</b>',
+    'act.encircle_enclosed_html': 'Du hast <b>{pixels}px</b> umzingelt — <b>{mult}</b> Regen für {seconds}s',
+    'fightback.banner_pct': 'GEGENWEHR · {pct}% verloren',
+    'fightback.power_brush': '+4 px/Strich · {brush} Pinsel',
+    'daily.toast_title': '🌅 TÄGLICHER LOGIN',
+    'daily.toast_amount': '+{amount} Pixel',
+    'daily.toast_streak': 'Tag {days} Streak',
+    'daily.toast_week_bonus': '+{n} WOCHEN-STREAK-BONUS',
+    'banner.encirclement_static': 'EINKREISUNG',
+    'banner.regen': 'Regen',
+    'stats.signin_prompt': 'Melde dich mit Discord an, um deine Stats zu sehen.',
+  },
+};
+
+// Active language code — persisted in localStorage
+let _activeLang = 'en';
+
+function _detectLang() {
+  try {
+    const stored = localStorage.getItem('pa_lang');
+    if (stored && LANGS[stored]) return stored;
+    const nav = (navigator.language || 'en').split('-')[0].toLowerCase();
+    if (LANGS[nav]) return nav;
+  } catch (e) {}
+  return 'en';
+}
+
+// Resolve a translation key. Falls back to English then to the key itself if missing.
+function t(key, vars) {
+  const dict = LANGS[_activeLang] || LANGS.en;
+  let s = dict[key];
+  if (s === undefined) s = LANGS.en[key];
+  if (s === undefined) s = key;
+  if (vars) {
+    for (const k in vars) s = s.split('{' + k + '}').join(String(vars[k]));
+  }
+  return s;
+}
+
+// Apply all [data-i18n] attributes on the page.
+// data-i18n="key"  → element.textContent
+// data-i18n-html="key" → element.innerHTML
+// data-i18n-attr="key|attr,key2|attr2" → set attributes (placeholder, title, etc.)
+function applyI18n(root) {
+  root = root || document;
+  root.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  root.querySelectorAll('[data-i18n-html]').forEach(el => {
+    el.innerHTML = t(el.getAttribute('data-i18n-html'));
+  });
+  root.querySelectorAll('[data-i18n-attr]').forEach(el => {
+    const pairs = el.getAttribute('data-i18n-attr').split(',');
+    for (const p of pairs) {
+      const [key, attr] = p.split('|').map(s => s.trim());
+      if (key && attr) el.setAttribute(attr, t(key));
+    }
+  });
+}
+
+function setLanguage(code) {
+  if (!LANGS[code]) code = 'en';
+  _activeLang = code;
+  try { localStorage.setItem('pa_lang', code); } catch (e) {}
+  const meta = LANG_META.find(m => m.code === code) || LANG_META[0];
+  document.documentElement.setAttribute('lang', code);
+  document.documentElement.setAttribute('dir', meta.dir);
+  applyI18n();
+  if (typeof refreshRankUI === 'function')   { try { refreshRankUI(); } catch(e){} }
+  if (typeof refreshBombMenu === 'function') { try { refreshBombMenu(); } catch(e){} }
+  if (typeof scheduleLegend === 'function')  { try { scheduleLegend(); } catch(e){} }
+  if (typeof renderLoginHUD === 'function')  { try { renderLoginHUD(window._currentProfile || null); } catch(e){} }
+  if (typeof updateBucketHUD === 'function') { try { updateBucketHUD(); } catch(e){} }
+}
+
+// Detect language at load time, before DOM ready
+_activeLang = _detectLang();
+document.documentElement.setAttribute('lang', _activeLang);
+const _initMeta = LANG_META.find(m => m.code === _activeLang);
+if (_initMeta) document.documentElement.setAttribute('dir', _initMeta.dir);
+
+document.addEventListener('DOMContentLoaded', () => { applyI18n(); });
+
+// Map English rank name (server-side canonical) → translated display name
+function tRank(name) {
+  const map = {
+    'Soldier':    'rank.soldier',
+    'Lieutenant': 'rank.lieutenant',
+    'Captain':    'rank.captain',
+    'General':    'rank.general',
+    'Admiral':    'rank.admiral',
+  };
+  return map[name] ? t(map[name]) : name;
+}
+
+// Map English bomb name → translated label
+function tBomb(name) {
+  const map = {
+    'Mortar': 'bomb.mortar',
+    'MOAB':   'bomb.moab',
+    'Nuke':   'bomb.nuke',
+  };
+  return map[name] ? t(map[name]) : name;
+}
+
+
+// Populate the language picker dropdowns
+function _initLangPickers() {
+  const opts = LANG_META.map(m => '<option value="' + m.code + '">' + m.flag + ' ' + m.name + '</option>').join('');
+  ['lang-picker-tut','lang-picker-main'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.innerHTML = opts; el.value = _activeLang; }
+  });
+}
+document.addEventListener('DOMContentLoaded', _initLangPickers);
+
+
 
 
 // ── Country DB: ISO numeric → {n:name, c:color} ──────────────────
@@ -1546,7 +2304,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-daily-popup-v23';
+const CODE_VERSION = '2026-05-18-i18n-phase1-v25';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -3267,7 +4025,7 @@ function applyEncirclementBonus(enclosed, mult, durationMs, cx, cy) {
     const remain = Math.max(0, _encircleExpiresAt - Date.now());
     const secs = Math.ceil(remain / 1000);
     const tEl = document.getElementById('enc-timer-text');
-    if (tEl) tEl.textContent = secs + 's · ' + enclosed + ' px enclosed';
+    if (tEl) tEl.textContent = t('banner.enclosed', { seconds: secs, pixels: enclosed });
     if (remain <= 0) {
       banner.classList.remove('active');
       clearInterval(_encircleTickId);
@@ -3281,8 +4039,8 @@ function applyEncirclementBonus(enclosed, mult, durationMs, cx, cy) {
   // Show a quick activity card too
   actPushCard({
     variant: 'win',
-    title:   '🎯 Encirclement!',
-    html:    'You enclosed <b>' + enclosed + 'px</b> — <b>×' + mult + '</b> regen for ' + (durationMs/1000) + 's',
+    title:   t('act.encircle_title'),
+    html:    t('act.encircle_enclosed_html', { pixels: enclosed, mult: '×' + mult, seconds: durationMs/1000 }),
   });
   sfxConquest && sfxConquest(); // reuse the conquest sting (if available)
 }
@@ -3733,32 +4491,32 @@ function showDailyPopup(bonus, world) {
   let totalGranted = 0;
   const rows = [];
   if (bonus && bonus.loggedIn) {
-    greeting.textContent = 'Signed in via Discord';
+    greeting.textContent = t('daily.sub_discord');
     const dailyAmt   = bonus.dailyBonus   || 0;
     const streakAmt  = bonus.streakBonus  || 0;
     const discordAmt = bonus.discordBonus || 0;
     if (discordAmt > 0) {
-      rows.push({ label: '🎉 Discord welcome bonus', amt: discordAmt });
+      rows.push({ label: t('daily.discord_welcome'), amt: discordAmt });
       totalGranted += discordAmt;
     }
     if (dailyAmt > 0) {
-      rows.push({ label: '📅 Daily login', amt: dailyAmt });
+      rows.push({ label: t('daily.daily_login'), amt: dailyAmt });
       totalGranted += dailyAmt;
     } else {
-      rows.push({ label: '📅 Daily login (already claimed today)', amt: 0 });
+      rows.push({ label: t('daily.daily_already'), amt: 0 });
     }
     if (streakAmt > 0) {
-      rows.push({ label: '🔥 Weekly streak bonus (' + bonus.streakDays + ' days)', amt: streakAmt });
+      rows.push({ label: t('daily.streak_bonus', { days: bonus.streakDays }), amt: streakAmt });
       totalGranted += streakAmt;
     } else if (bonus.streakDays) {
       const daysToStreak = 7 - (bonus.streakDays % 7);
-      rows.push({ label: '🔥 Weekly streak (' + daysToStreak + ' days until +150)', amt: 0 });
+      rows.push({ label: t('daily.streak_progress', { days: daysToStreak }), amt: 0 });
     }
   } else {
-    greeting.textContent = 'Sign in with Discord to earn login bonuses';
-    rows.push({ label: '🎉 Discord welcome bonus (sign in to claim)', amt: 0 });
-    rows.push({ label: '📅 Daily login (sign in to claim)',           amt: 0 });
-    rows.push({ label: '🔥 Weekly streak (sign in to claim)',         amt: 0 });
+    greeting.textContent = t('daily.sub_no_discord');
+    rows.push({ label: t('daily.discord_welcome_signin'), amt: 0 });
+    rows.push({ label: t('daily.daily_signin'),           amt: 0 });
+    rows.push({ label: t('daily.streak_signin'),          amt: 0 });
   }
   bonusList.innerHTML = rows.map(r => {
     const cls = r.amt > 0 ? 'gained' : 'skipped';
@@ -3785,7 +4543,7 @@ function showDailyPopup(bonus, world) {
   if (world) {
     const lines = [];
     if (world.topCountries && world.topCountries.length) {
-      lines.push('<div class="dp-world-row"><span class="dp-label">Top countries</span><span class="dp-val">' + (world.totalPlayers + world.totalBots) + ' active</span></div>');
+      lines.push('<div class="dp-world-row"><span class="dp-label">' + t('daily.top_countries') + '</span><span class="dp-val">' + t('daily.active', { n: world.totalPlayers + world.totalBots }) + '</span></div>');
       world.topCountries.forEach((c, i) => {
         lines.push('<div class="dp-world-row">' +
           '<span><span class="dp-rank">#' + (i+1) + '</span><span class="dp-country-name">' + c.name + '</span></span>' +
@@ -3793,21 +4551,21 @@ function showDailyPopup(bonus, world) {
         '</div>');
       });
     }
-    lines.push('<div class="dp-world-row" style="margin-top:8px;border-top:1px solid #1e293b;padding-top:8px;"><span class="dp-label">⚔️ Conquered countries</span><span class="dp-val">' + (world.conqueredCount || 0) + '</span></div>');
+    lines.push('<div class="dp-world-row" style="margin-top:8px;border-top:1px solid #1e293b;padding-top:8px;"><span class="dp-label">' + t('daily.conquered_label') + '</span><span class="dp-val">' + (world.conqueredCount || 0) + '</span></div>');
     if (world.topPlayers && world.topPlayers.length) {
-      lines.push('<div class="dp-world-row" style="margin-top:8px;border-top:1px solid #1e293b;padding-top:8px;"><span class="dp-label">Top players</span><span class="dp-val">' + world.totalPlayers + ' online</span></div>');
+      lines.push('<div class="dp-world-row" style="margin-top:8px;border-top:1px solid #1e293b;padding-top:8px;"><span class="dp-label">' + t('daily.top_players') + '</span><span class="dp-val">' + t('daily.online', { n: world.totalPlayers }) + '</span></div>');
       world.topPlayers.forEach((p, i) => {
         lines.push('<div class="dp-world-row">' +
           '<span><span class="dp-rank">#' + (i+1) + '</span><span class="dp-country-name">' + (p.username || 'Anonymous') + '</span></span>' +
-          '<span class="dp-pixel-count">' + (p.points || 0).toLocaleString() + ' pts · ' + (p.rank || 'Soldier') + '</span>' +
+          '<span class="dp-pixel-count">' + (p.points || 0).toLocaleString() + ' pts · ' + tRank(p.rank || 'Soldier') + '</span>' +
         '</div>');
       });
     } else {
-      lines.push('<div class="dp-world-row"><span class="dp-label">Top players</span><span class="dp-val">Be the first!</span></div>');
+      lines.push('<div class="dp-world-row"><span class="dp-label">' + t('daily.top_players') + '</span><span class="dp-val">' + t('daily.be_first') + '</span></div>');
     }
     worldStats.innerHTML = lines.join('');
   } else {
-    worldStats.innerHTML = '<div class="dp-world-row"><span class="dp-label">World state unavailable</span><span></span></div>';
+    worldStats.innerHTML = '<div class="dp-world-row"><span class="dp-label">' + t('daily.world_unavail') + '</span><span></span></div>';
   }
   overlay.classList.add('open');
 }
@@ -3821,11 +4579,11 @@ function showDailyBonusToast(data) {
   const toast = document.getElementById('daily-bonus-toast');
   if (!toast) return;
   let html =
-    '<div class="dbt-title">🌅 DAILY LOGIN</div>' +
-    '<div class="dbt-amount">+' + data.granted + ' pixels</div>' +
-    '<div class="dbt-streak">Day ' + data.streakDays + ' streak</div>';
+    '<div class="dbt-title">' + t('daily.toast_title') + '</div>' +
+    '<div class="dbt-amount">' + t('daily.toast_amount', { amount: data.granted }) + '</div>' +
+    '<div class="dbt-streak">' + t('daily.toast_streak', { days: data.streakDays }) + '</div>';
   if (data.streakBonus > 0) {
-    html += '<div class="dbt-bonus">+' + data.streakBonus + ' WEEK STREAK BONUS</div>';
+    html += '<div class="dbt-bonus">' + t('daily.toast_week_bonus', { n: data.streakBonus }) + '</div>';
   }
   toast.innerHTML = html;
   toast.classList.add('open');
@@ -3860,14 +4618,12 @@ function updateFightBackBanner() {
     const pct = Math.round(frac * 100);
     const fbText = document.getElementById('fb-text');
     const fbPower = document.getElementById('fb-power');
-    if (fbText)  fbText.textContent  = 'FIGHT-BACK · ' + pct + '% lost';
+    if (fbText)  fbText.textContent  = t('fightback.banner_pct', { pct });
     if (fbPower) {
       // Show effective bonus: base +4 + explosive multiplier hint
       const explosiveLevel = getExplosiveLevel(frac);
-      const txt = explosiveLevel === 1 ? '+4 px/stroke · 1×1 brush' :
-                  explosiveLevel === 2 ? '+4 px/stroke · 3×3 brush' :
-                                         '+4 px/stroke · 5×5 brush';
-      fbPower.textContent = txt;
+      const brush = explosiveLevel === 1 ? '1×1' : explosiveLevel === 2 ? '3×3' : '5×5';
+      fbPower.textContent = t('fightback.power_brush', { brush });
     }
   } else {
     banner.classList.remove('active');
@@ -3979,11 +4735,11 @@ function showActivityToast(geoIdx, fightBack) {
     flagHtml = tmp.innerHTML;
   }
   const span = '<span style="margin-left:5px;font-weight:600;">' +
-    (fightBack ? f.name + ' is fighting back!' : f.name + ' is being targeted') +
+    (fightBack ? t('act.fighting_back_msg', { country: f.name }) : t('act.being_targeted', { country: f.name })) +
     '</span>';
   actPushCard({
     variant: fightBack ? 'fightback' : 'alert',
-    title:   fightBack ? '⚔️ Fighting Back' : '⚠️ Under Attack',
+    title:   fightBack ? t('act.fighting_back_title') : t('act.under_attack_title'),
     html:    flagHtml + span,
   });
 }
@@ -5045,8 +5801,8 @@ if (msg.state?.conquered) {
         showAttackArrow(fi);
         actPushCard({
           variant: 'conquest',
-          title: '🚨 YOUR COUNTRY FELL',
-          html: '<b>' + (featList[fi]?.name || '?') + '</b> has conquered your country!',
+          title: t('act.your_country_fell_title'),
+          html: t('act.your_country_fell_text', { attacker: featList[fi]?.name || '?' }),
         });
       }
       // General conquest notification (when others conquer)
@@ -5056,8 +5812,8 @@ if (msg.state?.conquered) {
         if(conqueror && target){
           actPushCard({
             variant: 'info',
-            title: '⚔️ Conquest',
-            html: '<b>' + conqueror.name + '</b> conquered <b>' + target.name + '</b>',
+            title: t('act.conquest_event_title'),
+            html: t('act.conquest_event_text', { attacker: conqueror.name, defender: target.name }),
           });
         }
       }
@@ -5065,8 +5821,8 @@ if (msg.state?.conquered) {
       else if(fi === currentIdx){
         actPushCard({
           variant: 'win',
-          title: '🏆 Victory!',
-          html: 'You conquered <b>' + featList[targetFi].name + '</b>!',
+          title: t('act.victory_title'),
+          html: t('act.victory_text', { defender: featList[targetFi].name }),
         });
       }
       showConquestToast(targetFi, fi);
@@ -5097,8 +5853,8 @@ if (msg.state?.conquered) {
       addNukeZone(msg.cx, msg.cy, msg.radius, msg.expiresAt);
       actPushCard({
         variant: 'alert',
-        title: '☢️ Nuclear strike',
-        html: 'No-paint zone active for <b>' + Math.round((msg.expiresAt - Date.now())/1000) + 's</b> around the blast site',
+        title: t('act.nuke_title'),
+        html: t('act.nuke_text', { seconds: Math.round((msg.expiresAt - Date.now())/1000) }),
       });
       break;
     }
@@ -5867,6 +6623,7 @@ function showAuthToast(msg){
 }
 
 function renderLoginHUD(profile) {
+  window._currentProfile = profile; // stash for language re-render
   const hud = document.getElementById('login-hud');
   if (!hud) return;
   hud.innerHTML = '';
@@ -5891,14 +6648,14 @@ function renderLoginHUD(profile) {
     }
     const btn = document.createElement('button');
     btn.id = 'logout-btn';
-    btn.textContent = 'Sign out';
+    btn.textContent = t('hud.logout');
     btn.onclick = () => { window.location.href = '/auth/logout'; };
     hud.appendChild(btn);
   } else {
     hud.classList.remove('logged-in');
     const btn = document.createElement('button');
     btn.id = 'login-btn';
-    btn.innerHTML = '<svg class="discord-icon" viewBox="0 0 71 55" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M60.1 4.9A58.5 58.5 0 0 0 45.5 0L43.6 3.7a54 54 0 0 0-16.2 0L25.5 0A58.5 58.5 0 0 0 10.9 4.9 61.5 61.5 0 0 0 .5 46.6a58.8 58.8 0 0 0 18 9.1l3.6-5a35.6 35.6 0 0 1-5.6-2.7c.5-.4 1-.7 1.4-1.1a42 42 0 0 0 35.2 0c.4.4.9.7 1.4 1.1a35.6 35.6 0 0 1-5.6 2.7l3.6 5a58.8 58.8 0 0 0 18-9.1A61.6 61.6 0 0 0 60.1 4.9zM23.7 38.3c-3.5 0-6.4-3.2-6.4-7.1s2.8-7.1 6.4-7.1 6.4 3.2 6.4 7.1-2.8 7.1-6.4 7.1zm23.6 0c-3.5 0-6.4-3.2-6.4-7.1s2.8-7.1 6.4-7.1 6.4 3.2 6.4 7.1-2.8 7.1-6.4 7.1z"/></svg>Sign in with Discord';
+    btn.innerHTML = '<svg class="discord-icon" viewBox="0 0 71 55" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M60.1 4.9A58.5 58.5 0 0 0 45.5 0L43.6 3.7a54 54 0 0 0-16.2 0L25.5 0A58.5 58.5 0 0 0 10.9 4.9 61.5 61.5 0 0 0 .5 46.6a58.8 58.8 0 0 0 18 9.1l3.6-5a35.6 35.6 0 0 1-5.6-2.7c.5-.4 1-.7 1.4-1.1a42 42 0 0 0 35.2 0c.4.4.9.7 1.4 1.1a35.6 35.6 0 0 1-5.6 2.7l3.6 5a58.8 58.8 0 0 0 18-9.1A61.6 61.6 0 0 0 60.1 4.9zM23.7 38.3c-3.5 0-6.4-3.2-6.4-7.1s2.8-7.1 6.4-7.1 6.4 3.2 6.4 7.1-2.8 7.1-6.4 7.1zm23.6 0c-3.5 0-6.4-3.2-6.4-7.1s2.8-7.1 6.4-7.1 6.4 3.2 6.4 7.1-2.8 7.1-6.4 7.1z"/></svg>' + t('hud.sign_in_with_discord');
     btn.onclick = () => { window.location.href = '/auth/login'; };
     hud.appendChild(btn);
   }
@@ -5979,7 +6736,7 @@ async function loadStatsMe() {
     const res = await fetch('/api/stats/me', { credentials: 'include' });
     const data = await res.json();
     if (!data.loggedIn) {
-      el.innerHTML = '<div class="lb-empty">Sign in with Discord to see your stats.<br><br><button onclick="window.location.href=\'/auth/login\'" style="background:#5865f2;border:none;color:white;padding:8px 14px;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;">Sign in with Discord</button></div>';
+      el.innerHTML = '<div class="lb-empty">' + t('stats.signin_prompt') + '<br><br><button onclick="window.location.href=\'/auth/login\'" style="background:#5865f2;border:none;color:white;padding:8px 14px;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;">' + t('hud.sign_in_with_discord') + '</button></div>';
       return;
     }
     const topPaintedRows = (data.topCountries || []).map(c => {
@@ -7220,14 +7977,15 @@ function refreshBombMenu(){
   if(!menu) return;
   const types = getBombTypes();
   if(types.length === 0){
-    menu.innerHTML = '<span style="color:#334155;font-size:10px">Unlock Captain rank to use bombs</span>';
+    menu.innerHTML = '<span style="color:#334155;font-size:10px">' + t('hud.unlock_captain') + '</span>';
     return;
   }
-  menu.innerHTML = types.map(t => `
-    <button class="bomb-type-btn ${selectedBombType===t.key?'active':''}" 
-      onclick="selectedBombType='${t.key}';refreshBombMenu();"
-      title="Radius ${t.radius}px · costs ${t.cost} pixels">
-      ${t.label} <span class="bomb-meta">r:${t.radius} / ${t.cost}px</span>
+  // Renamed callback param from t→bt to avoid shadowing the global t() i18n fn
+  menu.innerHTML = types.map(bt => `
+    <button class="bomb-type-btn ${selectedBombType===bt.key?'active':''}" 
+      onclick="selectedBombType='${bt.key}';refreshBombMenu();"
+      title="${t('bomb.tooltip', { radius: bt.radius, cost: bt.cost })}">
+      ${tBomb(bt.label)} <span class="bomb-meta">r:${bt.radius} / ${bt.cost}px</span>
     </button>`).join('');
 }
 
@@ -7248,16 +8006,16 @@ function refreshRankUI(){
   const col = rankColours[ri];
 
   el.innerHTML = `
-    <div class="rank-name" style="color:${col}">&#9670; ${rank.name}</div>
+    <div class="rank-name" style="color:${col}">&#9670; ${tRank(rank.name)}</div>
     <div class="rank-bar-wrap">
       <div class="rank-bar-fill" style="width:${progress}%;background:${col}"></div>
     </div>
     <div class="rank-meta">
-      ${totalPixelsEverPlaced.toLocaleString()} px placed
-      ${next ? ' · next: <b>' + next.name + '</b> at ' + next.min : ' · <b>MAX RANK</b>'}
+      ${t('rank.pixels_placed', { n: totalPixelsEverPlaced.toLocaleString() })}
+      ${next ? ' · ' + t('rank.next_rank_inline', { name: tRank(next.name), min: next.min }) : ' · <b>' + t('hud.max_rank') + '</b>'}
     </div>
-    ${rank.bombType ? '<div class="rank-bomb">&#128163; '+rank.bombType+' unlocked</div>' : ''}
-    ${rank.bonus>0 ? '<div class="rank-bonus">+'+rank.bonus+' bonus px/stroke when attacking highlighted country</div>' : ''}
+    ${rank.bombType ? '<div class="rank-bomb">&#128163; ' + t('rank.bomb_unlocked', { bomb: tBomb(rank.bombType) }) + '</div>' : ''}
+    ${rank.bonus>0 ? '<div class="rank-bonus">' + t('rank.bonus_stroke', { n: rank.bonus }) + '</div>' : ''}
   `;
   refreshBombMenu();
 }
@@ -7633,8 +8391,8 @@ $("btn-bomb").addEventListener("click",function(){
     setTimeout(()=>btn.classList.remove('cooldown-flash'), 400);
     actPushCard({
       variant: 'alert',
-      title: '⏱️ Bomb on cooldown',
-      html: 'Next bomb available in <b>' + getBombCooldownSecsLeft() + 's</b>',
+      title: t('act.bomb_cooldown_title'),
+      html: t('act.bomb_cooldown_text', { seconds: getBombCooldownSecsLeft() }),
     });
     return;
   }
