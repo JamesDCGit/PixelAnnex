@@ -791,7 +791,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <div id="csel-btn" onclick="toggleCselDropdown()">
         <span id="csel-flag"></span>
         <div id="swatch"></div>
-        <span id="csel-label">Loading…</span>
+        <span id="csel-label" data-i18n="stats.loading">Loading…</span>
         <span id="csel-arrow">▾</span>
       </div>
       <div id="csel-dropdown">
@@ -985,7 +985,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     <canvas id="c-crater" style="pointer-events:none;"></canvas>
     <div id="rank-display"></div>
     <div id="login-hud">
-      <span id="login-status">Loading…</span>
+      <span id="login-status" data-i18n="stats.loading">Loading…</span>
     </div>
     <div id="highlight-banner"></div>
     <div id="banner"></div>
@@ -1298,8 +1298,101 @@ const LANGS = {
     'banner.encirclement_static': 'ENCIRCLEMENT',
     'banner.regen': 'regen',
     'stats.signin_prompt': 'Entre com Discord para ver suas estatísticas.',
+    'stats.title': '📊 Estatísticas e Ranking',
+    'stats.close': 'Fechar ✕',
+    'stats.tab_me': 'Minhas estatísticas',
+    'stats.tab_lb': 'Ranking',
+    'stats.loading': 'Carregando…',
+    'stats.joined': 'entrou em {date}',
+    'stats.points': 'Pontos',
+    'stats.pixels_placed': 'Pixels colocados',
+    'stats.conquests': 'Conquistas',
+    'stats.bombs_used': 'Bombas usadas',
+    'stats.top_painted': 'Países mais pintados',
+    'stats.load_error': 'Não foi possível carregar: {err}',
+    'stats.no_players': 'Nenhum jogador classificado — seja o primeiro!',
+    'stats.total_players': '{n} jogadores no total',
+    'stats.lb_load_error': 'Não foi possível carregar o ranking.',
+    'tip.1': '💡 Clique e arraste para mover. Role para zoom.',
+    'tip.2': '🎨 Você pode pintar pixels em qualquer país, mas conquistar requer 80% de domínio.',
+    'tip.3': '💥 Promoções desbloqueiam bombas: Capitão → Morteiro, General → MOAB, Almirante → Nuclear.',
+    'tip.4': '🤝 Defina 3 países preferidos no Discord com /country para formar alianças.',
+    'tip.5': '⚔️ Quando seu país perde mais de 70%, o modo contra-ataque dá bônus de 5× pixels.',
+    'tip.6': '🏆 Veja o ranking pelo botão 📊 na barra de ferramentas.',
+    'tip.7': '🌊 O oceano cobre 71% da Terra — mas em PixelAnnex são pixels puros.',
+    'tip.8': '📊 1 pixel colocado = 1 ponto. Conquistar um país = 50 pontos bônus.',
+    'tip.9': '🎖️ Suba 5 patentes: Soldado → Tenente → Capitão → General → Almirante.',
+    'tip.10': '🚨 Países piscam vermelho quando sob cerco (>50% inimigo).',
+    'tip.11': '🤖 Cada país tem um bot IA defendendo. Eles ficam mais espertos com mais jogadores.',
+    'tip.12': '🌐 O mapa tem ~2.4 milhões de pixels pintáveis em mais de 240 países.',
+    'tip.13': '🎵 Três trilhas musicais: chiptune, clássica e militar. Alterne no HUD de áudio.',
+    'tip.14': '👥 Entre com Discord para salvar progresso e ganhar promoções.',
+    'tip.15': '🏴 O menor país do mapa é o Vaticano — apenas alguns pixels!',
+    'tip.16': '💬 Eventos de guerra, conquistas e alianças são postados no seu servidor Discord.',
     'stats.signin_prompt': 'Inicia sesión con Discord para ver tus estadísticas.',
+    'stats.title': '📊 Estadísticas y Clasificación',
+    'stats.close': 'Cerrar ✕',
+    'stats.tab_me': 'Mis estadísticas',
+    'stats.tab_lb': 'Clasificación',
+    'stats.loading': 'Cargando…',
+    'stats.joined': 'se unió el {date}',
+    'stats.points': 'Puntos',
+    'stats.pixels_placed': 'Píxeles colocados',
+    'stats.conquests': 'Conquistas',
+    'stats.bombs_used': 'Bombas usadas',
+    'stats.top_painted': 'Países más pintados',
+    'stats.load_error': 'No se pudieron cargar las estadísticas: {err}',
+    'stats.no_players': 'No hay jugadores clasificados aún — ¡sé el primero!',
+    'stats.total_players': '{n} jugadores en total',
+    'stats.lb_load_error': 'No se pudo cargar la clasificación.',
+    'tip.1': '💡 Haz clic y arrastra para mover. Rueda para zoom.',
+    'tip.2': '🎨 Puedes pintar píxeles en cualquier país, pero conquistar requiere 80% de control.',
+    'tip.3': '💥 Los ascensos desbloquean bombas: Capitán → Mortero, General → MOAB, Almirante → Nuclear.',
+    'tip.4': '🤝 Configura 3 países preferidos en Discord con /country para formar alianzas.',
+    'tip.5': '⚔️ Cuando tu país pierde más del 70%, el modo contraataque da 5× píxeles bonus.',
+    'tip.6': '🏆 Mira la clasificación con el botón 📊 de la barra de herramientas.',
+    'tip.7': '🌊 El océano cubre el 71% de la Tierra — pero en PixelAnnex son píxeles puros.',
+    'tip.8': '📊 1 píxel colocado = 1 punto. Conquistar un país = 50 puntos extra.',
+    'tip.9': '🎖️ Sube 5 rangos: Soldado → Teniente → Capitán → General → Almirante.',
+    'tip.10': '🚨 Los países parpadean en rojo cuando están bajo asedio (>50% enemigo).',
+    'tip.11': '🤖 Cada país tiene un bot IA defendiéndolo. Mejoran con más jugadores.',
+    'tip.12': '🌐 El mapa tiene ~2.4 millones de píxeles pintables en más de 240 países.',
+    'tip.13': '🎵 Tres pistas musicales: chiptune, clásica y militar. Alterna en el HUD de audio.',
+    'tip.14': '👥 Inicia sesión con Discord para guardar tu progreso y ganar ascensos.',
+    'tip.15': '🏴 ¡El país más pequeño del mapa es Ciudad del Vaticano — solo unos píxeles!',
+    'tip.16': '💬 Eventos de guerra, conquistas y alianzas se publican en tu servidor de Discord.',
     'stats.signin_prompt': 'Sign in with Discord to see your stats.',
+    'stats.title': '📊 Stats & Leaderboard',
+    'stats.close': 'Close ✕',
+    'stats.tab_me': 'My Stats',
+    'stats.tab_lb': 'Leaderboard',
+    'stats.loading': 'Loading…',
+    'stats.joined': 'joined {date}',
+    'stats.points': 'Points',
+    'stats.pixels_placed': 'Pixels Placed',
+    'stats.conquests': 'Conquests',
+    'stats.bombs_used': 'Bombs Used',
+    'stats.top_painted': 'Top Countries Painted',
+    'stats.load_error': 'Could not load stats: {err}',
+    'stats.no_players': 'No ranked players yet — be the first!',
+    'stats.total_players': '{n} total players',
+    'stats.lb_load_error': 'Could not load leaderboard.',
+    'tip.1': '💡 Click and drag to pan. Scroll to zoom.',
+    'tip.2': '🎨 You can paint pixels in any country, but conquest requires 80% ownership.',
+    'tip.3': '💥 Promotions unlock bombs: Captain → Mortar, General → MOAB, Admiral → Nuke.',
+    'tip.4': '🤝 Set 3 country preferences in Discord with /country to form alliances.',
+    'tip.5': '⚔️ When your country is >70% lost, fight-back mode gives you 5× pixel bonus.',
+    'tip.6': '🏆 Check the leaderboard via the 📊 button in the toolbar.',
+    'tip.7': '🌊 The ocean covers 71% of Earth\'s surface — but in PixelAnnex it\'s pure pixels.',
+    'tip.8': '📊 1 pixel placed = 1 point. Conquering a country = 50 bonus points.',
+    'tip.9': '🎖️ Climb 5 ranks: Soldier → Lieutenant → Captain → General → Admiral.',
+    'tip.10': '🚨 Countries flash red when under siege (>50% enemy-held and being attacked).',
+    'tip.11': '🤖 Every country has an AI bot defending it. They get smarter at higher player counts.',
+    'tip.12': '🌐 The map has ~2.4 million paintable pixels across 240+ countries.',
+    'tip.13': '🎵 Three music tracks: chiptune, classical, and military. Toggle in the audio HUD.',
+    'tip.14': '👥 Sign in with Discord to save your progress and earn rank promotions.',
+    'tip.15': '🏴 The smallest country on the map is Vatican City — just a few pixels!',
+    'tip.16': '💬 War events, conquests, and alliances all post to your Discord server.',
   },
   es: {
     'lang.label':'Idioma','tut.title':'PixelAnnex','tut.welcome_sub':'Bienvenido — vamos a configurarte','tut.stat_players':'Jugadores','tut.stat_conquered':'Conquistados','tut.stat_alliances':'Alianzas',
@@ -1407,7 +1500,69 @@ const LANGS = {
     'banner.encirclement_static': '包围',
     'banner.regen': '再生',
     'stats.signin_prompt': 'Discordでログインして統計を表示。',
+    'stats.title': '📊 統計とリーダーボード',
+    'stats.close': '閉じる ✕',
+    'stats.tab_me': '自分の統計',
+    'stats.tab_lb': 'リーダーボード',
+    'stats.loading': '読込中…',
+    'stats.joined': '{date} に参加',
+    'stats.points': 'ポイント',
+    'stats.pixels_placed': '配置ピクセル',
+    'stats.conquests': '征服数',
+    'stats.bombs_used': '使用爆弾',
+    'stats.top_painted': 'よく塗られた国',
+    'stats.load_error': '統計を読込めません: {err}',
+    'stats.no_players': 'ランク付きプレイヤーがいません — 最初の一人に!',
+    'stats.total_players': '合計 {n} プレイヤー',
+    'stats.lb_load_error': 'リーダーボードを読込めません。',
+    'tip.1': '💡 クリック&ドラッグで移動。スクロールでズーム。',
+    'tip.2': '🎨 どの国でもピクセルを塗れますが、征服には80%の所有が必要です。',
+    'tip.3': '💥 昇進で爆弾が解放: 大尉 → 迫撃砲、将軍 → MOAB、提督 → 核。',
+    'tip.4': '🤝 Discord で /country を使って3つの国の好みを設定し同盟を組みましょう。',
+    'tip.5': '⚔️ 自国の70%以上を失うと、反撃モードで5×ピクセルボーナス。',
+    'tip.6': '🏆 ツールバーの 📊 ボタンでリーダーボードをチェック。',
+    'tip.7': '🌊 海洋は地球表面の71%を覆っています — でも PixelAnnex では純粋なピクセル。',
+    'tip.8': '📊 1ピクセル = 1ポイント。国を征服 = ボーナス50ポイント。',
+    'tip.9': '🎖️ 5つの階級を上る: 兵士 → 中尉 → 大尉 → 将軍 → 提督。',
+    'tip.10': '🚨 国が包囲されると赤く点滅 (>50%敵が保有)。',
+    'tip.11': '🤖 各国にAIボットが守ります。プレイヤーが多いほど賢くなります。',
+    'tip.12': '🌐 マップには240以上の国に約240万の塗装可能ピクセル。',
+    'tip.13': '🎵 3つの音楽トラック: チップチューン、クラシック、ミリタリー。オーディオHUDで切替。',
+    'tip.14': '👥 Discordでログインして進行状況を保存し、階級昇進を獲得。',
+    'tip.15': '🏴 マップ最小の国はバチカン市国 — わずか数ピクセル!',
+    'tip.16': '💬 戦争イベント、征服、同盟はすべてDiscordサーバーに投稿されます。',
     'stats.signin_prompt': '使用 Discord 登录以查看您的统计。',
+    'stats.title': '📊 统计与排行榜',
+    'stats.close': '关闭 ✕',
+    'stats.tab_me': '我的统计',
+    'stats.tab_lb': '排行榜',
+    'stats.loading': '加载中…',
+    'stats.joined': '于 {date} 加入',
+    'stats.points': '积分',
+    'stats.pixels_placed': '已放置像素',
+    'stats.conquests': '征服',
+    'stats.bombs_used': '使用炸弹',
+    'stats.top_painted': '绘制最多的国家',
+    'stats.load_error': '无法加载统计:{err}',
+    'stats.no_players': '尚无排名玩家 — 成为第一!',
+    'stats.total_players': '共 {n} 名玩家',
+    'stats.lb_load_error': '无法加载排行榜。',
+    'tip.1': '💡 点击拖动平移。滚动缩放。',
+    'tip.2': '🎨 你可以在任何国家绘制像素,但征服需要 80% 的占有率。',
+    'tip.3': '💥 晋升解锁炸弹:上尉 → 迫击炮,将军 → MOAB,海军上将 → 核弹。',
+    'tip.4': '🤝 在 Discord 中用 /country 设置 3 个首选国家来组建联盟。',
+    'tip.5': '⚔️ 当你的国家损失超过 70% 时,反击模式给予 5× 像素奖励。',
+    'tip.6': '🏆 通过工具栏的 📊 按钮查看排行榜。',
+    'tip.7': '🌊 海洋占地球表面的 71% — 但在 PixelAnnex 中全是纯像素。',
+    'tip.8': '📊 1 个像素 = 1 分。征服一个国家 = 50 奖励分。',
+    'tip.9': '🎖️ 攀登 5 个军衔:士兵 → 中尉 → 上尉 → 将军 → 海军上将。',
+    'tip.10': '🚨 国家被围攻时会闪红色 (>50% 敌占且正受攻击)。',
+    'tip.11': '🤖 每个国家都有 AI 机器人防守。玩家越多它们越聪明。',
+    'tip.12': '🌐 地图拥有约 240 万可绘制像素,跨越 240 多个国家。',
+    'tip.13': '🎵 三种音乐:芯片音乐、古典和军乐。在音频 HUD 中切换。',
+    'tip.14': '👥 使用 Discord 登录以保存进度并获得军衔晋升。',
+    'tip.15': '🏴 地图上最小的国家是梵蒂冈 — 只有几个像素!',
+    'tip.16': '💬 战争事件、征服和联盟都会发布到你的 Discord 服务器。',
   },
   hi: {
     'lang.label':'भाषा','tut.title':'PixelAnnex','tut.welcome_sub':'स्वागत है — आइए शुरू करें','tut.stat_players':'खिलाड़ी','tut.stat_conquered':'जीते गए','tut.stat_alliances':'गठबंधन',
@@ -1462,6 +1617,37 @@ const LANGS = {
     'banner.encirclement_static': 'घेराव',
     'banner.regen': 'रीजन',
     'stats.signin_prompt': 'अपने आँकड़े देखने के लिए Discord से साइन इन करें।',
+    'stats.title': '📊 आँकड़े और लीडरबोर्ड',
+    'stats.close': 'बंद ✕',
+    'stats.tab_me': 'मेरे आँकड़े',
+    'stats.tab_lb': 'लीडरबोर्ड',
+    'stats.loading': 'लोड हो रहा है…',
+    'stats.joined': '{date} को शामिल हुए',
+    'stats.points': 'अंक',
+    'stats.pixels_placed': 'रखे गए पिक्सेल',
+    'stats.conquests': 'जीतें',
+    'stats.bombs_used': 'इस्तेमाल बम',
+    'stats.top_painted': 'सबसे ज्यादा रंगे देश',
+    'stats.load_error': 'आँकड़े लोड नहीं हो सके: {err}',
+    'stats.no_players': 'अभी कोई रैंक खिलाड़ी नहीं — पहले बनें!',
+    'stats.total_players': 'कुल {n} खिलाड़ी',
+    'stats.lb_load_error': 'लीडरबोर्ड लोड नहीं हो सका।',
+    'tip.1': '💡 पैन के लिए क्लिक और खींचें। ज़ूम के लिए स्क्रॉल।',
+    'tip.2': '🎨 आप किसी भी देश में पिक्सेल रंग सकते हैं, लेकिन विजय के लिए 80% कब्जा चाहिए।',
+    'tip.3': '💥 पदोन्नतियाँ बम खोलती हैं: कैप्टन → मोर्टार, जनरल → MOAB, एडमिरल → परमाणु।',
+    'tip.4': '🤝 गठबंधन के लिए Discord में /country से 3 देश प्राथमिकताएँ सेट करें।',
+    'tip.5': '⚔️ जब आपका देश 70% से अधिक हार जाए, पलटवार मोड 5× पिक्सेल बोनस देता है।',
+    'tip.6': '🏆 टूलबार के 📊 बटन से लीडरबोर्ड देखें।',
+    'tip.7': '🌊 महासागर पृथ्वी की सतह का 71% है — लेकिन PixelAnnex में वह शुद्ध पिक्सेल है।',
+    'tip.8': '📊 1 पिक्सेल = 1 अंक। देश जीतना = 50 बोनस अंक।',
+    'tip.9': '🎖️ 5 रैंक चढ़ें: सैनिक → लेफ्टिनेंट → कैप्टन → जनरल → एडमिरल।',
+    'tip.10': '🚨 जब देश घेर में हो तो वे लाल चमकते हैं (>50% शत्रु-नियंत्रित)।',
+    'tip.11': '🤖 हर देश का एक AI बॉट रक्षक है। अधिक खिलाड़ी = ज्यादा चतुर।',
+    'tip.12': '🌐 नक्शे में 240+ देशों में लगभग 24 लाख रंगने योग्य पिक्सेल हैं।',
+    'tip.13': '🎵 तीन संगीत ट्रैक: चिपट्यून, शास्त्रीय और सैन्य। ऑडियो HUD में टॉगल करें।',
+    'tip.14': '👥 प्रगति सहेजने और पदोन्नति पाने के लिए Discord से साइन इन करें।',
+    'tip.15': '🏴 नक्शे का सबसे छोटा देश वेटिकन सिटी है — बस कुछ पिक्सेल!',
+    'tip.16': '💬 युद्ध की घटनाएं, विजय और गठबंधन सब आपके Discord सर्वर पर पोस्ट होते हैं।',
   },
   ar: {
     'lang.label':'اللغة','tut.title':'PixelAnnex','tut.welcome_sub':'مرحباً — لنبدأ','tut.stat_players':'اللاعبون','tut.stat_conquered':'مفتوحة','tut.stat_alliances':'تحالفات',
@@ -1516,6 +1702,37 @@ const LANGS = {
     'banner.encirclement_static': 'تطويق',
     'banner.regen': 'استرداد',
     'stats.signin_prompt': 'سجّل الدخول عبر Discord لعرض إحصاءاتك.',
+    'stats.title': '📊 الإحصاءات والقائمة',
+    'stats.close': 'إغلاق ✕',
+    'stats.tab_me': 'إحصاءاتي',
+    'stats.tab_lb': 'القائمة',
+    'stats.loading': 'جاري التحميل…',
+    'stats.joined': 'انضم في {date}',
+    'stats.points': 'النقاط',
+    'stats.pixels_placed': 'البكسلات الموضوعة',
+    'stats.conquests': 'الفتوحات',
+    'stats.bombs_used': 'القنابل المستخدمة',
+    'stats.top_painted': 'أكثر البلدان رسماً',
+    'stats.load_error': 'فشل تحميل الإحصاءات: {err}',
+    'stats.no_players': 'لا يوجد لاعبون مصنّفون بعد — كن الأول!',
+    'stats.total_players': '{n} لاعب إجمالاً',
+    'stats.lb_load_error': 'فشل تحميل القائمة.',
+    'tip.1': '💡 انقر واسحب للتحريك. مرر للتكبير.',
+    'tip.2': '🎨 يمكنك رسم البكسلات في أي بلد، لكن الفتح يتطلب ملكية 80%.',
+    'tip.3': '💥 الترقيات تفتح القنابل: نقيب → هاون، جنرال → MOAB، أميرال → نووي.',
+    'tip.4': '🤝 اضبط 3 بلدان مفضلة في Discord مع /country لتكوين تحالفات.',
+    'tip.5': '⚔️ عندما يخسر بلدك أكثر من 70%، يمنح وضع الرد مكافأة 5× بكسل.',
+    'tip.6': '🏆 تحقق من القائمة عبر زر 📊 في شريط الأدوات.',
+    'tip.7': '🌊 يغطي المحيط 71% من سطح الأرض — لكن في PixelAnnex هو بكسل خالص.',
+    'tip.8': '📊 1 بكسل = 1 نقطة. فتح بلد = 50 نقطة إضافية.',
+    'tip.9': '🎖️ ارتقِ 5 رتب: جندي → ملازم → نقيب → جنرال → أميرال.',
+    'tip.10': '🚨 تومض البلدان بالأحمر عند الحصار (>50% بأيدي العدو).',
+    'tip.11': '🤖 كل بلد لديه روبوت ذكاء اصطناعي يدافع عنه. يصبح أذكى مع زيادة اللاعبين.',
+    'tip.12': '🌐 الخريطة تحتوي على ~2.4 مليون بكسل قابل للرسم عبر 240+ بلد.',
+    'tip.13': '🎵 ثلاث مقطوعات موسيقية: شيبتيون، كلاسيكي، عسكري. بدّل في HUD الصوت.',
+    'tip.14': '👥 سجّل الدخول عبر Discord لحفظ تقدمك وكسب الترقيات.',
+    'tip.15': '🏴 أصغر بلد على الخريطة هو الفاتيكان — مجرد بضعة بكسلات!',
+    'tip.16': '💬 أحداث الحرب والفتوحات والتحالفات تُنشر على خادم Discord الخاص بك.',
   },
   pt: {
     'lang.label':'Idioma','tut.title':'PixelAnnex','tut.welcome_sub':'Bem-vindo — vamos configurar você','tut.stat_players':'Jogadores','tut.stat_conquered':'Conquistados','tut.stat_alliances':'Alianças',
@@ -1623,6 +1840,37 @@ const LANGS = {
     'banner.encirclement_static': 'ОКРУЖЕНИЕ',
     'banner.regen': 'регена',
     'stats.signin_prompt': 'Войдите через Discord, чтобы увидеть статистику.',
+    'stats.title': '📊 Статистика и таблица лидеров',
+    'stats.close': 'Закрыть ✕',
+    'stats.tab_me': 'Моя статистика',
+    'stats.tab_lb': 'Таблица лидеров',
+    'stats.loading': 'Загрузка…',
+    'stats.joined': 'присоединился {date}',
+    'stats.points': 'Очки',
+    'stats.pixels_placed': 'Размещено пикселей',
+    'stats.conquests': 'Завоевания',
+    'stats.bombs_used': 'Использовано бомб',
+    'stats.top_painted': 'Самые закрашенные страны',
+    'stats.load_error': 'Не удалось загрузить статистику: {err}',
+    'stats.no_players': 'Пока нет рейтинговых игроков — будьте первым!',
+    'stats.total_players': 'Всего игроков: {n}',
+    'stats.lb_load_error': 'Не удалось загрузить таблицу.',
+    'tip.1': '💡 Клик и перетаскивание для перемещения. Прокрутка для зума.',
+    'tip.2': '🎨 Можно рисовать пиксели в любой стране, но завоевание требует 80% владения.',
+    'tip.3': '💥 Звания открывают бомбы: Капитан → Миномёт, Генерал → MOAB, Адмирал → Ядерная.',
+    'tip.4': '🤝 Установите 3 страны-предпочтения в Discord через /country для альянсов.',
+    'tip.5': '⚔️ Когда страна потеряна >70%, режим контратаки даёт 5× бонус пикселей.',
+    'tip.6': '🏆 Смотрите таблицу лидеров через кнопку 📊 на панели.',
+    'tip.7': '🌊 Океан покрывает 71% Земли — но в PixelAnnex это чистые пиксели.',
+    'tip.8': '📊 1 пиксель = 1 очко. Завоевание страны = 50 бонусных очков.',
+    'tip.9': '🎖️ Поднимитесь по 5 званиям: Солдат → Лейтенант → Капитан → Генерал → Адмирал.',
+    'tip.10': '🚨 Страны мигают красным при осаде (>50% врага).',
+    'tip.11': '🤖 У каждой страны есть ИИ-бот-защитник. Они умнее при большем числе игроков.',
+    'tip.12': '🌐 На карте ~2.4 миллиона рисуемых пикселей в 240+ странах.',
+    'tip.13': '🎵 Три музыкальных трека: чиптюн, классика, военный. Переключайте в HUD аудио.',
+    'tip.14': '👥 Войдите через Discord, чтобы сохранять прогресс и получать звания.',
+    'tip.15': '🏴 Самая маленькая страна — Ватикан — всего несколько пикселей!',
+    'tip.16': '💬 События войны, завоевания и альянсы публикуются на ваш Discord-сервер.',
   },
   ja: {
     'lang.label':'言語','tut.title':'PixelAnnex','tut.welcome_sub':'ようこそ — セットアップしましょう','tut.stat_players':'プレイヤー','tut.stat_conquered':'征服','tut.stat_alliances':'同盟',
@@ -1730,6 +1978,37 @@ const LANGS = {
     'banner.encirclement_static': 'ENCERCLEMENT',
     'banner.regen': 'régen',
     'stats.signin_prompt': 'Connectez-vous avec Discord pour voir vos stats.',
+    'stats.title': '📊 Statistiques et Classement',
+    'stats.close': 'Fermer ✕',
+    'stats.tab_me': 'Mes stats',
+    'stats.tab_lb': 'Classement',
+    'stats.loading': 'Chargement…',
+    'stats.joined': 'inscrit le {date}',
+    'stats.points': 'Points',
+    'stats.pixels_placed': 'Pixels placés',
+    'stats.conquests': 'Conquêtes',
+    'stats.bombs_used': 'Bombes utilisées',
+    'stats.top_painted': 'Pays les plus peints',
+    'stats.load_error': 'Impossible de charger : {err}',
+    'stats.no_players': 'Aucun joueur classé — soyez le premier !',
+    'stats.total_players': '{n} joueurs au total',
+    'stats.lb_load_error': 'Impossible de charger le classement.',
+    'tip.1': '💡 Cliquez et glissez pour déplacer. Molette pour zoomer.',
+    'tip.2': '🎨 Vous pouvez peindre des pixels dans n\'importe quel pays, mais la conquête exige 80% de possession.',
+    'tip.3': '💥 Les promotions débloquent les bombes : Capitaine → Mortier, Général → MOAB, Amiral → Nuke.',
+    'tip.4': '🤝 Définissez 3 préférences de pays dans Discord avec /country pour former des alliances.',
+    'tip.5': '⚔️ Quand votre pays a perdu >70%, le mode riposte donne un bonus 5× de pixels.',
+    'tip.6': '🏆 Consultez le classement via le bouton 📊 de la barre.',
+    'tip.7': '🌊 L\'océan couvre 71% de la Terre — mais dans PixelAnnex ce sont des pixels purs.',
+    'tip.8': '📊 1 pixel = 1 point. Conquérir un pays = 50 points bonus.',
+    'tip.9': '🎖️ Gravissez 5 grades : Soldat → Lieutenant → Capitaine → Général → Amiral.',
+    'tip.10': '🚨 Les pays clignotent en rouge sous siège (>50% ennemi).',
+    'tip.11': '🤖 Chaque pays a un bot IA défenseur. Ils deviennent plus malins avec plus de joueurs.',
+    'tip.12': '🌐 La carte a ~2,4 millions de pixels peignables sur 240+ pays.',
+    'tip.13': '🎵 Trois pistes musicales : chiptune, classique et militaire. Basculez dans le HUD audio.',
+    'tip.14': '👥 Connectez-vous avec Discord pour sauvegarder vos progrès et gagner des promotions.',
+    'tip.15': '🏴 Le plus petit pays est le Vatican — juste quelques pixels !',
+    'tip.16': '💬 Événements de guerre, conquêtes et alliances sont postés sur votre serveur Discord.',
   },
   de: {
     'lang.label':'Sprache','tut.title':'PixelAnnex','tut.welcome_sub':'Willkommen — lass uns dich einrichten','tut.stat_players':'Spieler','tut.stat_conquered':'Erobert','tut.stat_alliances':'Allianzen',
@@ -1784,6 +2063,37 @@ const LANGS = {
     'banner.encirclement_static': 'EINKREISUNG',
     'banner.regen': 'Regen',
     'stats.signin_prompt': 'Melde dich mit Discord an, um deine Stats zu sehen.',
+    'stats.title': '📊 Statistik & Bestenliste',
+    'stats.close': 'Schließen ✕',
+    'stats.tab_me': 'Meine Stats',
+    'stats.tab_lb': 'Bestenliste',
+    'stats.loading': 'Lädt…',
+    'stats.joined': 'beigetreten am {date}',
+    'stats.points': 'Punkte',
+    'stats.pixels_placed': 'Platzierte Pixel',
+    'stats.conquests': 'Eroberungen',
+    'stats.bombs_used': 'Eingesetzte Bomben',
+    'stats.top_painted': 'Meistbemalte Länder',
+    'stats.load_error': 'Statistiken konnten nicht geladen werden: {err}',
+    'stats.no_players': 'Noch keine Spieler — sei der Erste!',
+    'stats.total_players': '{n} Spieler insgesamt',
+    'stats.lb_load_error': 'Bestenliste konnte nicht geladen werden.',
+    'tip.1': '💡 Klick und Ziehen zum Schwenken. Scrollen zum Zoomen.',
+    'tip.2': '🎨 Du kannst Pixel in jedem Land malen, aber Eroberung erfordert 80% Besitz.',
+    'tip.3': '💥 Beförderungen schalten Bomben frei: Hauptmann → Mörser, General → MOAB, Admiral → Atombombe.',
+    'tip.4': '🤝 Stelle 3 Länder-Präferenzen in Discord mit /country ein für Allianzen.',
+    'tip.5': '⚔️ Wenn dein Land >70% verloren ist, gibt der Gegenwehr-Modus 5× Pixel-Bonus.',
+    'tip.6': '🏆 Bestenliste über die 📊 Schaltfläche in der Werkzeugleiste.',
+    'tip.7': '🌊 Der Ozean bedeckt 71% der Erde — aber in PixelAnnex sind es reine Pixel.',
+    'tip.8': '📊 1 Pixel = 1 Punkt. Land erobern = 50 Bonus-Punkte.',
+    'tip.9': '🎖️ Steige 5 Ränge auf: Soldat → Leutnant → Hauptmann → General → Admiral.',
+    'tip.10': '🚨 Länder blinken rot bei Belagerung (>50% Feind).',
+    'tip.11': '🤖 Jedes Land hat einen KI-Bot-Verteidiger. Sie werden klüger mit mehr Spielern.',
+    'tip.12': '🌐 Die Karte hat ~2,4 Mio. bemalbare Pixel in 240+ Ländern.',
+    'tip.13': '🎵 Drei Musikspuren: Chiptune, klassisch, militärisch. Im Audio-HUD umschalten.',
+    'tip.14': '👥 Melde dich mit Discord an, um deinen Fortschritt zu speichern.',
+    'tip.15': '🏴 Das kleinste Land ist Vatikanstadt — nur ein paar Pixel!',
+    'tip.16': '💬 Kriegsereignisse, Eroberungen und Allianzen werden auf deinen Discord-Server gepostet.',
   },
 };
 
@@ -2304,7 +2614,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-i18n-phase1-v25';
+const CODE_VERSION = '2026-05-18-i18n-polish-v26';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -6749,25 +7059,26 @@ async function loadStatsMe() {
         '</div>';
     }).join('');
 
-    const joinedDate = new Date(data.joinedAt).toLocaleDateString();
+    // Format date in the active language for natural display
+    const joinedDate = new Date(data.joinedAt).toLocaleDateString(_activeLang === 'zh' ? 'zh-CN' : _activeLang);
 
     el.innerHTML =
       '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">' +
         (data.avatar ? '<img src="' + data.avatar + '" style="width:44px;height:44px;border-radius:50%">' : '') +
         '<div>' +
           '<div style="font-size:14px;color:#fff;font-weight:600">' + escapeHtml(data.username) + '</div>' +
-          '<div style="font-size:10px;color:#818cf8">' + escapeHtml(data.rank) + ' · joined ' + joinedDate + '</div>' +
+          '<div style="font-size:10px;color:#818cf8">' + escapeHtml(tRank(data.rank)) + ' · ' + t('stats.joined', { date: joinedDate }) + '</div>' +
         '</div>' +
       '</div>' +
       '<div class="stats-grid">' +
-        '<div class="stat-card"><div class="stat-label">Points</div><div class="stat-value">' + data.points.toLocaleString() + '</div></div>' +
-        '<div class="stat-card"><div class="stat-label">Pixels Placed</div><div class="stat-value">' + data.pixelsPlaced.toLocaleString() + '</div></div>' +
-        '<div class="stat-card"><div class="stat-label">Conquests</div><div class="stat-value">' + data.conquestsMade.toLocaleString() + '</div></div>' +
-        '<div class="stat-card"><div class="stat-label">Bombs Used</div><div class="stat-value">' + data.bombsDeployed.toLocaleString() + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">' + t('stats.points') + '</div><div class="stat-value">' + data.points.toLocaleString() + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">' + t('stats.pixels_placed') + '</div><div class="stat-value">' + data.pixelsPlaced.toLocaleString() + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">' + t('stats.conquests') + '</div><div class="stat-value">' + data.conquestsMade.toLocaleString() + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">' + t('stats.bombs_used') + '</div><div class="stat-value">' + data.bombsDeployed.toLocaleString() + '</div></div>' +
       '</div>' +
-      (topPaintedRows ? '<h3 style="font-size:11px;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin:18px 0 8px;">Top Countries Painted</h3>' + topPaintedRows : '');
+      (topPaintedRows ? '<h3 style="font-size:11px;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin:18px 0 8px;">' + t('stats.top_painted') + '</h3>' + topPaintedRows : '');
   } catch (e) {
-    el.innerHTML = '<div class="lb-empty">Could not load stats: ' + escapeHtml(e.message) + '</div>';
+    el.innerHTML = '<div class="lb-empty">' + t('stats.load_error', { err: escapeHtml(e.message) }) + '</div>';
   }
 }
 
@@ -6777,7 +7088,7 @@ async function loadStatsLeaderboard() {
     const res = await fetch('/api/stats/leaderboard');
     const data = await res.json();
     if (!data.leaderboard || data.leaderboard.length === 0) {
-      el.innerHTML = '<div class="lb-empty">No ranked players yet — be the first!</div>';
+      el.innerHTML = '<div class="lb-empty">' + t('stats.no_players') + '</div>';
       return;
     }
     const rows = data.leaderboard.map(p => {
@@ -6793,9 +7104,9 @@ async function loadStatsLeaderboard() {
         '<span class="lb-points">' + p.points.toLocaleString() + ' pts</span>' +
         '</div>';
     }).join('');
-    el.innerHTML = rows + '<div style="text-align:center;color:#475569;font-size:10px;margin-top:14px;">' + data.totalPlayers + ' total players</div>';
+    el.innerHTML = rows + '<div style="text-align:center;color:#475569;font-size:10px;margin-top:14px;">' + t('stats.total_players', { n: data.totalPlayers }) + '</div>';
   } catch (e) {
-    el.innerHTML = '<div class="lb-empty">Could not load leaderboard.</div>';
+    el.innerHTML = '<div class="lb-empty">' + t('stats.lb_load_error') + '</div>';
   }
 }
 
@@ -6917,22 +7228,8 @@ const _origConquestHandler = (function(){
 
 // ── Loading screen tips ───────────────────────────────────────────
 const LOADING_TIPS = [
-  "💡 Click and drag to pan. Scroll to zoom.",
-  "🎨 You can paint pixels in any country, but conquest requires 80% ownership.",
-  "💥 Promotions unlock bombs: Captain → Mortar, General → MOAB, Admiral → Nuke.",
-  "🤝 Set 3 country preferences in Discord with /country to form alliances.",
-  "⚔️ When your country is >70% lost, fight-back mode gives you 5× pixel bonus.",
-  "🏆 Check the leaderboard via the 📊 button in the toolbar.",
-  "🌊 The ocean covers 71% of Earth's surface — but in PixelAnnex it's pure pixels.",
-  "📊 1 pixel placed = 1 point. Conquering a country = 50 bonus points.",
-  "🎖️ Climb 5 ranks: Soldier → Lieutenant → Captain → General → Admiral.",
-  "🚨 Countries flash red when under siege (>50% enemy-held and being attacked).",
-  "🤖 Every country has an AI bot defending it. They get smarter at higher player counts.",
-  "🌐 The map has ~2.4 million paintable pixels across 240+ countries.",
-  "🎵 Three music tracks: chiptune, classical, and military. Toggle in the audio HUD.",
-  "👥 Sign in with Discord to save your progress and earn rank promotions.",
-  "🏴 The smallest country on the map is Vatican City — just a few pixels!",
-  "💬 War events, conquests, and alliances all post to your Discord server.",
+  'tip.1', 'tip.2', 'tip.3', 'tip.4',  'tip.5',  'tip.6',  'tip.7',  'tip.8',
+  'tip.9','tip.10','tip.11','tip.12','tip.13','tip.14','tip.15','tip.16',
 ];
 
 let _loadingTipTimer = null;
@@ -6943,7 +7240,7 @@ function startLoadingTips() {
   const showNext = () => {
     el.style.opacity = '0';
     setTimeout(() => {
-      el.textContent = LOADING_TIPS[i % LOADING_TIPS.length];
+      el.textContent = t(LOADING_TIPS[i % LOADING_TIPS.length]);
       el.style.opacity = '1';
       i++;
     }, 400);
@@ -8542,18 +8839,18 @@ document.getElementById('dbg-close').addEventListener('click',()=>{
 <div id="stats-overlay">
   <div id="stats-modal">
     <h2>
-      <span>📊 Stats &amp; Leaderboard</span>
-      <button id="stats-close" onclick="closeStats()">Close ✕</button>
+      <span data-i18n="stats.title">📊 Stats &amp; Leaderboard</span>
+      <button id="stats-close" onclick="closeStats()" data-i18n="stats.close">Close ✕</button>
     </h2>
     <div class="stats-tabs">
-      <button class="stats-tab active" data-panel="me" onclick="switchStatsTab('me')">My Stats</button>
-      <button class="stats-tab" data-panel="lb" onclick="switchStatsTab('lb')">Leaderboard</button>
+      <button class="stats-tab active" data-panel="me" onclick="switchStatsTab('me')" data-i18n="stats.tab_me">My Stats</button>
+      <button class="stats-tab" data-panel="lb" onclick="switchStatsTab('lb')" data-i18n="stats.tab_lb">Leaderboard</button>
     </div>
     <div class="stats-panel active" id="stats-panel-me">
-      <div id="stats-me-content">Loading…</div>
+      <div id="stats-me-content" data-i18n="stats.loading">Loading…</div>
     </div>
     <div class="stats-panel" id="stats-panel-lb">
-      <div id="stats-lb-content">Loading…</div>
+      <div id="stats-lb-content" data-i18n="stats.loading">Loading…</div>
     </div>
   </div>
 </div>
