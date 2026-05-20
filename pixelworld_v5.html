@@ -2431,7 +2431,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-flash-cleanup-v27';
+const CODE_VERSION = '2026-05-18-flash-fix-v28';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -2474,7 +2474,7 @@ let   bombMode         = false;
 let bordPixel=null;   // Uint8Array MAP_PX — 1 where a border pixel was drawn
 // Stroke tracking for auto-fill (geo countries touched this stroke)
 // strokeGeos is declared inside runAutoFill's outer scope above
-let totalClaimed=0,totalLandPx=0,showBorders=true,borderDark=false,brushSize=3,currentIdx=0;
+let totalClaimed=0,totalLandPx=0,showBorders=true,borderDark=false,brushSize=1,currentIdx=0;
 let isPainting=false,isDragging=false,scale=1,ox=0,oy=0,dragBase={x:0,y:0};
 const conqueredSet=new Set();
 
@@ -3815,7 +3815,7 @@ function scheduleLegend(){
 }
 
 // ── View ─────────────────────────────────────────────────────────
-function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>c.style.transform=t);}
+function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{if(c)c.style.transform=t;});}
 // Free panning — clamp is now a no-op so users can move the map anywhere they like.
 // Previous behaviour pinned the map within the viewport bounds; removing this lets
 // users drag the world off-screen, useful for inspecting edges and far-away regions.
@@ -5106,8 +5106,33 @@ function tickSiegeFlash(){
 // ── Chiptune background music ─────────────────────────────────────
 // Procedural 4/4 track: bass + melody + arp, ~90s loop
 // Built entirely with Web Audio API oscillators — no external files.
-let _musicOn  = true;
-let _sfxOn    = true;
+// ── Audio preferences (persisted to localStorage in v28) ───────
+// Load saved music/SFX state + selected track. Stored as JSON under 'pa_audio_prefs'.
+const _audioPrefsDefault = { musicOn: true, sfxOn: true, currentTrack: 1 };
+function _loadAudioPrefs(){
+  try {
+    const raw = localStorage.getItem('pa_audio_prefs');
+    if(!raw) return { ..._audioPrefsDefault };
+    const p = JSON.parse(raw);
+    return {
+      musicOn:      typeof p.musicOn === 'boolean' ? p.musicOn : _audioPrefsDefault.musicOn,
+      sfxOn:        typeof p.sfxOn   === 'boolean' ? p.sfxOn   : _audioPrefsDefault.sfxOn,
+      currentTrack: (p.currentTrack === 1 || p.currentTrack === 2 || p.currentTrack === 3) ? p.currentTrack : _audioPrefsDefault.currentTrack,
+    };
+  } catch(e){ return { ..._audioPrefsDefault }; }
+}
+function _saveAudioPrefs(){
+  try {
+    localStorage.setItem('pa_audio_prefs', JSON.stringify({
+      musicOn:      _musicOn,
+      sfxOn:        _sfxOn,
+      currentTrack: _currentTrack,
+    }));
+  } catch(e){}
+}
+const _audioPrefs = _loadAudioPrefs();
+let _musicOn = _audioPrefs.musicOn;
+let _sfxOn   = _audioPrefs.sfxOn;
 let _musicNode = null; // master gain for music
 let _musicLoop = null; // timeout for loop scheduling
 
@@ -5342,6 +5367,7 @@ function toggleMusic(){
     btn.textContent='♪ Muted';
     stopMusic();
   }
+  _saveAudioPrefs();
 }
 
 function toggleSFX(){
@@ -5354,6 +5380,7 @@ function toggleSFX(){
     btn.classList.remove('active');btn.classList.add('muted');
     btn.textContent='▶ Muted';
   }
+  _saveAudioPrefs();
 }
 
 // ── Track 2: Epic / Classical ────────────────────────────────────
@@ -5481,7 +5508,7 @@ function scheduleMusicTrack2(ctx, masterGain, startT){
 }
 
 // ── Track selection ───────────────────────────────────────────────
-let _currentTrack = 1;
+let _currentTrack = _audioPrefs.currentTrack;
 const _trackFns = { 1: scheduleMusicTrack, 2: scheduleMusicTrack2, 3: scheduleMusicTrack3 };
 
 function selectTrack(n){
@@ -5494,7 +5521,28 @@ function selectTrack(n){
     stopMusic();
     startMusic(); // startMusic handles not-yet-rendered case
   }
+  _saveAudioPrefs();
 }
+
+// Sync audio UI to restored prefs on page load (v28)
+function _syncAudioUI(){
+  const bm = document.getElementById('btn-music');
+  if(bm){
+    if(_musicOn){ bm.classList.remove('muted'); bm.classList.add('active'); bm.textContent='♪ Music'; }
+    else { bm.classList.remove('active'); bm.classList.add('muted'); bm.textContent='♪ Muted'; }
+  }
+  const bs = document.getElementById('btn-sfx');
+  if(bs){
+    if(_sfxOn){ bs.classList.remove('muted'); bs.classList.add('active'); bs.textContent='▶ SFX'; }
+    else { bs.classList.remove('active'); bs.classList.add('muted'); bs.textContent='▶ Muted'; }
+  }
+  [1,2,3].forEach(i=>{
+    const b = document.getElementById('btn-trk'+i);
+    if(b) b.classList.toggle('active', i === _currentTrack);
+  });
+}
+document.addEventListener('DOMContentLoaded', _syncAudioUI);
+
 
 // ── Track 3: Military / Epic ─────────────────────────────────────
 // Heavy percussion, deep brass ostinato, driving 4/4 at ~92bpm.
@@ -8084,7 +8132,9 @@ let highlightTimer     = null; // setInterval for countdown
 let _highlightBonusClaimed = false; // v27: tracks the one-shot +10 highlight bonus
 
 function setHighlight(geoIdx){
-  // v27: highlight is open to all ranks (no longer General+ only).
+  // v28: highlight is gated to General+ ranks.
+  const ri = getRankIndex();
+  if(ri < 3) return;
   if(highlightTimer) clearInterval(highlightTimer);
   highlightGeoIdx = geoIdx;
   highlightExpiry = Date.now() + 30000;
@@ -8213,7 +8263,14 @@ let highlightMode = false;
 let _mouseScreenX = 0, _mouseScreenY = 0; // live cursor position  // true = next map click designates a country
 
 function enterHighlightMode(){
-  // v27: highlight is no longer rank-gated — any rank can highlight a country.
+  // v28: highlight is gated to General+ ranks again.
+  const rank = getCurrentRank();
+  const ri = getRankIndex();
+  if(ri < 3){ // General is index 3, Admiral is 4
+    const btn = document.getElementById('btn-highlight');
+    if(btn){ btn.style.borderColor='#ef4444'; setTimeout(()=>btn.style.borderColor='',800); }
+    return;
+  }
   highlightMode = true;
   document.getElementById('btn-highlight').classList.add('active');
   document.getElementById('viewport').style.cursor = 'crosshair';
