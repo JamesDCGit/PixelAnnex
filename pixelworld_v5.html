@@ -19,8 +19,7 @@ body{width:100%;height:100%;overflow:hidden;background:#070d1a;font-family:'Cour
 select,.btn{background:#162035;border:1px solid rgba(255,255,255,0.1);color:#cbd5e1;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s;}
 select:hover,.btn:hover{border-color:rgba(255,255,255,.22);background:#1e2e4a}
 select:focus,.btn:focus{outline:none;border-color:#3b82f6}
-#brush-wrap{display:flex;align-items:center;gap:6px;font-size:11px;color:#475569}
-#brush-wrap input{width:70px;accent-color:#3b82f6}
+/* brush-wrap removed in v27 */
 #stats{font-size:11px;color:#334155;margin-left:auto;white-space:nowrap}
 #stats b{color:#64748b}
 #swatch{width:12px;height:12px;border-radius:2px;border:1px solid rgba(255,255,255,.12);flex-shrink:0}
@@ -77,49 +76,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 }
 #bomb-flash.bang{background:rgba(239,68,68,0.18);}
 
-/* ── Debug panel ── */
-#debug-panel{
-  width:190px;flex-shrink:0;background:#080f1c;
-  border-left:1px solid rgba(255,255,255,0.08);
-  display:flex;flex-direction:column;overflow-y:auto;
-  font-family:'Courier New',monospace;
-}
-#debug-panel::-webkit-scrollbar{width:6px}
-#debug-panel::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:3px}
-#dbg-header{
-  display:flex;justify-content:space-between;align-items:center;
-  padding:8px 10px;background:#0c1526;
-  border-bottom:1px solid rgba(255,255,255,0.08);
-  font-size:11px;font-weight:700;color:#64748b;
-  letter-spacing:.1em;text-transform:uppercase;flex-shrink:0;
-}
-#dbg-close{
-  background:none;border:none;color:#334155;cursor:pointer;
-  font-size:12px;padding:0 2px;line-height:1;
-}
-#dbg-close:hover{color:#94a3b8;}
-.dbg-section{
-  padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.05);
-  display:flex;flex-direction:column;gap:4px;
-}
-.dbg-label{
-  font-size:9px;color:#334155;letter-spacing:.08em;
-  text-transform:uppercase;margin-bottom:2px;
-}
-.dbg-btn{
-  background:#0f1e33;border:1px solid rgba(255,255,255,0.08);
-  color:#94a3b8;padding:5px 8px;border-radius:4px;
-  font-size:10px;cursor:pointer;text-align:left;
-  font-family:'Courier New',monospace;
-  transition:background .12s,border-color .12s;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-.dbg-btn:hover{background:#162035;border-color:rgba(255,255,255,.18);color:#cbd5e1;}
-.dbg-btn:active{transform:scale(0.97);}
-.dbg-green{border-color:rgba(34,197,94,0.25);color:#86efac;}
-.dbg-green:hover{background:#0f2016;border-color:rgba(34,197,94,.5);}
-.dbg-red{border-color:rgba(239,68,68,0.25);color:#fca5a5;}
-.dbg-red:hover{background:#1f0f0f;border-color:rgba(239,68,68,.5);}
+/* debug panel CSS removed in v27 */
 .dbg-sound{border-color:rgba(99,102,241,0.25);color:#a5b4fc;}
 .dbg-sound:hover{background:#0f1230;border-color:rgba(99,102,241,.5);}
 .dbg-bomb{border-color:rgba(251,146,60,0.25);color:#fdba74;}
@@ -800,12 +757,6 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       </div>
     </div>
     <div class="sep"></div>
-    <div id="brush-wrap">
-      <span>Brush</span>
-      <input type="range" id="brng" min="1" max="24" value="3" step="1">
-      <span id="blbl">3px</span>
-    </div>
-    <div class="sep"></div>
     <button class="btn" id="btn-brd">Borders Light</button>
     <button class="btn" id="btn-rst">Reset View</button>
     <button class="btn" id="btn-clr">Clear All</button>
@@ -974,6 +925,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     <canvas id="c-sprites" style="pointer-events:none"></canvas>
     <canvas id="c-landmarks" style="pointer-events:none"></canvas>
     <canvas id="c-claim"></canvas>
+    <canvas id="c-flash" style="pointer-events:none;"></canvas>
     <canvas id="c-outline" style="pointer-events:none;"></canvas>
     <canvas id="c-border"></canvas>
     <canvas id="c-flags"></canvas>
@@ -1020,142 +972,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   </div><!-- /viewport -->
   <div id="tip"><div id="tip-name"></div><div id="tip-sub"></div></div>
 
-  <!-- ── Debug panel ── -->
-  <div id="debug-panel">
-    <div id="dbg-header">
-      <span>Debug</span>
-      <button id="dbg-close" title="Close">&#10005;</button>
-    </div>
-
-    <div class="dbg-section">
-      <div class="dbg-label">Inventory</div>
-      <button class="dbg-btn dbg-green" onclick="pixelBucket=Math.min(BUCKET_MAX,pixelBucket+100);updateBucketHUD()">+100 pixels</button>
-      <button class="dbg-btn" style="color:#a78bfa;border-color:rgba(167,139,250,.3)" onclick="totalPixelsEverPlaced=0;saveXP();refreshRankUI()">Reset rank (Soldier)</button>
-      <button class="dbg-btn" style="color:#a78bfa;border-color:rgba(167,139,250,.3)" onclick="totalPixelsEverPlaced=500;saveXP();refreshRankUI()">Set rank (Admiral)</button>
-      <button class="dbg-btn dbg-green" onclick="pixelBucket=BUCKET_MAX;updateBucketHUD()">Fill bucket</button>
-      <button class="dbg-btn dbg-red"  onclick="pixelBucket=0;updateBucketHUD()">Empty bucket</button>
-      <button class="dbg-btn dbg-green" onclick="
-        if(!featList||!featList[currentIdx]){return;}
-        if(!conqueredSet.has(currentIdx+':'+currentIdx)){
-          conqueredSet.add(currentIdx+':'+currentIdx);
-        }
-        finisherFill(currentIdx,currentIdx);
-      ">&#9660; Flood fill country</button>
-    </div>
-
-    <div class="dbg-section">
-      <div class="dbg-label">Gameplay (Group D)</div>
-      <button class="dbg-btn" style="color:#818cf8;border-color:rgba(129,140,248,.3)" onclick="showTutorial()">Show tutorial</button>
-      <button class="dbg-btn" onclick="dbgResetTutorial()">Reset tutorial flag &amp; reload</button>
-      <button class="dbg-btn" style="color:#fbbf24;border-color:rgba(251,191,36,.3)" onclick="dbgFakeDailyBonus(1)">Show daily bonus toast</button>
-      <button class="dbg-btn" style="color:#fbbf24;border-color:rgba(251,191,36,.3)" onclick="dbgFakeDailyBonus(7)">Show 7-day streak toast</button>
-      <button class="dbg-btn" onclick="dbgTriggerFightBack(0.85)">Trigger fight-back (85% lost)</button>
-      <button class="dbg-btn" onclick="dbgTriggerFightBack(0.95)">Trigger fight-back (95% · 5×5 brush)</button>
-      <button class="dbg-btn dbg-green" onclick="dbgExitFightBack()">Exit fight-back mode</button>
-      <button class="dbg-btn" onclick="dbgCheckFightBack()">Check fight-back status</button>
-      <button class="dbg-btn" style="color:#a5b4fc;border-color:rgba(165,180,252,.3)" onclick="dbgShowDavidState()">Show my David state</button>
-      <button class="dbg-btn" style="color:#a5b4fc;border-color:rgba(165,180,252,.3)" onclick="dbgListDavidCountries()">List all David countries</button>
-      <button class="dbg-btn" style="color:#f97316;border-color:rgba(249,115,22,.3)" onclick="applyEncirclementBonus(120, 5, 60000, MAP_W/2, MAP_H/2)">Trigger encirclement bonus (×5, 60s)</button>
-      <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="renderLandmarks();updateLandmarksVisibility();">Re-render landmarks</button>
-      <button class="dbg-btn" style="color:#22c55e;border-color:rgba(34,197,94,.3)" onclick="lmCtx.clearRect(0,0,MAP_W,MAP_H);_renderSpriteCount=0;renderProceduralBiomes();">Procedural sprites only</button>
-      <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="cLandmarks.style.display=cLandmarks.style.display==='none'?'':'none';">Toggle landmarks visibility</button>
-      <button class="dbg-btn" style="color:#84cc16;border-color:rgba(132,204,22,.3)" onclick="(function(){const t=_LANDMARKS.map(l=>{const p=_lnglatToPx(l.lng,l.lat);return l.name+' → ('+p.x+','+p.y+')';}).join('\\n');alert('Landmarks:\\n\\n'+t);})()">List all landmarks</button>
-    </div>
-
-    <div class="dbg-section">
-      <div class="dbg-label">Power actions</div>
-      <button class="dbg-btn" style="background:#1a1020;border-color:rgba(255,215,0,0.4);color:#ffd700;" onclick="
-        if(!featList||featList.length===0)return;
-        (async()=>{
-          for(let i=0;i<featList.length;i++){
-            if(geoTotal[i]&&geoTotal[i]>0){
-              if(!geoClaimCnt[i])geoClaimCnt[i]={};
-              geoClaimCnt[i][currentIdx]=geoTotal[i];
-              claimerCount[currentIdx]=(claimerCount[currentIdx]||0)+geoTotal[i];
-              conqueredSet.add(i+':'+currentIdx);
-            }
-          }
-          for(let i=0;i<MAP_PX;i++){
-            if(landMask[i]&&claimByPixel[i]!==currentIdx){
-              claimByPixel[i]=currentIdx;
-              totalClaimed++;
-            }
-          }
-          const [r,g,b]=hexRgb(featList[currentIdx].color);
-          const img=claimCtx.createImageData(MAP_W,MAP_H);
-          const d=img.data;
-          for(let i=0;i<MAP_PX;i++){
-            if(landMask[i]){const p=i*4;d[p]=r;d[p+1]=g;d[p+2]=b;d[p+3]=215;}
-          }
-          claimCtx.putImageData(img,0,0);
-          refreshCsel();
-          scheduleLegend();
-          $('px-count').textContent=totalClaimed.toLocaleString();
-          setTimeout(()=>triggerWorldConquest(currentIdx),300);
-        })();
-      ">&#9812; Conquer World</button>
-    </div>
-
-    <div class="dbg-section">
-      <div class="dbg-label">Sounds</div>
-      <button class="dbg-btn dbg-sound" onclick="sfxUIClick()">&#9654; UI click</button>
-      <button class="dbg-btn dbg-sound" onclick="sfxPixelPlace()">&#9654; Pixel place</button>
-      <button class="dbg-btn dbg-sound" onclick="sfxBucketRegen()">&#9654; Bucket regen</button>
-      <button class="dbg-btn dbg-sound" onclick="sfxConquest()">&#9654; Conquest (generic)</button>
-      <button class="dbg-btn dbg-sound" onclick="sfxFillSuccess()">&#9654; Fill success</button>
-    </div>
-
-    <div class="dbg-section">
-      <div class="dbg-label">Unique country stings</div>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['840']&&COUNTRY_STINGS['840']()">&#127482;&#127480; USA</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['826']&&COUNTRY_STINGS['826']()">&#127468;&#127463; UK</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['643']&&COUNTRY_STINGS['643']()">&#127479;&#127482; Russia</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['276']&&COUNTRY_STINGS['276']()">&#127465;&#127466; Germany</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['250']&&COUNTRY_STINGS['250']()">&#127467;&#127479; France</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['156']&&COUNTRY_STINGS['156']()">&#127464;&#127475; China</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['392']&&COUNTRY_STINGS['392']()">&#127471;&#127477; Japan</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['356']&&COUNTRY_STINGS['356']()">&#127470;&#127475; India</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['76']&&COUNTRY_STINGS['76']()">&#127463;&#127479; Brazil</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['36']&&COUNTRY_STINGS['36']()">&#127462;&#127482; Australia</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['124']&&COUNTRY_STINGS['124']()">&#127464;&#127462; Canada</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['410']&&COUNTRY_STINGS['410']()">&#127472;&#127479; S. Korea</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['380']&&COUNTRY_STINGS['380']()">&#127470;&#127481; Italy</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['724']&&COUNTRY_STINGS['724']()">&#127466;&#127480; Spain</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['484']&&COUNTRY_STINGS['484']()">&#127474;&#127485; Mexico</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['682']&&COUNTRY_STINGS['682']()">&#127480;&#127462; Saudi Arabia</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['710']&&COUNTRY_STINGS['710']()">&#127487;&#127462; S. Africa</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['32']&&COUNTRY_STINGS['32']()">&#127462;&#127479; Argentina</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['566']&&COUNTRY_STINGS['566']()">&#127475;&#127468; Nigeria</button>
-      <button class="dbg-btn dbg-sound" onclick="COUNTRY_STINGS['792']&&COUNTRY_STINGS['792']()">&#127481;&#127479; Turkey</button>
-    </div>
-
-    <div class="dbg-section">
-      <div class="dbg-label">Regional fallbacks</div>
-      <button class="dbg-btn dbg-sound" onclick="_stingFanfare()">&#9654; Western fanfare</button>
-      <button class="dbg-btn dbg-sound" onclick="_stingSlavic()">&#9654; Slavic brass</button>
-      <button class="dbg-btn dbg-sound" onclick="_stingPentatonic()">&#9654; E. Asian penta.</button>
-      <button class="dbg-btn dbg-sound" onclick="_stingSouthAsian()">&#9654; S. Asian sitar</button>
-      <button class="dbg-btn dbg-sound" onclick="_stingLatin()">&#9654; Latin samba</button>
-      <button class="dbg-btn dbg-sound" onclick="_stingMiddleEast()">&#9654; Middle East</button>
-      <button class="dbg-btn dbg-sound" onclick="_stingAfrican()">&#9654; African perc.</button>
-      <button class="dbg-btn dbg-sound" onclick="_stingNordic()">&#9654; Nordic</button>
-    </div>
-
-    <div class="dbg-section">
-      <div class="dbg-label">Bombs</div>
-      <button class="dbg-btn dbg-bomb" onclick="sfxBombLight()">&#128163; Light  (r&le;30)</button>
-      <button class="dbg-btn dbg-bomb" onclick="sfxBombMedium()">&#128163; Medium (r&gt;30)</button>
-      <button class="dbg-btn dbg-bomb" onclick="sfxBombHeavy()">&#128163; Heavy  (r&gt;50)</button>
-      <button class="dbg-btn dbg-bomb dbg-nuke" onclick="sfxBombNuclear()">&#9762; Nuclear (r&gt;70)</button>
-    </div>
-
-    <div class="dbg-section">
-      <div class="dbg-label">State</div>
-      <div class="dbg-stat">Bucket: <span id="dbg-bucket">—</span></div>
-      <div class="dbg-stat">Claimed: <span id="dbg-claimed">—</span></div>
-      <div class="dbg-stat">Conquered: <span id="dbg-conquered">—</span></div>
-    </div>
-  </div><!-- /debug-panel -->
+<!-- debug-panel removed in v27 -->
 
   </div><!-- /main -->
 </div>
@@ -2614,7 +2431,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-i18n-polish-v26';
+const CODE_VERSION = '2026-05-18-flash-cleanup-v27';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -2865,7 +2682,66 @@ function drawNukeZoneOverlay() {
 
 const craterCtx=cCrater.getContext("2d");
 craterCtx.imageSmoothingEnabled=false;
-[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
+const cFlash = document.getElementById("c-flash");
+const flashCtx = cFlash ? cFlash.getContext("2d") : null;
+if (flashCtx) flashCtx.imageSmoothingEnabled = false;
+[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{if(c){c.width=MAP_W;c.height=MAP_H;}});
+
+// ── White pixel flash subsystem ──────────────────────────────────
+// Every newly placed pixel briefly flashes white before fading to reveal the
+// country colour. Implemented as a single canvas (cFlash) with a per-frame
+// global alpha decrement via 'destination-out' — O(1) per frame regardless of
+// the number of in-flight flashes.
+const FLASH_DURATION_MS = 1000; // total fade time per pixel
+let _flashHasPixels = false;     // true while the rAF loop should keep running
+let _flashRaf = null;
+let _flashLastTs = 0;
+
+function flashPixel(px, py) {
+  if (!flashCtx) return;
+  if (px < 0 || px >= MAP_W || py < 0 || py >= MAP_H) return;
+  flashCtx.fillStyle = '#ffffff';
+  flashCtx.fillRect(px, py, 1, 1);
+  _flashHasPixels = true;
+  if (!_flashRaf) {
+    _flashLastTs = performance.now();
+    _flashRaf = requestAnimationFrame(_flashTick);
+  }
+}
+
+function _flashTick(ts) {
+  if (!flashCtx) { _flashRaf = null; return; }
+  const dt = Math.min(50, ts - _flashLastTs);
+  _flashLastTs = ts;
+  // Linear alpha decrement: full canvas should fade in FLASH_DURATION_MS.
+  // destination-out with alpha A removes A from each pixel's alpha.
+  const fade = dt / FLASH_DURATION_MS;
+  if (fade > 0) {
+    flashCtx.globalCompositeOperation = 'destination-out';
+    flashCtx.fillStyle = 'rgba(0,0,0,' + fade + ')';
+    flashCtx.fillRect(0, 0, MAP_W, MAP_H);
+    flashCtx.globalCompositeOperation = 'source-over';
+  }
+  // After ~1.1s with no new flashes the canvas is effectively empty; stop rAF.
+  // We use a soft heuristic: if no new pixels added recently, decay timer.
+  if (_flashHasPixels) {
+    _flashHasPixels = false;
+    _flashDecayCounter = 0;
+    _flashRaf = requestAnimationFrame(_flashTick);
+  } else {
+    _flashDecayCounter = (_flashDecayCounter || 0) + dt;
+    if (_flashDecayCounter < FLASH_DURATION_MS + 100) {
+      _flashRaf = requestAnimationFrame(_flashTick);
+    } else {
+      // Fully decayed — clear and stop.
+      flashCtx.clearRect(0, 0, MAP_W, MAP_H);
+      _flashRaf = null;
+      _flashDecayCounter = 0;
+    }
+  }
+}
+let _flashDecayCounter = 0;
+
 
 // ── Helpers ───────────────────────────────────────────────────────
 const $=id=>document.getElementById(id);
@@ -3651,6 +3527,12 @@ async function boot(){
       // Apply worker results back to main thread state
       const claimImg = new ImageData(result.claimData, MAP_W, MAP_H);
       claimCtx.putImageData(claimImg, 0, 0);
+      // Flash all pixels that changed this batch — single canvas op
+      if (typeof flashPixel === 'function') {
+        for (const p of pixels) {
+          flashPixel(p.x, p.y);
+        }
+      }
       claimByPixel = result.claimByPixel;
       // Reconstruct main-thread bookkeeping from per-country counts
       for(let geo=0; geo<result.perCount.length; geo++){
@@ -3836,6 +3718,7 @@ function claimPixel(px,py){
   const id=claimCtx.createImageData(1,1);
   id.data[0]=r;id.data[1]=g;id.data[2]=b;id.data[3]=215;
   claimCtx.putImageData(id,px,py);
+  flashPixel(px, py);
   markOutlineDirty();
 }
 
@@ -3863,17 +3746,8 @@ function paintBrush(px,py){
       claimPixel(p.x, p.y);
     }
   }
-  // ── Highlight bonus (adds to bucket) ───────────────────────────
-  const hlBonus = strokeBonus();
-  if(hlBonus > 0){
-    const _i = py*MAP_W+px;
-    const _geo = featByPixel[_i];
-    if(_geo === highlightGeoIdx && highlightGeoIdx >= 0){
-      pixelBucket = Math.min(BUCKET_MAX, pixelBucket + hlBonus);
-      updateBucketHUD();
-      showBonusPop(hlBonus);
-    }
-  }
+  // ── Highlight bonus (one-shot +10 per highlight session) ────────
+  claimHighlightBonus(px, py);
   // ── Fight-back bonus (adds to bucket when >70% overrun) ──────────
   {
     const _fi = py*MAP_W+px;
@@ -8168,11 +8042,13 @@ document.addEventListener('visibilitychange', () => {
 // ── Rank system ──────────────────────────────────────────────────
 // Ranks are earned by cumulative pixels placed (persists via localStorage).
 const RANKS = [
+  // v27: bonus/highlightMult fields zeroed out — highlight bonus is now a flat +10 first-pixel reward
+  // available to all ranks, and there is no per-stroke multiplier anymore.
   { name:'Soldier',    min:0,    bombType:null,    bombCost:0,  bombRadius:0,   bonus:0, highlightMult:0 },
   { name:'Lieutenant', min:50,   bombType:null,    bombCost:0,  bombRadius:0,   bonus:0, highlightMult:0 },
   { name:'Captain',    min:150,  bombType:'Mortar', bombCost:10, bombRadius:20,  bonus:0, highlightMult:0 },
-  { name:'General',    min:500,  bombType:'MOAB',   bombCost:50, bombRadius:100, bonus:1, highlightMult:2 },
-  { name:'Admiral',    min:1500, bombType:'Nuke',   bombCost:100,bombRadius:300, bonus:2, highlightMult:3 },
+  { name:'General',    min:500,  bombType:'MOAB',   bombCost:50, bombRadius:100, bonus:0, highlightMult:0 },
+  { name:'Admiral',    min:1500, bombType:'Nuke',   bombCost:100,bombRadius:300, bonus:0, highlightMult:0 },
 ];
 
 // Persistent XP counter
@@ -8205,13 +8081,14 @@ function awardXP(n=1){
 let highlightGeoIdx    = -1;   // currently highlighted country index
 let highlightExpiry    = 0;    // timestamp when highlight expires
 let highlightTimer     = null; // setInterval for countdown
+let _highlightBonusClaimed = false; // v27: tracks the one-shot +10 highlight bonus
 
 function setHighlight(geoIdx){
-  const rank = getCurrentRank();
-  if(rank.highlightMult < 2) return; // General+ only
+  // v27: highlight is open to all ranks (no longer General+ only).
   if(highlightTimer) clearInterval(highlightTimer);
   highlightGeoIdx = geoIdx;
   highlightExpiry = Date.now() + 30000;
+  _highlightBonusClaimed = false; // fresh session, +10 available again
   updateHighlightBanner();
   highlightTimer = setInterval(()=>{
     if(Date.now() >= highlightExpiry){
@@ -8225,6 +8102,7 @@ function setHighlight(geoIdx){
 function clearHighlight(){
   highlightGeoIdx = -1;
   highlightExpiry = 0;
+  _highlightBonusClaimed = false;
   _hlPixelCache = null;
   if(highlightTimer){ clearInterval(highlightTimer); highlightTimer=null; }
   updateHighlightBanner();
@@ -8240,17 +8118,30 @@ function updateHighlightBanner(){
   const country = featList[highlightGeoIdx];
   const mult = getCurrentRank().highlightMult;
   el.style.display = 'block';
-  el.innerHTML = `<span style="color:#fbbf24">&#9733; ATTACK BONUS</span> · 
+  el.innerHTML = `<span style="color:#fbbf24">&#9733; HIGHLIGHT</span> · 
     <span style="color:${country?.color||'#fff'}">${country?.name||'?'}</span> · 
-    <b style="color:#22c55e">+${mult}× free pixels/stroke</b> · 
+    <b style="color:${_highlightBonusClaimed ? '#64748b' : '#22c55e'}">${_highlightBonusClaimed ? '+10 claimed' : '+10 first pixel'}</b> · 
     <span style="color:#64748b">${remaining}s</span>`;
 }
 
-// How many bonus pixels this stroke gets (0 if no highlight active)
-function strokeBonus(){
-  if(highlightGeoIdx < 0 || Date.now() >= highlightExpiry) return 0;
-  // Only applies if the player is painting in the highlighted country
-  return getCurrentRank().highlightMult;
+// (Legacy compatibility) strokeBonus used to return the per-stroke multiplier.
+// In v27 the highlight bonus is awarded directly in claimHighlightBonus(); this
+// function now always returns 0 so the old call site in paintBrush becomes a
+// no-op. Left in place for any external callers.
+function strokeBonus(){ return 0; }
+
+// Award the one-shot +10 bonus if the painted pixel falls inside the active
+// highlight and the bonus hasn't been claimed yet this highlight session.
+function claimHighlightBonus(px, py){
+  if(highlightGeoIdx < 0 || Date.now() >= highlightExpiry) return;
+  if(_highlightBonusClaimed) return;
+  const i = py*MAP_W + px;
+  if(i < 0 || i >= MAP_PX) return;
+  if(featByPixel[i] !== highlightGeoIdx) return;
+  _highlightBonusClaimed = true;
+  pixelBucket = Math.min(BUCKET_MAX, pixelBucket + 10);
+  updateBucketHUD();
+  showBonusPop(10, '⭐');
 }
 
 // ── Bomb types ────────────────────────────────────────────────────
@@ -8322,13 +8213,7 @@ let highlightMode = false;
 let _mouseScreenX = 0, _mouseScreenY = 0; // live cursor position  // true = next map click designates a country
 
 function enterHighlightMode(){
-  const rank = getCurrentRank();
-  if(rank.highlightMult < 2){
-    // Flash button to indicate rank too low
-    const btn = document.getElementById('btn-highlight');
-    if(btn){ btn.style.borderColor='#ef4444'; setTimeout(()=>btn.style.borderColor='',800); }
-    return;
-  }
+  // v27: highlight is no longer rank-gated — any rank can highlight a country.
   highlightMode = true;
   document.getElementById('btn-highlight').classList.add('active');
   document.getElementById('viewport').style.cursor = 'crosshair';
@@ -8741,7 +8626,7 @@ $("btn-clr").addEventListener("click",()=>{
   const _wcm=document.getElementById('world-conquest-modal');if(_wcm)_wcm.remove();
   const _cel=document.getElementById('c-celeb');if(_cel){_cel.remove();celebCanvas=null;}
 });
-$("brng").addEventListener("input",e=>{brushSize=+e.target.value;$("blbl").textContent=brushSize+"px";});
+// brush slider removed in v27; brushSize is fixed at 3
 
 // Touch
 let lastDist=null;
@@ -8822,18 +8707,10 @@ function mkNoise(pm){
 
 // ── Debug panel live stats + toggle ──────────────────────────────
 setInterval(()=>{
-  const dbgB=document.getElementById('dbg-bucket');
-  const dbgC=document.getElementById('dbg-claimed');
-  const dbgQ=document.getElementById('dbg-conquered');
-  if(dbgB) dbgB.textContent=pixelBucket+'/'+BUCKET_MAX;
-  if(dbgC) dbgC.textContent=totalClaimed.toLocaleString();
-  if(dbgQ) dbgQ.textContent=conqueredSet.size;
+// debug ticker removed in v27
 },500);
 
-document.getElementById('dbg-close').addEventListener('click',()=>{
-  const p=document.getElementById('debug-panel');
-  p.style.display=p.style.display==='none'?'flex':'none';
-});
+// debug panel removed in v27
 </script>
 
 <div id="stats-overlay">
