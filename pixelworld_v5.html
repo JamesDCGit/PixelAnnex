@@ -2431,7 +2431,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-flash-fix-v28';
+const CODE_VERSION = '2026-05-18-bot-flash-v29';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -2692,7 +2692,7 @@ if (flashCtx) flashCtx.imageSmoothingEnabled = false;
 // country colour. Implemented as a single canvas (cFlash) with a per-frame
 // global alpha decrement via 'destination-out' — O(1) per frame regardless of
 // the number of in-flight flashes.
-const FLASH_DURATION_MS = 1000; // total fade time per pixel
+const FLASH_DURATION_MS = 500;  // total fade time per pixel (v29: halved from 1s)
 let _flashHasPixels = false;     // true while the rAF loop should keep running
 let _flashRaf = null;
 let _flashLastTs = 0;
@@ -3527,12 +3527,6 @@ async function boot(){
       // Apply worker results back to main thread state
       const claimImg = new ImageData(result.claimData, MAP_W, MAP_H);
       claimCtx.putImageData(claimImg, 0, 0);
-      // Flash all pixels that changed this batch — single canvas op
-      if (typeof flashPixel === 'function') {
-        for (const p of pixels) {
-          flashPixel(p.x, p.y);
-        }
-      }
       claimByPixel = result.claimByPixel;
       // Reconstruct main-thread bookkeeping from per-country counts
       for(let geo=0; geo<result.perCount.length; geo++){
@@ -6006,13 +6000,15 @@ if (msg.state?.conquered) {
         claimByPixel[i] = fi;
         (byOwner[fi] ??= []).push({ x, y });
       }
-      // Paint batched pixels — all active paint strokes (player or bot) at full strength
+      // Paint batched pixels — all active paint strokes (player or bot) at full strength.
+      // Flash each pixel white for visibility (v29).
       for (const [fi, pixels] of Object.entries(byOwner)) {
         const [r,g,b] = hexRgb(featList[+fi].color);
         for (const { x, y } of pixels) {
           const id = claimCtx.createImageData(1,1);
           id.data[0]=r; id.data[1]=g; id.data[2]=b; id.data[3]=215;
           claimCtx.putImageData(id, x, y);
+          if (typeof flashPixel === 'function') flashPixel(x, y);
         }
       }
       markOutlineDirty();
