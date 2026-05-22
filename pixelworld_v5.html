@@ -978,9 +978,225 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   }
 }
 
+
+
+/* ════════════════════════════════════════════════════════════════
+   v32 — Mobile gating splash
+   ════════════════════════════════════════════════════════════════ */
+#mobile-splash {
+  display: none; /* shown via JS only when mobile + not opted-in */
+  position: fixed; inset: 0;
+  z-index: 100000;
+  background: linear-gradient(135deg, #070d1a 0%, #0c1526 50%, #0a1020 100%);
+  color: #e2e8f0;
+  font-family: 'Courier New', monospace;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+#mobile-splash.show { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#mobile-splash .ms-inner {
+  width: 100%;
+  max-width: 480px;
+  padding: 28px 22px;
+  text-align: center;
+}
+#mobile-splash h1 {
+  font-size: 26px;
+  letter-spacing: .12em;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+#mobile-splash h1 span { color: #3b82f6; }
+#mobile-splash .ms-sub {
+  font-size: 11px;
+  color: #64748b;
+  letter-spacing: .08em;
+  margin-bottom: 28px;
+  text-transform: uppercase;
+}
+#mobile-splash .ms-art {
+  width: 84px; height: 84px;
+  margin: 0 auto 24px;
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 44px;
+  background: linear-gradient(135deg, rgba(59,130,246,.18), rgba(99,102,241,.10));
+  border: 1px solid rgba(99,102,241,.25);
+}
+#mobile-splash h2 {
+  font-size: 17px;
+  color: #fbbf24;
+  margin: 0 0 14px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+#mobile-splash p {
+  font-size: 13px;
+  color: #94a3b8;
+  line-height: 1.6;
+  margin: 0 0 22px;
+}
+#mobile-splash p b { color: #cbd5e1; font-weight: 600; }
+#mobile-splash .ms-warn {
+  font-size: 11px;
+  color: #f87171;
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.2);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 22px;
+  line-height: 1.5;
+}
+#mobile-splash .ms-actions {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 6px;
+}
+#mobile-splash button,
+#mobile-splash a.ms-btn {
+  display: block;
+  width: 100%;
+  padding: 14px 18px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  text-align: center;
+  transition: background .15s, transform .05s;
+}
+#mobile-splash button:active,
+#mobile-splash a.ms-btn:active { transform: scale(0.98); }
+#mobile-splash .ms-primary {
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: white;
+}
+#mobile-splash .ms-primary:hover { background: linear-gradient(135deg, #2563eb, #4f46e5); }
+#mobile-splash .ms-secondary {
+  background: transparent;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  font-size: 12px;
+  padding: 11px 18px;
+}
+#mobile-splash .ms-secondary:hover { color: #cbd5e1; border-color: #475569; }
+#mobile-splash .ms-footer {
+  margin-top: 22px;
+  font-size: 10px;
+  color: #475569;
+  letter-spacing: .04em;
+}
+#mobile-splash .ms-footer a { color: #64748b; text-decoration: underline; }
+
+/* "Switch back to desktop view" link visible only when opted-in to mobile */
+#mobile-back-link {
+  display: none;
+  position: fixed;
+  bottom: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 90;
+  background: rgba(7,13,26,.85);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #64748b;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-family: 'Courier New', monospace;
+  letter-spacing: .04em;
+  cursor: pointer;
+  text-decoration: none;
+}
+#mobile-back-link:hover { color: #94a3b8; border-color: #334155; }
+html.pa-mobile-forced #mobile-back-link { display: block; }
+
+
+/* v33: DOM flag overlay — fixed screen size, position-only transforms */
+#flag-overlay .pa-flag {
+  position: absolute;
+  top: 0; left: 0;
+  width: 26px;
+  height: 17px;
+  transform: translate(-50%, -50%);
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.5);
+  transition: opacity .15s linear;
+  will-change: transform;
+}
+#flag-overlay { transition: opacity .2s linear; }
+
 </style>
 </head>
 <body>
+<!-- v32: Mobile gating splash (hidden by default; shown by inline script below) -->
+<div id="mobile-splash">
+  <div class="ms-inner">
+    <div class="ms-art">🗺️</div>
+    <h1>Pixel<span>Annex</span></h1>
+    <div class="ms-sub">Multiplayer · Pixel · Conquest</div>
+
+    <h2>Desktop Recommended</h2>
+    <p>
+      PixelAnnex is a <b>real-time map game</b> with precise pixel painting, 191 AI countries, and live multiplayer.
+      It's designed for <b>desktop browsers</b> where there's room to aim, room to think, and the horsepower to run smoothly.
+    </p>
+    <p>
+      We're working on proper iOS and Android apps — they'll handle the rendering far better than mobile browsers can.
+    </p>
+
+    <div class="ms-actions">
+      <a class="ms-btn ms-primary" href="mailto:hello@pixelannex.com?subject=Notify%20me%20when%20mobile%20apps%20launch">
+        🔔 Notify me when ready
+      </a>
+      <button class="ms-secondary" id="ms-force-mobile-btn">Try anyway (may be unstable)</button>
+    </div>
+
+    <div class="ms-footer">
+      Best on Chrome / Firefox / Safari on desktop.
+    </div>
+  </div>
+</div>
+
+<!-- v32: Small link to revert mobile opt-in -->
+<a id="mobile-back-link" onclick="(function(){ try{localStorage.removeItem('pa_force_mobile');}catch(e){} location.reload(); })()">↶ Show desktop notice</a>
+
+<!-- v32: Inline gate — runs BEFORE main script. Hides app, shows splash if mobile and not opted-in -->
+<script>
+(function(){
+  try {
+    var mobile = matchMedia('(max-width: 768px)').matches
+              || /iPad|iPhone|iPod|Android|Mobile/.test(navigator.userAgent)
+              || (navigator.maxTouchPoints > 1 && navigator.platform === 'MacIntel');
+    var forced = false;
+    try { forced = localStorage.getItem('pa_force_mobile') === '1'; } catch(e){}
+
+    if (mobile && !forced) {
+      // Defer until DOM has the splash element. We're inline in body so by the
+      // time this runs the splash markup above is in the DOM.
+      var splash = document.getElementById('mobile-splash');
+      var app    = document.getElementById('app');
+      if (splash) splash.classList.add('show');
+      if (app)    app.style.display = 'none';
+      document.documentElement.classList.add('pa-mobile-blocked');
+      // Wire up the "Try anyway" button now
+      var btn = document.getElementById('ms-force-mobile-btn');
+      if (btn) btn.addEventListener('click', function(){
+        try { localStorage.setItem('pa_force_mobile', '1'); } catch(e){}
+        location.reload();
+      });
+      // Halt the rest of the page boot by throwing — caught by no one, but
+      // prevents the heavy game init from running. Actually a cleaner approach
+      // is to set a global flag the main script can check.
+      window.__PA_MOBILE_BLOCKED__ = true;
+    } else if (mobile && forced) {
+      document.documentElement.classList.add('pa-mobile-forced');
+    }
+  } catch(e) { /* fall through — if gate fails, let the game try to load */ }
+})();
+</script>
 <div id="app">
   <div id="toolbar">
     <h1>Pixel<span>Annex</span></h1>
@@ -1001,7 +1217,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       </div>
     </div>
     <div class="sep"></div>
-    <button class="btn" id="btn-brd">Borders Light</button>
+    <button class="btn" id="btn-brd">Borders Dark</button>
     <button class="btn" id="btn-rst">Reset View</button>
     <button class="btn" id="btn-clr">Clear All</button>
     <div class="sep"></div>
@@ -1024,6 +1240,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   </div>
   <div id="main">
   <div id="viewport">
+    <div id="flag-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:7;"></div>
     <div id="loading">
       <h2>Loading World</h2>
       <p id="load-msg">Starting…</p>
@@ -1174,7 +1391,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     <canvas id="c-flash" style="pointer-events:none;"></canvas>
     <canvas id="c-outline" style="pointer-events:none;"></canvas>
     <canvas id="c-border"></canvas>
-    <canvas id="c-flags"></canvas>
+    <canvas id="c-flags" style="display:none;"></canvas><!-- v33: replaced by #flag-overlay DOM -->
     <canvas id="c-highlight" style="pointer-events:none;"></canvas>
     <canvas id="c-siege" style="pointer-events:none;"></canvas>
     <canvas id="c-overlay" style="pointer-events:none;"></canvas>
@@ -2751,7 +2968,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-ios-crash-fix-v31';
+const CODE_VERSION = '2026-05-18-bot-activity-v34';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -2794,7 +3011,7 @@ let   bombMode         = false;
 let bordPixel=null;   // Uint8Array MAP_PX — 1 where a border pixel was drawn
 // Stroke tracking for auto-fill (geo countries touched this stroke)
 // strokeGeos is declared inside runAutoFill's outer scope above
-let totalClaimed=0,totalLandPx=0,showBorders=true,borderDark=false,brushSize=1,currentIdx=0;
+let totalClaimed=0,totalLandPx=0,showBorders=true,borderDark=true,brushSize=1,currentIdx=0;
 let isPainting=false,isDragging=false,scale=1,ox=0,oy=0,dragBase={x:0,y:0};
 const conqueredSet=new Set();
 
@@ -3138,17 +3355,108 @@ function createFlagEl(isoId, scale){
   });
   return svg;
 }
+
+// v33: Procedural flag generator — 11×7 grid, 17 motifs based on country ID hash
+function _generateProceduralFlag(isoId, paletteColors) {
+  const palette = (paletteColors && paletteColors.length >= 2)
+    ? paletteColors.slice(0, 4)
+    : ['#003893','#FFFFFF','#CE1126','#FCD116'];
+  while (palette.length < 4) palette.push(palette[0]);
+  const motifs = [
+    'horiz3','vert3','diag','cross','center-disc','halves-h','halves-v',
+    'triband-v','triband-h','quad','top-corner','chevron-l','chevron-r',
+    'stripes-h','stripes-v','frame','off-center'
+  ];
+  const m = motifs[Math.abs(isoId) % motifs.length];
+  const g = Array.from({length:7},()=>Array(11).fill(0));
+  const W = 11, H = 7;
+  switch(m) {
+    case 'horiz3':
+      for (let y=0;y<H;y++) { const c = y < 3 ? 0 : (y < 5 ? 1 : 2); for (let x=0;x<W;x++) g[y][x] = c; }
+      break;
+    case 'vert3':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = x < 4 ? 0 : (x < 8 ? 1 : 2);
+      break;
+    case 'diag':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = (x + y < 8) ? 0 : 1;
+      break;
+    case 'cross':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = 0;
+      for (let y=0;y<H;y++) g[y][4] = g[y][5] = g[y][6] = 1;
+      for (let x=0;x<W;x++) g[3][x] = 1;
+      break;
+    case 'center-disc':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = 0;
+      for (let y=2;y<5;y++) for (let x=4;x<7;x++) g[y][x] = 1;
+      g[3][5] = 2;
+      break;
+    case 'halves-h':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = y < 4 ? 0 : 1;
+      break;
+    case 'halves-v':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = x < 6 ? 0 : 1;
+      break;
+    case 'triband-v':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = x < 3 ? 0 : (x < 8 ? 1 : 2);
+      break;
+    case 'triband-h':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = y < 2 ? 0 : (y < 5 ? 1 : 2);
+      break;
+    case 'quad':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = (y < 4 ? 0 : 2) + (x < 6 ? 0 : 1);
+      break;
+    case 'top-corner':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = 0;
+      for (let y=0;y<3;y++) for (let x=0;x<4;x++) g[y][x] = 1;
+      g[1][1] = g[1][2] = 2;
+      break;
+    case 'chevron-l':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = 0;
+      for (let y=0;y<H;y++) { const cx = Math.abs(y - 3); for (let x=0;x<=cx+2;x++) g[y][x] = 1; }
+      break;
+    case 'chevron-r':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = 0;
+      for (let y=0;y<H;y++) { const cx = Math.abs(y - 3); for (let x=W-1-cx-2;x<W;x++) g[y][x] = 1; }
+      break;
+    case 'stripes-h':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = (y % 2) ? 0 : 1;
+      break;
+    case 'stripes-v':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = (x % 2) ? 0 : 1;
+      break;
+    case 'frame':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = (y===0||y===H-1||x===0||x===W-1) ? 0 : 1;
+      break;
+    case 'off-center':
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++) g[y][x] = 0;
+      for (let y=0;y<H;y++) for (let x=2;x<5;x++) g[y][x] = 1;
+      break;
+  }
+  return { p: palette, g: g };
+}
+const _proceduralFlagCache = {};
+
 function decodeFlag(id){
   // Strip leading zeros: world-atlas stores IDs as "050","048" etc.
   const key=String(parseInt(String(id),10));
-  const f=FLAG_DATA[key]||FLAG_DATA[String(id)];
-  if(!f) return null;
+  // v33: Use procedural generator for all countries to get consistent style.
+  // (FLAG_DATA hand-encoded entries still exist but we ignore them — many were broken.)
+  let f = _proceduralFlagCache[key];
+  if (!f) {
+    // Pick palette: use FLAG_DATA's palette if available, else a sensible default
+    const hand = FLAG_DATA[key] || FLAG_DATA[String(id)];
+    const palette = hand && hand.p && hand.p.length >= 2
+      ? hand.p
+      : ['#003893','#FFFFFF','#CE1126','#FCD116'];
+    f = _generateProceduralFlag(parseInt(key, 10) || 0, palette);
+    _proceduralFlagCache[key] = f;
+  }
   const rows=[];
   // Data is encoded at SRC_FLAG_W×SRC_FLAG_H (11×7); FLAG_W/H are display size
   for(let y=0;y<SRC_FLAG_H;y++){
     const row=[];
     for(let x=0;x<SRC_FLAG_W;x++){
-      const idx=parseInt(f.d[y*SRC_FLAG_W+x]);
+      const idx = f.g ? f.g[y][x] : parseInt(f.d[y*SRC_FLAG_W+x]); // v33: prefer grid
       row.push(f.p[idx]||'#000000');
     }
     rows.push(row);
@@ -3213,6 +3521,84 @@ function drawFlagAt(cx,cy,claimer){
   flagCtx.putImageData(img, ox-1, oy-1);
 }
 
+
+// ── v33: DOM flag overlay subsystem ───────────────────────────────
+const _flagDOMNodes = {};
+const _flagDataURLCache = {};
+
+function _renderFlagToDataURL(claimerFi) {
+  if (!claimerFi) return null;
+  const isoId = String(claimerFi.id);
+  if (_flagDataURLCache[isoId]) return _flagDataURLCache[isoId];
+  const rows = decodeFlag(isoId);
+  if (!rows) return null;
+  const upscale = 4;
+  const w = SRC_FLAG_W * upscale, h = SRC_FLAG_H * upscale;
+  const off = document.createElement('canvas');
+  off.width = w + 2; off.height = h + 2;
+  const ctx = off.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w + 2, h + 2);
+  for (let sy = 0; sy < SRC_FLAG_H; sy++) {
+    for (let sx = 0; sx < SRC_FLAG_W; sx++) {
+      ctx.fillStyle = rows[sy][sx];
+      ctx.fillRect(1 + sx * upscale, 1 + sy * upscale, upscale, upscale);
+    }
+  }
+  const url = off.toDataURL('image/png');
+  _flagDataURLCache[isoId] = url;
+  return url;
+}
+
+function _placeFlagDOM(geoIdx, claimerFi, cx, cy) {
+  if (!claimerFi) return;
+  const overlay = document.getElementById('flag-overlay');
+  if (!overlay) return;
+  let entry = _flagDOMNodes[geoIdx];
+  if (!entry) {
+    const img = document.createElement('img');
+    img.className = 'pa-flag';
+    overlay.appendChild(img);
+    entry = { el: img, cx, cy, isoId: claimerFi.id };
+    _flagDOMNodes[geoIdx] = entry;
+  } else if (entry.isoId !== claimerFi.id) {
+    entry.isoId = claimerFi.id;
+  }
+  entry.el.src = _renderFlagToDataURL(claimerFi) || '';
+  entry.cx = cx; entry.cy = cy;
+  _updateFlagDOMPosition(entry);
+}
+
+function _eraseFlagDOM(geoIdx) {
+  const entry = _flagDOMNodes[geoIdx];
+  if (!entry) return;
+  entry.el.remove();
+  delete _flagDOMNodes[geoIdx];
+}
+
+function _updateFlagDOMPosition(entry) {
+  const screenX = entry.cx * scale + ox;
+  const screenY = entry.cy * scale + oy;
+  entry.el.style.transform = 'translate(' + (screenX - 13) + 'px, ' + (screenY - 8.5) + 'px)';
+}
+
+function _updateAllFlagPositions() {
+  for (const id in _flagDOMNodes) {
+    _updateFlagDOMPosition(_flagDOMNodes[id]);
+  }
+}
+
+function _updateFlagOpacity() {
+  const overlay = document.getElementById('flag-overlay');
+  if (!overlay) return;
+  let opacity;
+  if (scale <= 6) opacity = 1;
+  else if (scale >= 10) opacity = 0;
+  else opacity = 1 - (scale - 6) / 4;
+  overlay.style.opacity = String(opacity);
+  overlay.style.display = (opacity <= 0.02) ? 'none' : '';
+}
+
 // Place or update the flag for a conquered geo country
 function placeFlag(geoIdx, claimerIdx){
   // Find centroid (throttled — only sample every 8th pixel for speed)
@@ -3225,11 +3611,14 @@ function placeFlag(geoIdx, claimerIdx){
   if(n===0) return;
   const cx=Math.round(sx/n), cy=Math.round(sy/n);
   placedFlags[geoIdx]={claimerIdx,cx,cy};
-  drawFlagAt(cx,cy,featList[claimerIdx]);
+  // v33: skip canvas draw — DOM overlay handles flag display now
+  // drawFlagAt(cx,cy,featList[claimerIdx]);
+  _placeFlagDOM(geoIdx, featList[claimerIdx], cx, cy);
 }
 
 // Erase a flag for a geo country (when recaptured)
 function eraseFlag(geoIdx){
+  _eraseFlagDOM(geoIdx); // v33
   const f=placedFlags[geoIdx];
   if(!f) return;
   const ox=f.cx-Math.floor(FLAG_W/2)-1;
@@ -3827,8 +4216,32 @@ async function boot(){
     prog(86+Math.floor(s/MAP_PX*12),"Drawing borders…");
     await sleep(1);
   }
+  // v33: Dilate borders into ocean — fills 1-5px ocean gaps between adjacent
+  // countries so the border line stays continuous instead of breaking up.
+  const DILATION_PASSES = 2;
+  for (let pass = 0; pass < DILATION_PASSES; pass++) {
+    const toAdd = [];
+    for (let i = 0; i < MAP_PX; i++) {
+      if (bordPixel[i] !== 0) continue;
+      if (featByPixel[i] !== -1) continue; // only dilate into ocean
+      const x = i % MAP_W, y = (i / MAP_W) | 0;
+      let touches = false;
+      if (x > 0          && bordPixel[i - 1]     === 1) touches = true;
+      else if (x < MAP_W-1 && bordPixel[i + 1]     === 1) touches = true;
+      else if (y > 0       && bordPixel[i - MAP_W] === 1) touches = true;
+      else if (y < MAP_H-1 && bordPixel[i + MAP_W] === 1) touches = true;
+      if (touches) toAdd.push(i);
+    }
+    for (const i of toAdd) {
+      bordPixel[i] = 1;
+      const p = i*4;
+      bd[p]=182; bd[p+1]=157; bd[p+2]=107; bd[p+3]=255;
+    }
+    await sleep(1);
+  }
+  console.log("[Borders] Dilation done — " + DILATION_PASSES + " passes, ocean gaps filled");
   bordCtx.putImageData(borderImg,0,0);
-  console.log("Borders drawn – pixel-perfect 2px no antialiasing");
+  console.log("Borders drawn – pixel-perfect with ocean-gap fix");
 
   prog(100,"Ready!"); await sleep(150);
 
@@ -4155,7 +4568,13 @@ function scheduleLegend(){
 }
 
 // ── View ─────────────────────────────────────────────────────────
-function applyT(){const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{if(c)c.style.transform=t;});}
+function applyT(){
+  const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";
+  [cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{if(c)c.style.transform=t;});
+  // v33: update DOM flag positions + opacity each pan/zoom
+  _updateAllFlagPositions();
+  _updateFlagOpacity();
+}
 // Free panning — clamp is now a no-op so users can move the map anywhere they like.
 // Previous behaviour pinned the map within the viewport bounds; removing this lets
 // users drag the world off-screen, useful for inspecting edges and far-away regions.
@@ -9003,23 +9422,24 @@ $("btn-bomb").addEventListener("click",function(){
 });
 $("btn-brd").addEventListener("click",function(){
   sfxUIClick();
-  if(showBorders && !borderDark){
-    // Light → Dark
-    borderDark=true;
+  // v33: Dark is default. Cycle: Dark → Light → Off → Dark.
+  if(showBorders && borderDark){
+    // Dark → Light
+    borderDark=false;
     reborderCanvas();
-    this.textContent="Borders Dark";
-  } else if(showBorders && borderDark){
-    // Dark → Off
+    this.textContent="Borders Light";
+  } else if(showBorders && !borderDark){
+    // Light → Off
     showBorders=false;
     cBorder.style.opacity="0";
     this.textContent="Borders OFF";
   } else {
-    // Off → Light
+    // Off → Dark
     showBorders=true;
-    borderDark=false;
+    borderDark=true;
     reborderCanvas();
     cBorder.style.opacity="1";
-    this.textContent="Borders Light";
+    this.textContent="Borders Dark";
   }
 });
 $("btn-clr").addEventListener("click",()=>{
@@ -9174,6 +9594,11 @@ function mkNoise(pm){
 
 // ── Start — no external library loading needed! ───────────────────
 (async()=>{
+  // v32: bail if mobile gate is up (game would crash on memory-constrained devices)
+  if (window.__PA_MOBILE_BLOCKED__) {
+    console.log('[Mobile] Boot blocked — splash is up; user has not opted in.');
+    return;
+  }
   prog(3,"Initialising…");
   try{
     await boot();

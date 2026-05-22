@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-ios-crash-fix-v31';
+const SERVER_VERSION       = '2026-05-18-bot-activity-v34';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -46,6 +46,77 @@ const TIMEOUT_MS         = 30000;
 const BOT_TICK_MS         = 2000;  // ms between bot ticks (staggered) — slowed for smaller map
 const BOT_PIXELS_PER_TICK  = 1;    // pixels per stroke per bot — halved
 const BOT_BUCKET_MAX       = 60;   // smaller cap to prevent burst spikes
+
+// ── v34: Bot activity cycle — simulates "real player" login/logout ──
+// Each bot drifts between active and idle states. Only active bots paint and
+// are counted in the simulated player count. The target active-bot count
+// drifts slowly through the 50-200 range so the world feels alive.
+const BOT_ACTIVE_MIN_MS = 5  * 60 * 1000;
+const BOT_ACTIVE_MAX_MS = 30 * 60 * 1000;
+const BOT_IDLE_MIN_MS   = 3  * 60 * 1000;
+const BOT_IDLE_MAX_MS   = 20 * 60 * 1000;
+const SIM_PLAYER_MIN    = 50;
+const SIM_PLAYER_MAX    = 200;
+let _simTargetActive = SIM_PLAYER_MIN + Math.floor(Math.random() * (SIM_PLAYER_MAX - SIM_PLAYER_MIN));
+const _botActivity = new Map(); // countryId → { active: bool, expiresAt: number }
+function _rand(min, max) { return min + Math.random() * (max - min); }
+function _initBotActivity(countryId) {
+  const startActive = Math.random() < 0.6;
+  const dur = startActive
+    ? _rand(BOT_ACTIVE_MIN_MS, BOT_ACTIVE_MAX_MS)
+    : _rand(BOT_IDLE_MIN_MS,   BOT_IDLE_MAX_MS);
+  _botActivity.set(countryId, { active: startActive, expiresAt: Date.now() + dur });
+}
+function _isBotActive(countryId) {
+  const a = _botActivity.get(countryId);
+  if (!a) { _initBotActivity(countryId); return _botActivity.get(countryId).active; }
+  return a.active;
+}
+function _activeBotCount() {
+  let n = 0;
+  for (const a of _botActivity.values()) if (a.active) n++;
+  return n;
+}
+function _tickBotActivity() {
+  const now = Date.now();
+  let currentActive = 0;
+  for (const [cid, a] of _botActivity) {
+    if (now >= a.expiresAt) {
+      a.active = !a.active;
+      a.expiresAt = now + (a.active
+        ? _rand(BOT_ACTIVE_MIN_MS, BOT_ACTIVE_MAX_MS)
+        : _rand(BOT_IDLE_MIN_MS,   BOT_IDLE_MAX_MS));
+    }
+    if (a.active) currentActive++;
+  }
+  // Drift target every ~3 minutes by ±10
+  if (!_tickBotActivity._lastDrift || now - _tickBotActivity._lastDrift > 3 * 60 * 1000) {
+    _tickBotActivity._lastDrift = now;
+    _simTargetActive += Math.floor(_rand(-10, 11));
+    if (_simTargetActive < SIM_PLAYER_MIN) _simTargetActive = SIM_PLAYER_MIN;
+    if (_simTargetActive > SIM_PLAYER_MAX) _simTargetActive = SIM_PLAYER_MAX;
+  }
+  // Nudge currentActive toward target (gradual)
+  const drift = _simTargetActive - currentActive;
+  if (Math.abs(drift) > 8) {
+    const cands = [];
+    for (const [cid, a] of _botActivity) {
+      if (drift > 0 && !a.active) cands.push(cid);
+      else if (drift < 0 && a.active) cands.push(cid);
+    }
+    const flips = Math.min(cands.length, Math.floor(Math.abs(drift) / 2));
+    for (let i = 0; i < flips; i++) {
+      const cid = cands[Math.floor(Math.random() * cands.length)];
+      const a = _botActivity.get(cid);
+      a.active = (drift > 0);
+      a.expiresAt = now + (a.active
+        ? _rand(BOT_ACTIVE_MIN_MS, BOT_ACTIVE_MAX_MS)
+        : _rand(BOT_IDLE_MIN_MS,   BOT_IDLE_MAX_MS));
+    }
+  }
+}
+setInterval(_tickBotActivity, 30 * 1000);
+
 const BOT_REGEN_MS         = 3000; // bucket regen interval — doubled
 // All countries get bots — populated dynamically from map data
 
@@ -210,12 +281,65 @@ scheduleDailySummary();
 
 
 // Broadcast a game event to all connected bots
-function emitBotEvent(event) {
+// (v34: kept as a let so the cooldown wrapper below can rebind it)
+let emitBotEvent = function(event) {
   const data = 'data: ' + JSON.stringify(event) + '\n\n';
   for (const stream of botEventStreams) {
     try { stream.write(data); } catch (e) { botEventStreams.delete(stream); }
   }
+};
+// ── v34: Discord cooldown wrapper ────────────────────────────────
+// Cap non-priority events to 15 minutes minimum between consecutive emissions
+// of the same type. Conquests and nukes are exempt (always emit).
+const DISCORD_COOLDOWN_MS = 15 * 60 * 1000;
+const _lastEmitByType = new Map(); // type:key → ts
+
+function _isPriorityEvent(event) {
+  if (event.type === 'war_conquest') return true;
+  if (event.type === 'war_bomb' && event.bombName === 'Nuke') return true;
+  return false;
 }
+
+// Bucket strategy: cap per (type + sub-key) so different attacker→defender pairs
+// each have their own 15min window. For non-pair events (rank_change, alliance_*)
+// the sub-key is empty so global per-type cap applies.
+function _eventCooldownKey(event) {
+  switch (event.type) {
+    case 'war_siege_start':
+    case 'war_siege_end':
+      return event.type + ':' + (event.defenderId || '') + ':' + (event.attackerId || '');
+    case 'war_bomb':
+      return event.type + ':' + (event.bombName || '') + ':' + (event.attackerId || '');
+    case 'war_multi_attack':
+      return event.type + ':' + (event.defenderId || '');
+    case 'rank_change':
+      return event.type + ':' + (event.discordId || '');
+    case 'alliance_formed':
+    case 'alliance_changed':
+    case 'alliance_dissolved':
+      return event.type + ':' + (event.key || '');
+    default:
+      return event.type;
+  }
+}
+
+// Wrap the original emitBotEvent
+const _origEmitBotEvent = emitBotEvent;
+emitBotEvent = function(event) {
+  if (!_isPriorityEvent(event)) {
+    const key = _eventCooldownKey(event);
+    const last = _lastEmitByType.get(key) || 0;
+    const now = Date.now();
+    if (now - last < DISCORD_COOLDOWN_MS) {
+      // Suppressed by cooldown — log for visibility but don't notify
+      console.log('[Discord] cooldown suppressed', event.type, key, '(' + Math.round((DISCORD_COOLDOWN_MS - (now-last))/1000) + 's left)');
+      return;
+    }
+    _lastEmitByType.set(key, now);
+  }
+  return _origEmitBotEvent(event);
+};
+
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Player profiles by discord_id (persists across sessions)
@@ -651,6 +775,70 @@ function checkSiegeState(geoIdx) {
     });
   }
 }
+
+
+
+// ── v34: Multi-attacker detection ────────────────────────────────
+// When 5+ distinct attacker countries paint into the same defender geo within
+// a rolling 60-second window, emit a 'war_multi_attack' event once per defender
+// per 5-minute cooldown.
+const MULTI_ATTACK_THRESHOLD   = 5;
+const MULTI_ATTACK_WINDOW_MS   = 60 * 1000;
+const MULTI_ATTACK_COOLDOWN_MS = 5 * 60 * 1000;
+const _multiAttackTracker = new Map(); // defenderGeoIdx → { attackers: Map(attackerId → ts), lastNotifyAt }
+
+function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
+  // Skip self-paint (resident bot painting own country)
+  if (String(attackerCountryId) === String(geoToId(defenderGeoIdx))) return;
+  const now = Date.now();
+  let entry = _multiAttackTracker.get(defenderGeoIdx);
+  if (!entry) {
+    entry = { attackers: new Map(), lastNotifyAt: 0 };
+    _multiAttackTracker.set(defenderGeoIdx, entry);
+  }
+  // Prune expired
+  for (const [aid, ts] of entry.attackers) {
+    if (now - ts > MULTI_ATTACK_WINDOW_MS) entry.attackers.delete(aid);
+  }
+  entry.attackers.set(String(attackerCountryId), now);
+  if (entry.attackers.size >= MULTI_ATTACK_THRESHOLD &&
+      now - entry.lastNotifyAt > MULTI_ATTACK_COOLDOWN_MS) {
+    entry.lastNotifyAt = now;
+    const attackerIds = [...entry.attackers.keys()];
+    const defenderId = geoToId(defenderGeoIdx);
+    emitBotEvent({
+      type:         'war_multi_attack',
+      tier:         2,
+      defenderId,
+      attackerIds,
+      attackerCount: attackerIds.length,
+      timestamp:    now,
+    });
+    try {
+      const defName = _countryName(defenderId);
+      const attNames = attackerIds.slice(0, 3).map(id => _countryName(id)).join(', ');
+      const more = attackerIds.length > 3 ? ' +' + (attackerIds.length - 3) + ' more' : '';
+      pushTweetDraft({
+        type:        'multi_attack',
+        text:        '🚨 ' + attackerIds.length + ' countries are attacking ' + defName + '! (' + attNames + more + ') #PixelAnnex pixelannex.com',
+        dedupeKey:   'multi_attack:' + defenderId + ':' + Math.floor(now / 60000),
+        throttleKey: 'multi_attack_def:' + defenderId,
+      });
+    } catch (e) { /* ignore */ }
+  }
+}
+// Periodic cleanup
+setInterval(() => {
+  const now = Date.now();
+  for (const [defId, entry] of _multiAttackTracker) {
+    for (const [aid, ts] of entry.attackers) {
+      if (now - ts > MULTI_ATTACK_WINDOW_MS) entry.attackers.delete(aid);
+    }
+    if (entry.attackers.size === 0 && now - entry.lastNotifyAt > MULTI_ATTACK_COOLDOWN_MS * 2) {
+      _multiAttackTracker.delete(defId);
+    }
+  }
+}, 30 * 1000);
 
 // ── Alliance detection ───────────────────────────────────────────
 // An alliance forms when 3+ players share at least one country in their
@@ -1165,6 +1353,10 @@ function applyPixels(pixels, countryId) {
       geoClaimCnt[geo] ??= {};
       geoClaimCnt[geo][countryId] = (geoClaimCnt[geo][countryId] || 0) + 1;
       affected.add(geo);
+      // v34: track multi-attacker on this defender geo
+      if (String(countryId) !== String(geoToId(geo))) {
+        trackAttackerOnDefender(countryId, geo);
+      }
     }
     changed.push({ x, y, owner: countryId });
   }
@@ -1539,6 +1731,7 @@ function botInit(countryId) {
   players.set(nextPid++, { ws: null, countryId, countryIdx: getIdx(countryId), lastSeen: Date.now(), isBot: true });
   ownerPixels[getIdx(countryId)] = new Set();
   countryPxCount[countryId] = countryPxCount[countryId] || 0;
+  _initBotActivity(countryId); // v34
 }
 
 // Stagger bot ticks so they don't all fire simultaneously.
@@ -1574,6 +1767,8 @@ function botTickSingle(countryId) {
   // Persistence: if this country was conquered by a human, the resident bot dies down
   // until the country recovers (the human-claim is released elsewhere when occupation drops)
   if (humanClaimedCountries.has(countryId)) return;
+  // v34: only active bots paint
+  if (!_isBotActive(countryId)) return;
   const bot = bots.get(countryId);
   if (!bot || bot.bucket < BOT_PIXELS_PER_TICK) return;
 
@@ -1863,12 +2058,15 @@ const httpServer = http.createServer(async (req, res) => {
         country:     p.country,
       }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
+    // v34: report simulated player count = real humans + active bots
+    const realHumans = [...players.values()].filter(p => !p.isBot && p.ws).length;
+    const activeBots = _activeBotCount();
     res.end(JSON.stringify({
       topCountries,
       conqueredCount: distinctConquered.size,
       topPlayers,
-      totalPlayers:  players.size,
-      totalBots:     bots.size,
+      totalPlayers:  realHumans + activeBots,
+      totalBots:     activeBots,
     }));
     return;
   }
