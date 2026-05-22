@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0c1526">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>PixelAnnex</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23070d1a'/%3E%3Crect x='6' y='8' width='4' height='4' fill='%2360a5fa'/%3E%3Crect x='12' y='6' width='4' height='4' fill='%23818cf8'/%3E%3Crect x='18' y='8' width='4' height='4' fill='%23a78bfa'/%3E%3Crect x='4' y='14' width='4' height='4' fill='%2334d399'/%3E%3Crect x='10' y='14' width='4' height='4' fill='%23fbbf24'/%3E%3Crect x='16' y='14' width='4' height='4' fill='%23f87171'/%3E%3Crect x='22' y='14' width='4' height='4' fill='%23fb923c'/%3E%3Crect x='6' y='20' width='4' height='4' fill='%23ec4899'/%3E%3Crect x='12' y='20' width='4' height='4' fill='%2306b6d4'/%3E%3Crect x='18' y='20' width='4' height='4' fill='%2384cc16'/%3E%3C/svg%3E"/>
 <style>
@@ -734,6 +738,246 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
 #conquest-toast .toast-body{color:#93c5fd;}
 #banner{position:absolute;top:56px;left:50%;transform:translateX(-50%);background:#0b1e3d;border:1px solid #2563eb;border-radius:7px;padding:7px 20px;font-size:12px;color:#93c5fd;display:none;z-index:50;white-space:nowrap;}
+
+
+/* ════════════════════════════════════════════════════════════════
+   v30 — Mobile support (≤768px viewport)
+   ════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Ensure iOS-safe area padding on notched devices */
+  body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); box-sizing: border-box; }
+
+  /* Toolbar: compact 2-row layout */
+  #toolbar {
+    padding: 4px 8px;
+    gap: 4px;
+    min-height: 38px;
+  }
+  #toolbar h1 { font-size: 10px; letter-spacing: .08em; }
+  /* Hide non-essentials on mobile (still accessible via drawer) */
+  #toolbar #btn-font-scale,
+  #toolbar #font-scale-label,
+  #toolbar #stats,
+  #toolbar .sep { display: none; }
+  /* The mobile drawer holds the secondary tools */
+  #toolbar #btn-brd,
+  #toolbar #btn-rst,
+  #toolbar #btn-clr,
+  #toolbar #btn-debug,
+  #toolbar #btn-ownstroke { display: none; }
+  /* Show mobile-only hamburger */
+  #btn-mobile-menu { display: inline-flex !important; }
+
+  /* Bucket HUD: smaller, more compact */
+  #bucket-hud { padding: 3px 7px; font-size: 10px; }
+  #bucket-count { font-size: 11px; }
+  #bucket-bar { width: 32px; }
+  #bucket-timer { font-size: 9px; min-width: 22px; }
+
+  /* Country picker: shrink */
+  #csel-btn { padding: 4px 8px; font-size: 10px; }
+  #csel-dropdown { width: calc(100vw - 32px); max-width: 320px; left: 0; }
+
+  /* Bomb / Highlight buttons — larger tap targets */
+  #btn-bomb, #btn-highlight { padding: 6px 10px; font-size: 11px; }
+
+  /* Legend — collapsible. Closed state = small button. */
+  #legend {
+    max-width: 44px;
+    max-height: 44px;
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+    border-radius: 50%;
+    bottom: 12px; left: 12px;
+    transition: max-width .2s, max-height .2s, border-radius .2s;
+  }
+  #legend.expanded {
+    max-width: calc(100vw - 24px);
+    max-height: 60vh;
+    padding: 10px 12px;
+    border-radius: 8px;
+    overflow-y: auto;
+  }
+  #legend h3 {
+    display: flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px;
+    margin: 0;
+    font-size: 16px;
+  }
+  #legend.expanded h3 {
+    width: auto; height: auto; justify-content: flex-start;
+    margin-bottom: 7px; font-size: 9px;
+  }
+  /* Hide legend content unless expanded; show emoji icon when collapsed */
+  #legend:not(.expanded) #leg-items { display: none; }
+  #legend:not(.expanded) h3::before { content: '🗺️'; }
+  #legend:not(.expanded) h3 { text-indent: -9999px; }
+  #legend:not(.expanded) h3::before { text-indent: 0; display: block; }
+
+  /* Audio HUD — collapsible toggle */
+  #audio-hud {
+    right: 12px; bottom: 64px; /* sit above zoom-hud */
+    max-width: 44px; max-height: 44px;
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+    border-radius: 50%;
+    transition: max-width .2s, max-height .2s, border-radius .2s, padding .2s;
+  }
+  #audio-hud.expanded {
+    max-width: 220px; max-height: none;
+    padding: 8px;
+    border-radius: 8px;
+  }
+  /* Icon when collapsed */
+  #audio-hud:not(.expanded) #track-selector,
+  #audio-hud:not(.expanded) #audio-controls { display: none; }
+  #audio-hud::before {
+    content: '🔊';
+    width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  #audio-hud.expanded::before { display: none; }
+
+  /* Zoom HUD — keep but smaller; pinch is preferred */
+  #zoom-hud { padding: 4px; gap: 3px; bottom: 12px; right: 12px; }
+  #zoom-hud .z-btn { padding: 6px 9px; font-size: 14px; min-width: 30px; min-height: 30px; }
+
+  /* Login HUD — compact, no transform centering on small screen */
+  #login-hud {
+    top: 44px; left: 50%; transform: translateX(-50%);
+    padding: 4px 9px; font-size: 10px;
+    max-width: calc(100vw - 24px);
+  }
+  #login-name { font-size: 10px; max-width: 90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #login-rank { font-size: 9px; }
+  #login-btn, #logout-btn { padding: 3px 8px; font-size: 9px; }
+  .discord-icon { width: 11px; height: 11px; }
+
+  /* Language picker in-game — smaller */
+  #lang-picker-game { top: 44px; right: 12px; }
+  #lang-picker-game select { padding: 3px 6px; font-size: 10px; min-width: 80px; }
+
+  /* Tutorial modal — go full-screen */
+  #tutorial-box {
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    border-radius: 0 !important;
+    overflow-y: auto;
+    padding: 14px !important;
+  }
+  #tutorial-box h1 { font-size: 16px !important; }
+  .tut-sub { font-size: 11px !important; }
+  .tut-stats { gap: 6px !important; }
+  .tut-stat-val { font-size: 18px !important; }
+  .tut-tile { padding: 10px !important; }
+  .tut-tile-title { font-size: 12px !important; }
+  .tut-tile-desc { font-size: 10px !important; }
+  /* Country picker grid in tutorial */
+  #tut-country-list { grid-template-columns: 1fr 1fr !important; max-height: 50vh !important; }
+
+  /* Daily popup full-screen */
+  #daily-popup-card {
+    max-width: 100vw !important;
+    width: 100vw !important;
+    max-height: 100vh !important;
+    height: 100vh !important;
+    border-radius: 0 !important;
+    overflow-y: auto;
+    padding: 24px 16px !important;
+  }
+  #daily-popup-card h2 { font-size: 18px !important; }
+
+  /* Stats modal full-screen */
+  #stats-modal {
+    max-width: 100vw !important;
+    width: 100vw !important;
+    max-height: 100vh !important;
+    height: 100vh !important;
+    border-radius: 0 !important;
+    overflow-y: auto;
+    padding: 16px !important;
+  }
+  .stats-grid { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+  .stat-card { padding: 10px !important; }
+  .stat-value { font-size: 18px !important; }
+
+  /* Activity toast — constrain width, no overflow */
+  #activity-toast {
+    max-width: calc(100vw - 24px);
+    right: 12px !important;
+    font-size: 10px;
+  }
+  .act-card { max-width: calc(100vw - 24px); font-size: 10px !important; padding: 8px !important; }
+
+  /* Form input zoom prevention — iOS auto-zooms on inputs <16px */
+  input, select, textarea { font-size: 16px !important; }
+  /* But shrink visual sizing back down with line-height trick */
+  #csel-search, .tut-country-search { font-size: 14px !important; padding: 8px 10px; }
+
+  /* Touch behaviour on viewport — disable iOS gestures + scroll bounce */
+  #viewport { touch-action: none; -webkit-user-select: none; user-select: none; }
+
+  /* Larger tap targets for toolbar buttons */
+  .btn, select { min-height: 32px; }
+
+  /* Rank badge — keep but smaller */
+  #rank-badge { font-size: 10px !important; padding: 4px 8px !important; }
+
+  /* Mobile drawer panel */
+  #mobile-drawer {
+    display: none;
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 240px; max-width: 75vw;
+    background: #0c1526;
+    border-left: 1px solid rgba(255,255,255,0.07);
+    box-shadow: -4px 0 20px rgba(0,0,0,.5);
+    z-index: 9999;
+    flex-direction: column;
+    padding: 14px;
+    gap: 6px;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform .25s ease-out;
+  }
+  #mobile-drawer.open { display: flex; transform: translateX(0); }
+  #mobile-drawer .btn,
+  #mobile-drawer .z-btn { width: 100%; padding: 10px 12px; font-size: 12px; text-align: left; }
+  #mobile-drawer .drawer-header {
+    display: flex; align-items: center; justify-content: space-between;
+    color: #64748b; font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 8px; margin-bottom: 4px;
+  }
+  #mobile-drawer-close {
+    background: none; border: none; color: #94a3b8; font-size: 22px; cursor: pointer; padding: 0;
+  }
+  #mobile-drawer-backdrop {
+    display: none;
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.4); z-index: 9998;
+  }
+  #mobile-drawer.open + #mobile-drawer-backdrop,
+  #mobile-drawer-backdrop.open { display: block; }
+}
+
+/* The hamburger button is hidden by default, shown only on mobile via the media query above */
+#btn-mobile-menu { display: none; }
+@media (max-width: 768px) {
+  #btn-mobile-menu {
+    display: inline-flex !important;
+    align-items: center; justify-content: center;
+    margin-left: auto;
+    background: #162035; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;
+    width: 38px; height: 32px; font-size: 16px;
+    border-radius: 5px; cursor: pointer;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -775,6 +1019,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
       <span id="david-badge" style="display:none;margin-left:8px;padding:2px 7px;background:linear-gradient(90deg,rgba(99,102,241,.25),rgba(129,140,248,.18));border:1px solid rgba(129,140,248,.45);border-radius:4px;font-size:10px;color:#a5b4fc;letter-spacing:.04em;white-space:nowrap;"></span>
     </div>
     <div id="stats">4096×2048 · Claimed: <b id="px-count">0</b> px</div>
+    <!-- v30: Mobile-only hamburger -->
+    <button id="btn-mobile-menu" aria-label="Menu" title="Menu">&#9776;</button>
   </div>
   <div id="main">
   <div id="viewport">
@@ -1011,6 +1257,7 @@ const LANGS = {
     'tut.tile_fightback_title':'Fight back',
     'tut.tile_fightback_desc':'When your country is >70% lost, painting in your own land grants bonus pixels and a bigger brush.',
     'tut.hint_keys':         '{drag} to pan · {scroll} to zoom · {click} to paint',
+    'tut.hint_keys_touch':   'One finger to paint · Two fingers to pan & zoom',
     'tut.key_drag':          'Drag',
     'tut.key_scroll':        'Scroll',
     'tut.key_click':         'Click',
@@ -1218,6 +1465,8 @@ const LANGS = {
     'tut.tile_bombs_title':'Bombas y rangos','tut.tile_bombs_desc':'Gana XP por píxel. Los rangos altos desbloquean Mortero, MOAB y Bomba Nuclear.',
     'tut.tile_fightback_title':'Contraataque','tut.tile_fightback_desc':'Cuando tu país pierde más del 70%, pintar en tu propia tierra otorga píxeles extra y un pincel más grande.',
     'tut.hint_keys':'{drag} para mover · {scroll} para zoom · {click} para pintar','tut.key_drag':'Arrastra','tut.key_scroll':'Rueda','tut.key_click':'Clic',
+    'tut.hint_keys_touch':'Un doigt pour peindre · Deux doigts pour déplacer et zoomer',
+    'tut.hint_keys_touch':'Un dedo para pintar · Dos dedos para mover y zoom',
     'tut.btn_skip':'Omitir','tut.btn_next':'Siguiente →','tut.btn_back':'← Atrás','tut.btn_pick_country':'Elige un país',
     'tut.country_intro':'Elige el país desde el que empezarás. Puedes cambiarlo más tarde.','tut.country_search':'Buscar países…','tut.country_loading':'Cargando lista de países…',
     'tut.discord_title':'Conecta Discord','tut.discord_desc':'Inicia sesión para guardar tu <b>rango, puntos y estadísticas</b>, formar <b>alianzas</b> compartiendo preferencias de país, y ganar <b>bonificaciones diarias</b>.',
@@ -1271,6 +1520,7 @@ const LANGS = {
     'tut.tile_bombs_title':'炸弹与军衔','tut.tile_bombs_desc':'每个像素获得XP。高军衔解锁迫击炮、MOAB和核弹。',
     'tut.tile_fightback_title':'反击','tut.tile_fightback_desc':'当你的国家被占领超过70%时,在自己的领土上绘画可获得奖励像素和更大画笔。',
     'tut.hint_keys':'{drag}平移 · {scroll}缩放 · {click}绘画','tut.key_drag':'拖动','tut.key_scroll':'滚动','tut.key_click':'点击',
+    'tut.hint_keys_touch':'一指绘画 · 双指平移和缩放',
     'tut.btn_skip':'跳过','tut.btn_next':'下一步 →','tut.btn_back':'← 返回','tut.btn_pick_country':'选择国家',
     'tut.country_intro':'选择你的起始国家。之后随时可以更改。','tut.country_search':'搜索国家…','tut.country_loading':'正在加载国家列表…',
     'tut.discord_title':'连接 Discord','tut.discord_desc':'登录以保存你的<b>军衔、积分和统计</b>,通过分享国家偏好组建<b>联盟</b>,并获得<b>每日登录奖励</b>。',
@@ -1388,6 +1638,7 @@ const LANGS = {
     'tut.tile_bombs_title':'बम और रैंक','tut.tile_bombs_desc':'प्रति पिक्सेल XP कमाएं। उच्च रैंक मोर्टार, MOAB और परमाणु बम खोलते हैं।',
     'tut.tile_fightback_title':'पलटवार','tut.tile_fightback_desc':'जब आपका देश 70% से अधिक हार जाए, अपने क्षेत्र में रंगने से बोनस पिक्सेल और बड़ा ब्रश मिलता है।',
     'tut.hint_keys':'{drag} खींचें · {scroll} ज़ूम · {click} रंगें','tut.key_drag':'खींचें','tut.key_scroll':'स्क्रॉल','tut.key_click':'क्लिक',
+    'tut.hint_keys_touch':'एक उंगली रंगने · दो उंगलियाँ पैन और ज़ूम',
     'tut.btn_skip':'छोड़ें','tut.btn_next':'अगला →','tut.btn_back':'← पिछला','tut.btn_pick_country':'देश चुनें',
     'tut.country_intro':'अपना शुरुआती देश चुनें। बाद में कभी भी बदल सकते हैं।','tut.country_search':'देश खोजें…','tut.country_loading':'देश सूची लोड हो रही है…',
     'tut.discord_title':'Discord कनेक्ट करें','tut.discord_desc':'अपनी <b>रैंक, अंक और आँकड़े</b> सहेजने, देश वरीयताएँ साझा करके <b>गठबंधन</b> बनाने, और <b>दैनिक लॉगिन बोनस</b> कमाने के लिए साइन इन करें।',
@@ -1473,6 +1724,7 @@ const LANGS = {
     'tut.tile_bombs_title':'القنابل والرتب','tut.tile_bombs_desc':'احصل على XP لكل بكسل. الرتب الأعلى تفتح الهاون و MOAB والنووية.',
     'tut.tile_fightback_title':'الرد','tut.tile_fightback_desc':'عندما يفقد بلدك أكثر من 70%، الرسم في أرضك يمنح بكسلات إضافية وفرشاة أكبر.',
     'tut.hint_keys':'{drag} للتحريك · {scroll} للتكبير · {click} للرسم','tut.key_drag':'اسحب','tut.key_scroll':'مرر','tut.key_click':'انقر',
+    'tut.hint_keys_touch':'إصبع واحد للرسم · إصبعان للتحريك والتكبير',
     'tut.btn_skip':'تخطّي','tut.btn_next':'التالي →','tut.btn_back':'← السابق','tut.btn_pick_country':'اختر بلداً',
     'tut.country_intro':'اختر البلد الذي ستبدأ منه. يمكنك تغييره لاحقاً.','tut.country_search':'ابحث عن بلدان…','tut.country_loading':'تحميل قائمة البلدان…',
     'tut.discord_title':'اتصل بـ Discord','tut.discord_desc':'سجّل الدخول لحفظ <b>الرتبة والنقاط والإحصاءات</b>، وتكوين <b>تحالفات</b>، والحصول على <b>مكافآت تسجيل دخول يومية</b>.',
@@ -1558,6 +1810,7 @@ const LANGS = {
     'tut.tile_bombs_title':'Bombas e patentes','tut.tile_bombs_desc':'Ganhe XP por pixel. Patentes altas desbloqueiam Morteiro, MOAB e Bomba Nuclear.',
     'tut.tile_fightback_title':'Contra-ataque','tut.tile_fightback_desc':'Quando seu país perde mais de 70%, pintar na sua terra dá pixels bônus e pincel maior.',
     'tut.hint_keys':'{drag} para mover · {scroll} para zoom · {click} para pintar','tut.key_drag':'Arraste','tut.key_scroll':'Role','tut.key_click':'Clique',
+    'tut.hint_keys_touch':'Um dedo para pintar · Dois dedos para mover e zoom',
     'tut.btn_skip':'Pular','tut.btn_next':'Próximo →','tut.btn_back':'← Voltar','tut.btn_pick_country':'Escolha um país',
     'tut.country_intro':'Escolha o país de onde começará. Você pode mudar depois.','tut.country_search':'Buscar países…','tut.country_loading':'Carregando lista de países…',
     'tut.discord_title':'Conectar Discord','tut.discord_desc':'Entre para salvar <b>patente, pontos e estatísticas</b>, formar <b>alianças</b> compartilhando preferências, e ganhar <b>bônus diários</b>.',
@@ -1611,6 +1864,7 @@ const LANGS = {
     'tut.tile_bombs_title':'Бомбы и звания','tut.tile_bombs_desc':'Получай XP за пиксель. Высокие звания открывают Миномёт, MOAB и Ядерную.',
     'tut.tile_fightback_title':'Контратака','tut.tile_fightback_desc':'Когда страна потеряна >70%, рисование на своей земле даёт бонусные пиксели и большую кисть.',
     'tut.hint_keys':'{drag} перемещение · {scroll} зум · {click} рисование','tut.key_drag':'Тяни','tut.key_scroll':'Прокрутка','tut.key_click':'Клик',
+    'tut.hint_keys_touch':'Один палец — рисовать · Два — перемещение и зум',
     'tut.btn_skip':'Пропустить','tut.btn_next':'Далее →','tut.btn_back':'← Назад','tut.btn_pick_country':'Выбери страну',
     'tut.country_intro':'Выбери стартовую страну. Можно изменить позже.','tut.country_search':'Поиск стран…','tut.country_loading':'Загрузка списка стран…',
     'tut.discord_title':'Подключить Discord','tut.discord_desc':'Войдите, чтобы сохранить <b>звание, очки и статистику</b>, создавать <b>альянсы</b>, и получать <b>ежедневные бонусы</b>.',
@@ -1696,6 +1950,7 @@ const LANGS = {
     'tut.tile_bombs_title':'爆弾と階級','tut.tile_bombs_desc':'ピクセル毎にXP獲得。高階級で迫撃砲、MOAB、核兵器が解放。',
     'tut.tile_fightback_title':'反撃','tut.tile_fightback_desc':'自国の70%以上が奪われると、自領土への塗装でボーナスピクセルと大ブラシ。',
     'tut.hint_keys':'{drag}で移動 · {scroll}でズーム · {click}で塗る','tut.key_drag':'ドラッグ','tut.key_scroll':'スクロール','tut.key_click':'クリック',
+    'tut.hint_keys_touch':'1本指で塗装 · 2本指でパン&ズーム',
     'tut.btn_skip':'スキップ','tut.btn_next':'次へ →','tut.btn_back':'← 戻る','tut.btn_pick_country':'国を選ぶ',
     'tut.country_intro':'開始する国を選択。後で変更可能。','tut.country_search':'国を検索…','tut.country_loading':'国リストを読込中…',
     'tut.discord_title':'Discordを接続','tut.discord_desc':'ログインして<b>階級、ポイント、統計</b>を保存し、国の好みを共有して<b>同盟</b>を結成、<b>毎日のログインボーナス</b>を獲得しましょう。',
@@ -1834,6 +2089,7 @@ const LANGS = {
     'tut.tile_bombs_title':'Bomben & Ränge','tut.tile_bombs_desc':'Sammle XP pro Pixel. Höhere Ränge schalten Mörser, MOAB und Atombombe frei.',
     'tut.tile_fightback_title':'Gegenwehr','tut.tile_fightback_desc':'Wenn dein Land zu >70% verloren ist, geben Pixel auf eigenem Boden Bonus-Pixel und größeren Pinsel.',
     'tut.hint_keys':'{drag} zum Schwenken · {scroll} zum Zoomen · {click} zum Malen','tut.key_drag':'Ziehen','tut.key_scroll':'Scrollen','tut.key_click':'Klicken',
+    'tut.hint_keys_touch':'Ein Finger zum Malen · Zwei Finger zum Schwenken und Zoomen',
     'tut.btn_skip':'Überspringen','tut.btn_next':'Weiter →','tut.btn_back':'← Zurück','tut.btn_pick_country':'Land wählen',
     'tut.country_intro':'Wähle dein Startland. Du kannst es später ändern.','tut.country_search':'Länder suchen…','tut.country_loading':'Lade Länderliste…',
     'tut.discord_title':'Discord verbinden','tut.discord_desc':'Melde dich an, um <b>Rang, Punkte und Statistiken</b> zu speichern, <b>Allianzen</b> zu bilden, und <b>tägliche Boni</b> zu erhalten.',
@@ -2017,6 +2273,70 @@ function _initLangPickers() {
 document.addEventListener('DOMContentLoaded', _initLangPickers);
 
 
+
+
+
+
+// ── v30: Mobile support — drawer, collapsible HUDs, mobile detection ──
+const isMobile = matchMedia('(max-width: 768px)').matches || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
+if (isMobile) document.documentElement.classList.add('is-mobile');
+
+// Mobile drawer: open/close + delegated button clicks
+(function setupMobileDrawer() {
+  const drawer   = document.getElementById('mobile-drawer');
+  const backdrop = document.getElementById('mobile-drawer-backdrop');
+  const openBtn  = document.getElementById('btn-mobile-menu');
+  const closeBtn = document.getElementById('mobile-drawer-close');
+  if (!drawer || !openBtn) return;
+
+  function open()  { drawer.classList.add('open'); backdrop.classList.add('open'); }
+  function close() { drawer.classList.remove('open'); backdrop.classList.remove('open'); }
+  openBtn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', close);
+
+  // Delegate drawer button actions to existing toolbar buttons / functions
+  drawer.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-mobile-action]');
+    if (!btn) return;
+    const act = btn.dataset.mobileAction;
+    close();
+    // Defer to allow drawer animation to finish before the action runs
+    setTimeout(() => {
+      if (act === 'stats')        { const b = document.getElementById('btn-stats');     if (b) b.click(); }
+      else if (act === 'font-scale')  { if (typeof cycleFontScale === 'function') cycleFontScale(); }
+      else if (act === 'ownstroke')   { const b = document.getElementById('btn-ownstroke'); if (b) b.click(); }
+      else if (act === 'borders')     { const b = document.getElementById('btn-brd');     if (b) b.click(); }
+      else if (act === 'reset-view')  { const b = document.getElementById('btn-rst');     if (b) b.click(); }
+      else if (act === 'clear')       { const b = document.getElementById('btn-clr');     if (b) b.click(); }
+      else if (act === 'debug')       { const b = document.getElementById('btn-debug');   if (b) b.click(); }
+    }, 200);
+  });
+})();
+
+// Legend collapse: tap legend to expand/collapse on mobile
+(function setupLegendCollapse() {
+  const legend = document.getElementById('legend');
+  if (!legend) return;
+  legend.addEventListener('click', e => {
+    if (!isMobile) return;
+    // Don't toggle if user clicked an item inside the expanded panel (let event continue)
+    if (legend.classList.contains('expanded') && e.target.closest('#leg-items')) return;
+    legend.classList.toggle('expanded');
+  });
+})();
+
+// Audio HUD collapse: tap to expand/collapse on mobile
+(function setupAudioCollapse() {
+  const hud = document.getElementById('audio-hud');
+  if (!hud) return;
+  hud.addEventListener('click', e => {
+    if (!isMobile) return;
+    // If expanded and click is on a button inside, don't toggle
+    if (hud.classList.contains('expanded') && e.target.closest('button')) return;
+    hud.classList.toggle('expanded');
+  });
+})();
 
 
 // ── Country DB: ISO numeric → {n:name, c:color} ──────────────────
@@ -2431,7 +2751,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-bot-flash-v29';
+const CODE_VERSION = '2026-05-18-ios-crash-fix-v31';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -2479,6 +2799,12 @@ let isPainting=false,isDragging=false,scale=1,ox=0,oy=0,dragBase={x:0,y:0};
 const conqueredSet=new Set();
 
 const vp=document.getElementById("viewport");
+// ── v31: Mobile/iOS detection for memory-reduced canvas init ─────
+const _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const _isMobileForMemory = matchMedia('(max-width: 768px)').matches || _isIOS || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
+// Canvases that are purely decorative — shrunk to 1×1 on mobile to free GPU memory.
+// Drawing routines for these silently no-op when the canvas is 1×1.
+const _DECORATIVE_CANVAS_IDS = ['c-grid','c-waves','c-sprites','c-landmarks','c-crater','c-siege'];
 const cBase=document.getElementById("c-base");
 const cGrid=document.getElementById("c-grid");
 const gridCtx=cGrid.getContext("2d");
@@ -2685,7 +3011,20 @@ craterCtx.imageSmoothingEnabled=false;
 const cFlash = document.getElementById("c-flash");
 const flashCtx = cFlash ? cFlash.getContext("2d") : null;
 if (flashCtx) flashCtx.imageSmoothingEnabled = false;
-[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{if(c){c.width=MAP_W;c.height=MAP_H;}});
+// v31: On mobile/iOS, shrink decorative canvases to 1×1 to free GPU memory.
+//      Essential gameplay canvases stay at full MAP_W × MAP_H.
+[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{
+  if(!c) return;
+  if(_isMobileForMemory && _DECORATIVE_CANVAS_IDS.includes(c.id)){
+    c.width=1; c.height=1;
+    c.style.display='none'; // also skip GPU compositing
+  } else {
+    c.width=MAP_W; c.height=MAP_H;
+  }
+});
+if(_isMobileForMemory){
+  console.log('[Mobile] Decorative canvases skipped to save ~48 MB GPU memory');
+}
 
 // ── White pixel flash subsystem ──────────────────────────────────
 // Every newly placed pixel briefly flashes white before fading to reveal the
@@ -3506,8 +3845,15 @@ async function boot(){
       }
     }
 
-    // Try Web Worker first — runs heavy pixel sweep off main thread
+    // Try Web Worker first — runs heavy pixel sweep off main thread.
+    // v31: skip the worker entirely on mobile/iOS. Blob URL workers + large
+    // ImageData transfers are flaky and memory-hungry on iOS Safari, often
+    // killing the tab during the prepopulate phase. The main-thread chunked
+    // fallback below is async-yielding and works fine within iOS memory limits.
     let prepopDone = false;
+    if (_isMobileForMemory) {
+      console.log('[Mobile] Skipping Web Worker prepopulate — using main-thread fallback');
+    } else
     try {
       const worker = createPixelWorker();
       // Clone typed arrays so we don't transfer ownership of the originals
@@ -6657,6 +7003,7 @@ function renderProceduralBiomes() {
 }
 
 function renderLandmarks() {
+  if (_isMobileForMemory) return; // v31: landmarks canvas is 1×1 on mobile, skip rendering
   if (!lmCtx || !landMask) {
     console.warn('[Landmarks] Cannot render yet — canvas or landMask not ready');
     return;
@@ -7194,6 +7541,7 @@ setInterval(() => {
 // ── Grid overlay at high zoom ─────────────────────────────────────
 // Drawn once at MAP_W×MAP_H resolution. CSS opacity controls visibility based on scale.
 function drawGrid() {
+  if (_isMobileForMemory) return; // v31: grid canvas is 1×1 on mobile, skip rendering
   if (!cGrid || !gridCtx) return;
   // Use ImageData for ~50x speed vs millions of fillRect calls
   const img = gridCtx.createImageData(MAP_W, MAP_H);
@@ -7515,6 +7863,7 @@ function buildWaveBase(){
 }
 
 function tickWaves(){
+  if(_isMobileForMemory) return; // v31: waves canvas is 1×1 on mobile, skip animation
   if(!waveReady || !landMask){ waveAnimId=requestAnimationFrame(tickWaves); return; }
   // Timestamp-based throttle: ~10fps (100ms between ticks)
   // Immune to tab-hidden frame debt — won't burst on resume
@@ -7816,6 +8165,7 @@ let spriteFrame=0;
 let spriteImg=null; // persistent ImageData for sprites canvas
 
 function tickSprites(){
+  if(_isMobileForMemory) return; // v31: sprites canvas is 1×1 on mobile
   if(!spriteList.length||!landMask){requestAnimationFrame(tickSprites);return;}
   // Timestamp-based throttle: ~8fps (125ms between ticks)
   const _sNow = performance.now();
@@ -8681,30 +9031,108 @@ $("btn-clr").addEventListener("click",()=>{
 });
 // brush slider removed in v27; brushSize is fixed at 3
 
-// Touch
-let lastDist=null;
-vp.addEventListener("touchstart",e=>{
-  if(e.touches.length===1){isPainting=true;const t=e.touches[0],p=screenToMap(t.clientX,t.clientY);paintBrush(p.x,p.y);}
-  if(e.touches.length===2){isPainting=false;lastDist=tdist(e);}e.preventDefault();
-},{passive:false});
-vp.addEventListener("touchmove",e=>{
-  if(e.touches.length===1&&isPainting){const t=e.touches[0],p=screenToMap(t.clientX,t.clientY);paintBrush(p.x,p.y);}
-  if(e.touches.length===2){const d=tdist(e);if(lastDist){const r=vp.getBoundingClientRect();doZoom(d/lastDist,((e.touches[0].clientX+e.touches[1].clientX)/2)-r.left,((e.touches[0].clientY+e.touches[1].clientY)/2)-r.top);}lastDist=d;}
+// ── v30: Touch model — 1 finger paint, 2 finger pan+zoom ─────────
+// Disambiguation: while exactly 1 finger is down → paint. The moment a second
+// finger lands, we abort the paint and switch to pan+zoom. When both fingers
+// lift, we go back to idle (a fresh 1-finger touch resumes painting).
+//
+// Pan logic: track the midpoint between the two fingers. The delta from one
+// frame to the next is the pan vector. Pinch zoom uses the distance ratio,
+// centered on the midpoint (so zooming feels natural under the fingers).
+let _touchLastDist  = 0;
+let _touchLastMidX  = 0;
+let _touchLastMidY  = 0;
+let _touchMode      = 'idle'; // 'idle' | 'paint' | 'panzoom'
+
+function _tdist(e){return Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}
+function _tmid(e){return {x:(e.touches[0].clientX+e.touches[1].clientX)/2, y:(e.touches[0].clientY+e.touches[1].clientY)/2};}
+
+vp.addEventListener('touchstart', e => {
+  if (e.touches.length === 1 && _touchMode === 'idle') {
+    _touchMode = 'paint';
+    isPainting = true;
+    const t = e.touches[0];
+    const p = screenToMap(t.clientX, t.clientY);
+    paintBrush(p.x, p.y);
+  } else if (e.touches.length >= 2) {
+    // Second finger landed — switch to pan+zoom. Abort any in-flight paint
+    // without sending stroke-end (the partial stroke is discarded).
+    if (_touchMode === 'paint') {
+      isPainting = false;
+      strokePixelBuffer = [];
+    }
+    _touchMode = 'panzoom';
+    _touchLastDist = _tdist(e);
+    const mid = _tmid(e);
+    _touchLastMidX = mid.x;
+    _touchLastMidY = mid.y;
+  }
   e.preventDefault();
-},{passive:false});
-vp.addEventListener("touchend",()=>{
-  if(isPainting){
-    setTimeout(runAutoFill,0);
+}, { passive: false });
+
+vp.addEventListener('touchmove', e => {
+  if (_touchMode === 'paint' && e.touches.length === 1) {
+    const t = e.touches[0];
+    const p = screenToMap(t.clientX, t.clientY);
+    paintBrush(p.x, p.y);
+  } else if (_touchMode === 'panzoom' && e.touches.length >= 2) {
+    const r = vp.getBoundingClientRect();
+    const mid = _tmid(e);
+    // Pan: midpoint delta → ox/oy delta
+    const dx = mid.x - _touchLastMidX;
+    const dy = mid.y - _touchLastMidY;
+    ox += dx;
+    oy += dy;
+    _touchLastMidX = mid.x;
+    _touchLastMidY = mid.y;
+    // Zoom: distance ratio centered on midpoint (relative to viewport)
+    const d = _tdist(e);
+    if (_touchLastDist > 0) {
+      const ratio = d / _touchLastDist;
+      // doZoom expects viewport-relative center coords
+      doZoom(ratio, mid.x - r.left, mid.y - r.top);
+    }
+    _touchLastDist = d;
+    clamp();
+    applyT();
+  }
+  e.preventDefault();
+}, { passive: false });
+
+vp.addEventListener('touchend', e => {
+  // touchend fires when ANY finger leaves; e.touches has the remaining ones.
+  if (_touchMode === 'paint' && isPainting) {
+    setTimeout(runAutoFill, 0);
     if (strokePixelBuffer.length >= 4 && wsReady) {
-      try {
-        ws.send(JSON.stringify({ type: 'stroke-end', pixels: strokePixelBuffer.slice() }));
-      } catch (e) {}
+      try { ws.send(JSON.stringify({ type:'stroke-end', pixels: strokePixelBuffer.slice() })); } catch (err) {}
     }
     strokePixelBuffer = [];
+    isPainting = false;
   }
-  isPainting=false;lastDist=null;
+  if (e.touches.length === 0) {
+    // All fingers up — back to idle
+    _touchMode = 'idle';
+    _touchLastDist = 0;
+  } else if (e.touches.length === 1 && _touchMode === 'panzoom') {
+    // Dropped from 2 fingers to 1 — finish the gesture rather than starting a
+    // paint (which would create a stray pixel under the user's lifting finger).
+    _touchMode = 'idle';
+    _touchLastDist = 0;
+  }
 });
-function tdist(e){return Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}
+
+vp.addEventListener('touchcancel', () => {
+  _touchMode = 'idle';
+  _touchLastDist = 0;
+  isPainting = false;
+  strokePixelBuffer = [];
+});
+
+// Disable iOS gesturestart (pinch zoom on Safari that bypasses touchstart)
+window.addEventListener('gesturestart', e => e.preventDefault());
+window.addEventListener('gesturechange', e => e.preventDefault());
+window.addEventListener('gestureend', e => e.preventDefault());
+
 
 // ── Procedural fallback ───────────────────────────────────────────
 async function proceduralFallback(){
@@ -8784,5 +9212,21 @@ setInterval(()=>{
     </div>
   </div>
 </div>
+
+<!-- v30: Mobile drawer (hidden on desktop, slides in on mobile) -->
+<div id="mobile-drawer">
+  <div class="drawer-header">
+    <span>Menu</span>
+    <button id="mobile-drawer-close" aria-label="Close">&times;</button>
+  </div>
+  <button class="btn" data-mobile-action="stats">📊 Stats</button>
+  <button class="btn" data-mobile-action="font-scale">Aa Font scale</button>
+  <button class="btn" data-mobile-action="ownstroke">✏️ My pixels</button>
+  <button class="btn" data-mobile-action="borders">Borders</button>
+  <button class="btn" data-mobile-action="reset-view">Reset View</button>
+  <button class="btn" data-mobile-action="clear">Clear All</button>
+  <button class="btn" data-mobile-action="debug">+100 px (debug)</button>
+</div>
+<div id="mobile-drawer-backdrop"></div>
 </body>
 </html>
