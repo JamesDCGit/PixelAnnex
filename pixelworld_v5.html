@@ -1128,6 +1128,23 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 }
 #flag-overlay { transition: opacity .2s linear; }
 
+
+/* v35: Persistent leaderboard panel — mirrors #legend layout */
+#leaderboard-panel{position:absolute;bottom:50px;right:12px;max-width:240px;max-height:60vh;overflow-y:auto;z-index:11}
+#leaderboard-panel::-webkit-scrollbar{width:6px}
+#leaderboard-panel::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:3px}
+#leaderboard-panel h3{font-size:9px;color:#334155;letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center}
+#leaderboard-panel .lb-count{font-size:9px;color:#475569;font-weight:normal}
+.lb-row{display:flex;align-items:center;gap:5px;margin-bottom:3px;font-size:10px;color:#64748b;white-space:nowrap;cursor:default}
+.lb-row .lb-pos{color:#475569;font-size:9px;min-width:18px;text-align:right;font-variant-numeric:tabular-nums}
+.lb-row .lb-name{color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.lb-row .lb-pts{margin-left:auto;color:#fbbf24;font-size:10px;font-weight:600;font-variant-numeric:tabular-nums}
+.lb-row.lb-viewer{background:rgba(59,130,246,0.1);border-left:2px solid #3b82f6;padding-left:4px;margin-left:-6px;border-radius:0 3px 3px 0}
+.lb-row.lb-viewer .lb-name{color:#93c5fd;font-weight:600}
+.lb-divider{margin:4px 0;border-top:1px dashed #1e293b;height:0}
+.lb-empty{font-size:10px;color:#475569;padding:6px 0;text-align:center}
+@media (max-width: 768px){#leaderboard-panel{right:8px;max-width:180px;font-size:10px;max-height:40vh}}
+
 </style>
 </head>
 <body>
@@ -1225,7 +1242,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <button class="btn" id="btn-bomb">&#128163; Bomb</button>
     <div id="bomb-menu"></div>
     <button class="btn" id="btn-highlight" title="General/Admiral: click to enter highlight mode, then click a country to designate attack target">&#127919; Highlight</button>
-    <button class="btn active" id="btn-ownstroke" title="Toggle visibility of pixels you personally painted">&#9999;&#65039; My pixels</button>
+    <button class="btn" id="btn-ownstroke" title="Toggle visibility of pixels you personally painted">&#9999;&#65039; My pixels</button>
     <div class="sep"></div>
     <div id="bucket-hud">
       <div id="bucket-bar"><div id="bucket-fill"></div></div>
@@ -1302,7 +1319,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
               <div class="tut-tile">
                 <div class="tut-tile-icon">⚔️</div>
                 <div class="tut-tile-title" data-i18n="tut.tile_conquer_title">Conquer countries</div>
-                <div class="tut-tile-desc" data-i18n="tut.tile_conquer_desc">Hold 80% of a country's pixels to claim it. Larger countries are tougher.</div>
+                <div class="tut-tile-desc" data-i18n="tut.tile_conquer_desc">Hold 70% of a country's pixels to claim it. Larger countries are tougher.</div>
               </div>
               <div class="tut-tile">
                 <div class="tut-tile-icon">💥</div>
@@ -1411,7 +1428,12 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <div id="activity-toast"></div>
     <div id="bomb-toast"><div class="toast-title">&#128163; Bombing!</div><div class="toast-body" id="bomb-toast-body"></div></div>
     <div id="conquest-toast"><div class="toast-title">&#9873; Country Conquered</div><div class="toast-body" id="toast-body"></div></div>
-    <div class="hud" id="legend"><h3 data-i18n="hud.territory">Territory</h3><div id="leg-items"></div>
+    <!-- v35: Persistent leaderboard panel -->
+<div class="hud" id="leaderboard-panel">
+  <h3><span>Leaderboard</span><span class="lb-count" id="lb-count">0 players</span></h3>
+  <div id="lb-items" class="lb-empty">Loading…</div>
+</div>
+<div class="hud" id="legend"><h3 data-i18n="hud.territory">Territory</h3><div id="leg-items"></div>
     <div id="server-status" style="margin-top:6px;padding-top:6px;border-top:1px solid #1e293b;font-size:9px;display:flex;flex-direction:column;gap:3px;">
       <div style="display:flex;align-items:center;gap:5px;">
         <span id="mp-dot" style="width:6px;height:6px;border-radius:50%;background:#334155;flex-shrink:0"></span>
@@ -1468,7 +1490,7 @@ const LANGS = {
     'tut.tile_paint_title':  'Paint pixels',
     'tut.tile_paint_desc':   'Click and drag on the map to paint. Each pixel costs 1 from your bucket.',
     'tut.tile_conquer_title':'Conquer countries',
-    'tut.tile_conquer_desc': "Hold 80% of a country's pixels to claim it. Larger countries are tougher.",
+    'tut.tile_conquer_desc': "Hold 70% of a country's pixels to claim it. Larger countries are tougher.",
     'tut.tile_bombs_title':  'Bombs & ranks',
     'tut.tile_bombs_desc':   'Earn XP per pixel. Higher ranks unlock Mortar, MOAB, and Nuke.',
     'tut.tile_fightback_title':'Fight back',
@@ -2968,7 +2990,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-bot-activity-v34';
+const CODE_VERSION = '2026-05-18-balance-pass-v35';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -4201,8 +4223,9 @@ async function boot(){
   const borderImg=bordCtx.createImageData(MAP_W,MAP_H);
   const bd=borderImg.data;
   bordPixel=new Uint8Array(MAP_PX);
-  // Border colour: #ad986e = [173,152,110] (light warm tan)
-  function wb(i){bd[i*4]=182;bd[i*4+1]=157;bd[i*4+2]=107;bd[i*4+3]=255;bordPixel[i]=1;}
+  // v35: respect borderDark state on initial draw (was hardcoded to light)
+  const [_br0, _bg0, _bb0] = borderDark ? [63, 50, 30] : [182, 157, 107];
+  function wb(i){bd[i*4]=_br0;bd[i*4+1]=_bg0;bd[i*4+2]=_bb0;bd[i*4+3]=255;bordPixel[i]=1;}
 
   const CHUNK2=262144;
   for(let s=0;s<MAP_PX;s+=CHUNK2){
@@ -4235,7 +4258,7 @@ async function boot(){
     for (const i of toAdd) {
       bordPixel[i] = 1;
       const p = i*4;
-      bd[p]=182; bd[p+1]=157; bd[p+2]=107; bd[p+3]=255;
+      bd[p]=_br0; bd[p+1]=_bg0; bd[p+2]=_bb0; bd[p+3]=255; // v35
     }
     await sleep(1);
   }
@@ -4380,7 +4403,8 @@ if (typeof renderLandmarks === 'function') {
 // Track pixels the local player has personally painted (vs country-prepopulate
 // or bot/other-player paints) so we can show them subtly.
 let ownPixels = null; // Uint8Array(MAP_PX) — 1 where local player painted
-let _ownStrokeVisible = true;
+let _ownStrokeVisible = false; // v35: off by default
+setTimeout(() => { const c = document.getElementById('c-ownstroke'); if (c) c.style.opacity = '0'; }, 0);
 let _ownStrokeQueue = []; // batched pixel paints
 
 function initOwnStroke() {
@@ -4515,12 +4539,27 @@ function paintBrush(px,py){
   scheduleLegend();
 }
 
-function showBonusPop(n, prefix){
+function showBonusPop(n, prefix, opts){
   const el=document.createElement('div');
   el.className='bonus-pop';
   el.textContent=(prefix||'')+'+'+n+' bonus!';
-  el.style.left=(_mouseScreenX+8)+'px';
-  el.style.top=(_mouseScreenY-18)+'px';
+  const useLoginAnchor = (opts && opts.encirclement) || /encircle/i.test(String(prefix||''));
+  if (useLoginAnchor) {
+    const login = document.getElementById('login-hud');
+    if (login) {
+      const r = login.getBoundingClientRect();
+      el.style.left = (r.left + r.width/2 - 50) + 'px';
+      el.style.top  = (r.bottom + 6) + 'px';
+      el.style.transform = 'none';
+    } else {
+      el.style.left = '50%';
+      el.style.top  = '60px';
+      el.style.transform = 'translateX(-50%)';
+    }
+  } else {
+    el.style.left=(_mouseScreenX+8)+'px';
+    el.style.top=(_mouseScreenY-18)+'px';
+  }
   document.body.appendChild(el);
   setTimeout(()=>el.remove(),800);
 }
@@ -4598,7 +4637,7 @@ function screenToMap(sx,sy){const r=vp.getBoundingClientRect();return{x:Math.flo
 //   - You cannot fill across country borders
 //   - Small border completes a loop → only the loop interior fills
 const MAX_FILL_PX = 500000; // safety cap
-const CONQUEST_THRESHOLD = 0.8; // 80% triggers conquest
+const CONQUEST_THRESHOLD = 0.7; // v35: was 0.8
 
 function isWallFill(i){
   if(!landMask[i]) return true;               // ocean: wall
@@ -7502,6 +7541,18 @@ function mpInit() {
   setTimeout(mpConnect, 500);
 }
 
+// v35: cached simulated count from /api/world-state
+let _simPlayerCount = null;
+let _lastSimFetch = 0;
+function _refreshSimPlayerCount() {
+  if (Date.now() - _lastSimFetch < 25000) return;
+  _lastSimFetch = Date.now();
+  fetch('/api/world-state').then(r => r.json()).then(ws => {
+    if (typeof ws.totalPlayers === 'number') _simPlayerCount = ws.totalPlayers;
+  }).catch(() => {});
+}
+setInterval(_refreshSimPlayerCount, 30000);
+
 function updateServerStatus(online, humanCount, botList){
   const dot    = document.getElementById('mp-dot');
   const status = document.getElementById('mp-status');
@@ -7520,8 +7571,11 @@ function updateServerStatus(online, humanCount, botList){
   // Online
   dot.style.background = '#22c55e';
   dot.classList.add('bot-active');
-  const total = humanCount + botList.length;
-  status.textContent = online ? (humanCount + ' player' + (humanCount!==1?'s':'') + ' · ' + botList.length + ' bots') : 'Connecting…';
+  _refreshSimPlayerCount();
+  const displayCount = (_simPlayerCount !== null) ? _simPlayerCount : (humanCount + botList.length);
+  status.textContent = online
+    ? (displayCount + ' player' + (displayCount !== 1 ? 's' : '') + ' online')
+    : 'Connecting…';
   status.style.color = '#4ade80';
 
   // Bot list
@@ -8615,6 +8669,12 @@ function tickSprites(){
       if(cx>=0&&cx<MAP_W&&cy>=0&&cy<MAP_H&&landMask[cy*MAP_W+cx]===1){
         s.vy = -s.vy + (Math.random()-0.5)*0.2;
         if(s.type!=='whale') s.vx=Math.abs(s.vx)*(s.flip?-1:1);
+        // v35: clamp velocity so repeated bounces can't compound speed
+        const MAX_VX = 0.8, MAX_VY = 0.5;
+        if (s.vx > MAX_VX) s.vx = MAX_VX;
+        else if (s.vx < -MAX_VX) s.vx = -MAX_VX;
+        if (s.vy > MAX_VY) s.vy = MAX_VY;
+        else if (s.vy < -MAX_VY) s.vy = -MAX_VY;
       }
     }
 
@@ -9615,6 +9675,60 @@ function mkNoise(pm){
 setInterval(()=>{
 // debug ticker removed in v27
 },500);
+
+
+// ── v35: Persistent leaderboard panel ─────────────────────────────
+let _lbViewerDiscordId = null;
+function _resolveViewerDiscordId() {
+  if (_lbViewerDiscordId) return Promise.resolve(_lbViewerDiscordId);
+  return fetch('/api/stats/me', { credentials: 'same-origin' })
+    .then(r => r.ok ? r.json() : null)
+    .then(me => {
+      if (me && me.discordId) { _lbViewerDiscordId = me.discordId; }
+      return _lbViewerDiscordId;
+    }).catch(() => null);
+}
+
+function refreshLeaderboardPanel() {
+  _resolveViewerDiscordId().then(id => {
+    let url = '/api/stats/leaderboard';
+    if (id) url += '?discord_id=' + encodeURIComponent(id);
+    fetch(url).then(r => r.json()).then(data => {
+      const el = document.getElementById('lb-items');
+      const countEl = document.getElementById('lb-count');
+      if (!el) return;
+      if (countEl) countEl.textContent = data.totalPlayers + ' player' + (data.totalPlayers !== 1 ? 's' : '');
+      const rows = (data.leaderboard || []);
+      if (!rows.length) {
+        el.className = 'lb-empty';
+        el.innerHTML = 'No ranked players yet.';
+        return;
+      }
+      el.className = '';
+      let h = '';
+      for (const r of rows) {
+        const isViewer = data.viewer && r.rank === data.viewer.rank;
+        h += '<div class="lb-row' + (isViewer ? ' lb-viewer' : '') + '">'
+           + '<span class="lb-pos">#' + r.rank + '</span>'
+           + '<span class="lb-name">' + escapeHtml(r.username) + '</span>'
+           + '<span class="lb-pts">' + r.points.toLocaleString() + '</span>'
+           + '</div>';
+      }
+      if (data.viewer && !data.viewer.inTop20) {
+        h += '<div class="lb-divider"></div>'
+           + '<div class="lb-row lb-viewer">'
+           + '<span class="lb-pos">#' + data.viewer.rank + '</span>'
+           + '<span class="lb-name">' + escapeHtml(data.viewer.username) + '</span>'
+           + '<span class="lb-pts">' + data.viewer.points.toLocaleString() + '</span>'
+           + '</div>';
+      }
+      el.innerHTML = h;
+    }).catch(() => {});
+  });
+}
+
+setInterval(refreshLeaderboardPanel, 30 * 1000);
+document.addEventListener('DOMContentLoaded', () => setTimeout(refreshLeaderboardPanel, 800));
 
 // debug panel removed in v27
 </script>

@@ -214,6 +214,22 @@ async function setProfile(data) {
   return gameFetch('/api/bot/profile', { method: 'POST', body: JSON.stringify(data) });
 }
 
+// v35: lookup Discord users with prefs matching a defender country
+async function _fetchDefenderMentions(defenderCountryId) {
+  if (!defenderCountryId) return [];
+  try {
+    const url = process.env.GAME_SERVER_URL + '/api/bot/users-by-country?country_id=' + encodeURIComponent(defenderCountryId);
+    const res = await fetch(url, { headers: { 'X-Bot-Secret': process.env.BOT_API_SECRET || '' } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.discordIds) ? data.discordIds : [];
+  } catch (e) {
+    console.warn('[Bot] _fetchDefenderMentions failed:', e.message);
+    return [];
+  }
+}
+
+
 // ── Discord client ────────────────────────────────────────────────
 const client = new Client({
   intents: [
@@ -803,8 +819,20 @@ async function postWarEvent(guild, event) {
     case 'war_siege_start':
       title   = '🚨 Country Under Siege';
       content = `${attacker} has ${event.ratio}% of ${defender}'s territory!`;
-      color   = 0xf59e0b; // amber
+      color   = 0xf59e0b;
+      event._mentionDefenders = true; // v35
       break;
+
+    case 'war_multi_attack': {
+      title   = '🚨 Multi-Country Attack';
+      const atkNames = (event.attackerIds || []).map(id => COUNTRY_BY_ID[id] || ('Country ' + id));
+      const sampled  = atkNames.slice(0, 3).join(', ');
+      const more     = atkNames.length > 3 ? ' +' + (atkNames.length - 3) + ' more' : '';
+      content = `${event.attackerCount} countries are attacking ${defender}! (${sampled}${more})`;
+      color   = 0xef4444;
+      event._mentionDefenders = true;
+      break;
+    }
 
     case 'war_siege_end':
       title   = '🛡️ Siege Lifted';
@@ -826,10 +854,19 @@ async function postWarEvent(guild, event) {
   }
 
   // Tier 3 events ping @everyone (use sparingly!)
-  const allowedMentions = { roles: [] };
+  const allowedMentions = { roles: [], users: [] };
   let mentionPrefix = '';
+  // v35: ping defender-pref users for siege_start + multi_attack
+  if (event._mentionDefenders && event.defenderId) {
+    const defenderUsers = await _fetchDefenderMentions(event.defenderId);
+    if (defenderUsers.length > 0) {
+      const slice = defenderUsers.slice(0, 10);
+      mentionPrefix = slice.map(id => '<@' + id + '>').join(' ') + ' ';
+      allowedMentions.users = slice;
+    }
+  }
   if (event.tier >= 3) {
-    mentionPrefix = '@everyone ';
+    mentionPrefix += '@everyone ';
     allowedMentions.parse = ['everyone', 'roles'];
   } else if (event.tier >= 2) {
     // Tier 2: allow role mentions (alliance pings)
@@ -888,6 +925,7 @@ function handleGameEvent(event) {
       break;
 
     case 'war_conquest':
+    case 'war_multi_attack':
     case 'war_siege_start':
     case 'war_siege_end':
     case 'war_bomb':

@@ -31,19 +31,19 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-bot-activity-v34';
+const SERVER_VERSION       = '2026-05-18-balance-pass-v35';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
 const MAP_PX             = MAP_W * MAP_H;
-const CONQUEST_THRESHOLD = 0.80;
+const CONQUEST_THRESHOLD = 0.70; // v35
 const MAX_STROKE_PX      = 500;
 const BROADCAST_MS       = 50;    // delta broadcast debounce
 const PING_MS            = 10000;
 const TIMEOUT_MS         = 30000;
 
 // ── Bot config ────────────────────────────────────────────────────
-const BOT_TICK_MS         = 2000;  // ms between bot ticks (staggered) — slowed for smaller map
+const BOT_TICK_MS         = 1000;  // v35: doubled paint rate (was 2000)
 const BOT_PIXELS_PER_TICK  = 1;    // pixels per stroke per bot — halved
 const BOT_BUCKET_MAX       = 60;   // smaller cap to prevent burst spikes
 
@@ -1732,7 +1732,41 @@ function botInit(countryId) {
   ownerPixels[getIdx(countryId)] = new Set();
   countryPxCount[countryId] = countryPxCount[countryId] || 0;
   _initBotActivity(countryId); // v34
+  _initBotProfile(countryId);  // v35
 }
+
+// v35: bot profile bootstrap — store 3 random country prefs in profiles for alliance forming
+function _initBotProfile(countryId) {
+  const synthId = 'bot:' + countryId;
+  if (profiles.has(synthId)) return;
+  const allIds = [...bots.keys()];
+  if (allIds.length < 4) return;
+  const others = allIds.filter(id => id !== countryId);
+  const picks = [];
+  while (picks.length < 3 && others.length > 0) {
+    const idx = Math.floor(Math.random() * others.length);
+    picks.push(others.splice(idx, 1)[0]);
+  }
+  profiles.set(synthId, {
+    discordId:   synthId,
+    username:    'Bot ' + (countryNames[countryId] || countryId),
+    rank:        'Soldier',
+    points:      0,
+    xp:          0,
+    countryMain: picks[0] || null,
+    countryB:    picks[1] || null,
+    countryC:    picks[2] || null,
+    joinedAt:    Date.now(),
+    isBot:       true,
+  });
+}
+setInterval(() => {
+  for (const countryId of bots.keys()) {
+    const synthId = 'bot:' + countryId;
+    const p = profiles.get(synthId);
+    if (!p || !p.countryMain) _initBotProfile(countryId);
+  }
+}, 60 * 1000);
 
 // Stagger bot ticks so they don't all fire simultaneously.
 // Tickers are self-terminating: if the bot disappears from the map, the ticker stops.
@@ -2079,7 +2113,8 @@ const httpServer = http.createServer(async (req, res) => {
     const session = token ? getSession(token) : null;
     if (!session) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ loggedIn: false }));
+      res.end(JSON.stringify({
+      discordId:    profile.discordId, loggedIn: false }));
       return;
     }
     const result = processDailyLogin(session.discordId);
@@ -2126,9 +2161,11 @@ const httpServer = http.createServer(async (req, res) => {
 
   // ── /api/stats/leaderboard — top 20 by points (public) ──
   if (url.pathname === '/api/stats/leaderboard') {
-    const sorted = [...profiles.values()]
-      .filter(p => p.username && p.points > 0)
-      .sort((a, b) => (b.points || 0) - (a.points || 0))
+    // v35: skip bots so leaderboard only shows real players
+    const allRanked = [...profiles.values()]
+      .filter(p => p.username && p.points > 0 && !p.isBot)
+      .sort((a, b) => (b.points || 0) - (a.points || 0));
+    const sorted = allRanked
       .slice(0, 20)
       .map((p, i) => ({
         rank:          i + 1,
@@ -2140,8 +2177,52 @@ const httpServer = http.createServer(async (req, res) => {
         countryMain:   p.countryMain,
         countryMainName: p.countryMain ? (countryNames[p.countryMain] || ('Country ' + p.countryMain)) : null,
       }));
+    // v35: if caller supplies discord_id, include their rank position even when below top-20
+    const viewerDiscordId = url.searchParams.get('discord_id');
+    let viewer = null;
+    if (viewerDiscordId) {
+      const idx = allRanked.findIndex(p => p.discordId === viewerDiscordId);
+      if (idx >= 0) {
+        const p = allRanked[idx];
+        viewer = {
+          rank: idx + 1,
+          username: p.username,
+          avatar:   p.avatar,
+          points:   p.points || 0,
+          gameRank: p.rank,
+          inTop20:  idx < 20,
+        };
+      }
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ leaderboard: sorted, totalPlayers: profiles.size }));
+    res.end(JSON.stringify({ leaderboard: sorted, totalPlayers: allRanked.length, viewer }));
+    return;
+  }
+
+  // ── v35: /api/bot/users-by-country — Discord IDs whose prefs include this country ──
+  if (url.pathname === '/api/bot/users-by-country') {
+    if (req.headers['x-bot-secret'] !== process.env.BOT_API_SECRET) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'forbidden' }));
+      return;
+    }
+    const countryId = url.searchParams.get('country_id');
+    if (!countryId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'country_id required' }));
+      return;
+    }
+    const ids = [];
+    for (const p of profiles.values()) {
+      if (p.isBot) continue;
+      if (String(p.countryMain) === String(countryId) ||
+          String(p.countryB)    === String(countryId) ||
+          String(p.countryC)    === String(countryId)) {
+        ids.push(p.discordId);
+      }
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ countryId, discordIds: ids }));
     return;
   }
 
