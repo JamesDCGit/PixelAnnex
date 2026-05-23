@@ -214,6 +214,34 @@ async function setProfile(data) {
   return gameFetch('/api/bot/profile', { method: 'POST', body: JSON.stringify(data) });
 }
 
+// v36: country-name resolver — uses local COUNTRY_BY_ID, falls back to server's countryNames
+const _countryNameMissCache = new Map();
+async function _resolveCountryName(countryId) {
+  if (!countryId) return null;
+  const local = COUNTRY_BY_ID[countryId] || COUNTRY_BY_ID[String(countryId)];
+  if (local) return local;
+  // Try cached miss-then-server-resolved value
+  if (_countryNameMissCache.has(String(countryId))) {
+    return _countryNameMissCache.get(String(countryId));
+  }
+  try {
+    const url = process.env.GAME_SERVER_URL + '/api/bot/country-name?country_id=' + encodeURIComponent(countryId);
+    const res = await fetch(url, { headers: { 'X-Bot-Secret': process.env.BOT_API_SECRET || '' } });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.name) {
+        _countryNameMissCache.set(String(countryId), data.name);
+        // Also populate COUNTRY_BY_ID for future lookups
+        COUNTRY_BY_ID[String(countryId)] = data.name;
+        return data.name;
+      }
+    }
+  } catch (e) { /* ignore */ }
+  const fallback = 'Country ' + countryId;
+  _countryNameMissCache.set(String(countryId), fallback);
+  return fallback;
+}
+
 // v35: lookup Discord users with prefs matching a defender country
 async function _fetchDefenderMentions(defenderCountryId) {
   if (!defenderCountryId) return [];
@@ -804,6 +832,14 @@ async function flushWarQueue() {
 async function postWarEvent(guild, event) {
   const attacker = event.attackerId ? getCountryMention(event.attackerId, guild) : null;
   const defender = event.defenderId ? getCountryMention(event.defenderId, guild) : null;
+  // v36: resolve any "Country NNN" placeholders via server lookup
+  let _atkName = attacker, _defName = defender;
+  if (/^Country \d+$/i.test(_atkName) && event.attackerId) {
+    _atkName = await _resolveCountryName(event.attackerId);
+  }
+  if (/^Country \d+$/i.test(_defName) && event.defenderId) {
+    _defName = await _resolveCountryName(event.defenderId);
+  }
 
   let content = '';
   let color   = 0x6366f1;
@@ -812,13 +848,13 @@ async function postWarEvent(guild, event) {
   switch (event.type) {
     case 'war_conquest':
       title   = '⚔️ Country Conquered';
-      content = `${attacker} has conquered ${defender}!`;
+      content = `${_atkName} has conquered ${_defName}!`;
       color   = 0xef4444; // red
       break;
 
     case 'war_siege_start':
       title   = '🚨 Country Under Siege';
-      content = `${attacker} has ${event.ratio}% of ${defender}'s territory!`;
+      content = `${_atkName} has ${event.ratio}% of ${_defName}'s territory!`;
       color   = 0xf59e0b;
       event._mentionDefenders = true; // v35
       break;
@@ -828,7 +864,7 @@ async function postWarEvent(guild, event) {
       const atkNames = (event.attackerIds || []).map(id => COUNTRY_BY_ID[id] || ('Country ' + id));
       const sampled  = atkNames.slice(0, 3).join(', ');
       const more     = atkNames.length > 3 ? ' +' + (atkNames.length - 3) + ' more' : '';
-      content = `${event.attackerCount} countries are attacking ${defender}! (${sampled}${more})`;
+      content = `${event.attackerCount} countries are attacking ${_defName}! (${sampled}${more})`;
       color   = 0xef4444;
       event._mentionDefenders = true;
       break;
@@ -836,7 +872,7 @@ async function postWarEvent(guild, event) {
 
     case 'war_siege_end':
       title   = '🛡️ Siege Lifted';
-      content = `${defender} has reclaimed enough territory to break the siege.`;
+      content = `${_defName} has reclaimed enough territory to break the siege.`;
       color   = 0x10b981; // green
       break;
 
@@ -844,8 +880,8 @@ async function postWarEvent(guild, event) {
       const emojis = { 1: '💥', 2: '🔥', 3: '☢️' };
       title   = `${emojis[event.tier] || '💥'} ${event.bombName} Deployed`;
       content = defender
-        ? `${attacker} dropped a ${event.bombName} on ${defender}!`
-        : `${attacker} dropped a ${event.bombName}!`;
+        ? `${_atkName} dropped a ${event.bombName} on ${_defName}!`
+        : `${_atkName} dropped a ${event.bombName}!`;
       color   = event.tier === 3 ? 0x8b5cf6 : (event.tier === 2 ? 0xef4444 : 0xf59e0b);
       break;
 

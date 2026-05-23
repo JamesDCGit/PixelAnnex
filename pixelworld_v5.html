@@ -1145,6 +1145,24 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 .lb-empty{font-size:10px;color:#475569;padding:6px 0;text-align:center}
 @media (max-width: 768px){#leaderboard-panel{right:8px;max-width:180px;font-size:10px;max-height:40vh}}
 
+
+/* v36: Toolbar controls — compact audio + zoom + language inline in #toolbar */
+.tb-controls { display: flex; align-items: center; gap: 6px; }
+.tb-audio { display: flex; align-items: center; gap: 2px; }
+.tb-audio .trk-btn { width: 22px; height: 22px; min-width: 22px; padding: 0; font-size: 9px; line-height: 1; background: #162035; border: 1px solid rgba(255,255,255,0.1); color: #64748b; border-radius: 3px; cursor: pointer; font-family: inherit; }
+.tb-audio .trk-btn.active { background: #1e3a5f; color: #93c5fd; }
+.tb-audio .aud-btn { width: 22px; height: 22px; min-width: 22px; padding: 0; font-size: 10px; background: #162035; border: 1px solid rgba(255,255,255,0.1); color: #64748b; border-radius: 3px; cursor: pointer; font-family: inherit; margin-left: 1px; }
+.tb-audio .aud-btn.active { background: #1e3a5f; color: #93c5fd; }
+.tb-audio .aud-btn.muted { background: #1a1a2e; color: #475569; }
+.tb-zoom { display: flex; align-items: center; gap: 2px; }
+.tb-zoom .z-btn { width: 24px; height: 22px; min-width: 24px; padding: 0; font-size: 13px; background: #162035; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1; border-radius: 3px; cursor: pointer; font-family: inherit; line-height: 1; }
+.tb-zoom .z-btn:hover { background: #1e3a5f; }
+.tb-lang { line-height: 1; }
+@media (max-width: 768px) {
+  /* On mobile, drop the toolbar controls — they live in the drawer */
+  .tb-controls { display: none; }
+}
+
 </style>
 </head>
 <body>
@@ -1252,6 +1270,37 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
       <span id="david-badge" style="display:none;margin-left:8px;padding:2px 7px;background:linear-gradient(90deg,rgba(99,102,241,.25),rgba(129,140,248,.18));border:1px solid rgba(129,140,248,.45);border-radius:4px;font-size:10px;color:#a5b4fc;letter-spacing:.04em;white-space:nowrap;"></span>
     </div>
     <div id="stats">4096×2048 · Claimed: <b id="px-count">0</b> px</div>
+
+    <!-- v36: Compact audio + zoom + language controls in toolbar -->
+    <div class="sep"></div>
+    <div class="tb-controls">
+      <!-- Audio (compact) -->
+      <div id="audio-hud-tb" class="tb-audio">
+        <button class="trk-btn active" id="btn-trk1" onclick="selectTrack(1)" title="Chiptune">♪1</button>
+        <button class="trk-btn" id="btn-trk2" onclick="selectTrack(2)" title="Classical">♪2</button>
+        <button class="trk-btn" id="btn-trk3" onclick="selectTrack(3)" title="Military">♪3</button>
+        <button class="aud-btn active" id="btn-music" onclick="toggleMusic()" title="Toggle music">♪</button>
+        <button class="aud-btn active" id="btn-sfx" onclick="toggleSFX()" title="Toggle sound effects">▶</button>
+      </div>
+      <!-- Zoom (compact) -->
+      <div id="zoom-hud-tb" class="tb-zoom">
+        <button class="z-btn" id="zi" title="Zoom in">+</button>
+        <button class="z-btn" id="zo" title="Zoom out">-</button>
+      </div>
+      <!-- Language picker (compact) -->
+      <select id="lang-select-tb" class="tb-lang" title="Language" aria-label="Language" style="background:#162035;border:1px solid rgba(255,255,255,0.1);color:#cbd5e1;padding:3px 6px;font-size:10px;border-radius:4px;font-family:inherit;">
+        <option value="en">🇬🇧 EN</option>
+        <option value="es">🇪🇸 ES</option>
+        <option value="zh">🇨🇳 中文</option>
+        <option value="hi">🇮🇳 HI</option>
+        <option value="ar">🇸🇦 AR</option>
+        <option value="pt">🇧🇷 PT</option>
+        <option value="ru">🇷🇺 RU</option>
+        <option value="ja">🇯🇵 JA</option>
+        <option value="fr">🇫🇷 FR</option>
+        <option value="de">🇩🇪 DE</option>
+      </select>
+    </div>
     <!-- v30: Mobile-only hamburger -->
     <button id="btn-mobile-menu" aria-label="Menu" title="Menu">&#9776;</button>
   </div>
@@ -1422,9 +1471,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <div id="highlight-banner"></div>
     <div id="banner"></div>
     
-    <div class="lang-picker" id="lang-picker-game">
-      <select id="lang-picker-main" onchange="setLanguage(this.value)" title="Language"></select>
-    </div>
+    <!-- v36: in-game lang picker moved to toolbar -->
     <div id="activity-toast"></div>
     <div id="bomb-toast"><div class="toast-title">&#128163; Bombing!</div><div class="toast-body" id="bomb-toast-body"></div></div>
     <div id="conquest-toast"><div class="toast-title">&#9873; Country Conquered</div><div class="toast-body" id="toast-body"></div></div>
@@ -1441,19 +1488,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
       </div>
       <div id="bot-list" style="display:none;color:#475569;line-height:1.6"></div>
     </div></div>
-    <div class="hud" id="zoom-hud">
-      <button class="z-btn" id="zi">+</button>
-      <button class="z-btn" id="zo">-</button>
-    </div>
-    <div class="hud" id="audio-hud">
-      <div id="track-selector">
-        <button class="trk-btn active" id="btn-trk1" onclick="selectTrack(1)" title="Chiptune">♪1</button>
-        <button class="trk-btn" id="btn-trk2" onclick="selectTrack(2)" title="Epic/Classical">♪2</button>
-        <button class="trk-btn" id="btn-trk3" onclick="selectTrack(3)" title="Military/Epic">♪3</button>
-      </div>
-      <button class="aud-btn active" id="btn-music" onclick="toggleMusic()">Music</button>
-      <button class="aud-btn active" id="btn-sfx" onclick="toggleSFX()">SFX</button>
-    </div>
+<!-- v36: zoom HUD moved to toolbar -->
+<!-- v36: audio HUD moved to toolbar -->
   </div><!-- /viewport -->
   <div id="tip"><div id="tip-name"></div><div id="tip-sub"></div></div>
 
@@ -2990,7 +3026,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-balance-pass-v35';
+const CODE_VERSION = '2026-05-18-fixup-v36';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -3623,15 +3659,64 @@ function _updateFlagOpacity() {
 
 // Place or update the flag for a conquered geo country
 function placeFlag(geoIdx, claimerIdx){
-  // Find centroid (throttled — only sample every 8th pixel for speed)
-  let sx=0,sy=0,n=0;
-  for(let i=0;i<MAP_PX;i+=8){
-    if(featByPixel[i]===geoIdx&&claimByPixel[i]===claimerIdx){
-      sx+=i%MAP_W; sy+=(i/MAP_W)|0; n++;
+  // v36: Find centroid of the LARGEST connected component (not the raw average).
+  // This puts flags on the biggest landmass for multi-island countries (Indonesia, UK, Japan, etc.)
+  // Use sparse BFS over claimed-pixels-of-this-geo. Limit to a manageable cell count.
+  const pixels = [];
+  for(let i=0;i<MAP_PX;i++){
+    if(featByPixel[i]===geoIdx && claimByPixel[i]===claimerIdx){
+      pixels.push(i);
     }
   }
-  if(n===0) return;
-  const cx=Math.round(sx/n), cy=Math.round(sy/n);
+  if (pixels.length === 0) return;
+
+  // For small countries skip the BFS — raw centroid is fine
+  let cx, cy;
+  if (pixels.length < 200) {
+    let sx=0, sy=0;
+    for(const i of pixels){ sx += i%MAP_W; sy += (i/MAP_W)|0; }
+    cx = Math.round(sx / pixels.length);
+    cy = Math.round(sy / pixels.length);
+  } else {
+    // BFS connected-component labeling
+    const visited = new Uint8Array(MAP_PX);
+    const components = []; // { pixels: [], sx, sy }
+    const queue = [];
+    for (const start of pixels) {
+      if (visited[start]) continue;
+      const comp = { sx: 0, sy: 0, n: 0 };
+      queue.length = 0;
+      queue.push(start);
+      visited[start] = 1;
+      while (queue.length > 0) {
+        const idx = queue.pop();
+        comp.sx += idx % MAP_W;
+        comp.sy += (idx / MAP_W) | 0;
+        comp.n++;
+        const x = idx % MAP_W, y = (idx / MAP_W) | 0;
+        // 4-neighbour
+        const neighbors = [];
+        if (x > 0)         neighbors.push(idx - 1);
+        if (x < MAP_W - 1) neighbors.push(idx + 1);
+        if (y > 0)         neighbors.push(idx - MAP_W);
+        if (y < MAP_H - 1) neighbors.push(idx + MAP_W);
+        for (const ni of neighbors) {
+          if (!visited[ni] && featByPixel[ni] === geoIdx && claimByPixel[ni] === claimerIdx) {
+            visited[ni] = 1;
+            queue.push(ni);
+          }
+        }
+      }
+      components.push(comp);
+      // Stop early if we've already found a huge component (≥ 80% of total)
+      if (comp.n >= pixels.length * 0.8) break;
+    }
+    // Largest component wins
+    let largest = components[0];
+    for (const c of components) if (c.n > largest.n) largest = c;
+    cx = Math.round(largest.sx / largest.n);
+    cy = Math.round(largest.sy / largest.n);
+  }
   placedFlags[geoIdx]={claimerIdx,cx,cy};
   // v33: skip canvas draw — DOM overlay handles flag display now
   // drawFlagAt(cx,cy,featList[claimerIdx]);
@@ -4533,7 +4618,7 @@ function paintBrush(px,py){
     if(fbBonus > 0){
       pixelBucket = Math.min(BUCKET_MAX, pixelBucket + fbBonus);
       updateBucketHUD();
-      showBonusPop(fbBonus, '⚔️');
+      showBonusPop(fbBonus, '⚔️', { encirclement: true }); // v36: anchor under login HUD
     }
   }
   scheduleLegend();
@@ -6914,6 +6999,10 @@ if (msg.state?.conquered) {
       const humans = msg.list.filter(p=>!p.isBot);
       const bots   = msg.list.filter(p=>p.isBot);
       console.log('[MP] Players:', humans.length, 'humans,', bots.length, 'bots');
+      // v36: prefer simulated count from server when available
+      if (typeof msg.simulatedPlayerCount === 'number') {
+        _simPlayerCount = msg.simulatedPlayerCount;
+      }
       // Update player count per country
       Object.keys(_playerCountByCountry).forEach(k => delete _playerCountByCountry[k]);
       for(const p of msg.list){
@@ -9729,6 +9818,24 @@ function refreshLeaderboardPanel() {
 
 setInterval(refreshLeaderboardPanel, 30 * 1000);
 document.addEventListener('DOMContentLoaded', () => setTimeout(refreshLeaderboardPanel, 800));
+
+
+// v36: Wire toolbar language picker
+(function _wireToolbarLangPicker(){
+  function init(){
+    const sel = document.getElementById('lang-select-tb');
+    if (!sel) return;
+    sel.value = (typeof _activeLang !== 'undefined') ? _activeLang : (localStorage.getItem('pa_lang') || 'en');
+    sel.addEventListener('change', function() {
+      try {
+        if (typeof selectLang === 'function') selectLang(sel.value);
+        else { localStorage.setItem('pa_lang', sel.value); location.reload(); }
+      } catch(e) { console.warn('lang switch failed', e); }
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 
 // debug panel removed in v27
 </script>

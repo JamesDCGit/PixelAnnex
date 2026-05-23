@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-balance-pass-v35';
+const SERVER_VERSION       = '2026-05-18-fixup-v36';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1247,7 +1247,11 @@ function broadcastPlayers() {
   for (const [pid, p] of players) {
     list.push({ id: pid, countryId: p.countryId, pixels: countryPxCount[p.countryId] || 0, isBot: !!p.isBot });
   }
-  broadcast(JSON.stringify({ type: 'players', list, david: davidSnapshot }));
+  // v36: include simulated player count so clients show it immediately
+  const realHumans = list.filter(p => !p.isBot).length;
+  const activeBots = typeof _activeBotCount === 'function' ? _activeBotCount() : 0;
+  const simulatedPlayerCount = realHumans + activeBots;
+  broadcast(JSON.stringify({ type: 'players', list, david: davidSnapshot, simulatedPlayerCount }));
 }
 
 // ── State snapshot (RLE compressed) ──────────────────────────────
@@ -1735,27 +1739,36 @@ function botInit(countryId) {
   _initBotProfile(countryId);  // v35
 }
 
-// v35: bot profile bootstrap — store 3 random country prefs in profiles for alliance forming
+// v36: clear stale bot profiles from previous schema on boot
+(function _cleanStaleBotProfiles(){
+  let cleared = 0;
+  for (const [id, p] of [...profiles.entries()]) {
+    if (p && p.isBot && (p.countryB || p.countryC)) {
+      profiles.delete(id);
+      cleared++;
+    }
+  }
+  if (cleared > 0) console.log('[v36] Cleared', cleared, 'stale multi-country bot profiles');
+})();
+
+// v36: bot profile bootstrap — single random country pref to participate in alliances without forming mega-alliances
 function _initBotProfile(countryId) {
   const synthId = 'bot:' + countryId;
   if (profiles.has(synthId)) return;
   const allIds = [...bots.keys()];
   if (allIds.length < 4) return;
+  // v36: only assign a single random ally to prevent mega-alliances of all bots
   const others = allIds.filter(id => id !== countryId);
-  const picks = [];
-  while (picks.length < 3 && others.length > 0) {
-    const idx = Math.floor(Math.random() * others.length);
-    picks.push(others.splice(idx, 1)[0]);
-  }
+  const pick = others.length > 0 ? others[Math.floor(Math.random() * others.length)] : null;
   profiles.set(synthId, {
     discordId:   synthId,
     username:    'Bot ' + (countryNames[countryId] || countryId),
     rank:        'Soldier',
     points:      0,
     xp:          0,
-    countryMain: picks[0] || null,
-    countryB:    picks[1] || null,
-    countryC:    picks[2] || null,
+    countryMain: pick,
+    countryB:    null,
+    countryC:    null,
     joinedAt:    Date.now(),
     isBot:       true,
   });
@@ -2196,6 +2209,20 @@ const httpServer = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ leaderboard: sorted, totalPlayers: allRanked.length, viewer }));
+    return;
+  }
+
+  // ── v36: /api/bot/country-name — fallback country-name lookup ──
+  if (url.pathname === '/api/bot/country-name') {
+    if (req.headers['x-bot-secret'] !== process.env.BOT_API_SECRET) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'forbidden' }));
+      return;
+    }
+    const countryId = url.searchParams.get('country_id');
+    const name = countryId ? (countryNames[countryId] || null) : null;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ countryId, name }));
     return;
   }
 
