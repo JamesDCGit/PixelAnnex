@@ -848,23 +848,27 @@ async function postWarEvent(guild, event) {
   switch (event.type) {
     case 'war_conquest':
       title   = '⚔️ Country Conquered';
-      content = `${_atkName} has conquered ${_defName}!`;
+      content = event.sassyText || `${_atkName} has conquered ${_defName}!`;
       color   = 0xef4444; // red
       break;
 
     case 'war_siege_start':
       title   = '🚨 Country Under Siege';
-      content = `${_atkName} has ${event.ratio}% of ${_defName}'s territory!`;
+      content = event.sassyText || `${_atkName} has ${event.ratio}% of ${_defName}'s territory!`;
       color   = 0xf59e0b;
       event._mentionDefenders = true; // v35
       break;
 
     case 'war_multi_attack': {
       title   = '🚨 Multi-Country Attack';
-      const atkNames = (event.attackerIds || []).map(id => COUNTRY_BY_ID[id] || ('Country ' + id));
-      const sampled  = atkNames.slice(0, 3).join(', ');
-      const more     = atkNames.length > 3 ? ' +' + (atkNames.length - 3) + ' more' : '';
-      content = `${event.attackerCount} countries are attacking ${_defName}! (${sampled}${more})`;
+      if (event.sassyText) {
+        content = event.sassyText;
+      } else {
+        const atkNames = (event.attackerIds || []).map(id => COUNTRY_BY_ID[id] || ('Country ' + id));
+        const sampled  = atkNames.slice(0, 3).join(', ');
+        const more     = atkNames.length > 3 ? ' +' + (atkNames.length - 3) + ' more' : '';
+        content = `${event.attackerCount} countries are attacking ${_defName}! (${sampled}${more})`;
+      }
       color   = 0xef4444;
       event._mentionDefenders = true;
       break;
@@ -883,6 +887,12 @@ async function postWarEvent(guild, event) {
         ? `${_atkName} dropped a ${event.bombName} on ${_defName}!`
         : `${_atkName} dropped a ${event.bombName}!`;
       color   = event.tier === 3 ? 0x8b5cf6 : (event.tier === 2 ? 0xef4444 : 0xf59e0b);
+      break;
+
+    case 'world_conquest':
+      title   = '🌍 WORLD CONQUERED 🌍';
+      content = event.sassyText || ('The world has been conquered! ' + (event.conquered || 0) + '/' + (event.total || 0) + ' countries claimed.');
+      color   = 0xfbbf24;
       break;
 
     default:
@@ -962,6 +972,7 @@ function handleGameEvent(event) {
       break;
 
     case 'war_conquest':
+    case 'world_conquest':
     case 'war_multi_attack':
     case 'war_siege_start':
     case 'war_siege_end':

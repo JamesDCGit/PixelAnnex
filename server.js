@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-sass-news-v37';
+const SERVER_VERSION       = '2026-05-18-gameplay-v38';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1087,6 +1087,11 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
     entry.lastNotifyAt = now;
     const attackerIds = [...entry.attackers.keys()];
     const defenderId = geoToId(defenderGeoIdx);
+    const _sassyMulti = _pickSassy(SASS_MULTI)({
+      n:   attackerIds.length,
+      d:   _countryName(defenderId),
+      atk: attackerIds.slice(0, 3).map(id => _countryName(id)).join(', ') + (attackerIds.length > 3 ? ' +' + (attackerIds.length - 3) + ' more' : ''),
+    });
     emitBotEvent({
       type:         'war_multi_attack',
       tier:         2,
@@ -1094,6 +1099,7 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
       attackerIds,
       attackerCount: attackerIds.length,
       timestamp:    now,
+      sassyText:    _sassyMulti,
     });
     try {
       const defName = _countryName(defenderId);
@@ -1125,6 +1131,93 @@ setInterval(() => {
     }
   }
 }, 30 * 1000);
+
+
+// ── v38: World conquest watcher + 5-min countdown reset ───────────
+const WORLD_CONQUEST_THRESHOLD = 0.70;
+const WORLD_RESET_COUNTDOWN_MS = 5 * 60 * 1000;
+let _worldConquestActive = false;
+let _worldResetAt = 0;
+
+function _countDistinctConquered() {
+  const set = new Set();
+  for (const key of conqueredSet) set.add(String(key).split(':')[0]);
+  return set.size;
+}
+function _totalCountries() {
+  return Object.keys(countryNames || {}).length || 240;
+}
+function _isPaintLocked() { return _worldConquestActive; }
+
+function _checkWorldConquest() {
+  if (_worldConquestActive) return;
+  const total = _totalCountries();
+  const conquered = _countDistinctConquered();
+  if (total === 0) return;
+  const ratio = conquered / total;
+  if (ratio < WORLD_CONQUEST_THRESHOLD) return;
+  _worldConquestActive = true;
+  _worldResetAt = Date.now() + WORLD_RESET_COUNTDOWN_MS;
+  const conquestsByCountry = {};
+  for (const key of conqueredSet) {
+    const attackerId = String(key).split(':')[1];
+    if (!attackerId) continue;
+    conquestsByCountry[attackerId] = (conquestsByCountry[attackerId] || 0) + 1;
+  }
+  const topCountries = Object.entries(conquestsByCountry)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(e => ({ countryId: e[0], name: _countryName(e[0]), conquests: e[1] }));
+  const topPlayers = [...profiles.values()]
+    .filter(p => p.username && p.points > 0 && !p.isBot)
+    .sort((a, b) => (b.points || 0) - (a.points || 0))
+    .slice(0, 5)
+    .map(p => ({ username: p.username, points: p.points || 0, avatar: p.avatar, country: p.countryMain }));
+  console.log('[v38] WORLD CONQUERED! ratio=' + (ratio*100).toFixed(1) + '% top=' + topCountries.map(c => c.name).join(','));
+  broadcast(JSON.stringify({
+    type:           'world_conquest',
+    conquered, total, topCountries, topPlayers,
+    resetAt:        _worldResetAt,
+  }));
+  emitBotEvent({
+    type:        'world_conquest',
+    tier:        3,
+    conquered, total, topCountries, topPlayers,
+    timestamp:   Date.now(),
+    sassyText:   '🌍 THE WORLD HAS BEEN CONQUERED! ' + conquered + '/' + total + ' countries claimed. Top conqueror: ' + (topCountries[0] && topCountries[0].name || '??') + ' with ' + (topCountries[0] && topCountries[0].conquests || 0) + '. Resetting in 5 minutes.',
+  });
+  try {
+    const winners = topCountries.slice(0, 3).map(c => c.name).join(', ');
+    pushTweetDraft({
+      type:      'world_conquest',
+      text:      '🌍 THE WORLD HAS BEEN CONQUERED! Top dogs: ' + winners + '. The map resets in 5 minutes — get ready for round 2. ' + GAME_URL + ' · ' + TWITTER_HANDLE + ' #PixelAnnex',
+      dedupeKey: 'world_conquest:' + Math.floor(_worldResetAt / 1000),
+    });
+  } catch(e) {}
+  setTimeout(_resetWorld, WORLD_RESET_COUNTDOWN_MS);
+}
+
+function _resetWorld() {
+  console.log('[v38] Resetting world state…');
+  for (let i = 0; i < claimByPixel.length; i++) claimByPixel[i] = -1;
+  conqueredSet.clear();
+  for (const k of Object.keys(geoClaimCnt)) delete geoClaimCnt[k];
+  for (const k of Object.keys(countryPxCount)) countryPxCount[k] = 0;
+  for (const k of Object.keys(ownerPixels)) ownerPixels[k] = new Set();
+  if (typeof _nukeZones !== 'undefined') _nukeZones.length = 0;
+  _worldConquestActive = false;
+  _worldResetAt = 0;
+  broadcast(JSON.stringify({ type: 'world_reset' }));
+  console.log('[v38] World reset complete — broadcasting fresh state');
+  try {
+    pushTweetDraft({
+      type:      'world_reset',
+      text:      '🌍 World map has been reset. Fresh canvas, fresh chaos. Get back in: ' + GAME_URL + ' · ' + TWITTER_HANDLE + ' #PixelAnnex',
+      dedupeKey: 'world_reset:' + Math.floor(Date.now() / 1000),
+    });
+  } catch(e) {}
+}
+setInterval(_checkWorldConquest, 30 * 1000);
 
 // ── Alliance detection ───────────────────────────────────────────
 // An alliance forms when 3+ players share at least one country in their
@@ -1612,6 +1705,10 @@ setInterval(() => {
 
 // ── Core pixel logic ──────────────────────────────────────────────
 function applyPixels(pixels, countryId) {
+  // v38: paint locked during world-conquest fanfare countdown
+  if (typeof _isPaintLocked === 'function' && _isPaintLocked()) {
+    return { changed: [], conquests: [], reversals: [] };
+  }
   const cidx     = getIdx(countryId);
   const changed  = [];
   const affected = new Set();
@@ -1672,13 +1769,35 @@ function applyPixels(pixels, countryId) {
       // War reporter event — Tier 2 (role ping)
       // Skip self-conquest (country reclaiming its own native territory)
       if (countryId !== geoToId(geo)) {
+        const _defId = geoToId(geo);
+        const _sassyConq = _pickSassy(SASS_CONQUEST)({
+          a: _countryName(countryId),
+          d: _countryName(_defId),
+          held: Array.from(conqueredSet).filter(k => String(k).split(':')[1] === String(countryId)).length,
+        });
         emitBotEvent({
           type:        'war_conquest',
           tier:        2,
           attackerId:  countryId,
-          defenderId:  geoToId(geo),
+          defenderId:  _defId,
           timestamp:   Date.now(),
+          sassyText:   _sassyConq,
         });
+        // v38: notify players who were playing as the conquered country
+        for (const [pid, p] of players) {
+          if (p.isBot) continue;
+          if (!p.ws) continue;
+          if (String(p.countryId) === String(_defId)) {
+            try {
+              p.ws.send(JSON.stringify({
+                type:           'your_country_lost',
+                lostCountryId:  _defId,
+                attackerId:     countryId,
+                mercenaryBonus: 20,
+              }));
+            } catch (e) {}
+          }
+        }
         // Queue a tweet draft for the conquest. Throttle per attacker so a
         // single dominant country doesn't flood the queue.
         try {
@@ -2412,8 +2531,7 @@ const httpServer = http.createServer(async (req, res) => {
     const session = token ? getSession(token) : null;
     if (!session) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-      discordId:    profile.discordId, loggedIn: false }));
+      res.end(JSON.stringify({ loggedIn: false }));
       return;
     }
     const result = processDailyLogin(session.discordId);
@@ -2923,6 +3041,19 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      case 'set-country': {
+        // v38: player re-picked country after their own was conquered
+        const cid = String(msg.countryId);
+        if (countryNames && countryNames[cid]) {
+          p.countryId = cid;
+          p.countryIdx = getIdx(cid);
+          if (!ownerPixels[p.countryIdx]) ownerPixels[p.countryIdx] = new Set();
+          countryPxCount[cid] = countryPxCount[cid] || 0;
+          console.log('[v38] Player', pid, 'switched to country', cid);
+          broadcastPlayers();
+        }
+        break;
+      }
       case 'stroke': {
         if (!player.countryId || !Array.isArray(msg.pixels)) return;
         if (msg.pixels.length > MAX_STROKE_PX) return;

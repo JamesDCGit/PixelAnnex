@@ -3045,7 +3045,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-sass-news-v37';
+const CODE_VERSION = '2026-05-18-gameplay-v38';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -4864,15 +4864,19 @@ setInterval(()=>{
   if(pixelBucket>=BUCKET_MAX){ $("bucket-timer").textContent="FULL"; return; }
   regenSecsLeft--;
   if(regenSecsLeft<=0){
-    // David multiplier: small countries regen faster
-    const mult = getMyMultiplier();
+    // v38: rank multiplier × David multiplier (rounded so progression is visible)
+    const davidMult = getMyMultiplier();
+    const rankMult  = getRankRegenMult();
+    const mult      = Math.max(1, Math.round(davidMult * rankMult));
     pixelBucket = Math.min(BUCKET_MAX, pixelBucket + mult);
     regenSecsLeft = REGEN_INTERVAL;
     updateBucketHUD();
     sfxBucketRegen();
   }
-  const mult = getMyMultiplier();
-  const suffix = mult > 1 ? (' +'+mult) : '+1';
+  const _davidMult = getMyMultiplier();
+  const _rankMult  = getRankRegenMult();
+  const mult       = Math.max(1, Math.round(_davidMult * _rankMult));
+  const suffix     = mult > 1 ? (' +' + mult) : '+1';
   $("bucket-timer").textContent = suffix+" in "+regenSecsLeft+"s";
 }, 1000);
 
@@ -7014,6 +7018,19 @@ if (msg.state?.conquered) {
       break;
     }
 
+    case 'world_conquest': {
+      _showWorldConquestOverlay(msg);
+      break;
+    }
+    case 'world_reset': {
+      console.log('[v38] World reset received, reloading…');
+      setTimeout(function(){ location.reload(); }, 1500);
+      break;
+    }
+    case 'your_country_lost': {
+      _showCountryRepickModal(msg);
+      break;
+    }
     case 'players': {
       const humans = msg.list.filter(p=>!p.isBot);
       const bots   = msg.list.filter(p=>p.isBot);
@@ -9023,13 +9040,13 @@ document.addEventListener('visibilitychange', () => {
 // ── Rank system ──────────────────────────────────────────────────
 // Ranks are earned by cumulative pixels placed (persists via localStorage).
 const RANKS = [
-  // v27: bonus/highlightMult fields zeroed out — highlight bonus is now a flat +10 first-pixel reward
-  // available to all ranks, and there is no per-stroke multiplier anymore.
-  { name:'Soldier',    min:0,    bombType:null,    bombCost:0,  bombRadius:0,   bonus:0, highlightMult:0 },
-  { name:'Lieutenant', min:50,   bombType:null,    bombCost:0,  bombRadius:0,   bonus:0, highlightMult:0 },
-  { name:'Captain',    min:150,  bombType:'Mortar', bombCost:10, bombRadius:20,  bonus:0, highlightMult:0 },
-  { name:'General',    min:500,  bombType:'MOAB',   bombCost:50, bombRadius:100, bonus:0, highlightMult:0 },
-  { name:'Admiral',    min:1500, bombType:'Nuke',   bombCost:100,bombRadius:300, bonus:0, highlightMult:0 },
+  // v38: Mortar + MOAB removed. Captain/General now provide regen multipliers
+  // (see getRankRegenMult), not bombs.
+  { name:'Soldier',    min:0,    bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.0  },
+  { name:'Lieutenant', min:50,   bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.25 },
+  { name:'Captain',    min:150,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.5  },
+  { name:'General',    min:500,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:2.0  },
+  { name:'Admiral',    min:1500, bombType:'Nuke',bombCost:100,bombRadius:300, regenMult:3.0  },
 ];
 
 // Persistent XP counter
@@ -9043,6 +9060,12 @@ function getCurrentRank(){
   let rank = RANKS[0];
   for(const r of RANKS) if(totalPixelsEverPlaced >= r.min) rank=r;
   return rank;
+}
+
+// v38: rank-based regen multiplier (applied on top of David multiplier)
+function getRankRegenMult(){
+  const rank = getCurrentRank();
+  return (rank && typeof rank.regenMult === 'number') ? rank.regenMult : 1.0;
 }
 
 function getRankIndex(){
@@ -9133,15 +9156,14 @@ function claimHighlightBonus(px, py){
 function getBombTypes(){
   const rank = getCurrentRank();
   const ri = getRankIndex();
-  // Only show bomb types available at current rank
+  // v38: Only Nuke remains (Admiral-only). Mortar+MOAB removed; their old
+  // ranks now provide regen multipliers via getRankRegenMult() instead.
   const types = [];
-  if(ri >= 2) types.push({ key:'mortar', label:'Mortar',  radius:5,   cost:10,  sound:'light'  });
-  if(ri >= 3) types.push({ key:'moab',   label:'MOAB',    radius:10,  cost:50,  sound:'heavy'  });
-  if(ri >= 4) types.push({ key:'nuke',   label:'Nuke',    radius:15,  cost:100, sound:'nuclear', clears:true, lockoutMs: 30*1000 }); // ⚠️ DEBUG: 30s (production = 2*60*1000)
+  if(ri >= 4) types.push({ key:'nuke', label:'Nuke', radius:15, cost:100, sound:'nuclear', clears:true, lockoutMs: 30*1000 }); // ⚠️ DEBUG: 30s (production = 2*60*1000)
   return types;
 }
 
-let selectedBombType = 'mortar'; // default
+let selectedBombType = 'nuke'; // v38: only Nuke remains
 
 function refreshBombMenu(){
   const menu = document.getElementById('bomb-menu');
@@ -9855,6 +9877,108 @@ document.addEventListener('DOMContentLoaded', () => setTimeout(refreshLeaderboar
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
+
+
+// ── v38: World-conquest overlay ───────────────────────────────────
+function _showWorldConquestOverlay(data) {
+  const old = document.getElementById('world-conquest-overlay');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'world-conquest-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;background:linear-gradient(135deg,#070d1a,#1a0a14);' +
+    'color:#fbbf24;font-family:"Courier New",monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+    'padding:24px;text-align:center;overflow-y:auto;';
+  const topCList = (data.topCountries || []).map(function(c, i) {
+    return '<div style="display:flex;justify-content:space-between;padding:6px 12px;background:rgba(255,255,255,0.04);margin-bottom:4px;border-radius:4px;font-size:14px;">' +
+      '<span><b style="color:#fbbf24">#' + (i + 1) + '</b> ' + (c.name || '?') + '</span>' +
+      '<span style="color:#cbd5e1">' + c.conquests + ' conquests</span></div>';
+  }).join('');
+  const topPList = (data.topPlayers || []).map(function(p, i) {
+    return '<div style="display:flex;justify-content:space-between;padding:6px 12px;background:rgba(99,102,241,0.08);margin-bottom:4px;border-radius:4px;font-size:14px;">' +
+      '<span><b style="color:#93c5fd">#' + (i + 1) + '</b> ' + (p.username || '?') + '</span>' +
+      '<span style="color:#cbd5e1">' + (p.points || 0).toLocaleString() + ' pts</span></div>';
+  }).join('');
+  overlay.innerHTML =
+    '<div style="font-size:36px;font-weight:800;letter-spacing:.12em;margin-bottom:8px;">🌍 WORLD CONQUERED 🌍</div>' +
+    '<div style="font-size:14px;color:#94a3b8;margin-bottom:32px;letter-spacing:.08em;">' + (data.conquered || 0) + ' / ' + (data.total || 0) + ' COUNTRIES CLAIMED</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:800px;width:100%;margin-bottom:24px;">' +
+      '<div><h2 style="font-size:14px;color:#94a3b8;letter-spacing:.1em;margin-bottom:12px;">🏆 TOP CONQUERORS</h2>' +
+      (topCList || '<div style="color:#475569;font-size:11px">No conquests recorded.</div>') + '</div>' +
+      '<div><h2 style="font-size:14px;color:#94a3b8;letter-spacing:.1em;margin-bottom:12px;">⭐ TOP PLAYERS</h2>' +
+      (topPList || '<div style="color:#475569;font-size:11px">No ranked players.</div>') + '</div></div>' +
+    '<div style="margin-top:16px;font-size:16px;color:#fbbf24;">World restarting in <span id="wc-countdown" style="font-weight:800">5:00</span></div>' +
+    '<div style="font-size:11px;color:#475569;margin-top:8px;">Fresh canvas, fresh chaos. Hold tight.</div>';
+  document.body.appendChild(overlay);
+  const resetAt = data.resetAt || (Date.now() + 5 * 60 * 1000);
+  function tick() {
+    const left = Math.max(0, resetAt - Date.now());
+    const mins = Math.floor(left / 60000);
+    const secs = Math.floor((left % 60000) / 1000);
+    const el = document.getElementById('wc-countdown');
+    if (el) el.textContent = mins + ':' + String(secs).padStart(2, '0');
+    if (left <= 0) return;
+    setTimeout(tick, 250);
+  }
+  tick();
+}
+
+// ── v38: Country re-pick modal (after own country lost) ───────────
+let _repickAwarded = false;
+function _showCountryRepickModal(data) {
+  if (document.getElementById('repick-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'repick-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(7,13,26,0.96);' +
+    'color:#e2e8f0;font-family:"Courier New",monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;';
+  overlay.innerHTML =
+    '<div style="font-size:28px;font-weight:700;color:#f87171;margin-bottom:6px;">⚔️ YOUR COUNTRY HAS FALLEN ⚔️</div>' +
+    '<div style="font-size:13px;color:#94a3b8;margin-bottom:18px;">Pick a new allegiance to play as. <b style="color:#fbbf24">+20 mercenary bonus</b> on selection.</div>' +
+    '<input type="text" id="repick-search" placeholder="Search countries…" style="background:#0f172a;border:1px solid #1e293b;color:#e2e8f0;padding:8px 12px;border-radius:6px;font-size:13px;width:280px;font-family:inherit;margin-bottom:12px;">' +
+    '<div id="repick-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;max-width:720px;max-height:60vh;overflow-y:auto;width:100%;padding:8px;"></div>' +
+    '<div style="font-size:10px;color:#475569;margin-top:14px;">Your XP, rank, and stats are preserved.</div>';
+  document.body.appendChild(overlay);
+  function render(filter) {
+    const list = document.getElementById('repick-list');
+    if (!list || !featList) return;
+    const fl = (filter || '').toLowerCase();
+    list.innerHTML = '';
+    const items = featList
+      .filter(function(f) { return f && f.name && (!fl || f.name.toLowerCase().includes(fl)); })
+      .sort(function(a, b) { return a.name.localeCompare(b.name); });
+    for (var i = 0; i < Math.min(items.length, 200); i++) {
+      var f = items[i];
+      var btn = document.createElement('button');
+      btn.style.cssText = 'background:#162035;border:1px solid #1e293b;color:#cbd5e1;padding:6px 10px;font-size:11px;border-radius:4px;cursor:pointer;text-align:left;font-family:inherit;display:flex;align-items:center;gap:6px;';
+      btn.innerHTML = '<span style="width:10px;height:10px;background:' + (f.color || '#475569') + ';border-radius:2px;display:inline-block;flex-shrink:0;"></span>' + escapeHtml(f.name);
+      (function(ff) { btn.onclick = function() { _pickRepick(ff); }; })(f);
+      list.appendChild(btn);
+    }
+  }
+  render('');
+  const search = document.getElementById('repick-search');
+  if (search) {
+    search.addEventListener('input', function(e) { render(e.target.value); });
+    setTimeout(function(){ search.focus(); }, 50);
+  }
+  function _pickRepick(f) {
+    const idx = featList.indexOf(f);
+    if (idx < 0) return;
+    currentIdx = idx;
+    try { localStorage.setItem('pa_country_idx', String(idx)); } catch(e) {}
+    if (!_repickAwarded && data && data.mercenaryBonus) {
+      _repickAwarded = true;
+      pixelBucket = Math.min(BUCKET_MAX, pixelBucket + (data.mercenaryBonus || 20));
+      updateBucketHUD();
+      showBonusPop(data.mercenaryBonus || 20, '🪖 Mercenary ', { encirclement: true });
+    }
+    const csel = document.getElementById('csel-label');
+    if (csel) csel.textContent = f.name;
+    overlay.remove();
+    if (typeof ws !== 'undefined' && ws && ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: 'set-country', countryId: f.id })); } catch (e) {}
+    }
+  }
+}
 
 // debug panel removed in v27
 </script>

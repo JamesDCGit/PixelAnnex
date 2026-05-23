@@ -9,7 +9,7 @@
  * Version bumped per release so old caches get cleared automatically.
  */
 
-const CACHE_VERSION = 'pixelannex-v2026-05-18-sass-news-v37';
+const CACHE_VERSION = 'pixelannex-v2026-05-18-gameplay-v38';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
