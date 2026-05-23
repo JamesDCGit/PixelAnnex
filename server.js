@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-fixup-v36';
+const SERVER_VERSION       = '2026-05-18-sass-news-v37';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -209,36 +209,107 @@ function _countryTag(id) {
 }
 
 // ── Tweet template generators ────────────────────────────────────
+
+
+// v37: Sassy template pools — picked at random per event for variety
+const TWITTER_HANDLE = '@PixelAnnexGame';
+const DISCORD_INVITE = 'https://discord.gg/FcbzWCY2F';
+const GAME_URL       = 'pixelannex.com';
+function _pickSassy(pool) { return pool[Math.floor(Math.random() * pool.length)]; }
+function _suffix() { return GAME_URL + ' · ' + TWITTER_HANDLE + ' #PixelAnnex'; }
+
+// CONQUEST variants — {attacker} {defender} {held}
+const SASS_CONQUEST = [
+  v => `🗡️ ${v.a} has conquered ${v.d}! ${v.a} now controls ${v.held} ${v.held === 1 ? 'country' : 'countries'}. ` + _suffix(),
+  v => `📢 ${v.d} just got rebranded by ${v.a}. New management, same map. ` + _suffix(),
+  v => `👑 ${v.a} adds ${v.d} to the collection (${v.held} total). Empire-building hours: open. ` + _suffix(),
+  v => `🗺️ ${v.d} is now part of the ${v.a} extended universe. Tough day for the locals. ` + _suffix(),
+  v => `⚔️ ${v.a} has annexed ${v.d}. Diplomacy was tried — briefly. ` + _suffix(),
+  v => `🚩 New flag dropped: ${v.a} over ${v.d}. ${v.held} down. ` + _suffix(),
+];
+
+// REVERSAL variants — {victim} {oppressor}
+const SASS_REVERSAL = [
+  v => `🛡️ ${v.v} has liberated itself from ${v.o}! The resistance prevails. ` + _suffix(),
+  v => `🔥 ${v.v} just kicked ${v.o} to the curb. Liberation tastes sweet. ` + _suffix(),
+  v => `📢 Plot twist: ${v.v} is back. ${v.o} loses the chokehold. ` + _suffix(),
+  v => `✊ ${v.v} reclaimed itself. ${v.o} is going to need a moment. ` + _suffix(),
+];
+
+// NUKE variants — {attacker} {target}
+const SASS_NUKE = [
+  v => `☢️ ${v.a} just nuked ${v.target}. No-paint zone active for 2 minutes. ` + _suffix(),
+  v => `💥 ${v.a} chose violence. ${v.target} is a smoking crater. ` + _suffix(),
+  v => `🚨 BREAKING: ${v.a} went nuclear on ${v.target}. Literally. ` + _suffix(),
+  v => `☢️ Diplomatic resolution attempted via ${v.a}'s nuke at ${v.target}. ` + _suffix(),
+  v => `☢️ ${v.a} fired off a nuke at ${v.target}. The 2-minute lockout will give everyone time to reflect. ` + _suffix(),
+];
+
+// MULTI-ATTACK variants — {n} {defender} {attackers}
+const SASS_MULTI = [
+  v => `🚨 ${v.n} countries are attacking ${v.d}! (${v.atk}) ` + _suffix(),
+  v => `📢 Wow, some countries really don't like ${v.d}! ${v.n} attackers piling on: ${v.atk}. ` + _suffix(),
+  v => `🔥 ${v.d} is hosting an uninvited party. ${v.n} RSVPs: ${v.atk}. ` + _suffix(),
+  v => `⚠️ Today's group project subject: ${v.d}. ${v.n} contributors: ${v.atk}. ` + _suffix(),
+  v => `🚨 ${v.n}-on-1 right now against ${v.d}. (${v.atk}) Reinforcements?? ` + _suffix(),
+];
+
+// ADMIRAL promotion variants — {username} {country?}
+const SASS_ADMIRAL = [
+  v => `🎖️ ${v.user} has reached ADMIRAL${v.country ? ' (' + v.country + ')' : ''}! Nukes unlocked. ☢️ ` + _suffix(),
+  v => `🌟 New Admiral: ${v.user}${v.country ? ' of ' + v.country : ''}. The nuke codes have been handed over. ` + _suffix(),
+  v => `⭐ ${v.user} is now ADMIRAL${v.country ? ' (' + v.country + ')' : ''}. May they use the nukes responsibly. (They won't.) ` + _suffix(),
+];
+
+// DAILY SUMMARY variants — {lines} {conquered}
+const SASS_DAILY = [
+  v => `🌍 World Snapshot · ${v.lines} · ${v.conquered} countries conquered. ` + _suffix(),
+  v => `📊 Daily standings: ${v.lines}. ${v.conquered} countries currently under foreign rule. ` + _suffix(),
+  v => `🌍 Today's top dogs: ${v.lines}. ${v.conquered} conquests on the board. ` + _suffix(),
+];
+
+// COMMUNITY tweet — periodic standalone
+const SASS_COMMUNITY = [
+  () => `🌍 PixelAnnex is a real-time pixel-conquest world map. 240+ countries, live multiplayer. Join the Discord: ${DISCORD_INVITE} · Play: ${GAME_URL} #PixelAnnex`,
+  () => `🚨 Conquering the world, one pixel at a time. Join the Discord for war updates + alliance plays: ${DISCORD_INVITE} · ${GAME_URL} #PixelAnnex`,
+  () => `🎖️ Climb the ranks. Drop nukes. Form alliances. PixelAnnex is live: ${GAME_URL} · Community: ${DISCORD_INVITE} #PixelAnnex`,
+  () => `🗺️ Today on PixelAnnex: same map, fresh chaos. ${GAME_URL} · ${DISCORD_INVITE} #PixelAnnex`,
+];
+
+// NEWS variants — {country} {headline}
+const SASS_NEWS = [
+  v => `📰 Real-world update on ${v.country}: "${v.headline}". How will this play out in PixelAnnex? ` + _suffix(),
+  v => `🌍 ${v.country} in the headlines: "${v.headline}". Watching how it shapes the game. ` + _suffix(),
+  v => `📰 ${v.country}: "${v.headline}". Real-world stakes, pixel-world consequences. ` + _suffix(),
+];
+
+
 function tweetForConquest(attackerId, defenderGeoId) {
   const a = _countryName(attackerId);
   const d = _countryName(defenderGeoId);
-  // Count attacker's total conquests
   let conquestsHeld = 0;
   for (const key of conqueredSet) {
     const parts = String(key).split(':');
     if (parts[1] === String(attackerId)) conquestsHeld++;
   }
-  const text = `🗡️ ${a} has conquered ${d}! ${a} now controls ${conquestsHeld} ${conquestsHeld === 1 ? 'country' : 'countries'}. Play at pixelannex.com ${_countryTag(attackerId)} ${_countryTag(defenderGeoId)} #PixelAnnex`;
-  return text;
+  return _pickSassy(SASS_CONQUEST)({ a, d, held: conquestsHeld });
 }
 
 function tweetForReversal(victimId, oppressorId) {
-  const v = _countryName(victimId);
-  const o = _countryName(oppressorId);
-  return `🛡️ ${v} has liberated itself from ${o}! The resistance prevails. ${_countryTag(victimId)} #PixelAnnex pixelannex.com`;
+  return _pickSassy(SASS_REVERSAL)({
+    v: _countryName(victimId),
+    o: _countryName(oppressorId),
+  });
 }
 
 function tweetForNuke(attackerId, cx, cy) {
-  const a = _countryName(attackerId);
-  // Find which geographic country was nuked (look up geoAtPixel)
   const i = cy * MAP_W + cx;
   const geoId = (i >= 0 && i < geoAtPixel.length) ? geoAtPixel[i] : -1;
   const targetName = geoId >= 0 ? _countryName(String(geoId)) : 'open territory';
-  return `☢️ ${a} has launched a nuclear strike on ${targetName}! No-paint zone active for 2 minutes. ${_countryTag(attackerId)} #PixelAnnex pixelannex.com`;
+  return _pickSassy(SASS_NUKE)({ a: _countryName(attackerId), target: targetName });
 }
 
 function tweetForDailySummary() {
-  // Top 3 countries by pixels
   const top = Object.entries(countryPxCount)
     .filter(([, c]) => c > 0)
     .sort(([, a], [, b]) => b - a)
@@ -247,11 +318,22 @@ function tweetForDailySummary() {
   const distinctConquered = new Set();
   for (const key of conqueredSet) distinctConquered.add(String(key).split(':')[0]);
   const lines = top.map(([id, c], i) => `${i + 1}. ${_countryName(id)} (${c.toLocaleString()} px)`).join(' · ');
-  return `🌍 World Snapshot · ${lines} · ${distinctConquered.size} countries conquered · Play at pixelannex.com #PixelAnnex`;
+  return _pickSassy(SASS_DAILY)({ lines, conquered: distinctConquered.size });
 }
 
 function tweetForAdmiralPromotion(username, countryId) {
-  return `🎖️ ${username} has reached ADMIRAL rank in PixelAnnex ${countryId ? '(' + _countryName(countryId) + ')' : ''}! Nukes unlocked. ☢️ Play at pixelannex.com #PixelAnnex`;
+  return _pickSassy(SASS_ADMIRAL)({
+    user: username,
+    country: countryId ? _countryName(countryId) : null,
+  });
+}
+
+// v37: news + community templates
+function tweetForNews(countryName, headline) {
+  return _pickSassy(SASS_NEWS)({ country: countryName, headline });
+}
+function tweetForCommunity() {
+  return _pickSassy(SASS_COMMUNITY)();
 }
 
 // Daily summary scheduler — fires once per UTC day at 12:00 UTC
@@ -278,6 +360,205 @@ function scheduleDailySummary() {
 
 loadTweetQueue();
 scheduleDailySummary();
+
+// ── v37: Daily news scraper ──────────────────────────────────────
+// Pulls BBC World News RSS once per day, matches headlines against game
+// country names, and queues up to 3 topical tweet drafts. No external API
+// keys required — RSS is public.
+const NEWS_FEED_URLS = [
+  'https://feeds.bbci.co.uk/news/world/rss.xml',
+  'https://feeds.npr.org/1004/rss.xml',          // NPR World
+  'https://rss.cnn.com/rss/edition_world.rss',
+];
+const NEWS_MAX_DRAFTS  = 3;
+const NEWS_SCRAPE_MS   = 24 * 60 * 60 * 1000; // daily
+
+// Lazy-built map of (lowercased name → country id) for keyword matching.
+// Includes some demonyms / alternate names for common countries.
+let _newsCountryAliases = null;
+function _buildNewsCountryAliases() {
+  const m = new Map();
+  const ALTS = {
+    '840': ['us', 'usa', 'u.s.', 'u.s.a.', 'united states', 'america', 'americans'],
+    '826': ['uk', 'u.k.', 'britain', 'british', 'england', 'english', 'scotland', 'wales'],
+    '643': ['russia', 'russian'],
+    '156': ['china', 'chinese'],
+    '276': ['germany', 'german'],
+    '250': ['france', 'french'],
+    '356': ['india', 'indian'],
+    '392': ['japan', 'japanese'],
+    '410': ['korea', 'south korea', 'korean'],
+    '410.n': ['north korea'],   // not a real id; placeholder
+    '408': ['north korea', 'dprk'],
+    '124': ['canada', 'canadian'],
+    '036': ['australia', 'australian', 'aussie'],
+    '076': ['brazil', 'brazilian'],
+    '484': ['mexico', 'mexican'],
+    '380': ['italy', 'italian'],
+    '724': ['spain', 'spanish'],
+    '792': ['turkey', 'turkish'],
+    '364': ['iran', 'iranian'],
+    '368': ['iraq', 'iraqi'],
+    '376': ['israel', 'israeli'],
+    '275': ['palestine', 'palestinian', 'gaza'],
+    '682': ['saudi arabia', 'saudi'],
+    '784': ['uae', 'emirates'],
+    '818': ['egypt', 'egyptian'],
+    '710': ['south africa'],
+    '566': ['nigeria', 'nigerian'],
+    '404': ['kenya'],
+    '231': ['ethiopia'],
+    '352': ['iceland'],
+    '372': ['ireland', 'irish'],
+    '528': ['netherlands', 'dutch'],
+    '056': ['belgium', 'belgian'],
+    '208': ['denmark', 'danish'],
+    '578': ['norway', 'norwegian'],
+    '752': ['sweden', 'swedish'],
+    '246': ['finland', 'finnish'],
+    '616': ['poland', 'polish'],
+    '300': ['greece', 'greek'],
+    '320': ['guatemala'],
+    '702': ['singapore'],
+    '764': ['thailand', 'thai'],
+    '704': ['vietnam', 'vietnamese'],
+    '360': ['indonesia', 'indonesian'],
+    '608': ['philippines', 'filipino'],
+    '586': ['pakistan', 'pakistani'],
+    '050': ['bangladesh'],
+    '004': ['afghanistan', 'afghan'],
+    '760': ['syria', 'syrian'],
+    '422': ['lebanon', 'lebanese'],
+    '400': ['jordan'],
+    '887': ['yemen'],
+    '634': ['qatar'],
+    '414': ['kuwait'],
+    '716': ['zimbabwe'],
+    '858': ['uruguay'],
+    '600': ['paraguay'],
+    '604': ['peru', 'peruvian'],
+    '152': ['chile', 'chilean'],
+    '032': ['argentina', 'argentine', 'argentinian'],
+    '170': ['colombia', 'colombian'],
+    '862': ['venezuela', 'venezuelan'],
+    '218': ['ecuador'],
+    '068': ['bolivia'],
+    '188': ['costa rica'],
+    '192': ['cuba', 'cuban'],
+    '214': ['dominican republic'],
+    '320.h': ['haiti'],
+    '332': ['haiti', 'haitian'],
+    '388': ['jamaica'],
+    '780': ['trinidad'],
+  };
+  // First add the full official names from countryNames
+  for (const [id, name] of Object.entries(countryNames || {})) {
+    if (typeof name === 'string' && name.length > 2) m.set(name.toLowerCase(), id);
+  }
+  // Then overlay the aliases
+  for (const [id, names] of Object.entries(ALTS)) {
+    for (const n of names) m.set(n, id.split('.')[0]);
+  }
+  return m;
+}
+
+// Minimal RSS parser — just <title> and <description> inside <item>
+function _parseRSSItems(xml) {
+  const items = [];
+  const itemRe = /<item>([\s\S]*?)<\/item>/g;
+  let m;
+  while ((m = itemRe.exec(xml)) !== null) {
+    const block = m[1];
+    const titleMatch = block.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/);
+    const linkMatch  = block.match(/<link>([\s\S]*?)<\/link>/);
+    if (titleMatch) {
+      let title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
+      // Limit headline length to keep tweet under 280 chars
+      if (title.length > 140) title = title.slice(0, 137) + '…';
+      items.push({
+        title,
+        link: linkMatch ? linkMatch[1].trim() : null,
+      });
+    }
+  }
+  return items;
+}
+
+async function _scrapeNewsAndQueue() {
+  if (!_newsCountryAliases) _newsCountryAliases = _buildNewsCountryAliases();
+  const UA = 'Mozilla/5.0 (compatible; PixelAnnexBot/1.0; +https://pixelannex.com)';
+  let xml = null;
+  let usedUrl = null;
+  for (const url of NEWS_FEED_URLS) {
+    try {
+      console.log('[News] Trying feed:', url);
+      const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept': 'application/rss+xml, application/xml, text/xml; q=0.9, */*; q=0.8' } });
+      if (res.ok) {
+        xml = await res.text();
+        usedUrl = url;
+        break;
+      } else {
+        console.warn('[News]', url, 'returned', res.status);
+      }
+    } catch (e) {
+      console.warn('[News]', url, 'fetch error:', e.message);
+    }
+  }
+  if (!xml) { console.warn('[News] all feeds failed; skipping'); return; }
+  try {
+    console.log('[News] Using feed:', usedUrl);
+    const items = _parseRSSItems(xml);
+    console.log('[News] Parsed', items.length, 'items');
+
+    // Score items: prefer those mentioning a game country
+    const matched = [];
+    for (const it of items) {
+      const lc = it.title.toLowerCase();
+      for (const [alias, countryId] of _newsCountryAliases) {
+        if (lc.includes(alias)) {
+          // Take canonical name from countryNames for display
+          const displayName = countryNames[countryId] || alias.replace(/\b\w/g, c => c.toUpperCase());
+          matched.push({ headline: it.title, countryId, countryName: displayName });
+          break;
+        }
+      }
+      if (matched.length >= NEWS_MAX_DRAFTS) break;
+    }
+    console.log('[News] Matched', matched.length, 'country-relevant headlines');
+    for (const m of matched) {
+      pushTweetDraft({
+        type:      'news',
+        text:      tweetForNews(m.countryName, m.headline),
+        dedupeKey: 'news:' + m.headline.slice(0, 60),
+      });
+    }
+  } catch (e) {
+    console.warn('[News] scrape failed:', e.message);
+  }
+}
+
+// Run once on boot (delayed) + then once per day
+setTimeout(_scrapeNewsAndQueue, 90 * 1000); // 90s after start (let map data settle)
+setInterval(_scrapeNewsAndQueue, NEWS_SCRAPE_MS);
+
+// ── v37: Community tweet scheduler — every 24h ────────────────────
+setInterval(() => {
+  pushTweetDraft({
+    type:      'community',
+    text:      tweetForCommunity(),
+    dedupeKey: 'community:' + Math.floor(Date.now() / NEWS_SCRAPE_MS),
+  });
+  console.log('[Community] Daily community tweet queued');
+}, NEWS_SCRAPE_MS);
+// Also schedule one within 5 minutes of boot
+setTimeout(() => {
+  pushTweetDraft({
+    type:      'community',
+    text:      tweetForCommunity(),
+    dedupeKey: 'community:boot:' + Math.floor(Date.now() / (60 * 60 * 1000)),
+  });
+}, 5 * 60 * 1000);
+
 
 
 // Broadcast a game event to all connected bots
@@ -818,9 +1099,14 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
       const defName = _countryName(defenderId);
       const attNames = attackerIds.slice(0, 3).map(id => _countryName(id)).join(', ');
       const more = attackerIds.length > 3 ? ' +' + (attackerIds.length - 3) + ' more' : '';
+      const sassyMulti = _pickSassy(SASS_MULTI)({
+        n: attackerIds.length,
+        d: defName,
+        atk: attNames + more,
+      });
       pushTweetDraft({
         type:        'multi_attack',
-        text:        '🚨 ' + attackerIds.length + ' countries are attacking ' + defName + '! (' + attNames + more + ') #PixelAnnex pixelannex.com',
+        text:        sassyMulti,
         dedupeKey:   'multi_attack:' + defenderId + ':' + Math.floor(now / 60000),
         throttleKey: 'multi_attack_def:' + defenderId,
       });

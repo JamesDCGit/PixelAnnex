@@ -412,7 +412,7 @@ async function handleMeCommand(interaction) {
         { name: '🏠 Main Country',   value: mainName,                                            inline: true },
         { name: '🌍 Top Painted',    value: topCountries,                                        inline: false },
       ],
-      footer: { text: 'PixelAnnex · play at pixelannex.com' },
+      footer: { text: 'PixelAnnex · pixelannex.com · X: @PixelAnnexGame · discord.gg/FcbzWCY2F' },
     };
 
     await interaction.reply({ embeds: [embed], flags: 64 });
@@ -444,7 +444,7 @@ async function handleLeaderboardCommand(interaction) {
       color: 0xfbbf24,
       title: '🏆 PixelAnnex Leaderboard',
       description: rows,
-      footer: { text: `${data.totalPlayers} total players · play at pixelannex.com` },
+      footer: { text: `${data.totalPlayers} total players · pixelannex.com · X: @PixelAnnexGame` },
     };
 
     await interaction.reply({ embeds: [embed] });
@@ -917,6 +917,7 @@ async function postWarEvent(guild, event) {
       title,
       description: content,
       timestamp: new Date(event.timestamp).toISOString(),
+      footer: { text: 'PixelAnnex · pixelannex.com · X: @PixelAnnexGame · discord.gg/FcbzWCY2F' }, // v37
     }],
     allowedMentions,
   });
