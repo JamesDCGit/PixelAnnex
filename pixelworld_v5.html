@@ -3440,6 +3440,37 @@ const SRC_FLAG_W=11, SRC_FLAG_H=7; // source encoding size
 // Build flag SVG element using DOM API (avoids innerHTML SVG parsing issues)
 function createFlagEl(isoId, scale){
   scale = scale || 2;
+  const W = SRC_FLAG_W*scale, H = SRC_FLAG_H*scale;
+
+  // v41a: try the real PNG first
+  if (typeof isoNumericToA2 === 'function') {
+    const a2 = isoNumericToA2(isoId);
+    if (a2 && _realFlagURLCache[a2] !== null) {
+      const img = document.createElement('img');
+      img.className = 'pa-flag-inline';
+      img.src = '/flags/' + a2 + '.png';
+      img.style.cssText = 'width:' + W + 'px;height:' + H + 'px;image-rendering:pixelated;'
+        + 'vertical-align:middle;border:1px solid #333;margin-right:4px;flex-shrink:0;display:inline-block';
+      // If the PNG fails, swap to the procedural SVG fallback
+      img.onerror = function() {
+        if (typeof markRealFlagMissing === 'function') {
+          markRealFlagMissing({ id: isoId });
+        }
+        const svgFallback = _createProceduralFlagSVG(isoId, scale);
+        if (svgFallback && img.parentNode) {
+          img.parentNode.replaceChild(svgFallback, img);
+        }
+      };
+      return img;
+    }
+  }
+  // Fallback: procedural SVG (also used when the real flag is known-missing)
+  return _createProceduralFlagSVG(isoId, scale);
+}
+
+// v41a: extracted so the onerror handler can rebuild the procedural SVG inline
+function _createProceduralFlagSVG(isoId, scale) {
+  scale = scale || 2;
   const rows = decodeFlag(isoId);
   if(!rows) return null;
   const W = SRC_FLAG_W*scale, H = SRC_FLAG_H*scale;
