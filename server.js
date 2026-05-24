@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-cleanup-v40';
+const SERVER_VERSION       = '2026-05-18-realflags-v41a';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2482,6 +2482,33 @@ const httpServer = http.createServer(async (req, res) => {
       // HTML changes per deploy; tell browser to revalidate
       'Cache-Control': 'no-cache, must-revalidate',
     });
+    return;
+  }
+
+  // ── v41a: Flag PNG files at /flags/{iso2}.png ─────────────────
+  // DaFluffyPotato CC0 pack — 252 flags in public/flags/ as 15×10 PNGs.
+  // Cached aggressively since flags are immutable.
+  if (url.pathname.startsWith('/flags/') && url.pathname.endsWith('.png')) {
+    // Whitelist: only allow [a-z]{2}.png to prevent path-traversal/scan
+    const m = url.pathname.match(/^\/flags\/([a-z]{2})\.png$/);
+    if (!m) {
+      res.writeHead(400);
+      res.end('invalid flag path');
+      return;
+    }
+    const iso2 = m[1];
+    const f = path.join(__dirname, 'public', 'flags', iso2 + '.png');
+    if (!fs.existsSync(f)) {
+      res.writeHead(404);
+      res.end('flag not found: ' + iso2);
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(f).pipe(res);
     return;
   }
 

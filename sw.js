@@ -9,7 +9,7 @@
  * Version bumped per release so old caches get cleared automatically.
  */
 
-const CACHE_VERSION = 'pixelannex-v2026-05-18-cleanup-v40';
+const CACHE_VERSION = 'pixelannex-v2026-05-18-realflags-v41a';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
