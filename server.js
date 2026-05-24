@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-visuals-v39d';
+const SERVER_VERSION       = '2026-05-18-cleanup-v40';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3203,14 +3203,19 @@ wss.on('connection', (ws, req) => {
 
       case 'set-country': {
         // v38: player re-picked country after their own was conquered
+        // v40: also rejects culled countries (those with no playable pixels)
         const cid = String(msg.countryId);
-        if (countryNames && countryNames[cid]) {
+        const geoIdx = parseInt(cid, 10);
+        const hasPixels = geoPixels[geoIdx] && geoPixels[geoIdx].length > 0;
+        if (countryNames && countryNames[cid] && hasPixels) {
           p.countryId = cid;
           p.countryIdx = getIdx(cid);
           if (!ownerPixels[p.countryIdx]) ownerPixels[p.countryIdx] = new Set();
           countryPxCount[cid] = countryPxCount[cid] || 0;
           console.log('[v38] Player', pid, 'switched to country', cid);
           broadcastPlayers();
+        } else {
+          console.log('[v40] Rejected set-country for', cid, 'no playable pixels');
         }
         break;
       }

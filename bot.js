@@ -846,6 +846,15 @@ async function postWarEvent(guild, event) {
   let title   = '';
 
   switch (event.type) {
+    case 'monster_event': {
+      // v40: explicit monster handler
+      const isUFO = event.monsterType === 'ufo';
+      title   = isUFO ? '🛸 UFO Sighting' : '🦑 Kraken Sighting';
+      content = event.sassyText || (isUFO ? 'A UFO has been spotted abducting pixels!' : 'A kraken has surfaced on the coast!');
+      color   = isUFO ? 0x60a5fa : 0x9333ea;
+      break;
+    }
+
     case 'war_conquest':
       title   = '⚔️ Country Conquered';
       content = event.sassyText || `${_atkName} has conquered ${_defName}!`;
@@ -977,6 +986,7 @@ function handleGameEvent(event) {
     case 'war_siege_start':
     case 'war_siege_end':
     case 'war_bomb':
+    case 'monster_event':   // v40
       queueWarEvent(event);
       break;
   }
