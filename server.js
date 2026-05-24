@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-followup-v39c';
+const SERVER_VERSION       = '2026-05-18-visuals-v39d';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1225,6 +1225,145 @@ function _resetWorld() {
   } catch(e) {}
 }
 setInterval(_checkWorldConquest, 30 * 1000);
+
+
+
+// ── v39d: Monster events — random destructive sprite spawns ───────
+const MONSTER_INTERVAL_MIN_MS = 50 * 60 * 1000;
+const MONSTER_INTERVAL_MAX_MS = 70 * 60 * 1000;
+const MONSTER_DURATION_MS     = 30 * 1000;
+const MONSTER_TICK_MS         = 1500;
+let _monsterActive = false;
+let _monsterTickHandle = null;
+
+function _scheduleNextMonster() {
+  const delay = MONSTER_INTERVAL_MIN_MS + Math.random() * (MONSTER_INTERVAL_MAX_MS - MONSTER_INTERVAL_MIN_MS);
+  console.log('[Monster] next spawn in ' + Math.round(delay/60000) + ' min');
+  setTimeout(_spawnMonster, delay);
+}
+
+function _pickMonsterSpawn(type) {
+  const MAX_TRIES = 80;
+  for (let i = 0; i < MAX_TRIES; i++) {
+    const x = Math.floor(Math.random() * MAP_W);
+    const y = Math.floor(Math.random() * MAP_H);
+    const idx = y * MAP_W + x;
+    if (idx < 0 || idx >= MAP_PX) continue;
+    if (type === 'ufo' && landMask[idx] === 1) {
+      return { x, y };
+    }
+    if (type === 'kraken' && landMask[idx] === 0) {
+      let hasLand = false;
+      for (let dy = -12; dy <= 12 && !hasLand; dy += 4) {
+        for (let dx = -12; dx <= 12 && !hasLand; dx += 4) {
+          const ni = (y + dy) * MAP_W + (x + dx);
+          if (ni >= 0 && ni < MAP_PX && landMask[ni] === 1) hasLand = true;
+        }
+      }
+      if (hasLand) return { x, y };
+    }
+  }
+  return null;
+}
+
+function _spawnMonster() {
+  if (_monsterActive) { _scheduleNextMonster(); return; }
+  if (typeof landMask === 'undefined' || !landMask) { _scheduleNextMonster(); return; }
+  if (typeof _isPaintLocked === 'function' && _isPaintLocked()) { _scheduleNextMonster(); return; }
+
+  const type = Math.random() < 0.5 ? 'ufo' : 'kraken';
+  const spawn = _pickMonsterSpawn(type);
+  if (!spawn) { console.log('[Monster] no spawn location, retrying later'); _scheduleNextMonster(); return; }
+
+  _monsterActive = true;
+  console.log('[Monster] spawning', type, 'at', spawn.x, spawn.y);
+
+  const eventId = 'm' + Date.now();
+  const startTs = Date.now();
+  const endTs   = startTs + MONSTER_DURATION_MS;
+  const driftVx = type === 'kraken' ? (Math.random() - 0.5) * 0.2 : 0;
+  const driftVy = type === 'kraken' ? (Math.random() - 0.5) * 0.15 : 0;
+
+  broadcast(JSON.stringify({
+    type:        'monster_spawn',
+    monsterId:   eventId,
+    monsterType: type,
+    x: spawn.x, y: spawn.y,
+    driftVx, driftVy,
+    durationMs:  MONSTER_DURATION_MS,
+    timestamp:   startTs,
+  }));
+
+  emitBotEvent({
+    type:        'monster_event',
+    tier:        2,
+    monsterType: type,
+    timestamp:   startTs,
+    sassyText:   type === 'ufo'
+      ? '🛸 UFO sighting! Pixel cattle abduction in progress.'
+      : '🦑 Kraken surfaced! A coastline is having a very bad afternoon.',
+  });
+
+  let cur = { x: spawn.x, y: spawn.y };
+  let ticks = 0;
+  const maxTicks = Math.floor(MONSTER_DURATION_MS / MONSTER_TICK_MS);
+
+  _monsterTickHandle = setInterval(() => {
+    ticks++;
+    cur.x += driftVx * MONSTER_TICK_MS / 100;
+    cur.y += driftVy * MONSTER_TICK_MS / 100;
+    cur.x = Math.max(0, Math.min(MAP_W - 1, cur.x));
+    cur.y = Math.max(0, Math.min(MAP_H - 1, cur.y));
+
+    const RADIUS = type === 'ufo' ? 4 : 3;
+    const cx = Math.round(cur.x), cy = Math.round(cur.y);
+    const changed = [];
+    for (let dy = -RADIUS; dy <= RADIUS; dy++) {
+      for (let dx = -RADIUS; dx <= RADIUS; dx++) {
+        if (dx*dx + dy*dy > RADIUS*RADIUS) continue;
+        const px = cx + dx, py = cy + dy;
+        if (px < 0 || px >= MAP_W || py < 0 || py >= MAP_H) continue;
+        const i = py * MAP_W + px;
+        if (!landMask[i]) continue;
+        if (claimByPixel[i] === -1) continue;
+        const prev = claimByPixel[i];
+        const owner = idxToId[prev];
+        if (owner !== undefined) {
+          updateOwnerIndex(i, prev, -1);
+          countryPxCount[owner] = Math.max(0, (countryPxCount[owner] || 0) - 1);
+          const geo = geoAtPixel[i];
+          if (geo >= 0 && geoClaimCnt[geo] && geoClaimCnt[geo][owner]) {
+            geoClaimCnt[geo][owner]--;
+            if (geoClaimCnt[geo][owner] <= 0) delete geoClaimCnt[geo][owner];
+          }
+        }
+        claimByPixel[i] = -1;
+        changed.push({ x: px, y: py, owner: -1 });
+      }
+    }
+    if (changed.length > 0) queueDelta(changed);
+    broadcast(JSON.stringify({
+      type:        'monster_tick',
+      monsterId:   eventId,
+      x: cur.x, y: cur.y,
+      timestamp:   Date.now(),
+    }));
+
+    if (ticks >= maxTicks || Date.now() >= endTs) {
+      clearInterval(_monsterTickHandle);
+      _monsterTickHandle = null;
+      _monsterActive = false;
+      broadcast(JSON.stringify({
+        type:      'monster_despawn',
+        monsterId: eventId,
+      }));
+      console.log('[Monster]', type, 'despawned after', ticks, 'ticks');
+      _scheduleNextMonster();
+    }
+  }, MONSTER_TICK_MS);
+}
+
+setTimeout(_scheduleNextMonster, 2 * 60 * 1000);
 
 // ── Alliance detection ───────────────────────────────────────────
 // An alliance forms when 3+ players share at least one country in their

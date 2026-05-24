@@ -1175,6 +1175,15 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 /* Hide on mobile to save space — links also live in the drawer (TBD) */
 @media (max-width: 768px) { #social-links { display: none; } }
 
+
+/* v39d: Monster banner fade-out */
+@keyframes monsterBannerFade {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  10%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+  85%  { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+}
+
 </style>
 </head>
 <body>
@@ -3052,7 +3061,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-followup-v39c';
+const CODE_VERSION = '2026-05-18-visuals-v39d';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -7060,6 +7069,18 @@ if (msg.state?.conquered) {
       _showCountryRepickModal(msg);
       break;
     }
+    case 'monster_spawn': {
+      _onMonsterSpawn(msg);
+      break;
+    }
+    case 'monster_tick': {
+      _onMonsterTick(msg);
+      break;
+    }
+    case 'monster_despawn': {
+      _onMonsterDespawn(msg);
+      break;
+    }
     case 'players': {
       const humans = msg.list.filter(p=>!p.isBot);
       const bots   = msg.list.filter(p=>p.isBot);
@@ -8667,6 +8688,47 @@ const GLYPHS = {
     [7,1],[8,1],                                 // funnel base
     [7,0],                                       // funnel
   ],
+  // 🦑 Kraken — 16×16, two-frame animation (sea, large + slow)
+  kraken_a: [
+    [7,2],[8,2],
+    [6,3],[7,3],[8,3],[9,3],
+    [5,4],[6,4],[9,4],[10,4],
+    [4,5],[5,5],[6,5],[9,5],[10,5],[11,5],
+    [3,6],[4,6],[11,6],[12,6],
+    [3,7],[4,7],[5,7],[6,7],[7,7],[8,7],[9,7],[10,7],[11,7],[12,7],
+    [4,8],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],
+    [4,9],[5,9],[6,9],[7,9],[8,9],[9,9],[10,9],[11,9],
+    [3,10],[4,10],[11,10],[12,10],
+    [6,10],[7,10],[8,10],[9,10],
+    [2,11],[3,11],[12,11],[13,11],
+    [5,11],[6,11],[9,11],[10,11],
+    [1,12],[2,12],[13,12],[14,12],
+    [4,12],[5,12],[10,12],[11,12],
+    [1,13],[14,13],
+    [4,13],[11,13],
+    [4,14],[11,14],
+    [3,15],[12,15],
+  ],
+  kraken_b: [
+    [7,2],[8,2],
+    [6,3],[7,3],[8,3],[9,3],
+    [5,4],[6,4],[9,4],[10,4],
+    [4,5],[5,5],[6,5],[9,5],[10,5],[11,5],
+    [3,6],[4,6],[11,6],[12,6],
+    [3,7],[4,7],[5,7],[6,7],[7,7],[8,7],[9,7],[10,7],[11,7],[12,7],
+    [4,8],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],
+    [4,9],[5,9],[6,9],[7,9],[8,9],[9,9],[10,9],[11,9],
+    [2,10],[3,10],[12,10],[13,10],
+    [5,10],[6,10],[9,10],[10,10],
+    [1,11],[2,11],[13,11],[14,11],
+    [4,11],[5,11],[10,11],[11,11],
+    [0,12],[14,12],
+    [3,12],[12,12],
+    [2,13],[13,13],
+    [5,13],[10,13],
+    [6,14],[9,14],
+    [7,15],[8,15],
+  ],
   // 🚀 Rocket — 4px wide, 7px tall, moves north or randomly
   rocket: [
     [1,0],[2,0],                                 // nose
@@ -8687,6 +8749,7 @@ const SPRITE_COLOURS = {
   ufo:    [[180,220,180], [150,255,150], [200,255,200]],
   tanker: [[140,130,110], [160,150,130], [200,190,170]],
   rocket: [[220,180,140], [200,160,120], [255,220,180]],
+  kraken: [[55,15,55],     [120,30,90],   [200,80,150]],  // v39d
 };
 
 // Glyph bounding box
@@ -8731,10 +8794,17 @@ function initSprites(){
     {type:'plane',  count:6,  zone:'any'},
     {type:'ufo',    count:3,  zone:'any'},
     {type:'rocket', count:2,  zone:'any'},
+    {type:'kraken', count:1,  zone:'ocean'},  // v39d: lone sea monster, slow drift
   ];
 
   for(const {type,count,zone} of config){
-    const glyph=GLYPHS[type];
+    // v39d: multi-frame sprites pick first frame as initial glyph
+    let glyph = GLYPHS[type];
+    let frames = null;
+    if (type === 'kraken') {
+      frames = [GLYPHS.kraken_a, GLYPHS.kraken_b];
+      glyph = frames[0];
+    }
     const {w,h}=glyphBounds(glyph);
     let placed=0, attempts=0;
     while(placed<count && attempts<2000){
@@ -8751,15 +8821,18 @@ function initSprites(){
       else if(type==='plane')            {vx=-(0.8+rand()*0.5);vy=(rand()-0.5)*0.2;}
       else if(type==='ufo')              {vx=(rand()-0.5)*0.6;vy=(rand()-0.5)*0.4;}
       else if(type==='rocket')           {vx=(rand()-0.5)*0.3;vy=-(0.5+rand()*0.4);}
+      else if(type==='kraken')           {vx=(rand()-0.5)*0.15;vy=(rand()-0.5)*0.1;} // v39d: slow drift
 
       spriteList.push({
         type, glyph, w, h,
         x:mx, y:my,
         vx, vy,
-        px:mx, py:my,  // previous position
-        flip: vx < 0,  // mirror for left-moving sprites
+        px:mx, py:my,
+        flip: vx < 0,
         colours: SPRITE_COLOURS[type],
         opacity: 0.7+rand()*0.3,
+        frames,
+        frameIdx: 0,
       });
       placed++;
     }
@@ -8799,6 +8872,16 @@ function tickSprites(){
   if(_sNow - _lastSpriteTick < 125){requestAnimationFrame(tickSprites);return;}
   _lastSpriteTick = _sNow;
   spriteFrame++;
+
+  // v39d: cycle 2-frame sprites every 4 ticks (~500ms at 8fps)
+  if (spriteFrame % 4 === 0) {
+    for (const s of spriteList) {
+      if (s.frames && s.frames.length > 1) {
+        s.frameIdx = (s.frameIdx + 1) % s.frames.length;
+        s.glyph = s.frames[s.frameIdx];
+      }
+    }
+  }
 
   if(!spriteImg) spriteImg=sctx.createImageData(MAP_W,MAP_H);
   const d=spriteImg.data;
@@ -9921,9 +10004,24 @@ function _showWorldConquestOverlay(data) {
   overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;background:linear-gradient(135deg,#070d1a,#1a0a14);' +
     'color:#fbbf24;font-family:"Courier New",monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;' +
     'padding:24px;text-align:center;overflow-y:auto;';
+  // v39d: render the country flag next to the name
+  function _wcFlagSrc(country) {
+    if (!country || !country.countryId) return '';
+    const fi = (typeof featList !== 'undefined') ? featList.find(f => String(f.id) === String(country.countryId)) : null;
+    if (!fi) return '';
+    try {
+      return (typeof _renderFlagToDataURL === 'function') ? (_renderFlagToDataURL(fi) || '') : '';
+    } catch(e) { return ''; }
+  }
   const topCList = (data.topCountries || []).map(function(c, i) {
-    return '<div style="display:flex;justify-content:space-between;padding:6px 12px;background:rgba(255,255,255,0.04);margin-bottom:4px;border-radius:4px;font-size:14px;">' +
-      '<span><b style="color:#fbbf24">#' + (i + 1) + '</b> ' + (c.name || '?') + '</span>' +
+    const flagSrc = _wcFlagSrc(c);
+    const flagImg = flagSrc
+      ? '<img src="' + flagSrc + '" style="width:40px;height:26px;image-rendering:pixelated;box-shadow:0 0 0 1px rgba(0,0,0,0.6),0 2px 4px rgba(0,0,0,0.5);margin-right:10px;flex-shrink:0;">'
+      : '<span style="width:40px;height:26px;display:inline-block;margin-right:10px;background:#475569;border-radius:2px;flex-shrink:0;"></span>';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,0.04);margin-bottom:4px;border-radius:4px;font-size:14px;">' +
+      '<span style="display:flex;align-items:center;">' + flagImg +
+        '<span><b style="color:#fbbf24">#' + (i + 1) + '</b> ' + (c.name || '?') + '</span>' +
+      '</span>' +
       '<span style="color:#cbd5e1">' + c.conquests + ' conquests</span></div>';
   }).join('');
   const topPList = (data.topPlayers || []).map(function(p, i) {
@@ -10011,6 +10109,73 @@ function _showCountryRepickModal(data) {
       try { ws.send(JSON.stringify({ type: 'set-country', countryId: f.id })); } catch (e) {}
     }
   }
+}
+
+
+// ── v39d: Monster event client handlers ───────────────────────────
+const _activeMonsters = {};
+
+function _onMonsterSpawn(msg) {
+  if (!Array.isArray(spriteList)) return;
+  let type = msg.monsterType;
+  let glyph, frames = null;
+  if (type === 'kraken') {
+    frames = [GLYPHS.kraken_a, GLYPHS.kraken_b];
+    glyph = frames[0];
+  } else if (type === 'ufo') {
+    glyph = GLYPHS.ufo;
+  } else {
+    return;
+  }
+  const {w, h} = glyphBounds(glyph);
+  const sprite = {
+    type, glyph, w, h,
+    x: msg.x - w/2, y: msg.y - h/2,
+    vx: 0, vy: 0,
+    px: msg.x - w/2, py: msg.y - h/2,
+    flip: false,
+    colours: SPRITE_COLOURS[type] || SPRITE_COLOURS.ufo,
+    opacity: 0.95,
+    frames,
+    frameIdx: 0,
+    _isMonster: true,
+  };
+  spriteList.push(sprite);
+  _activeMonsters[msg.monsterId] = sprite;
+  _showMonsterBanner(type);
+}
+
+function _onMonsterTick(msg) {
+  const s = _activeMonsters[msg.monsterId];
+  if (!s) return;
+  s.x = msg.x - s.w / 2;
+  s.y = msg.y - s.h / 2;
+}
+
+function _onMonsterDespawn(msg) {
+  const s = _activeMonsters[msg.monsterId];
+  if (!s) return;
+  const idx = spriteList.indexOf(s);
+  if (idx >= 0) spriteList.splice(idx, 1);
+  delete _activeMonsters[msg.monsterId];
+}
+
+function _showMonsterBanner(type) {
+  const old = document.getElementById('monster-banner');
+  if (old) old.remove();
+  const banner = document.createElement('div');
+  banner.id = 'monster-banner';
+  const isUFO = (type === 'ufo');
+  banner.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:120;' +
+    'background:' + (isUFO ? 'rgba(60,140,80,0.92)' : 'rgba(120,30,90,0.92)') + ';' +
+    'color:#fff;padding:8px 16px;border-radius:6px;font-family:"Courier New",monospace;' +
+    'font-size:13px;letter-spacing:.04em;box-shadow:0 4px 12px rgba(0,0,0,0.4);' +
+    'animation:monsterBannerFade 6s ease-out forwards;';
+  banner.textContent = isUFO
+    ? '🛸 UFO sighting! Pixels are being abducted.'
+    : '🦑 KRAKEN! Tentacles incoming on the coast.';
+  document.body.appendChild(banner);
+  setTimeout(() => banner.remove(), 6000);
 }
 
 // debug panel removed in v27
