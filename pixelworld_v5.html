@@ -1459,10 +1459,11 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <canvas id="c-waves" style="pointer-events:none"></canvas>
     <canvas id="c-sprites" style="pointer-events:none"></canvas>
     <canvas id="c-landmarks" style="pointer-events:none"></canvas>
+    <canvas id="c-border"></canvas><!-- v39b: now below c-claim -->
     <canvas id="c-claim"></canvas>
     <canvas id="c-flash" style="pointer-events:none;"></canvas>
     <canvas id="c-outline" style="pointer-events:none;"></canvas>
-    <canvas id="c-border"></canvas>
+    <!-- v39b: c-border moved below to render before c-claim -->
     <canvas id="c-flags" style="display:none;"></canvas><!-- v33: replaced by #flag-overlay DOM -->
     <canvas id="c-highlight" style="pointer-events:none;"></canvas>
     <canvas id="c-siege" style="pointer-events:none;"></canvas>
@@ -3045,7 +3046,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-gameplay-v38';
+const CODE_VERSION = '2026-05-18-backlog-v39b';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -3697,44 +3698,64 @@ function placeFlag(geoIdx, claimerIdx){
     cx = Math.round(sx / pixels.length);
     cy = Math.round(sy / pixels.length);
   } else {
-    // BFS connected-component labeling
+    // v39b: BFS to find largest connected component; record its pixel list so
+    // we can then density-cluster to find the visually-densest spot.
     const visited = new Uint8Array(MAP_PX);
-    const components = []; // { pixels: [], sx, sy }
+    const components = []; // [{ pixelList: number[], n }]
     const queue = [];
     for (const start of pixels) {
       if (visited[start]) continue;
-      const comp = { sx: 0, sy: 0, n: 0 };
+      const compPixels = [];
       queue.length = 0;
       queue.push(start);
       visited[start] = 1;
       while (queue.length > 0) {
         const idx = queue.pop();
-        comp.sx += idx % MAP_W;
-        comp.sy += (idx / MAP_W) | 0;
-        comp.n++;
+        compPixels.push(idx);
         const x = idx % MAP_W, y = (idx / MAP_W) | 0;
-        // 4-neighbour
-        const neighbors = [];
-        if (x > 0)         neighbors.push(idx - 1);
-        if (x < MAP_W - 1) neighbors.push(idx + 1);
-        if (y > 0)         neighbors.push(idx - MAP_W);
-        if (y < MAP_H - 1) neighbors.push(idx + MAP_W);
-        for (const ni of neighbors) {
-          if (!visited[ni] && featByPixel[ni] === geoIdx && claimByPixel[ni] === claimerIdx) {
-            visited[ni] = 1;
-            queue.push(ni);
-          }
-        }
+        if (x > 0          && !visited[idx-1]      && featByPixel[idx-1]      === geoIdx && claimByPixel[idx-1]      === claimerIdx) { visited[idx-1]=1;      queue.push(idx-1); }
+        if (x < MAP_W - 1  && !visited[idx+1]      && featByPixel[idx+1]      === geoIdx && claimByPixel[idx+1]      === claimerIdx) { visited[idx+1]=1;      queue.push(idx+1); }
+        if (y > 0          && !visited[idx-MAP_W]  && featByPixel[idx-MAP_W]  === geoIdx && claimByPixel[idx-MAP_W]  === claimerIdx) { visited[idx-MAP_W]=1;  queue.push(idx-MAP_W); }
+        if (y < MAP_H - 1  && !visited[idx+MAP_W]  && featByPixel[idx+MAP_W]  === geoIdx && claimByPixel[idx+MAP_W]  === claimerIdx) { visited[idx+MAP_W]=1;  queue.push(idx+MAP_W); }
       }
-      components.push(comp);
-      // Stop early if we've already found a huge component (≥ 80% of total)
-      if (comp.n >= pixels.length * 0.8) break;
+      components.push({ pixelList: compPixels, n: compPixels.length });
+      if (compPixels.length >= pixels.length * 0.8) break;
     }
-    // Largest component wins
+    // Pick largest component
     let largest = components[0];
     for (const c of components) if (c.n > largest.n) largest = c;
-    cx = Math.round(largest.sx / largest.n);
-    cy = Math.round(largest.sy / largest.n);
+
+    // v39b: Density grid — bucket the component's pixels into 32×32 cells
+    // (each cell ~ MAP_W/32 × MAP_H/32 ≈ 64×32 map px). Find the densest cell,
+    // then use the mean pixel position within that cell as the flag spot.
+    const GRID_W = 32, GRID_H = 32;
+    const cellW = MAP_W / GRID_W, cellH = MAP_H / GRID_H;
+    const cellCount = new Int32Array(GRID_W * GRID_H);
+    const cellSX    = new Float64Array(GRID_W * GRID_H);
+    const cellSY    = new Float64Array(GRID_W * GRID_H);
+    for (const idx of largest.pixelList) {
+      const x = idx % MAP_W, y = (idx / MAP_W) | 0;
+      const gx = Math.min(GRID_W - 1, (x / cellW) | 0);
+      const gy = Math.min(GRID_H - 1, (y / cellH) | 0);
+      const ci = gy * GRID_W + gx;
+      cellCount[ci]++;
+      cellSX[ci] += x;
+      cellSY[ci] += y;
+    }
+    let bestCell = -1, bestN = 0;
+    for (let i = 0; i < cellCount.length; i++) {
+      if (cellCount[i] > bestN) { bestN = cellCount[i]; bestCell = i; }
+    }
+    if (bestCell >= 0 && bestN > 0) {
+      cx = Math.round(cellSX[bestCell] / bestN);
+      cy = Math.round(cellSY[bestCell] / bestN);
+    } else {
+      // Fallback to component-wide centroid
+      let sx = 0, sy = 0;
+      for (const idx of largest.pixelList) { sx += idx % MAP_W; sy += (idx / MAP_W) | 0; }
+      cx = Math.round(sx / largest.n);
+      cy = Math.round(sy / largest.n);
+    }
   }
   placedFlags[geoIdx]={claimerIdx,cx,cy};
   // v33: skip canvas draw — DOM overlay handles flag display now

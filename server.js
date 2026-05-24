@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-gameplay-v38';
+const SERVER_VERSION       = '2026-05-18-backlog-v39b';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -141,7 +141,7 @@ const botEventStreams = new Set();
 // keeps tweet quality curated and avoids X API costs.
 
 const TWEET_QUEUE_FILE = path.join(__dirname, 'tweet_queue.json');
-const TWEETS_MAX_KEEP   = 500;      // total drafts retained
+const TWEETS_MAX_KEEP   = 50;       // v39a: latest 50 only (was 500)
 const TWEETS_DEDUPE_MS  = 5 * 60_000;       // 5 min dedupe window per event signature
 const TWEETS_RATE_LIMIT = 60 * 60_000;      // 1hr min between conquest tweets from same attacker
 const tweetQueue = [];                       // newest first; each: { id, ts, type, text, status }
@@ -154,6 +154,12 @@ function loadTweetQueue() {
       const raw = JSON.parse(fs.readFileSync(TWEET_QUEUE_FILE, 'utf8'));
       if (Array.isArray(raw)) {
         for (const t of raw) tweetQueue.push(t);
+        // v39a: enforce new cap immediately on load — older drafts dropped
+        if (tweetQueue.length > TWEETS_MAX_KEEP) {
+          const dropped = tweetQueue.length - TWEETS_MAX_KEEP;
+          tweetQueue.length = TWEETS_MAX_KEEP;
+          console.log('[Tweets] Dropped', dropped, 'older drafts beyond cap of', TWEETS_MAX_KEEP);
+        }
         console.log('[Tweets] Loaded', tweetQueue.length, 'drafts from disk');
       }
     }
@@ -216,7 +222,8 @@ const TWITTER_HANDLE = '@PixelAnnexGame';
 const DISCORD_INVITE = 'https://discord.gg/FcbzWCY2F';
 const GAME_URL       = 'pixelannex.com';
 function _pickSassy(pool) { return pool[Math.floor(Math.random() * pool.length)]; }
-function _suffix() { return GAME_URL + ' · ' + TWITTER_HANDLE + ' #PixelAnnex'; }
+// v39a: tweet posted by @PixelAnnexGame anyway — drop the self-mention
+function _suffix() { return GAME_URL + ' #PixelAnnex'; }
 
 // CONQUEST variants — {attacker} {defender} {held}
 const SASS_CONQUEST = [
@@ -1190,7 +1197,7 @@ function _checkWorldConquest() {
     const winners = topCountries.slice(0, 3).map(c => c.name).join(', ');
     pushTweetDraft({
       type:      'world_conquest',
-      text:      '🌍 THE WORLD HAS BEEN CONQUERED! Top dogs: ' + winners + '. The map resets in 5 minutes — get ready for round 2. ' + GAME_URL + ' · ' + TWITTER_HANDLE + ' #PixelAnnex',
+      text:      '🌍 THE WORLD HAS BEEN CONQUERED! Top dogs: ' + winners + '. The map resets in 5 minutes — get ready for round 2. ' + GAME_URL + ' #PixelAnnex',
       dedupeKey: 'world_conquest:' + Math.floor(_worldResetAt / 1000),
     });
   } catch(e) {}
@@ -1212,7 +1219,7 @@ function _resetWorld() {
   try {
     pushTweetDraft({
       type:      'world_reset',
-      text:      '🌍 World map has been reset. Fresh canvas, fresh chaos. Get back in: ' + GAME_URL + ' · ' + TWITTER_HANDLE + ' #PixelAnnex',
+      text:      '🌍 World map has been reset. Fresh canvas, fresh chaos. Get back in: ' + GAME_URL + ' #PixelAnnex',
       dedupeKey: 'world_reset:' + Math.floor(Date.now() / 1000),
     });
   } catch(e) {}

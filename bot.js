@@ -927,7 +927,7 @@ async function postWarEvent(guild, event) {
       title,
       description: content,
       timestamp: new Date(event.timestamp).toISOString(),
-      footer: { text: 'PixelAnnex · pixelannex.com · X: @PixelAnnexGame · discord.gg/FcbzWCY2F' }, // v37
+      // v39a: footer removed from war channel — channel topic carries the links
     }],
     allowedMentions,
   });
