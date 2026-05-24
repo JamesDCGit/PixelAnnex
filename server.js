@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-backlog-v39b';
+const SERVER_VERSION       = '2026-05-18-followup-v39c';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2221,10 +2221,24 @@ function startTickerFor(countryId) {
   }, Math.random() * BOT_TICK_MS);
 }
 
+// v39c: returns true if any other country has conquered the given country.
+// conqueredSet keys are 'geoId:attackerId'. We match on geoId regardless of attacker.
+function _isCountryConquered(countryId) {
+  const target = String(countryId) + ':';
+  for (const key of conqueredSet) {
+    if (String(key).startsWith(target)) return true;
+  }
+  return false;
+}
+
 function botTickSingle(countryId) {
   if (!mapReady) return;
-  // Persistence: if this country was conquered by a human, the resident bot dies down
-  // until the country recovers (the human-claim is released elsewhere when occupation drops)
+  // v39c: if this country has been conquered by ANYONE (human or bot), the
+  // resident bot stops painting. The country is dead until the world resets
+  // or the claim is reversed. Previously this only checked human conquests.
+  if (_isCountryConquered(countryId)) return;
+  // (legacy: humanClaimedCountries is still consulted in case it gets used
+  // elsewhere; the new gate above covers it as a superset.)
   if (humanClaimedCountries.has(countryId)) return;
   // v34: only active bots paint
   if (!_isBotActive(countryId)) return;

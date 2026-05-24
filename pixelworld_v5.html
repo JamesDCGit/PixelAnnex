@@ -1137,6 +1137,12 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 #leaderboard-panel .lb-count{font-size:9px;color:#475569;font-weight:normal}
 .lb-row{display:flex;align-items:center;gap:5px;margin-bottom:3px;font-size:10px;color:#64748b;white-space:nowrap;cursor:default}
 .lb-row .lb-pos{color:#475569;font-size:9px;min-width:18px;text-align:right;font-variant-numeric:tabular-nums}
+.lb-row.lb-top1 .lb-pos { color: #fbbf24; min-width: 32px; }
+.lb-row.lb-top2 .lb-pos { color: #cbd5e1; min-width: 32px; }
+.lb-row.lb-top3 .lb-pos { color: #d97706; min-width: 32px; }
+.lb-row.lb-top1 { background: rgba(251,191,36,0.06); }
+.lb-row.lb-top2 { background: rgba(203,213,225,0.05); }
+.lb-row.lb-top3 { background: rgba(217,119,6,0.05); }
 .lb-row .lb-name{color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .lb-row .lb-pts{margin-left:auto;color:#fbbf24;font-size:10px;font-weight:600;font-variant-numeric:tabular-nums}
 .lb-row.lb-viewer{background:rgba(59,130,246,0.1);border-left:2px solid #3b82f6;padding-left:4px;margin-left:-6px;border-radius:0 3px 3px 0}
@@ -1497,7 +1503,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <div id="conquest-toast"><div class="toast-title">&#9873; Country Conquered</div><div class="toast-body" id="toast-body"></div></div>
     <!-- v35: Persistent leaderboard panel -->
 <div class="hud" id="leaderboard-panel">
-  <h3><span>Leaderboard</span><span class="lb-count" id="lb-count">0 players</span></h3>
+  <h3><span>Discord Leaderboard</span><span class="lb-count" id="lb-count">0 players</span></h3>
   <div id="lb-items" class="lb-empty">Loading…</div>
 </div>
 <div class="hud" id="legend"><h3 data-i18n="hud.territory">Territory</h3><div id="leg-items"></div>
@@ -3046,7 +3052,7 @@ function topoFeatures(topo){
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-backlog-v39b';
+const CODE_VERSION = '2026-05-18-followup-v39c';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -3690,13 +3696,13 @@ function placeFlag(geoIdx, claimerIdx){
   }
   if (pixels.length === 0) return;
 
-  // For small countries skip the BFS — raw centroid is fine
+  // v39c: density grid is used for ALL sizes. Small countries like El Salvador
+  // have 4 outlier "island" pixels in the Mediterranean (map-data artifact) that
+  // drag a raw centroid into the ocean. The density grid correctly picks the
+  // densest cell (the real landmass) and ignores the outliers.
   let cx, cy;
-  if (pixels.length < 200) {
-    let sx=0, sy=0;
-    for(const i of pixels){ sx += i%MAP_W; sy += (i/MAP_W)|0; }
-    cx = Math.round(sx / pixels.length);
-    cy = Math.round(sy / pixels.length);
+  if (false) {
+    // (formerly the small-country fast path — disabled)
   } else {
     // v39b: BFS to find largest connected component; record its pixel list so
     // we can then density-cluster to find the visually-densest spot.
@@ -5458,13 +5464,15 @@ function filterTutCountries() {
 async function fetchWorldStats() {
   // Pull live stats from public endpoints; update BOTH the tutorial header
   // and the persistent bottom-centre bar with the same data.
+  // v39c: use /api/world-state.totalPlayers (humans + active bots) so the bottom
+  // panel reflects the world's total activity, not just Discord-logged-in users.
   let players = 0, alliances = 0, conquered = 0;
   try {
-    const [lb, al] = await Promise.all([
-      fetch('/api/stats/leaderboard').then(r => r.json()).catch(() => ({})),
+    const [ws, al] = await Promise.all([
+      fetch('/api/world-state').then(r => r.json()).catch(() => ({})),
       fetch('/api/alliances').then(r => r.json()).catch(() => ({})),
     ]);
-    players   = (lb && typeof lb.totalPlayers === 'number') ? lb.totalPlayers : 0;
+    players   = (ws && typeof ws.totalPlayers === 'number') ? ws.totalPlayers : 0;
     alliances = (al && al.alliances) ? al.alliances.length : 0;
   } catch (e) { /* silent */ }
   // Conquered count comes from client-side state — the size of conqueredSet
@@ -9857,10 +9865,14 @@ function refreshLeaderboardPanel() {
       }
       el.className = '';
       let h = '';
+      // v39c: medal prefix for top 3 ranks
+      const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
       for (const r of rows) {
         const isViewer = data.viewer && r.rank === data.viewer.rank;
-        h += '<div class="lb-row' + (isViewer ? ' lb-viewer' : '') + '">'
-           + '<span class="lb-pos">#' + r.rank + '</span>'
+        const medal = MEDALS[r.rank] || '';
+        const posDisplay = medal ? medal + ' #' + r.rank : '#' + r.rank;
+        h += '<div class="lb-row' + (isViewer ? ' lb-viewer' : '') + (r.rank <= 3 ? ' lb-top' + r.rank : '') + '">'
+           + '<span class="lb-pos">' + posDisplay + '</span>'
            + '<span class="lb-name">' + escapeHtml(r.username) + '</span>'
            + '<span class="lb-pts">' + r.points.toLocaleString() + '</span>'
            + '</div>';
