@@ -31,12 +31,12 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-26-v55';
+const SERVER_VERSION       = '2026-05-26-v56';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
 const MAP_PX             = MAP_W * MAP_H;
-const CONQUEST_THRESHOLD = 0.70; // v35
+const CONQUEST_THRESHOLD = 0.60; // v56: lowered from 70% → 60% to match bot surrender mechanics
 const MAX_STROKE_PX      = 500;
 const BROADCAST_MS       = 50;    // delta broadcast debounce
 const PING_MS            = 10000;
@@ -2645,12 +2645,13 @@ function _isCountryConquered(countryId) {
   return false;
 }
 
-// v54: surrender threshold — if any single enemy holds this fraction of a
-// country's home territory the defending bot immediately surrenders: conquest is
-// declared right away rather than waiting for the attacker to independently reach
-// the 70% threshold.  This eliminates the stalemate where an evenly-matched bot
-// and attacker equilibrate just below 70% so conquest never fires.
-const BOT_SURRENDER_THRESHOLD = 0.60;
+// v56: bot surrender threshold — once any single enemy holds this share of a
+// country's home territory the defending bot stands down completely.  This lets
+// the attacker accumulate pixels unopposed until applyPixels fires formal
+// conquest at CONQUEST_THRESHOLD (60%).  Keeping the two thresholds separate
+// (50% stand-down / 60% formal) means finisherFill runs properly and the
+// reversal check never immediately undoes the conquest (reversal fires at <60%).
+const BOT_SURRENDER_THRESHOLD = 0.50;
 
 function botTickSingle(countryId) {
   if (!mapReady) return;
@@ -2663,10 +2664,8 @@ function botTickSingle(countryId) {
   // (legacy: humanClaimedCountries is still consulted in case it gets used
   // elsewhere; the new gate above covers it as a superset.)
   if (humanClaimedCountries.has(countryId)) return;
-  // v54: if a single enemy holds ≥ BOT_SURRENDER_THRESHOLD of home territory,
-  // trigger conquest immediately (don't wait for the attacker to reach 70%).
-  // This prevents a permanent stalemate where the defending bot and the attacker
-  // are evenly matched and neither crosses the formal threshold.
+  // v56: bot stands down when overwhelmed so the attacker can reach the formal
+  // conquest threshold (60%) without constant reclaim interference.
   const _homeGeoIdx = getGeoForCountry(countryId);
   const _homeTotal  = geoTotal[_homeGeoIdx] || 0;
   if (_homeTotal > 0) {
@@ -2674,15 +2673,7 @@ function botTickSingle(countryId) {
     if (_claims) {
       for (const [cId, cnt] of Object.entries(_claims)) {
         if (cId !== countryId && cnt / _homeTotal >= BOT_SURRENDER_THRESHOLD) {
-          // Trigger formal conquest immediately so migration happens right away.
-          permanentlyConquered.add(countryId);
-          const surrenderKey = _homeGeoIdx + ':' + cId;
-          conqueredSet.add(surrenderKey);
-          console.log(`[Bot] ${countryId} surrendering — ${cId} holds ${(cnt / _homeTotal * 100).toFixed(1)}% → conquest`);
-          broadcast(JSON.stringify({ type: 'conquest', geoIdx: _homeGeoIdx, countryId: cId }));
-          const _cgid = countryId;
-          setTimeout(() => _onCountryConquered(_cgid), 0);
-          return;
+          return; // overwhelmed — stand down, let applyPixels fire formal conquest
         }
       }
     }
