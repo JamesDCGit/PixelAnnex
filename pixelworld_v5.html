@@ -3064,14 +3064,27 @@ let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
 
 // v40: cull helper — countries with 0 land pixels (Antarctica + tiny artifact-removed
 // islands) shouldn't be selectable since they have no playable territory.
+// v41b: ISO IDs that aren't meaningful playable countries (research stations,
+// uninhabited territories, military bases). Excluded from picker + bot init.
+const NON_PLAYABLE_IDS = new Set([
+  '10',  // Antarctica (10px sliver survives the lat<-60 cull)
+  '74',  // Bouvet Island
+  '260', // French Southern Territories
+  '334', // Heard Island & McDonald Islands
+  '239', // South Georgia & South Sandwich Is.
+]);
 function isPlayableCountry(fi) {
   if (typeof fi !== 'number' || fi < 0) return false;
+  if (typeof featList === 'undefined' || !featList[fi]) return false;
+  const f = featList[fi];
+  if (!f.id) return false; // unidentified (Akrotiri, Dhekelia, Siachen)
+  if (NON_PLAYABLE_IDS.has(String(f.id))) return false;
   if (typeof geoTotal === 'undefined' || !geoTotal) return true;
   return (geoTotal[fi] || 0) > 0;
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-18-realflags-v41a';
+const CODE_VERSION = '2026-05-18-monsters-v41b';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 
@@ -4824,15 +4837,19 @@ function showBonusPop(n, prefix, opts){
   el.textContent=(prefix||'')+'+'+n+' bonus!';
   const useLoginAnchor = (opts && opts.encirclement) || /encircle/i.test(String(prefix||''));
   if (useLoginAnchor) {
-    const login = document.getElementById('login-hud');
-    if (login) {
-      const r = login.getBoundingClientRect();
-      el.style.left = (r.left + r.width/2 - 50) + 'px';
-      el.style.top  = (r.bottom + 6) + 'px';
-      el.style.transform = 'none';
+    // v41b: anchor below the social-links row (which is below login-hud) so the
+    // popup is centered + doesn't overlap the X/Discord buttons or event log
+    const social = document.getElementById('social-links');
+    const login  = document.getElementById('login-hud');
+    const anchor = social || login;
+    if (anchor) {
+      const r = anchor.getBoundingClientRect();
+      el.style.left = (r.left + r.width / 2) + 'px';
+      el.style.top  = (r.bottom + 8) + 'px';
+      el.style.transform = 'translateX(-50%)';
     } else {
       el.style.left = '50%';
-      el.style.top  = '60px';
+      el.style.top  = '80px';
       el.style.transform = 'translateX(-50%)';
     }
   } else {
@@ -7218,6 +7235,10 @@ if (msg.state?.conquered) {
       _onMonsterTick(msg);
       break;
     }
+    case 'monster_ray': {
+      _onMonsterRay(msg);
+      break;
+    }
     case 'monster_despawn': {
       _onMonsterDespawn(msg);
       break;
@@ -8834,6 +8855,35 @@ const GLYPHS = {
     [7,1],[8,1],                                 // funnel base
     [7,0],                                       // funnel
   ],
+  // v41b: Godzilla — 12×12, two-frame walking animation
+  godzilla_a: [
+    [4,0],[6,0],[8,0],
+    [5,1],[6,1],[7,1],
+    [4,2],[5,2],[6,2],[7,2],[8,2],
+    [4,3],[8,3],
+    [4,4],[5,4],[6,4],[7,4],[8,4],
+    [3,5],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],
+    [3,6],[4,6],[5,6],[6,6],[7,6],[8,6],[9,6],
+    [3,7],[4,7],[8,7],[9,7],
+    [4,8],[5,8],[6,8],[7,8],[8,8],
+    [4,9],[5,9],[7,9],[8,9],
+    [4,10],[5,10],[7,10],[8,10],
+    [3,11],[5,11],[7,11],[9,11],
+  ],
+  godzilla_b: [
+    [4,0],[6,0],[8,0],
+    [5,1],[6,1],[7,1],
+    [4,2],[5,2],[6,2],[7,2],[8,2],
+    [4,3],[8,3],
+    [4,4],[5,4],[6,4],[7,4],[8,4],
+    [3,5],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],
+    [3,6],[4,6],[5,6],[6,6],[7,6],[8,6],[9,6],
+    [2,7],[3,7],[8,7],[9,7],
+    [4,8],[5,8],[6,8],[7,8],[8,8],
+    [3,9],[6,9],[7,9],[9,9],
+    [3,10],[6,10],[9,10],
+    [3,11],[6,11],[9,11],
+  ],
   // v40: Kraken — 12×12, two-frame, tentacles ABOVE head
   kraken_a: [
     [3,0],[8,0],
@@ -8886,6 +8936,7 @@ const SPRITE_COLOURS = {
   tanker: [[140,130,110], [160,150,130], [200,190,170]],
   rocket: [[220,180,140], [200,160,120], [255,220,180]],
   kraken: [[55,15,55],     [120,30,90],   [200,80,150]],  // v39d
+  godzilla: [[20,80,20],   [40,140,40],    [100,200,100]],  // v41b
 };
 
 // Glyph bounding box
@@ -9567,7 +9618,13 @@ function buildCselOptions(){
   const seen = new Set();
   _cselOptions = [...featList]
     .map((f,idx)=>({idx,f}))
-    .filter(({f})=>{ if(seen.has(f.id)) return false; seen.add(f.id); return true; })
+    // v41b: filter culled/non-playable countries (Antarctica + tiny artifact features)
+    .filter(({idx,f})=>{
+      if (!isPlayableCountry(idx)) return false;
+      if (seen.has(f.id)) return false;
+      seen.add(f.id);
+      return true;
+    })
     .sort((a,b)=>a.f.name.localeCompare(b.f.name));
   renderCselList('');
 }
@@ -9755,7 +9812,20 @@ vp.addEventListener("mousemove",e=>{
     if(landMask[i]){
       const geoName = gi>=0 ? featList[gi].name : "Unclaimed Territory";
       const geoFlag = gi>=0 ? flagAny(featList[gi].id,2) : '';
-      $("tip-name").innerHTML = geoFlag + '<span>' + geoName + '</span>';
+      // v41b: show "Conquered by X" inline on the name when this geo is conquered
+      let _conqLabel = '';
+      if (gi >= 0) {
+        const _conq = [...conqueredSet].find(k => k.startsWith(gi + ':'));
+        if (_conq) {
+          const _conqIdx = +_conq.split(':')[1];
+          const _conqFeat = featList[_conqIdx];
+          if (_conqFeat && _conqIdx !== gi) {
+            _conqLabel = ' <span style="color:#94a3b8;font-weight:400;font-size:11px"> — Conquered by '
+              + '<span style="color:' + _conqFeat.color + ';font-weight:600">' + _conqFeat.name + '</span></span>';
+          }
+        }
+      }
+      $("tip-name").innerHTML = geoFlag + '<span>' + geoName + '</span>' + _conqLabel;
 
       const sub=$("tip-sub");
       let html2="";
@@ -10324,6 +10394,26 @@ function _renderMonsters() {
     drawGlyph(imgData, MAP_W, s, false);
   }
   monCtx.putImageData(imgData, 0, 0);
+
+  // v41b: draw active raygun beams as fading yellow disks
+  if (window._monsterRays && window._monsterRays.length > 0) {
+    const now2 = performance.now();
+    window._monsterRays = window._monsterRays.filter(r => now2 - r.born < r.duration);
+    for (const r of window._monsterRays) {
+      const age = (now2 - r.born) / r.duration;
+      const alpha = 1 - age;
+      monCtx.save();
+      monCtx.globalAlpha = alpha;
+      monCtx.fillStyle = '#fbbf24';
+      monCtx.beginPath();
+      monCtx.arc(r.x, r.y, r.radius + age * 4, 0, Math.PI * 2);
+      monCtx.fill();
+      monCtx.strokeStyle = '#fef3c7';
+      monCtx.lineWidth = 1;
+      monCtx.stroke();
+      monCtx.restore();
+    }
+  }
 }
 requestAnimationFrame(_renderMonsters);
 
@@ -10339,6 +10429,9 @@ function _onMonsterSpawn(msg) {
     glyph = frames[0];
   } else if (type === 'ufo') {
     glyph = GLYPHS.ufo;
+  } else if (type === 'godzilla') {
+    frames = [GLYPHS.godzilla_a, GLYPHS.godzilla_b];
+    glyph = frames[0];
   } else {
     return;
   }
@@ -10366,6 +10459,20 @@ function _onMonsterTick(msg) {
   s.y = msg.y - s.h / 2;
 }
 
+let _monsterRays = [];
+window._monsterRays = _monsterRays;
+
+// v41b: Brief raygun beam effect — yellow flash at the target for 500ms
+function _onMonsterRay(msg) {
+  if (!monCtx) return;
+  if (!window._monsterRays) window._monsterRays = [];
+  window._monsterRays.push({
+    x: msg.x, y: msg.y, radius: msg.radius || 4,
+    born: performance.now(),
+    duration: 500,
+  });
+}
+
 function _onMonsterDespawn(msg) {
   const s = _activeMonsters[msg.monsterId];
   if (!s) return;
@@ -10379,14 +10486,17 @@ function _showMonsterBanner(type) {
   const banner = document.createElement('div');
   banner.id = 'monster-banner';
   const isUFO = (type === 'ufo');
+  let bannerBg = 'rgba(120,30,90,0.92)';
+  if (type === 'ufo') bannerBg = 'rgba(60,140,80,0.92)';
+  else if (type === 'godzilla') bannerBg = 'rgba(20,80,20,0.94)';
   banner.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:120;' +
-    'background:' + (isUFO ? 'rgba(60,140,80,0.92)' : 'rgba(120,30,90,0.92)') + ';' +
+    'background:' + bannerBg + ';' +
     'color:#fff;padding:8px 16px;border-radius:6px;font-family:"Courier New",monospace;' +
     'font-size:13px;letter-spacing:.04em;box-shadow:0 4px 12px rgba(0,0,0,0.4);' +
     'animation:monsterBannerFade 6s ease-out forwards;';
-  banner.textContent = isUFO
-    ? '🛸 UFO sighting! Pixels are being abducted.'
-    : '🦑 KRAKEN! Tentacles incoming on the coast.';
+  banner.textContent = (type === 'ufo')      ? '🛸 UFO sighting! Pixels are being abducted.'
+                     : (type === 'godzilla') ? '🦖 GODZILLA! Brace for stomping.'
+                     :                         '🦑 KRAKEN! Tentacles incoming on the coast.';
   document.body.appendChild(banner);
   setTimeout(() => banner.remove(), 6000);
 }

@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-18-realflags-v41a';
+const SERVER_VERSION       = '2026-05-18-monsters-v41b';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1228,11 +1228,13 @@ setInterval(_checkWorldConquest, 30 * 1000);
 
 
 
-// ── v39d: Monster events — random destructive sprite spawns ───────
+// ── v41b: Monster events redesigned ───────────────────────────────
+// Three monster types with distinct behaviors:
+//   ufo:      darts to N random conquered countries firing raygun blobs (30s)
+//   godzilla: emerges, walks 50px leaving a 4px-wide cleared trail, sinks (12s)
+//   kraken:   stationary pop-up at coast for 2 min, then despawns
 const MONSTER_INTERVAL_MIN_MS = 50 * 60 * 1000;
 const MONSTER_INTERVAL_MAX_MS = 70 * 60 * 1000;
-const MONSTER_DURATION_MS     = 30 * 1000;
-const MONSTER_TICK_MS         = 1500;
 let _monsterActive = false;
 let _monsterTickHandle = null;
 
@@ -1242,28 +1244,264 @@ function _scheduleNextMonster() {
   setTimeout(_spawnMonster, delay);
 }
 
-function _pickMonsterSpawn(type) {
-  const MAX_TRIES = 80;
-  for (let i = 0; i < MAX_TRIES; i++) {
+function _pickConqueredTarget() {
+  const conq = [...conqueredSet];
+  if (conq.length === 0) return null;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const key = conq[Math.floor(Math.random() * conq.length)];
+    const geoId = parseInt(String(key).split(':')[0], 10);
+    if (!geoPixels[geoId] || geoPixels[geoId].length === 0) continue;
+    const pixels = geoPixels[geoId];
+    const offset = pixels[Math.floor(Math.random() * pixels.length)];
+    if (offset === undefined) continue;
+    return { x: offset % MAP_W, y: Math.floor(offset / MAP_W), geoIdx: geoId };
+  }
+  return null;
+}
+
+function _pickCoastalOcean() {
+  for (let i = 0; i < 80; i++) {
     const x = Math.floor(Math.random() * MAP_W);
     const y = Math.floor(Math.random() * MAP_H);
     const idx = y * MAP_W + x;
     if (idx < 0 || idx >= MAP_PX) continue;
-    if (type === 'ufo' && landMask[idx] === 1) {
-      return { x, y };
-    }
-    if (type === 'kraken' && landMask[idx] === 0) {
-      let hasLand = false;
-      for (let dy = -12; dy <= 12 && !hasLand; dy += 4) {
-        for (let dx = -12; dx <= 12 && !hasLand; dx += 4) {
-          const ni = (y + dy) * MAP_W + (x + dx);
-          if (ni >= 0 && ni < MAP_PX && landMask[ni] === 1) hasLand = true;
-        }
+    if (landMask[idx] !== 0) continue;
+    let hasLand = false;
+    for (let dy = -12; dy <= 12 && !hasLand; dy += 4) {
+      for (let dx = -12; dx <= 12 && !hasLand; dx += 4) {
+        const ni = (y + dy) * MAP_W + (x + dx);
+        if (ni >= 0 && ni < MAP_PX && landMask[ni] === 1) hasLand = true;
       }
-      if (hasLand) return { x, y };
     }
+    if (hasLand) return { x, y };
   }
   return null;
+}
+
+function _pickRandomLand() {
+  for (let i = 0; i < 80; i++) {
+    const x = Math.floor(Math.random() * MAP_W);
+    const y = Math.floor(Math.random() * MAP_H);
+    const idx = y * MAP_W + x;
+    if (idx >= 0 && idx < MAP_PX && landMask[idx] === 1) return { x, y };
+  }
+  return null;
+}
+
+function _clearMonsterArea(cx, cy, radius) {
+  const changed = [];
+  const affectedGeos = new Set();
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (dx * dx + dy * dy > radius * radius) continue;
+      const px = Math.round(cx + dx), py = Math.round(cy + dy);
+      if (px < 0 || px >= MAP_W || py < 0 || py >= MAP_H) continue;
+      const i = py * MAP_W + px;
+      if (!landMask[i]) continue;
+      if (claimByPixel[i] === -1) continue;
+      const prev = claimByPixel[i];
+      const owner = idxToId[prev];
+      if (owner !== undefined) {
+        updateOwnerIndex(i, prev, -1);
+        countryPxCount[owner] = Math.max(0, (countryPxCount[owner] || 0) - 1);
+        const geo = geoAtPixel[i];
+        if (geo >= 0) {
+          affectedGeos.add(geo);
+          if (geoClaimCnt[geo] && geoClaimCnt[geo][owner]) {
+            geoClaimCnt[geo][owner]--;
+            if (geoClaimCnt[geo][owner] <= 0) delete geoClaimCnt[geo][owner];
+          }
+        }
+      }
+      claimByPixel[i] = -1;
+      changed.push({ x: px, y: py, owner: -1 });
+    }
+  }
+  // v41b: re-evaluate conquest threshold for affected geos
+  for (const geo of affectedGeos) {
+    const total = geoTotal[geo] || 1;
+    for (const key of [...conqueredSet]) {
+      if (!key.startsWith(geo + ':')) continue;
+      const ownerId = key.split(':')[1];
+      const ownerOwned = (geoClaimCnt[geo] && geoClaimCnt[geo][ownerId]) || 0;
+      if (ownerOwned / total < CONQUEST_THRESHOLD) {
+        conqueredSet.delete(key);
+        broadcast(JSON.stringify({
+          type:        'reversal',
+          attackerId:  geoToId(geo),
+          defenderId:  ownerId,
+          reason:      'monster',
+        }));
+      }
+    }
+  }
+  if (changed.length > 0) queueDelta(changed);
+  return changed.length;
+}
+
+function _spawnUFO(eventId) {
+  console.log('[Monster] UFO spawning');
+  const DURATION_MS = 30 * 1000;
+  const STOPS_MAX   = 7;
+  const RAY_RADIUS  = 4;
+  let firstTarget = _pickConqueredTarget() || _pickRandomLand();
+  if (!firstTarget) { _monsterActive = false; _scheduleNextMonster(); return; }
+  let cur = { x: firstTarget.x, y: firstTarget.y };
+  let target = cur;
+  const startTs = Date.now();
+  const endTs   = startTs + DURATION_MS;
+
+  broadcast(JSON.stringify({
+    type:        'monster_spawn',
+    monsterId:   eventId,
+    monsterType: 'ufo',
+    x: cur.x, y: cur.y,
+    durationMs:  DURATION_MS,
+    timestamp:   startTs,
+  }));
+  emitBotEvent({
+    type:        'monster_event',
+    tier:        2,
+    monsterType: 'ufo',
+    timestamp:   startTs,
+    sassyText:   '🛸 UFO sighting! Pixel cattle abduction in progress.',
+  });
+
+  let stopCount = 0;
+  let lastFireTs = 0;
+  _monsterTickHandle = setInterval(() => {
+    const now = Date.now();
+    if (now >= endTs || stopCount >= STOPS_MAX) {
+      clearInterval(_monsterTickHandle);
+      _monsterTickHandle = null;
+      _monsterActive = false;
+      broadcast(JSON.stringify({ type: 'monster_despawn', monsterId: eventId }));
+      _scheduleNextMonster();
+      return;
+    }
+    const dx = target.x - cur.x, dy = target.y - cur.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 4) {
+      const speed = 12;
+      cur.x += (dx / dist) * speed;
+      cur.y += (dy / dist) * speed;
+    } else {
+      if (now - lastFireTs > 800) {
+        _clearMonsterArea(cur.x, cur.y, RAY_RADIUS);
+        broadcast(JSON.stringify({
+          type:        'monster_ray',
+          monsterId:   eventId,
+          x: cur.x, y: cur.y,
+          radius: RAY_RADIUS,
+          timestamp: now,
+        }));
+        lastFireTs = now;
+      }
+      stopCount++;
+      const next = _pickConqueredTarget() || _pickRandomLand();
+      if (next) target = next;
+    }
+    broadcast(JSON.stringify({
+      type:        'monster_tick',
+      monsterId:   eventId,
+      x: cur.x, y: cur.y,
+      timestamp:   now,
+    }));
+  }, 200);
+}
+
+function _spawnGodzilla(eventId) {
+  console.log('[Monster] Godzilla spawning');
+  const DURATION_MS = 12 * 1000;
+  const TRAIL_LEN   = 50;
+  const TRAIL_RAD   = 2;
+  const start = _pickConqueredTarget() || _pickRandomLand();
+  if (!start) { _monsterActive = false; _scheduleNextMonster(); return; }
+  const angle = Math.random() * Math.PI * 2;
+  const vx = Math.cos(angle), vy = Math.sin(angle);
+  let cur = { x: start.x, y: start.y };
+  const startTs = Date.now();
+  const endTs   = startTs + DURATION_MS;
+  const EMERGE_END = startTs + 2000;
+  const WALK_END   = startTs + 10000;
+  const stepPerTick = TRAIL_LEN / (8000 / 200);
+
+  broadcast(JSON.stringify({
+    type:        'monster_spawn',
+    monsterId:   eventId,
+    monsterType: 'godzilla',
+    x: cur.x, y: cur.y,
+    durationMs:  DURATION_MS,
+    timestamp:   startTs,
+    phase:       'emerge',
+  }));
+  emitBotEvent({
+    type:        'monster_event',
+    tier:        2,
+    monsterType: 'godzilla',
+    timestamp:   startTs,
+    sassyText:   '🦖 GODZILLA! A giant lizard is stomping pixels. Run.',
+  });
+
+  _monsterTickHandle = setInterval(() => {
+    const now = Date.now();
+    if (now >= endTs) {
+      clearInterval(_monsterTickHandle);
+      _monsterTickHandle = null;
+      _monsterActive = false;
+      broadcast(JSON.stringify({ type: 'monster_despawn', monsterId: eventId }));
+      _scheduleNextMonster();
+      return;
+    }
+    let phase = 'walk';
+    if (now < EMERGE_END) phase = 'emerge';
+    else if (now > WALK_END) phase = 'sink';
+    if (phase === 'walk') {
+      cur.x += vx * stepPerTick;
+      cur.y += vy * stepPerTick;
+      cur.x = Math.max(0, Math.min(MAP_W - 1, cur.x));
+      cur.y = Math.max(0, Math.min(MAP_H - 1, cur.y));
+      _clearMonsterArea(cur.x, cur.y, TRAIL_RAD);
+    }
+    broadcast(JSON.stringify({
+      type:        'monster_tick',
+      monsterId:   eventId,
+      x: cur.x, y: cur.y,
+      phase,
+      timestamp:   now,
+    }));
+  }, 200);
+}
+
+function _spawnKraken(eventId) {
+  console.log('[Monster] Kraken spawning');
+  const DURATION_MS = 2 * 60 * 1000;
+  const spawn = _pickCoastalOcean();
+  if (!spawn) { _monsterActive = false; _scheduleNextMonster(); return; }
+  const startTs = Date.now();
+
+  broadcast(JSON.stringify({
+    type:        'monster_spawn',
+    monsterId:   eventId,
+    monsterType: 'kraken',
+    x: spawn.x, y: spawn.y,
+    durationMs:  DURATION_MS,
+    timestamp:   startTs,
+  }));
+  emitBotEvent({
+    type:        'monster_event',
+    tier:        2,
+    monsterType: 'kraken',
+    timestamp:   startTs,
+    sassyText:   '🦑 Kraken surfaced! A coastline is having a very bad afternoon.',
+  });
+
+  _monsterTickHandle = setTimeout(() => {
+    _monsterTickHandle = null;
+    _monsterActive = false;
+    broadcast(JSON.stringify({ type: 'monster_despawn', monsterId: eventId }));
+    _scheduleNextMonster();
+  }, DURATION_MS);
 }
 
 function _spawnMonster() {
@@ -1271,96 +1509,14 @@ function _spawnMonster() {
   if (typeof landMask === 'undefined' || !landMask) { _scheduleNextMonster(); return; }
   if (typeof _isPaintLocked === 'function' && _isPaintLocked()) { _scheduleNextMonster(); return; }
 
-  const type = Math.random() < 0.5 ? 'ufo' : 'kraken';
-  const spawn = _pickMonsterSpawn(type);
-  if (!spawn) { console.log('[Monster] no spawn location, retrying later'); _scheduleNextMonster(); return; }
-
+  const types = ['ufo', 'godzilla', 'kraken'];
+  const type = types[Math.floor(Math.random() * types.length)];
   _monsterActive = true;
-  console.log('[Monster] spawning', type, 'at', spawn.x, spawn.y);
-
   const eventId = 'm' + Date.now();
-  const startTs = Date.now();
-  const endTs   = startTs + MONSTER_DURATION_MS;
-  const driftVx = type === 'kraken' ? (Math.random() - 0.5) * 0.2 : 0;
-  const driftVy = type === 'kraken' ? (Math.random() - 0.5) * 0.15 : 0;
 
-  broadcast(JSON.stringify({
-    type:        'monster_spawn',
-    monsterId:   eventId,
-    monsterType: type,
-    x: spawn.x, y: spawn.y,
-    driftVx, driftVy,
-    durationMs:  MONSTER_DURATION_MS,
-    timestamp:   startTs,
-  }));
-
-  emitBotEvent({
-    type:        'monster_event',
-    tier:        2,
-    monsterType: type,
-    timestamp:   startTs,
-    sassyText:   type === 'ufo'
-      ? '🛸 UFO sighting! Pixel cattle abduction in progress.'
-      : '🦑 Kraken surfaced! A coastline is having a very bad afternoon.',
-  });
-
-  let cur = { x: spawn.x, y: spawn.y };
-  let ticks = 0;
-  const maxTicks = Math.floor(MONSTER_DURATION_MS / MONSTER_TICK_MS);
-
-  _monsterTickHandle = setInterval(() => {
-    ticks++;
-    cur.x += driftVx * MONSTER_TICK_MS / 100;
-    cur.y += driftVy * MONSTER_TICK_MS / 100;
-    cur.x = Math.max(0, Math.min(MAP_W - 1, cur.x));
-    cur.y = Math.max(0, Math.min(MAP_H - 1, cur.y));
-
-    const RADIUS = type === 'ufo' ? 4 : 3;
-    const cx = Math.round(cur.x), cy = Math.round(cur.y);
-    const changed = [];
-    for (let dy = -RADIUS; dy <= RADIUS; dy++) {
-      for (let dx = -RADIUS; dx <= RADIUS; dx++) {
-        if (dx*dx + dy*dy > RADIUS*RADIUS) continue;
-        const px = cx + dx, py = cy + dy;
-        if (px < 0 || px >= MAP_W || py < 0 || py >= MAP_H) continue;
-        const i = py * MAP_W + px;
-        if (!landMask[i]) continue;
-        if (claimByPixel[i] === -1) continue;
-        const prev = claimByPixel[i];
-        const owner = idxToId[prev];
-        if (owner !== undefined) {
-          updateOwnerIndex(i, prev, -1);
-          countryPxCount[owner] = Math.max(0, (countryPxCount[owner] || 0) - 1);
-          const geo = geoAtPixel[i];
-          if (geo >= 0 && geoClaimCnt[geo] && geoClaimCnt[geo][owner]) {
-            geoClaimCnt[geo][owner]--;
-            if (geoClaimCnt[geo][owner] <= 0) delete geoClaimCnt[geo][owner];
-          }
-        }
-        claimByPixel[i] = -1;
-        changed.push({ x: px, y: py, owner: -1 });
-      }
-    }
-    if (changed.length > 0) queueDelta(changed);
-    broadcast(JSON.stringify({
-      type:        'monster_tick',
-      monsterId:   eventId,
-      x: cur.x, y: cur.y,
-      timestamp:   Date.now(),
-    }));
-
-    if (ticks >= maxTicks || Date.now() >= endTs) {
-      clearInterval(_monsterTickHandle);
-      _monsterTickHandle = null;
-      _monsterActive = false;
-      broadcast(JSON.stringify({
-        type:      'monster_despawn',
-        monsterId: eventId,
-      }));
-      console.log('[Monster]', type, 'despawned after', ticks, 'ticks');
-      _scheduleNextMonster();
-    }
-  }, MONSTER_TICK_MS);
+  if (type === 'ufo')           _spawnUFO(eventId);
+  else if (type === 'godzilla') _spawnGodzilla(eventId);
+  else                          _spawnKraken(eventId);
 }
 
 setTimeout(_scheduleNextMonster, 2 * 60 * 1000);
