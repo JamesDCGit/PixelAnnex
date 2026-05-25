@@ -3085,7 +3085,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-25-v42';
+const CODE_VERSION = '2026-05-25-v44';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4751,6 +4751,7 @@ function clearOwnPixel(x, y) {
 // creates a subtle "I painted this" glow that's only really visible when zoomed in.
 function flushOwnStroke() {
   if (!ownCtx || !_ownStrokeQueue.length) return;
+  if (_ownStrokeQueue.length > 2000) _ownStrokeQueue = _ownStrokeQueue.slice(-500);
   for (const { x, y } of _ownStrokeQueue) {
     const id = ownCtx.createImageData(1, 1);
     id.data[0] = 255; id.data[1] = 255; id.data[2] = 255; id.data[3] = 90;
@@ -6902,6 +6903,13 @@ function mpConnect() {
     wsReady = false;
     console.log('[MP] Disconnected — reconnecting in 3s');
     updateServerStatus(false, 0, []);
+    // Clear volatile state so stale data doesn't linger after reconnect
+    _joinSent = false;
+    _localPlayerId = null;
+    for (const k in _activeMonsters) delete _activeMonsters[k];
+    craters.length = 0;
+    _ownStrokeQueue = [];
+    if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
     setTimeout(mpConnect, 3000);
   });
 
@@ -6916,8 +6924,10 @@ function mpConnect() {
   });
 }
 
+let _joinSent = false;
 function mpSendJoin() {
   if (!wsReady) return;
+  if (_joinSent) return;
   // Retry if map not loaded yet
   if (!featList.length || !landMask || !Object.keys(geoTotal).length) {
     setTimeout(mpSendJoin, 500);
@@ -6973,6 +6983,7 @@ function mpSendJoin() {
     }
   }
 
+  _joinSent = true;
   ws.send(JSON.stringify({
     type: 'join',
     countryId: f.id,
@@ -7082,6 +7093,7 @@ if (msg.state?.conquered) {
     }
 
     case 'delta': {
+      if (!_localPlayerId) return; // discard deltas that arrive before welcome
       if (!msg.pixels?.length) return;
       const byOwner = {};
       for (const { x, y, owner } of msg.pixels) {
@@ -8601,7 +8613,9 @@ function drawCrater(ctx, cx, cy, r, alpha, type){
 
 function drawAllCraters(){
   const now = Date.now();
-  craters = craters.filter(c => now - c.born < CRATER_FADE_MS);
+  for (let i = craters.length - 1; i >= 0; i--) {
+    if (now - craters[i].born >= CRATER_FADE_MS) craters.splice(i, 1);
+  }
   craterCtx.clearRect(0,0,MAP_W,MAP_H);
   for(const c of craters){
     const age = (now - c.born) / CRATER_FADE_MS;
@@ -9456,12 +9470,6 @@ function updateHighlightBanner(){
     <span style="color:#64748b">${remaining}s</span>`;
 }
 
-// (Legacy compatibility) strokeBonus used to return the per-stroke multiplier.
-// In v27 the highlight bonus is awarded directly in claimHighlightBonus(); this
-// function now always returns 0 so the old call site in paintBrush becomes a
-// no-op. Left in place for any external callers.
-function strokeBonus(){ return 0; }
-
 // Award the one-shot +10 bonus if the painted pixel falls inside the active
 // highlight and the bonus hasn't been claimed yet this highlight session.
 function claimHighlightBonus(px, py){
@@ -9485,7 +9493,7 @@ function getBombTypes(){
   // v38: Only Nuke remains (Admiral-only). Mortar+MOAB removed; their old
   // ranks now provide regen multipliers via getRankRegenMult() instead.
   const types = [];
-  if(ri >= 4) types.push({ key:'nuke', label:'Nuke', radius:15, cost:100, sound:'nuclear', clears:true, lockoutMs: 30*1000 }); // ⚠️ DEBUG: 30s (production = 2*60*1000)
+  if(ri >= 4) types.push({ key:'nuke', label:'Nuke', radius:15, cost:100, sound:'nuclear', clears:true, lockoutMs: 2*60*1000 });
   return types;
 }
 
@@ -10401,10 +10409,10 @@ function _renderMonsters() {
     }
   }
   if (!monCtx || !_activeMonsters) return;
-  monCtx.clearRect(0, 0, MAP_W, MAP_H);
   let hasAny = false;
   for (const k in _activeMonsters) { hasAny = true; break; }
   if (!hasAny) return;
+  monCtx.clearRect(0, 0, MAP_W, MAP_H);
   const imgData = monCtx.createImageData(MAP_W, MAP_H);
   for (const id in _activeMonsters) {
     const s = _activeMonsters[id];
