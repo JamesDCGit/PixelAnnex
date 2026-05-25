@@ -556,7 +556,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 }
 
 #encircle-banner{
-  position:absolute;top:60px;right:14px;
+  position:absolute;top:60px;left:50%;transform:translateX(-50%);
   background:linear-gradient(135deg,#7c2d12,#f97316);
   color:#fff;font-family:'Courier New',monospace;
   padding:10px 18px;border-radius:8px;
@@ -577,8 +577,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   font-size:10px;letter-spacing:.06em;font-weight:500;
 }
 @keyframes enc-pop{
-  0%   {transform:scale(0.6);opacity:0;}
-  100% {transform:scale(1);opacity:1;}
+  0%   {transform:translateX(-50%) scale(0.6);opacity:0;}
+  100% {transform:translateX(-50%) scale(1);opacity:1;}
 }
 
 #stats-overlay{
@@ -1477,7 +1477,6 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <canvas id="c-landmarks" style="pointer-events:none"></canvas>
     <canvas id="c-border"></canvas><!-- v39b: now below c-claim -->
     <canvas id="c-claim"></canvas>
-    <canvas id="c-monsters"></canvas><!-- v40: monsters render on top -->
     <canvas id="c-flash" style="pointer-events:none;"></canvas>
     <canvas id="c-outline" style="pointer-events:none;"></canvas>
     <!-- v39b: c-border moved below to render before c-claim -->
@@ -1488,6 +1487,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <canvas id="c-nuke" style="pointer-events:none;"></canvas>
     <canvas id="c-ownstroke" style="pointer-events:none;mix-blend-mode:screen;"></canvas>
     <canvas id="c-crater" style="pointer-events:none;"></canvas>
+    <canvas id="c-monsters" style="pointer-events:none;"></canvas><!-- v42: moved last so monsters render above all other canvases -->
     <div id="rank-display"></div>
     <div id="login-hud">
       <span id="login-status" data-i18n="stats.loading">Loading…</span>
@@ -4555,6 +4555,26 @@ async function boot(){
     await sleep(1);
   }
   console.log("[Borders] Dilation done — " + DILATION_PASSES + " passes, ocean gaps filled");
+
+  // Sand shoreline: paint ocean pixels that touch land with a warm sand colour
+  const SAND_R = 194, SAND_G = 168, SAND_B = 110;
+  for (let i = 0; i < MAP_PX; i++) {
+    if (featByPixel[i] !== -1) continue; // land — skip
+    if (bordPixel[i]) continue;          // already a border pixel — skip
+    const x = i % MAP_W, y = (i / MAP_W) | 0;
+    let touchesLand = false;
+    if (x > 0          && featByPixel[i - 1]     !== -1) touchesLand = true;
+    else if (x < MAP_W-1 && featByPixel[i + 1]     !== -1) touchesLand = true;
+    else if (y > 0       && featByPixel[i - MAP_W] !== -1) touchesLand = true;
+    else if (y < MAP_H-1 && featByPixel[i + MAP_W] !== -1) touchesLand = true;
+    if (touchesLand) {
+      const p = i * 4;
+      bd[p] = SAND_R; bd[p+1] = SAND_G; bd[p+2] = SAND_B; bd[p+3] = 255;
+      bordPixel[i] = 1;
+    }
+  }
+  console.log("[Borders] Sand shoreline drawn");
+
   bordCtx.putImageData(borderImg,0,0);
   console.log("Borders drawn – pixel-perfect with ocean-gap fix");
 
@@ -4837,21 +4857,9 @@ function showBonusPop(n, prefix, opts){
   el.textContent=(prefix||'')+'+'+n+' bonus!';
   const useLoginAnchor = (opts && opts.encirclement) || /encircle/i.test(String(prefix||''));
   if (useLoginAnchor) {
-    // v41b: anchor below the social-links row (which is below login-hud) so the
-    // popup is centered + doesn't overlap the X/Discord buttons or event log
-    const social = document.getElementById('social-links');
-    const login  = document.getElementById('login-hud');
-    const anchor = social || login;
-    if (anchor) {
-      const r = anchor.getBoundingClientRect();
-      el.style.left = (r.left + r.width / 2) + 'px';
-      el.style.top  = (r.bottom + 8) + 'px';
-      el.style.transform = 'translateX(-50%)';
-    } else {
-      el.style.left = '50%';
-      el.style.top  = '80px';
-      el.style.transform = 'translateX(-50%)';
-    }
+    el.style.left = '50%';
+    el.style.top  = '110px';
+    el.style.transform = 'translateX(-50%)';
   } else {
     el.style.left=(_mouseScreenX+8)+'px';
     el.style.top=(_mouseScreenY-18)+'px';
@@ -9800,11 +9808,15 @@ vp.addEventListener("mousemove",e=>{
       }
     }
     if (_monsterHover) {
-      const isUFO = _monsterHover.type === 'ufo';
-      $("tip-name").innerHTML = (isUFO ? '🛸 ' : '🦑 ') + '<span>' + (isUFO ? 'UFO' : 'Kraken') + '</span>';
-      const subEl = $("tip-sub");
-      subEl.innerHTML = '<span style="color:' + (isUFO ? '#60a5fa' : '#9333ea') + ';font-size:10px">'
-        + (isUFO ? 'Abducting pixels' : 'Tentacles attacking') + '</span>';
+      const mt = _monsterHover.type;
+      const MINFO = {
+        ufo:      { icon: '🛸', label: 'UFO',      color: '#60a5fa', desc: 'Abducting pixels' },
+        kraken:   { icon: '🦑', label: 'Kraken',   color: '#9333ea', desc: 'Tentacles attacking' },
+        godzilla: { icon: '🦖', label: 'Godzilla', color: '#4ade80', desc: 'Stomping the map' },
+      };
+      const mi = MINFO[mt] || { icon: '👾', label: mt, color: '#94a3b8', desc: 'Monster' };
+      $("tip-name").innerHTML = mi.icon + ' <span>' + mi.label + '</span>';
+      $("tip-sub").innerHTML = '<span style="color:' + mi.color + ';font-size:10px">' + mi.desc + '</span>';
       tip.style.display = "block";
       tip.style.left=(e.clientX+14)+"px";tip.style.top=(e.clientY-40)+"px";
       return;
@@ -10425,8 +10437,7 @@ function _onMonsterSpawn(msg) {
   let type = msg.monsterType;
   let glyph, frames = null;
   if (type === 'kraken') {
-    frames = [GLYPHS.kraken_a, GLYPHS.kraken_b];
-    glyph = frames[0];
+    glyph = GLYPHS.kraken_a; // stationary — no frame animation
   } else if (type === 'ufo') {
     glyph = GLYPHS.ufo;
   } else if (type === 'godzilla') {
@@ -10450,6 +10461,14 @@ function _onMonsterSpawn(msg) {
   };
   _activeMonsters[msg.monsterId] = sprite;
   _showMonsterBanner(type);
+  // Alert card in the activity stack
+  const _MALERT = {
+    ufo:      { icon: '🛸', title: 'UFO Sighting!',  text: 'Pixels are being abducted.' },
+    kraken:   { icon: '🦑', title: 'KRAKEN!',         text: 'Tentacles incoming on the coast.' },
+    godzilla: { icon: '🦖', title: 'GODZILLA!',       text: 'Brace for stomping.' },
+  };
+  const _ma = _MALERT[type] || { icon: '👾', title: 'Monster!', text: '' };
+  actPushCard({ variant: 'alert', title: _ma.icon + ' ' + _ma.title, text: _ma.text });
 }
 
 function _onMonsterTick(msg) {

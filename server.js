@@ -1233,8 +1233,8 @@ setInterval(_checkWorldConquest, 30 * 1000);
 //   ufo:      darts to N random conquered countries firing raygun blobs (30s)
 //   godzilla: emerges, walks 50px leaving a 4px-wide cleared trail, sinks (12s)
 //   kraken:   stationary pop-up at coast for 2 min, then despawns
-const MONSTER_INTERVAL_MIN_MS = 50 * 60 * 1000;
-const MONSTER_INTERVAL_MAX_MS = 70 * 60 * 1000;
+const MONSTER_INTERVAL_MIN_MS = 5 * 60 * 1000;  // TEST: 5 min (prod: 50 min)
+const MONSTER_INTERVAL_MAX_MS = 6 * 60 * 1000;  // TEST: 6 min (prod: 70 min)
 let _monsterActive = false;
 let _monsterTickHandle = null;
 
