@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-25-v51';
+const SERVER_VERSION       = '2026-05-25-v52';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1208,6 +1208,7 @@ function _resetWorld() {
   console.log('[v38] Resetting world state…');
   for (let i = 0; i < claimByPixel.length; i++) claimByPixel[i] = -1;
   conqueredSet.clear();
+  permanentlyConquered.clear();
   for (const k of Object.keys(geoClaimCnt)) delete geoClaimCnt[k];
   for (const k of Object.keys(countryPxCount)) countryPxCount[k] = 0;
   for (const k of Object.keys(ownerPixels)) ownerPixels[k] = new Set();
@@ -1742,6 +1743,10 @@ function watchAssetsForChanges() {
 }
 
 const conqueredSet = new Set();
+// Once a territory is conquered this game cycle it stays locked even after
+// pixel reversals (monsters / nukes can drop it below threshold). Cleared only
+// on world reset so the conquest is a lasting consequence.
+const permanentlyConquered = new Set(); // geoToId values
 
 // ── Bomb cooldown — anti-spam ────────────────────────────────────
 const BOMB_COOLDOWN_MS = 30_000;
@@ -2086,6 +2091,7 @@ function applyPixels(pixels, countryId) {
     if (!conqueredSet.has(key) && owned / total >= CONQUEST_THRESHOLD) {
       _conquestImmunity.set(geoToId(geo), Date.now() + CONQUEST_IMMUNITY_MS);
       conqueredSet.add(key);
+      permanentlyConquered.add(geoToId(geo)); // persists through reversals until world reset
       conquests.push({ geoIdx: geo, countryId });
       changed.push(...finisherFill(geo, countryId));
       // War reporter event — Tier 2 (role ping)
@@ -2548,9 +2554,11 @@ function _isCountryConquered(countryId) {
 
 function botTickSingle(countryId) {
   if (!mapReady) return;
-  // v39c: if this country has been conquered by ANYONE (human or bot), the
-  // resident bot stops painting. The country is dead until the world resets
-  // or the claim is reversed. Previously this only checked human conquests.
+  // Once permanently conquered this cycle the bot never resumes — even if a
+  // monster/nuke reversal temporarily drops the attacker below the threshold.
+  if (permanentlyConquered.has(countryId)) return;
+  // Active conquest gate (redundant with permanentlyConquered, but kept for
+  // clarity and to block mid-conquest activity before the set is populated).
   if (_isCountryConquered(countryId)) return;
   // (legacy: humanClaimedCountries is still consulted in case it gets used
   // elsewhere; the new gate above covers it as a superset.)

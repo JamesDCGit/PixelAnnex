@@ -3085,7 +3085,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-25-v51';
+const CODE_VERSION = '2026-05-25-v52';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10372,91 +10372,114 @@ function _showCountryRepickModal(data) {
 
 
 
-// ── v40: Monster render loop — draws _activeMonsters on cMonsters ──
+// ── v40/v52: Monster render loop — draws _activeMonsters on cMonsters ──
+// v52: all sprites pre-baked to offscreen canvases; drawImage + scale for pop-in/out
 let _lastMonsterRender = 0;
-let _monsterFrameTick = 0;
+let _monsterFrameTick  = 0;
+const MONSTER_SPAWN_ANIM_MS   = 350; // ms for pop-in
+const MONSTER_DESPAWN_ANIM_MS = 220; // ms for pop-out
+
 function _renderMonsters() {
   requestAnimationFrame(_renderMonsters);
   const now = performance.now();
-  if (now - _lastMonsterRender < 125) return;
+
+  // Full framerate during spawn/despawn animations; throttle to ~8fps otherwise
+  let needsFast = false;
+  for (const id in _activeMonsters) {
+    const s = _activeMonsters[id];
+    if (!s) continue;
+    if (s._despawnStart !== null ||
+        (s._spawnTime && now - s._spawnTime < MONSTER_SPAWN_ANIM_MS)) {
+      needsFast = true; break;
+    }
+  }
+  if (!needsFast && now - _lastMonsterRender < 125) return;
   _lastMonsterRender = now;
   _monsterFrameTick++;
+
+  // Cycle multi-frame sprites every 4 ticks (~500 ms at throttled rate)
   if (_monsterFrameTick % 4 === 0) {
     for (const id in _activeMonsters) {
       const s = _activeMonsters[id];
-      if (s && s.frames && s.frames.length > 1) {
-        s.frameIdx = (s.frameIdx + 1) % s.frames.length;
-        s.glyph = s.frames[s.frameIdx];
+      if (s && s._canvases && s._canvases.length > 1) {
+        s.frameIdx = (s.frameIdx + 1) % s._canvases.length;
+        s._canvas  = s._canvases[s.frameIdx];
       }
     }
   }
-  if (!monCtx || !_activeMonsters) return;
+
+  if (!monCtx) return;
   let hasAny = false;
   for (const k in _activeMonsters) { hasAny = true; break; }
   if (!hasAny) return;
+
   monCtx.clearRect(0, 0, MAP_W, MAP_H);
+  monCtx.imageSmoothingEnabled = false;
 
-  // Pass 1: glyph-based sprites (UFO, Kraken) via putImageData
-  const imgData = monCtx.createImageData(MAP_W, MAP_H);
+  // ── Pass 1: sprite drawImage with pop-in / pop-out scale ──────
   for (const id in _activeMonsters) {
     const s = _activeMonsters[id];
-    if (!s || s.emoji) continue; // emoji sprites rendered in pass 2
-    drawGlyph(imgData, MAP_W, s, false);
-  }
-  monCtx.putImageData(imgData, 0, 0);
+    if (!s || !s._canvas) continue;
 
-  // Pass 2: emoji sprites (Giant Radioactive Lizard)
-  for (const id in _activeMonsters) {
-    const s = _activeMonsters[id];
-    if (!s || !s.emoji) continue;
+    let popScale = 1;
+    if (s._despawnStart !== null) {
+      const t = (now - s._despawnStart) / MONSTER_DESPAWN_ANIM_MS;
+      if (t >= 1) { delete _activeMonsters[id]; continue; }
+      popScale = 1 - t;
+    } else if (s._spawnTime) {
+      const t = (now - s._spawnTime) / MONSTER_SPAWN_ANIM_MS;
+      if (t < 1) popScale = t;
+    }
+
+    const cx = Math.round(s.x + s.w / 2);
+    const cy = Math.round(s.y + s.h / 2);
     monCtx.save();
-    monCtx.font = s.emojiSize + 'px serif';
-    monCtx.textBaseline = 'top';
     monCtx.globalAlpha = s.opacity || 0.95;
-    monCtx.fillText(s.emoji, Math.round(s.x), Math.round(s.y));
+    monCtx.translate(cx, cy);
+    monCtx.scale(popScale, popScale);
+    monCtx.drawImage(s._canvas, -(s.w / 2) | 0, -(s.h / 2) | 0, s.w, s.h);
     monCtx.restore();
   }
 
-  // Pass 3: UFO abduction beam — pulsing green cone below UFO while hovering
+  // ── Pass 2: UFO abduction beam — pulsing green cone ───────────
   for (const id in _activeMonsters) {
     const s = _activeMonsters[id];
-    if (!s || s.type !== 'ufo' || !s._hoverStart) continue;
-    const cx = s.x + s.w / 2;
-    const by = s.y + s.h;
-    const beamW = s.w * 0.7;
-    const beamH = 20;
-    const pulse = 0.35 + 0.35 * Math.sin(performance.now() * 0.006);
+    if (!s || s.type !== 'ufo' || !s._hoverStart || s._despawnStart !== null) continue;
+    const cx  = s.x + s.w / 2;
+    const by  = s.y + s.h;
+    const bW  = s.w * 0.7;
+    const bH  = 20;
+    const pulse = 0.35 + 0.35 * Math.sin(now * 0.006);
     monCtx.save();
     monCtx.globalAlpha = pulse;
-    const grad = monCtx.createLinearGradient(cx, by, cx, by + beamH);
+    const grad = monCtx.createLinearGradient(cx, by, cx, by + bH);
     grad.addColorStop(0, 'rgba(180,255,180,1)');
     grad.addColorStop(1, 'rgba(80,255,80,0)');
     monCtx.fillStyle = grad;
     monCtx.beginPath();
-    monCtx.moveTo(cx - beamW / 2, by);
-    monCtx.lineTo(cx + beamW / 2, by);
-    monCtx.lineTo(cx + beamW, by + beamH);
-    monCtx.lineTo(cx - beamW, by + beamH);
+    monCtx.moveTo(cx - bW / 2, by);
+    monCtx.lineTo(cx + bW / 2, by);
+    monCtx.lineTo(cx + bW,     by + bH);
+    monCtx.lineTo(cx - bW,     by + bH);
     monCtx.closePath();
     monCtx.fill();
     monCtx.restore();
   }
 
-  // v41b: draw active raygun beams as fading yellow disks
+  // ── Pass 3: raygun blast rings — fading yellow disk ───────────
   if (window._monsterRays && window._monsterRays.length > 0) {
-    const now2 = performance.now();
-    window._monsterRays = window._monsterRays.filter(r => now2 - r.born < r.duration);
+    window._monsterRays = window._monsterRays.filter(r => now - r.born < r.duration);
     for (const r of window._monsterRays) {
-      const age = (now2 - r.born) / r.duration;
+      const age   = (now - r.born) / r.duration;
       const alpha = 1 - age;
       monCtx.save();
       monCtx.globalAlpha = alpha;
-      monCtx.fillStyle = '#fbbf24';
+      monCtx.fillStyle   = '#fbbf24';
       monCtx.beginPath();
       monCtx.arc(r.x, r.y, r.radius + age * 4, 0, Math.PI * 2);
       monCtx.fill();
       monCtx.strokeStyle = '#fef3c7';
-      monCtx.lineWidth = 1;
+      monCtx.lineWidth   = 1;
       monCtx.stroke();
       monCtx.restore();
     }
@@ -10467,37 +10490,85 @@ requestAnimationFrame(_renderMonsters);
 // ── v39d: Monster event client handlers ───────────────────────────
 const _activeMonsters = {};
 
+// Pre-render a pixel-glyph to its own small canvas for drawImage use.
+// Each pixel gets one of three colours based on its position in the glyph array.
+function _makeMonsterCanvas(glyph, w, h, colours, opacity) {
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const cx2 = cv.getContext('2d');
+  const id  = cx2.createImageData(w, h);
+  const d   = id.data;
+  const a   = Math.round(opacity * 255);
+  for (let pi = 0; pi < glyph.length; pi++) {
+    const [gx, gy] = glyph[pi];
+    if (gx < 0 || gx >= w || gy < 0 || gy >= h) continue;
+    const idx = (gy * w + gx) * 4;
+    const col = pi < glyph.length * 0.5 ? colours[0]
+              : pi < glyph.length * 0.8 ? colours[1]
+              : colours[2];
+    d[idx] = col[0]; d[idx+1] = col[1]; d[idx+2] = col[2]; d[idx+3] = a;
+  }
+  cx2.putImageData(id, 0, 0);
+  return cv;
+}
+
 function _onMonsterSpawn(msg) {
   // v40: monsters live on cMonsters canvas, NOT in spriteList (would double-render)
+  // v52: all sprites pre-baked to offscreen canvases; rendered via drawImage with pop-in scale
   let type = msg.monsterType;
-  let glyph = null, frames = null, emoji = null, emojiSize = 0;
+  let glyph = null, frames = null, emojiCanvas = null;
+
   if (type === 'kraken') {
-    frames = [GLYPHS.kraken_a, GLYPHS.kraken_b]; // 2-frame tentacle animation
+    frames = [GLYPHS.kraken_a, GLYPHS.kraken_b];
     glyph = frames[0];
   } else if (type === 'ufo') {
     glyph = GLYPHS.ufo;
   } else if (type === 'godzilla') {
-    // v51: rendered as emoji instead of pixel glyph
-    emoji = '🦖';
-    emojiSize = 16; // map-pixel font size
+    // v51/v52: emoji sprite, halved to 8px, alpha-thresholded for crisp pixels
+    const esz = 8, pad = 3;
+    const cv = document.createElement('canvas');
+    cv.width = esz + pad; cv.height = esz + pad;
+    const octx = cv.getContext('2d');
+    octx.font = esz + 'px serif';
+    octx.textBaseline = 'top';
+    octx.fillText('🦖', 0, 0);
+    const id = octx.getImageData(0, 0, cv.width, cv.height);
+    for (let ai = 3; ai < id.data.length; ai += 4)
+      id.data[ai] = id.data[ai] >= 48 ? 255 : 0; // cull semi-transparent fringe
+    octx.putImageData(id, 0, 0);
+    emojiCanvas = cv;
   } else {
     return;
   }
-  const {w, h} = glyph ? glyphBounds(glyph) : { w: emojiSize, h: emojiSize };
+
+  const {w, h} = glyph ? glyphBounds(glyph)
+               : { w: emojiCanvas.width, h: emojiCanvas.height };
+  const colours = SPRITE_COLOURS[type] || SPRITE_COLOURS.ufo;
+
   const sprite = {
     type, glyph, w, h,
     x: msg.x - w/2, y: msg.y - h/2,
     vx: 0, vy: 0,
     px: msg.x - w/2, py: msg.y - h/2,
     flip: false,
-    colours: SPRITE_COLOURS[type] || SPRITE_COLOURS.ufo,
+    colours,
     opacity: 0.95,
     frames,
     frameIdx: 0,
-    emoji,
-    emojiSize,
     _isMonster: true,
+    _spawnTime: performance.now(),
+    _despawnStart: null,
   };
+
+  // Pre-bake to offscreen canvas(es) for drawImage rendering
+  if (emojiCanvas) {
+    sprite._canvas   = emojiCanvas;
+    sprite._canvases = [emojiCanvas];
+  } else {
+    const bake = f => _makeMonsterCanvas(f, w, h, colours, 0.95);
+    sprite._canvases = frames ? frames.map(bake) : [bake(glyph)];
+    sprite._canvas   = sprite._canvases[0];
+  }
   _activeMonsters[msg.monsterId] = sprite;
   _showMonsterBanner(type);
   // Alert card in the activity stack
@@ -10542,8 +10613,8 @@ function _onMonsterRay(msg) {
 function _onMonsterDespawn(msg) {
   const s = _activeMonsters[msg.monsterId];
   if (!s) return;
-  // v40: just remove from _activeMonsters — monster render loop stops drawing it
-  delete _activeMonsters[msg.monsterId];
+  // v52: trigger pop-out animation; render loop deletes after it completes
+  s._despawnStart = performance.now();
 }
 
 function _showMonsterBanner(type) {
