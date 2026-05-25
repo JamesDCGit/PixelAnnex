@@ -3085,7 +3085,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-25-v52';
+const CODE_VERSION = '2026-05-25-v53';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7141,7 +7141,7 @@ if (msg.state?.conquered) {
       const fi = featList.findIndex(f => f.id === String(countryId));
       const targetFi = featList.findIndex(f => f.id === String(geoCountryId));
       if (targetFi < 0 || fi < 0) { scheduleLegend(); break; }
-      // Attack detection: if WE were conquered, show direction arrow + card
+      // Attack detection: if WE were conquered, show direction arrow + card + force repick
       if(targetFi === currentIdx && fi !== currentIdx){
         showAttackArrow(fi);
         actPushCard({
@@ -7149,6 +7149,8 @@ if (msg.state?.conquered) {
           title: t('act.your_country_fell_title'),
           html: t('act.your_country_fell_text', { attacker: featList[fi]?.name || '?' }),
         });
+        // Force country re-selection — player can no longer paint as this country
+        _showCountryRepickModal({ mercenaryBonus: 20 });
       }
       // General conquest notification (when others conquer)
       else if(fi !== currentIdx && targetFi !== currentIdx){
@@ -10308,6 +10310,15 @@ function _showWorldConquestOverlay(data) {
 }
 
 // ── v38: Country re-pick modal (after own country lost) ───────────
+// Returns true if the given country ID is in the client-side conqueredSet
+function _isCountryConqueredClient(countryId) {
+  const prefix = String(countryId) + ':';
+  for (const key of conqueredSet) {
+    if (String(key).startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 let _repickAwarded = false;
 function _showCountryRepickModal(data) {
   if (document.getElementById('repick-overlay')) return;
@@ -10330,8 +10341,10 @@ function _showCountryRepickModal(data) {
     const items = featList
       .filter(function(f) {
         // v40: skip culled countries (Antarctica, tiny non-visible islands)
+        // v53: skip currently conquered countries — players can't paint there
         return f && f.name
                && (typeof isPlayableCountry === 'function' ? isPlayableCountry(featList.indexOf(f)) : true)
+               && !_isCountryConqueredClient(f.id)
                && (!fl || f.name.toLowerCase().includes(fl));
       })
       .sort(function(a, b) { return a.name.localeCompare(b.name); });

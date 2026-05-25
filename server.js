@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-25-v52';
+const SERVER_VERSION       = '2026-05-25-v53';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1748,6 +1748,96 @@ const conqueredSet = new Set();
 // on world reset so the conquest is a lasting consequence.
 const permanentlyConquered = new Set(); // geoToId values
 
+// ── Conquest consequences ─────────────────────────────────────────
+// Pick the best country for a defeated bot to migrate to:
+// alliance partner preferred, else underpopulated unconquered country.
+function _pickBotMigrationTarget(fromCountryId) {
+  const ally = getAllianceForCountry(String(fromCountryId));
+  if (ally) {
+    const partners = ally.countries.filter(c =>
+      String(c) !== String(fromCountryId) && !permanentlyConquered.has(String(c)));
+    if (partners.length) {
+      // Prefer the partner with most pixels (strongest ally)
+      return partners.reduce((best, c) =>
+        (countryPxCount[c] || 0) > (countryPxCount[best] || 0) ? c : best, partners[0]);
+    }
+  }
+  // Fallback: unconquered country needing the most help (fewest pixels, has territory)
+  const cands = Object.keys(geoPixels).filter(g =>
+    g !== String(fromCountryId) &&
+    !permanentlyConquered.has(g) &&
+    geoPixels[g] && geoPixels[g].length > 0);
+  if (!cands.length) return null;
+  cands.sort((a, b) => (countryPxCount[a] || 0) - (countryPxCount[b] || 0));
+  return cands[0];
+}
+
+// Called (deferred) when a territory is permanently conquered:
+//   1. Transfer foreign pixels to alliance partner
+//   2. Migrate the defeated bot (boost ally's bot + update player entry)
+function _onCountryConquered(conqueredGeoId) {
+  conqueredGeoId = String(conqueredGeoId);
+  const homeGeoIdx    = parseInt(conqueredGeoId, 10); // numeric ISO stored in geoAtPixel
+  const conqueredCidx = getIdx(conqueredGeoId);
+
+  // ── 1. Alliance pixel transfer ──────────────────────────────────
+  const ally = getAllianceForCountry(conqueredGeoId);
+  let transferTo = null;
+  if (ally) {
+    const partners = ally.countries.filter(c =>
+      String(c) !== conqueredGeoId && !permanentlyConquered.has(String(c)));
+    if (partners.length) {
+      transferTo = partners.reduce((best, c) =>
+        (countryPxCount[c] || 0) > (countryPxCount[best] || 0) ? c : best, partners[0]);
+    }
+  }
+  if (transferTo) {
+    const newCidx      = getIdx(transferTo);
+    const ownedPixels  = ownerPixels[conqueredCidx];
+    const toTransfer   = ownedPixels
+      ? [...ownedPixels].filter(i => geoAtPixel[i] !== homeGeoIdx)
+      : [];
+    if (toTransfer.length) {
+      const changed = [];
+      for (const i of toTransfer) {
+        const geo = geoAtPixel[i];
+        updateOwnerIndex(i, conqueredCidx, newCidx);
+        claimByPixel[i] = newCidx;
+        countryPxCount[conqueredGeoId] = Math.max(0, (countryPxCount[conqueredGeoId] || 1) - 1);
+        countryPxCount[transferTo]     = (countryPxCount[transferTo] || 0) + 1;
+        if (geo >= 0 && geoClaimCnt[geo]) {
+          geoClaimCnt[geo][conqueredGeoId] = Math.max(0, (geoClaimCnt[geo][conqueredGeoId] || 1) - 1);
+          geoClaimCnt[geo][transferTo]     = (geoClaimCnt[geo][transferTo] || 0) + 1;
+        }
+        changed.push({ x: i % MAP_W, y: (i / MAP_W) | 0, owner: transferTo });
+      }
+      queueDelta(changed);
+      console.log(`[Conquest] ${conqueredGeoId} foreign pixels (${changed.length}) → ally ${transferTo}`);
+    }
+  }
+
+  // ── 2. Bot migration ────────────────────────────────────────────
+  const migTarget = transferTo || _pickBotMigrationTarget(conqueredGeoId);
+  if (migTarget) {
+    if (bots.has(migTarget)) {
+      // Boost target bot's bucket with the conquered bot's remaining energy
+      const targetBot = bots.get(migTarget);
+      targetBot.bucket = Math.min(BOT_BUCKET_MAX, (targetBot.bucket || 0) + BOT_BUCKET_MAX * 0.5);
+    }
+    // Reassign the conquered bot's player slot to the new country so it shows
+    // in the player list as playing there instead of a dead country
+    for (const [, p] of players) {
+      if (p.isBot && String(p.countryId) === conqueredGeoId) {
+        p.countryId  = migTarget;
+        p.countryIdx = getIdx(migTarget);
+        break; // only reassign one slot
+      }
+    }
+    console.log(`[Bot] ${conqueredGeoId} conquered → migrated to ${migTarget}`);
+    broadcastPlayers();
+  }
+}
+
 // ── Bomb cooldown — anti-spam ────────────────────────────────────
 const BOMB_COOLDOWN_MS = 30_000;
 const _lastBombAt = new Map(); // discordId or countryId → timestamp
@@ -2092,6 +2182,9 @@ function applyPixels(pixels, countryId) {
       _conquestImmunity.set(geoToId(geo), Date.now() + CONQUEST_IMMUNITY_MS);
       conqueredSet.add(key);
       permanentlyConquered.add(geoToId(geo)); // persists through reversals until world reset
+      // Defer so applyPixels finishes before we mutate ownership data
+      const _cgid = geoToId(geo);
+      setTimeout(() => _onCountryConquered(_cgid), 0);
       conquests.push({ geoIdx: geo, countryId });
       changed.push(...finisherFill(geo, countryId));
       // War reporter event — Tier 2 (role ping)
@@ -3424,6 +3517,7 @@ wss.on('connection', (ws, req) => {
         const cid = String(msg.countryId);
         const geoIdx = parseInt(cid, 10);
         const hasPixels = geoPixels[geoIdx] && geoPixels[geoIdx].length > 0;
+        if (permanentlyConquered.has(cid)) break; // can't select a conquered country
         if (countryNames && countryNames[cid] && hasPixels) {
           p.countryId = cid;
           p.countryIdx = getIdx(cid);
@@ -3439,6 +3533,8 @@ wss.on('connection', (ws, req) => {
       case 'stroke': {
         if (!player.countryId || !Array.isArray(msg.pixels)) return;
         if (msg.pixels.length > MAX_STROKE_PX) return;
+        // Conquered country — player must repick; reject silently (client is notified via 'conquest' broadcast)
+        if (permanentlyConquered.has(player.countryId)) return;
         // Rate limit — clamp pixels to what the player's token bucket allows
         const allowed = consumeStrokeTokens(pid, msg.pixels.length);
         if (allowed <= 0) return; // empty bucket — drop entire stroke silently
