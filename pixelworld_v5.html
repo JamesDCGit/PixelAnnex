@@ -3085,7 +3085,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-25-v46';
+const CODE_VERSION = '2026-05-25-v47';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3128,7 +3128,6 @@ let   regenSecsLeft    = REGEN_INTERVAL;
 // ── Bomb mode ───────────────────────────────────────────────────
 let   bombMode         = false;
 let bordPixel=null;   // Uint8Array MAP_PX — 1 where a border pixel was drawn
-let sandPixel=null;   // Uint8Array MAP_PX — 1 where a sand shoreline pixel was drawn
 // Stroke tracking for auto-fill (geo countries touched this stroke)
 // strokeGeos is declared inside runAutoFill's outer scope above
 let totalClaimed=0,totalLandPx=0,showBorders=true,borderDark=true,brushSize=1,currentIdx=0;
@@ -4519,11 +4518,8 @@ async function boot(){
   const borderImg=bordCtx.createImageData(MAP_W,MAP_H);
   const bd=borderImg.data;
   bordPixel=new Uint8Array(MAP_PX);
-  sandPixel=new Uint8Array(MAP_PX);
-  // Country border colour — dark so inland borders are clearly legible
+  // v35: respect borderDark state on initial draw (was hardcoded to light)
   const [_br0, _bg0, _bb0] = borderDark ? [63, 50, 30] : [182, 157, 107];
-  // Sandy shore colour used for all ocean-side pixels (shore ring + dilation)
-  const [_sr, _sg, _sb] = [228, 208, 152];
   function wb(i){bd[i*4]=_br0;bd[i*4+1]=_bg0;bd[i*4+2]=_bb0;bd[i*4+3]=255;bordPixel[i]=1;}
 
   const CHUNK2=262144;
@@ -4556,34 +4552,12 @@ async function boot(){
     }
     for (const i of toAdd) {
       bordPixel[i] = 1;
-      sandPixel[i] = 1; // ocean-side — painted sandy, same as shore
       const p = i*4;
-      bd[p]=_sr; bd[p+1]=_sg; bd[p+2]=_sb; bd[p+3]=255;
+      bd[p]=_br0; bd[p+1]=_bg0; bd[p+2]=_bb0; bd[p+3]=255;
     }
     await sleep(1);
   }
   console.log("[Borders] Dilation done — " + DILATION_PASSES + " passes, ocean gaps filled");
-
-  // Shore outline: paint the exact 1px ocean ring touching land with the sandy
-  // colour — runs LAST so it is always flush with the coastline regardless of
-  // dilation. Together with the sandy dilation pixels this forms a unified
-  // "beach" band: ocean → sandy (1–3 px) → dark country border → land.
-  for (let i = 0; i < MAP_PX; i++) {
-    if (featByPixel[i] !== -1) continue; // land — skip
-    const x = i % MAP_W, y = (i / MAP_W) | 0;
-    let touchesLand = false;
-    if (x > 0          && featByPixel[i - 1]     !== -1) touchesLand = true;
-    else if (x < MAP_W-1 && featByPixel[i + 1]     !== -1) touchesLand = true;
-    else if (y > 0       && featByPixel[i - MAP_W] !== -1) touchesLand = true;
-    else if (y < MAP_H-1 && featByPixel[i + MAP_W] !== -1) touchesLand = true;
-    if (touchesLand) {
-      const p = i * 4;
-      bd[p] = _sr; bd[p+1] = _sg; bd[p+2] = _sb; bd[p+3] = 255;
-      bordPixel[i] = 1;
-      sandPixel[i] = 1;
-    }
-  }
-  console.log("[Borders] Shore outline drawn (ocean-side, sandy)");
 
   bordCtx.putImageData(borderImg,0,0);
   console.log("Borders drawn – pixel-perfect with ocean-gap fix");
@@ -8820,22 +8794,15 @@ function showConquestToast(geoIdx, claimerIdx){
 
 // ── Redraw border canvas in the currently selected colour ────────
 // Called by the colour toggle; reads bordPixel[] and repaints.
-// Ocean-side pixels (sandPixel[]) use the sandy shore colour;
-// land border pixels use the dark toggle colour.
 function reborderCanvas(){
   if(!bordPixel) return;
-  const [br,bg,bb] = borderDark ? [63,50,30] : [182,157,107]; // land border
-  const [sr,sg,sb] = [228,208,152]; // shore / ocean-side (always sandy)
+  const [br,bg,bb] = borderDark ? [63,50,30] : [182,157,107];
   const img = bordCtx.createImageData(MAP_W, MAP_H);
   const d   = img.data;
   for(let i=0;i<MAP_PX;i++){
     if(bordPixel[i]===1){
       const p=i*4;
-      if(sandPixel && sandPixel[i]===1){
-        d[p]=sr; d[p+1]=sg; d[p+2]=sb; d[p+3]=255;
-      } else {
-        d[p]=br; d[p+1]=bg; d[p+2]=bb; d[p+3]=255;
-      }
+      d[p]=br; d[p+1]=bg; d[p+2]=bb; d[p+3]=255;
     }
   }
   bordCtx.putImageData(img, 0, 0);
