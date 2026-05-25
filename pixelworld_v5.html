@@ -3085,7 +3085,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-25-v48';
+const CODE_VERSION = '2026-05-25-v49';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10434,7 +10434,8 @@ function _onMonsterSpawn(msg) {
   let type = msg.monsterType;
   let glyph, frames = null;
   if (type === 'kraken') {
-    glyph = GLYPHS.kraken_a; // stationary — no frame animation
+    frames = [GLYPHS.kraken_a, GLYPHS.kraken_b]; // 2-frame tentacle animation
+    glyph = frames[0];
   } else if (type === 'ufo') {
     glyph = GLYPHS.ufo;
   } else if (type === 'godzilla') {
