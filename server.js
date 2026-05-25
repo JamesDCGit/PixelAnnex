@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-25-v50';
+const SERVER_VERSION       = '2026-05-25-v51';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1329,7 +1329,7 @@ function _clearMonsterArea(cx, cy, radius) {
         }
       }
       claimByPixel[i] = -1;
-      changed.push({ x: px, y: py, owner: -1 });
+      changed.push({ x: px, y: py, owner: null });
     }
   }
   // v41b: re-evaluate conquest threshold for affected geos
@@ -1362,17 +1362,14 @@ function _spawnUFO(eventId) {
   console.log('[Monster] UFO spawning');
 
   const DURATION_MS   = 2 * 60 * 1000;   // 2-minute run
-  const HOVER_MS      = 10 * 1000;        // 10 s circling each target before blast
-  const BLAST_RADIUS  = 5;
-  const TRANSIT_SPEED = 3;                // px / 100 ms tick when in transit
-  const WANDER_SPEED  = 1;               // px / tick when circling a target
-  const WANDER_RADIUS = 25;              // wander within ±25 px of main target
+  const HOVER_MS      = 10 * 1000;        // 10 s stationary abduction per target
+  const BLAST_RADIUS  = 10;              // radius of pixel abduction circle
+  const TRANSIT_SPEED = 3;               // px / 100 ms tick when in transit
 
   let mainTarget = _pickConqueredTarget() || _pickRandomLand();
   if (!mainTarget) { _ufoActive = false; setTimeout(_scheduleUFO, _randInterval(UFO_PROD_MIN_MS, UFO_PROD_MAX_MS)); return; }
 
   let cur        = { x: mainTarget.x, y: mainTarget.y };
-  let subTarget  = { ...cur };
   let phase      = 'transit'; // 'transit' | 'hover'
   let hoverStart = 0;
   const startTs  = Date.now();
@@ -1382,13 +1379,6 @@ function _spawnUFO(eventId) {
     x:cur.x, y:cur.y, durationMs:DURATION_MS, timestamp:startTs }));
   emitBotEvent({ type:'monster_event', tier:2, monsterType:'ufo', timestamp:startTs,
     sassyText:'🛸 UFO sighting! Pixel cattle abduction in progress.' });
-
-  function pickSubTarget() {
-    return {
-      x: mainTarget.x + (Math.random() * 2 - 1) * WANDER_RADIUS,
-      y: mainTarget.y + (Math.random() * 2 - 1) * WANDER_RADIUS,
-    };
-  }
 
   _ufoHandle = setInterval(() => {
     const now = Date.now();
@@ -1407,24 +1397,19 @@ function _spawnUFO(eventId) {
         cur.x += (dx / dist) * TRANSIT_SPEED;
         cur.y += (dy / dist) * TRANSIT_SPEED;
       } else {
-        // Arrived — start hovering
+        // Arrived — lock on and start abducting
         phase      = 'hover';
         hoverStart = now;
-        subTarget  = pickSubTarget();
+        cur.x = mainTarget.x;
+        cur.y = mainTarget.y;
       }
     } else {
-      // Hover: wander slowly around main target
-      const dx = subTarget.x - cur.x, dy = subTarget.y - cur.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > WANDER_SPEED) {
-        cur.x += (dx / dist) * WANDER_SPEED;
-        cur.y += (dy / dist) * WANDER_SPEED;
-      } else {
-        subTarget = pickSubTarget(); // pick next wander point
-      }
+      // Hover: UFO is stationary — locked on, beam active, abducting pixels
+      cur.x = mainTarget.x;
+      cur.y = mainTarget.y;
 
       if (now - hoverStart >= HOVER_MS) {
-        // Blast current position and move to next region
+        // Abduct! Clear pixels beneath, then fly to next target
         _clearMonsterArea(cur.x, cur.y, BLAST_RADIUS);
         broadcast(JSON.stringify({ type:'monster_ray', monsterId:eventId,
           x:cur.x, y:cur.y, radius:BLAST_RADIUS, timestamp:now }));
@@ -1435,7 +1420,7 @@ function _spawnUFO(eventId) {
     }
 
     broadcast(JSON.stringify({ type:'monster_tick', monsterId:eventId,
-      x:cur.x, y:cur.y, timestamp:now }));
+      x:cur.x, y:cur.y, phase, timestamp:now }));
   }, 100);
 }
 
@@ -1490,7 +1475,7 @@ function _spawnGodzilla(eventId) {
 
   const DURATION_MS    = 3 * 60 * 1000;  // 3 minutes
   const TOTAL_DIST_PX  = 80;
-  const TRAIL_RAD      = 3;              // radius 3 → ~5 px wide swath
+  const TRAIL_RAD      = 5;              // radius 5 → ~10 px wide swath
   const TICK_MS        = 200;
   const TICKS          = DURATION_MS / TICK_MS;           // 900 ticks
   const STEP_PER_TICK  = TOTAL_DIST_PX / TICKS;           // ≈0.089 px/tick

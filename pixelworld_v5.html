@@ -3085,7 +3085,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-25-v50';
+const CODE_VERSION = '2026-05-25-v51';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10395,13 +10395,52 @@ function _renderMonsters() {
   for (const k in _activeMonsters) { hasAny = true; break; }
   if (!hasAny) return;
   monCtx.clearRect(0, 0, MAP_W, MAP_H);
+
+  // Pass 1: glyph-based sprites (UFO, Kraken) via putImageData
   const imgData = monCtx.createImageData(MAP_W, MAP_H);
   for (const id in _activeMonsters) {
     const s = _activeMonsters[id];
-    if (!s) continue;
+    if (!s || s.emoji) continue; // emoji sprites rendered in pass 2
     drawGlyph(imgData, MAP_W, s, false);
   }
   monCtx.putImageData(imgData, 0, 0);
+
+  // Pass 2: emoji sprites (Giant Radioactive Lizard)
+  for (const id in _activeMonsters) {
+    const s = _activeMonsters[id];
+    if (!s || !s.emoji) continue;
+    monCtx.save();
+    monCtx.font = s.emojiSize + 'px serif';
+    monCtx.textBaseline = 'top';
+    monCtx.globalAlpha = s.opacity || 0.95;
+    monCtx.fillText(s.emoji, Math.round(s.x), Math.round(s.y));
+    monCtx.restore();
+  }
+
+  // Pass 3: UFO abduction beam — pulsing green cone below UFO while hovering
+  for (const id in _activeMonsters) {
+    const s = _activeMonsters[id];
+    if (!s || s.type !== 'ufo' || !s._hoverStart) continue;
+    const cx = s.x + s.w / 2;
+    const by = s.y + s.h;
+    const beamW = s.w * 0.7;
+    const beamH = 20;
+    const pulse = 0.35 + 0.35 * Math.sin(performance.now() * 0.006);
+    monCtx.save();
+    monCtx.globalAlpha = pulse;
+    const grad = monCtx.createLinearGradient(cx, by, cx, by + beamH);
+    grad.addColorStop(0, 'rgba(180,255,180,1)');
+    grad.addColorStop(1, 'rgba(80,255,80,0)');
+    monCtx.fillStyle = grad;
+    monCtx.beginPath();
+    monCtx.moveTo(cx - beamW / 2, by);
+    monCtx.lineTo(cx + beamW / 2, by);
+    monCtx.lineTo(cx + beamW, by + beamH);
+    monCtx.lineTo(cx - beamW, by + beamH);
+    monCtx.closePath();
+    monCtx.fill();
+    monCtx.restore();
+  }
 
   // v41b: draw active raygun beams as fading yellow disks
   if (window._monsterRays && window._monsterRays.length > 0) {
@@ -10431,19 +10470,20 @@ const _activeMonsters = {};
 function _onMonsterSpawn(msg) {
   // v40: monsters live on cMonsters canvas, NOT in spriteList (would double-render)
   let type = msg.monsterType;
-  let glyph, frames = null;
+  let glyph = null, frames = null, emoji = null, emojiSize = 0;
   if (type === 'kraken') {
     frames = [GLYPHS.kraken_a, GLYPHS.kraken_b]; // 2-frame tentacle animation
     glyph = frames[0];
   } else if (type === 'ufo') {
     glyph = GLYPHS.ufo;
   } else if (type === 'godzilla') {
-    frames = [GLYPHS.godzilla_a, GLYPHS.godzilla_b];
-    glyph = frames[0];
+    // v51: rendered as emoji instead of pixel glyph
+    emoji = '🦖';
+    emojiSize = 16; // map-pixel font size
   } else {
     return;
   }
-  const {w, h} = glyphBounds(glyph);
+  const {w, h} = glyph ? glyphBounds(glyph) : { w: emojiSize, h: emojiSize };
   const sprite = {
     type, glyph, w, h,
     x: msg.x - w/2, y: msg.y - h/2,
@@ -10454,6 +10494,8 @@ function _onMonsterSpawn(msg) {
     opacity: 0.95,
     frames,
     frameIdx: 0,
+    emoji,
+    emojiSize,
     _isMonster: true,
   };
   _activeMonsters[msg.monsterId] = sprite;
@@ -10473,6 +10515,14 @@ function _onMonsterTick(msg) {
   if (!s) return;
   s.x = msg.x - s.w / 2;
   s.y = msg.y - s.h / 2;
+  // Track UFO hover phase so render loop can draw abduction beam
+  if (s.type === 'ufo') {
+    if (msg.phase === 'hover') {
+      if (!s._hoverStart) s._hoverStart = performance.now();
+    } else {
+      s._hoverStart = null;
+    }
+  }
 }
 
 let _monsterRays = [];
