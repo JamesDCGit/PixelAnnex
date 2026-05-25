@@ -4914,7 +4914,7 @@ function scheduleLegend(){
 // ── View ─────────────────────────────────────────────────────────
 function applyT(){
   const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";
-  [cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{if(c)c.style.transform=t;});
+  [cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke,cMonsters].forEach(c=>{if(c)c.style.transform=t;});
   // v33: update DOM flag positions + opacity each pan/zoom
   _updateAllFlagPositions();
   _updateFlagOpacity();
