@@ -1382,7 +1382,7 @@ function _spawnUFO(eventId) {
     const dx = target.x - cur.x, dy = target.y - cur.y;
     const dist = Math.hypot(dx, dy);
     if (dist > 4) {
-      const speed = 12;
+      const speed = 24;
       cur.x += (dx / dist) * speed;
       cur.y += (dy / dist) * speed;
     } else {
@@ -2632,6 +2632,12 @@ const httpServer = http.createServer(async (req, res) => {
   }
 
   // ── Static game file (cached, compressed) ──────────────────────
+  if (url.pathname === '/api/version') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+    res.end(JSON.stringify({ version: SERVER_VERSION }));
+    return;
+  }
+
   if (url.pathname === '/' || url.pathname === '/index.html') {
     const f = path.join(__dirname, 'pixelworld_v5.html');
     serveCompressedAsset(req, res, f, {

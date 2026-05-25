@@ -27,10 +27,11 @@ select:focus,.btn:focus{outline:none;border-color:#3b82f6}
 #stats{font-size:11px;color:#334155;margin-left:auto;white-space:nowrap}
 #stats b{color:#64748b}
 #swatch{width:12px;height:12px;border-radius:2px;border:1px solid rgba(255,255,255,.12);flex-shrink:0}
-#viewport{flex:1;position:relative;overflow:hidden;cursor:crosshair}
+#viewport{flex:1;position:relative;overflow:hidden;cursor:crosshair;isolation:isolate}
+#ver-badge{font-size:9px;color:#334155;letter-spacing:.04em;font-weight:400;margin-left:2px;align-self:flex-end;padding-bottom:1px;}
 canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixelated;image-rendering:crisp-edges}
 #c-border{pointer-events:none}
-#c-monsters{pointer-events:none;z-index:10;}/* above all map canvases, below HUD (30+) */
+#c-monsters{pointer-events:none;z-index:100;}/* isolation:isolate on #viewport scopes this above all sibling canvases */
 #loading{position:absolute;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#070d1a;gap:16px;}
 #loading h2{font-size:14px;font-weight:700;color:#e2e8f0;letter-spacing:.12em;text-transform:uppercase}
 #load-msg{font-size:11px;color:#64748b;min-height:1.4em;text-align:center;max-width:360px;line-height:1.5}
@@ -1256,7 +1257,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 </script>
 <div id="app">
   <div id="toolbar">
-    <h1>Pixel<span>Annex</span></h1>
+    <h1>Pixel<span>Annex</span></h1><span id="ver-badge"></span>
     <button class="z-btn" id="btn-stats" onclick="openStats()" title="Stats &amp; Leaderboard" style="margin-left:6px;font-size:9px;padding:2px 6px;">📊</button>
     <button class="z-btn" id="btn-font-scale" onclick="cycleFontScale()" title="Font Scale: Normal / Mid / Large" style="margin-left:6px;font-size:9px;padding:2px 6px;">Aa</button>
     <span id="font-scale-label" style="font-size:9px;color:#475569;margin-left:2px;margin-right:2px">Normal</span>
@@ -3087,6 +3088,8 @@ function isPlayableCountry(fi) {
 const CODE_VERSION = '2026-05-25-v42';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
+// Version badge in toolbar
+(function(){ const b=document.getElementById('ver-badge'); if(b) b.textContent=CODE_VERSION.split('-').pop(); })();
 
 // ── Service worker (caches static assets for fast reloads) ────────
 if ('serviceWorker' in navigator) {
@@ -4556,12 +4559,12 @@ async function boot(){
   }
   console.log("[Borders] Dilation done — " + DILATION_PASSES + " passes, ocean gaps filled");
 
-  // Sand shoreline: paint ocean pixels that touch land with a bright sand colour
-  // Intentionally lighter than both the dark border (63,50,30) and light border (182,157,107)
+  // Sand shoreline: paint the exact 1px ocean ring touching land — runs LAST so it
+  // overwrites any dilation pixels that landed on these ocean-edge pixels, ensuring
+  // sand always sits on the ocean side of the coastline (outward, not inward).
   const SAND_R = 228, SAND_G = 208, SAND_B = 152;
   for (let i = 0; i < MAP_PX; i++) {
     if (featByPixel[i] !== -1) continue; // land — skip
-    if (bordPixel[i]) continue;          // already a border pixel — skip
     const x = i % MAP_W, y = (i / MAP_W) | 0;
     let touchesLand = false;
     if (x > 0          && featByPixel[i - 1]     !== -1) touchesLand = true;
@@ -4574,7 +4577,7 @@ async function boot(){
       bordPixel[i] = 1;
     }
   }
-  console.log("[Borders] Sand shoreline drawn");
+  console.log("[Borders] Sand shoreline drawn (ocean-side)");
 
   bordCtx.putImageData(borderImg,0,0);
   console.log("Borders drawn – pixel-perfect with ocean-gap fix");
@@ -6999,6 +7002,8 @@ function mpHandleMessage(msg) {
       console.log('[MP] Welcome, player', _localPlayerId, '· server', window.SERVER_VERSION, '· client', CODE_VERSION);
       if (msg.serverVersion && msg.serverVersion !== CODE_VERSION) {
         console.warn('[MP] Version mismatch — client', CODE_VERSION, 'vs server', msg.serverVersion);
+        // Auto-refresh: new build deployed — reload after 4s to pick up fresh HTML
+        setTimeout(() => window.location.reload(true), 4000);
       }
       // Apply server state — overlay server's actively-painted pixels.
       // Pixels in state.runs were painted by a player or bot; paint them at full alpha.
@@ -9801,8 +9806,8 @@ vp.addEventListener("mousemove",e=>{
       for (const mid in _activeMonsters) {
         const ms = _activeMonsters[mid];
         if (!ms) continue;
-        if (p.x >= ms.x - 4 && p.x <= ms.x + ms.w + 4 &&
-            p.y >= ms.y - 4 && p.y <= ms.y + ms.h + 4) {
+        if (p.x >= ms.x - 12 && p.x <= ms.x + ms.w + 12 &&
+            p.y >= ms.y - 12 && p.y <= ms.y + ms.h + 12) {
           _monsterHover = ms;
           break;
         }
