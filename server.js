@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-25-v49';
+const SERVER_VERSION       = '2026-05-25-v50';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1509,7 +1509,7 @@ function _spawnGodzilla(eventId) {
     x:cur.x, y:cur.y, durationMs:DURATION_MS, timestamp:startTs,
     vx, vy, totalDist:TOTAL_DIST_PX }));
   emitBotEvent({ type:'monster_event', tier:2, monsterType:'godzilla', timestamp:startTs,
-    sassyText:'🦖 GODZILLA! A giant lizard is stomping through the map. Run.' });
+    sassyText:'🦖 Giant Radioactive Lizard! It is stomping through the map. Run.' });
 
   _godzillaHandle = setInterval(() => {
     const now = Date.now();

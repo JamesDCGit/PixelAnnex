@@ -3085,7 +3085,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-25-v49';
+const CODE_VERSION = '2026-05-25-v50';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8990,9 +8990,8 @@ function initSprites(){
     {type:'tanker', count:5,  zone:'ocean'},
     {type:'whale',  count:4,  zone:'ocean'},
     {type:'plane',  count:6,  zone:'any'},
-    {type:'ufo',    count:3,  zone:'any'},
     {type:'rocket', count:2,  zone:'any'},
-    {type:'kraken', count:1,  zone:'ocean'},  // v39d: lone sea monster, slow drift
+    // UFO and kraken removed from ambient sprites — only appear as monster events
   ];
 
   for(const {type,count,zone} of config){
@@ -9797,8 +9796,8 @@ vp.addEventListener("mousemove",e=>{
       for (const mid in _activeMonsters) {
         const ms = _activeMonsters[mid];
         if (!ms) continue;
-        if (p.x >= ms.x - 12 && p.x <= ms.x + ms.w + 12 &&
-            p.y >= ms.y - 12 && p.y <= ms.y + ms.h + 12) {
+        if (p.x >= ms.x && p.x <= ms.x + ms.w &&
+            p.y >= ms.y && p.y <= ms.y + ms.h) {
           _monsterHover = ms;
           break;
         }
@@ -9809,7 +9808,7 @@ vp.addEventListener("mousemove",e=>{
       const MINFO = {
         ufo:      { icon: '🛸', label: 'UFO',      color: '#60a5fa', desc: 'Abducting pixels' },
         kraken:   { icon: '🦑', label: 'Kraken',   color: '#9333ea', desc: 'Tentacles attacking' },
-        godzilla: { icon: '🦖', label: 'Godzilla', color: '#4ade80', desc: 'Stomping the map' },
+        godzilla: { icon: '🦖', label: 'Giant Radioactive Lizard', color: '#4ade80', desc: 'Stomping the map' },
       };
       const mi = MINFO[mt] || { icon: '👾', label: mt, color: '#94a3b8', desc: 'Monster' };
       $("tip-name").innerHTML = mi.icon + ' <span>' + mi.label + '</span>';
@@ -10463,7 +10462,7 @@ function _onMonsterSpawn(msg) {
   const _MALERT = {
     ufo:      { icon: '🛸', title: 'UFO Sighting!',  text: 'Pixels are being abducted.' },
     kraken:   { icon: '🦑', title: 'KRAKEN!',         text: 'Tentacles incoming on the coast.' },
-    godzilla: { icon: '🦖', title: 'GODZILLA!',       text: 'Brace for stomping.' },
+    godzilla: { icon: '🦖', title: 'Giant Radioactive Lizard!', text: 'Brace for stomping.' },
   };
   const _ma = _MALERT[type] || { icon: '👾', title: 'Monster!', text: '' };
   actPushCard({ variant: 'alert', title: _ma.icon + ' ' + _ma.title, text: _ma.text });
@@ -10512,7 +10511,7 @@ function _showMonsterBanner(type) {
     'font-size:13px;letter-spacing:.04em;box-shadow:0 4px 12px rgba(0,0,0,0.4);' +
     'animation:monsterBannerFade 6s ease-out forwards;';
   banner.textContent = (type === 'ufo')      ? '🛸 UFO sighting! Pixels are being abducted.'
-                     : (type === 'godzilla') ? '🦖 GODZILLA! Brace for stomping.'
+                     : (type === 'godzilla') ? '🦖 Giant Radioactive Lizard! Brace for stomping.'
                      :                         '🦑 KRAKEN! Tentacles incoming on the coast.';
   document.body.appendChild(banner);
   setTimeout(() => banner.remove(), 6000);
