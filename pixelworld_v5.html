@@ -31,7 +31,7 @@ select:focus,.btn:focus{outline:none;border-color:#3b82f6}
 #ver-badge{font-size:9px;color:#334155;letter-spacing:.04em;font-weight:400;margin-left:2px;align-self:flex-end;padding-bottom:1px;}
 canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixelated;image-rendering:crisp-edges}
 #c-border{pointer-events:none}
-#c-monsters{pointer-events:none;z-index:100;}/* isolation:isolate on #viewport scopes this above all sibling canvases */
+#c-monsters{pointer-events:none;z-index:100;will-change:transform;}/* translateZ(0.01px) in applyT() + will-change forces a dedicated GPU layer above all sibling canvases */
 #loading{position:absolute;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#070d1a;gap:16px;}
 #loading h2{font-size:14px;font-weight:700;color:#e2e8f0;letter-spacing:.12em;text-transform:uppercase}
 #load-msg{font-size:11px;color:#64748b;min-height:1.4em;text-align:center;max-width:360px;line-height:1.5}
@@ -3085,7 +3085,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-25-v47';
+const CODE_VERSION = '2026-05-25-v48';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4898,7 +4898,10 @@ function scheduleLegend(){
 // ── View ─────────────────────────────────────────────────────────
 function applyT(){
   const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";
-  [cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke,cMonsters].forEach(c=>{if(c)c.style.transform=t;});
+  [cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{if(c)c.style.transform=t;});
+  // translateZ(0.01px) promotes c-monsters to its own GPU compositing layer,
+  // guaranteeing it renders above all sibling canvases regardless of z-index quirks.
+  if(cMonsters) cMonsters.style.transform=t+' translateZ(0.01px)';
   // v33: update DOM flag positions + opacity each pan/zoom
   _updateAllFlagPositions();
   _updateFlagOpacity();

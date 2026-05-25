@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-25-v47';
+const SERVER_VERSION       = '2026-05-25-v48';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1233,8 +1233,8 @@ setInterval(_checkWorldConquest, 30 * 1000);
 //   ufo:      darts to N random conquered countries firing raygun blobs (30s)
 //   godzilla: emerges, walks 50px leaving a 4px-wide cleared trail, sinks (12s)
 //   kraken:   stationary pop-up at coast for 2 min, then despawns
-const MONSTER_INTERVAL_MIN_MS = 5 * 60 * 1000;  // TEST: 5 min (prod: 50 min)
-const MONSTER_INTERVAL_MAX_MS = 6 * 60 * 1000;  // TEST: 6 min (prod: 70 min)
+const MONSTER_INTERVAL_MIN_MS = 2 * 60 * 1000;  // TEST: 2 min (prod: 50 min)
+const MONSTER_INTERVAL_MAX_MS = 2 * 60 * 1000;  // TEST: 2 min (prod: 70 min)
 let _monsterActive = false;
 let _monsterTickHandle = null;
 
