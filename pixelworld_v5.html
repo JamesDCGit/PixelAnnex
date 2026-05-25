@@ -4556,8 +4556,9 @@ async function boot(){
   }
   console.log("[Borders] Dilation done — " + DILATION_PASSES + " passes, ocean gaps filled");
 
-  // Sand shoreline: paint ocean pixels that touch land with a warm sand colour
-  const SAND_R = 194, SAND_G = 168, SAND_B = 110;
+  // Sand shoreline: paint ocean pixels that touch land with a bright sand colour
+  // Intentionally lighter than both the dark border (63,50,30) and light border (182,157,107)
+  const SAND_R = 228, SAND_G = 208, SAND_B = 152;
   for (let i = 0; i < MAP_PX; i++) {
     if (featByPixel[i] !== -1) continue; // land — skip
     if (bordPixel[i]) continue;          // already a border pixel — skip
