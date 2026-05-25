@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-25-v53';
+const SERVER_VERSION       = '2026-05-26-v54';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2645,6 +2645,12 @@ function _isCountryConquered(countryId) {
   return false;
 }
 
+// v54: surrender threshold — if any single enemy holds this fraction of a
+// country's home territory, the defending bot stands down so the attacker can
+// accumulate enough pixels to cross the formal 70% conquest threshold without
+// the bot constantly reclaiming them.
+const BOT_SURRENDER_THRESHOLD = 0.60;
+
 function botTickSingle(countryId) {
   if (!mapReady) return;
   // Once permanently conquered this cycle the bot never resumes — even if a
@@ -2656,6 +2662,30 @@ function botTickSingle(countryId) {
   // (legacy: humanClaimedCountries is still consulted in case it gets used
   // elsewhere; the new gate above covers it as a superset.)
   if (humanClaimedCountries.has(countryId)) return;
+  // v54: bot surrenders when a single enemy already holds BOT_SURRENDER_THRESHOLD
+  // of home territory.  Without this, the defending bot and the attacker reach an
+  // equilibrium just below the 70% conquest threshold and conquest never fires.
+  const _homeGeoIdx = getGeoForCountry(countryId);
+  const _homeTotal  = geoTotal[_homeGeoIdx] || 0;
+  if (_homeTotal > 0) {
+    const _claims = geoClaimCnt[_homeGeoIdx];
+    if (_claims) {
+      for (const [cId, cnt] of Object.entries(_claims)) {
+        if (cId !== countryId && cnt / _homeTotal >= BOT_SURRENDER_THRESHOLD) {
+          // Log once per country (suppress repeated noise using a debounce flag on the bot)
+          const _bot = bots.get(countryId);
+          if (_bot && !_bot._surrenderLogged) {
+            console.log(`[Bot] ${countryId} surrendering — ${cId} holds ${(cnt/_homeTotal*100).toFixed(1)}% of home territory`);
+            _bot._surrenderLogged = true;
+          }
+          return; // stand down — let attacker reach 70% conquest threshold
+        }
+      }
+    }
+  }
+  // Reset surrender log flag once no longer overwhelmed
+  const _botRef = bots.get(countryId);
+  if (_botRef && _botRef._surrenderLogged) _botRef._surrenderLogged = false;
   // v34: only active bots paint
   if (!_isBotActive(countryId)) return;
   const bot = bots.get(countryId);
