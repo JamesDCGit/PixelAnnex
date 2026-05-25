@@ -3085,7 +3085,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-25-v44';
+const CODE_VERSION = '2026-05-25-v45';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3128,6 +3128,7 @@ let   regenSecsLeft    = REGEN_INTERVAL;
 // ── Bomb mode ───────────────────────────────────────────────────
 let   bombMode         = false;
 let bordPixel=null;   // Uint8Array MAP_PX — 1 where a border pixel was drawn
+let sandPixel=null;   // Uint8Array MAP_PX — 1 where a sand shoreline pixel was drawn
 // Stroke tracking for auto-fill (geo countries touched this stroke)
 // strokeGeos is declared inside runAutoFill's outer scope above
 let totalClaimed=0,totalLandPx=0,showBorders=true,borderDark=true,brushSize=1,currentIdx=0;
@@ -4518,8 +4519,9 @@ async function boot(){
   const borderImg=bordCtx.createImageData(MAP_W,MAP_H);
   const bd=borderImg.data;
   bordPixel=new Uint8Array(MAP_PX);
-  // v35: respect borderDark state on initial draw (was hardcoded to light)
-  const [_br0, _bg0, _bb0] = borderDark ? [63, 50, 30] : [182, 157, 107];
+  sandPixel=new Uint8Array(MAP_PX);
+  // Country border colour: light sandy so borders read as soft inland lines
+  const [_br0, _bg0, _bb0] = [228, 208, 152];
   function wb(i){bd[i*4]=_br0;bd[i*4+1]=_bg0;bd[i*4+2]=_bb0;bd[i*4+3]=255;bordPixel[i]=1;}
 
   const CHUNK2=262144;
@@ -4559,10 +4561,11 @@ async function boot(){
   }
   console.log("[Borders] Dilation done — " + DILATION_PASSES + " passes, ocean gaps filled");
 
-  // Sand shoreline: paint the exact 1px ocean ring touching land — runs LAST so it
+  // Shore outline: paint the exact 1px ocean ring touching land — runs LAST so it
   // overwrites any dilation pixels that landed on these ocean-edge pixels, ensuring
-  // sand always sits on the ocean side of the coastline (outward, not inward).
-  const SAND_R = 228, SAND_G = 208, SAND_B = 152;
+  // the shore always sits on the ocean side of the coastline (outward, not inward).
+  // Uses a darker colour than inland borders to make coastlines visually prominent.
+  const SHORE_R = 63, SHORE_G = 50, SHORE_B = 30;
   for (let i = 0; i < MAP_PX; i++) {
     if (featByPixel[i] !== -1) continue; // land — skip
     const x = i % MAP_W, y = (i / MAP_W) | 0;
@@ -4573,11 +4576,12 @@ async function boot(){
     else if (y < MAP_H-1 && featByPixel[i + MAP_W] !== -1) touchesLand = true;
     if (touchesLand) {
       const p = i * 4;
-      bd[p] = SAND_R; bd[p+1] = SAND_G; bd[p+2] = SAND_B; bd[p+3] = 255;
+      bd[p] = SHORE_R; bd[p+1] = SHORE_G; bd[p+2] = SHORE_B; bd[p+3] = 255;
       bordPixel[i] = 1;
+      sandPixel[i] = 1;
     }
   }
-  console.log("[Borders] Sand shoreline drawn (ocean-side)");
+  console.log("[Borders] Shore outline drawn (ocean-side)");
 
   bordCtx.putImageData(borderImg,0,0);
   console.log("Borders drawn – pixel-perfect with ocean-gap fix");
@@ -8814,15 +8818,22 @@ function showConquestToast(geoIdx, claimerIdx){
 
 // ── Redraw border canvas in the currently selected colour ────────
 // Called by the colour toggle; reads bordPixel[] and repaints.
+// Shore pixels (sandPixel[]) always use the dark coastal colour;
+// inland country border pixels use the light sandy colour.
 function reborderCanvas(){
   if(!bordPixel) return;
-  const [br,bg,bb] = borderDark ? [63,50,30] : [182,157,107];
+  const [sr,sg,sb] = borderDark ? [63,50,30] : [182,157,107]; // shore colour
+  const [br,bg,bb] = [228,208,152]; // inland border colour (always sandy)
   const img = bordCtx.createImageData(MAP_W, MAP_H);
   const d   = img.data;
   for(let i=0;i<MAP_PX;i++){
     if(bordPixel[i]===1){
       const p=i*4;
-      d[p]=br; d[p+1]=bg; d[p+2]=bb; d[p+3]=255;
+      if(sandPixel && sandPixel[i]===1){
+        d[p]=sr; d[p+1]=sg; d[p+2]=sb; d[p+3]=255;
+      } else {
+        d[p]=br; d[p+1]=bg; d[p+2]=bb; d[p+3]=255;
+      }
     }
   }
   bordCtx.putImageData(img, 0, 0);
