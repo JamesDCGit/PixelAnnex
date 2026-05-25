@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-26-v56';
+const SERVER_VERSION       = '2026-05-26-v57';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -290,10 +290,207 @@ const SASS_NEWS = [
   v => `📰 ${v.country}: "${v.headline}". Real-world stakes, pixel-world consequences. ` + _suffix(),
 ];
 
+// ── Geopolitical context table ────────────────────────────────────────────────
+// Key: 'attackerISOnum:defenderISOnum'  (ISO 3166-1 numeric, as strings)
+// When a conquest matches a known hot-spot, pick one of these instead of the
+// generic SASS_CONQUEST pool.  Falls back to generic if no match.
+const GEO_CONTEXT = {
+  // ── USA (840) ──────────────────────────────────────────────────────────
+  '840:364': [ // USA → Iran
+    () => `🛢️ USA trying to open the Strait of Hormuz... with pixels?! Iran is not impressed. ` + _suffix(),
+    () => `🗡️ Washington just switched from JCPOA to pixel diplomacy. It's not subtle. ` + _suffix(),
+    () => `☢️ US pixel sanctions now extend to Iran's entire colour palette. Tehran responds with 240 militia bots. ` + _suffix(),
+  ],
+  '364:840': [ // Iran → USA
+    () => `🕌 Iran pixels the Great Satan. The ayatollah is posting about it. ` + _suffix(),
+    () => `🇮🇷 Tehran claims pixel sovereignty over Washington DC. This is unprecedented. ` + _suffix(),
+    () => `☢️ Iran crosses the Atlantic — in pixels. CENTCOM is filing a strongly-worded pixel. ` + _suffix(),
+  ],
+  '840:156': [ // USA → China
+    () => `🇺🇸 US pixel tariffs hit China. 145% surcharge on every painted square. ` + _suffix(),
+    () => `💻 US-China pixel war escalates. TikTok ban now extends to map tiles. ` + _suffix(),
+    () => `🛸 America repaints China red — wait, China's already red. ` + _suffix(),
+  ],
+  '156:840': [ // China → USA
+    () => `🐉 China conquers America on a pixel map. First the chips, now the pixels. ` + _suffix(),
+    () => `🇨🇳 Beijing paints over Washington. Wall Street is nervously refreshing. ` + _suffix(),
+    () => `🏴 China claims the continental US. Trade war: now with territorial gains. ` + _suffix(),
+  ],
+  '840:643': [ // USA → Russia
+    () => `🗽 American pixel division advances into Russia. Sanctions mode: now includes colour palette. ` + _suffix(),
+    () => `🇺🇸 USA pixels into Russia. NATO's 2D eastern flank: secured. ` + _suffix(),
+  ],
+  '643:840': [ // Russia → USA
+    () => `🐻 Russian pixel bear hug reaches Washington. NATO Article 5 says nothing about 2D maps. ` + _suffix(),
+    () => `🇷🇺 Russia conquers America — in pixels. The pixel split negotiations begin. ` + _suffix(),
+  ],
+  '840:484': [ // USA → Mexico
+    () => `🇺🇸 USA pixels into Mexico. The pixel deportation flights are already inbound. ` + _suffix(),
+    () => `🌮 Washington paints south of the border. The pixel wall couldn't keep them in. ` + _suffix(),
+  ],
+  '484:840': [ // Mexico → USA
+    () => `🌮 Mexico pixels across the border. The pixel wall couldn't stop them either. ` + _suffix(),
+    () => `🇲🇽 Mexico takes the fight north. Pixel by pixel. ` + _suffix(),
+  ],
+  // ── Russia (643) ───────────────────────────────────────────────────────
+  '643:804': [ // Russia → Ukraine
+    () => `🇷🇺 Russia advances on Ukraine — again. Zelensky is typing... ` + _suffix(),
+    () => `🚀 Pixel blitzkrieg in Ukraine. Someone call NATO. ` + _suffix(),
+    () => `🌻 Eastern Ukraine just turned Russian pixels. The ICC is watching. ` + _suffix(),
+    () => `🛡️ Russia pushes to the Dnipro — one pixel at a time. ` + _suffix(),
+  ],
+  '804:643': [ // Ukraine → Russia
+    () => `🇺🇦 Ukraine counter-pixels into Russia! The Kursk offensive: now in 2D. ` + _suffix(),
+    () => `⚡ Zelensky pixel update: Ukraine is winning on the map at least. ` + _suffix(),
+    () => `🌻 Ukraine strikes deep into Russian territory. One pixel at a time. ` + _suffix(),
+  ],
+  '643:246': [ // Russia → Finland
+    () => `🇷🇺 Russia pixels toward Finland. NATO's newest member: fully activated. ` + _suffix(),
+    () => `🌲 Russia eyes the Finnish border — in pixels. Helsinki is not amused. ` + _suffix(),
+  ],
+  '643:616': [ // Russia → Poland
+    () => `🇷🇺 Russia pixels into Poland. Article 5 is sweating. ` + _suffix(),
+    () => `🏰 Russia crosses into Poland on the pixel map. Warsaw is calling an emergency session. ` + _suffix(),
+  ],
+  '643:233': [ // Russia → Estonia
+    () => `🇷🇺 Russia pixels Estonia. The smallest NATO member, the biggest pixel problem. ` + _suffix(),
+  ],
+  '643:428': [ // Russia → Latvia
+    () => `🇷🇺 Russian pixels reach Latvia. The Baltics are speed-dialling Brussels. ` + _suffix(),
+  ],
+  '643:440': [ // Russia → Lithuania
+    () => `🇷🇺 Russia pixels into Lithuania, cutting off the Suwałki corridor — in 2D. ` + _suffix(),
+  ],
+  // ── China (156) ────────────────────────────────────────────────────────
+  '156:158': [ // China → Taiwan
+    () => `🇨🇳 China achieves pixel reunification with Taiwan. Xi counted those pixels twice. ` + _suffix(),
+    () => `🎆 One China Policy: now enforced in pixel form. TSMC pixel fabs at risk. ` + _suffix(),
+    () => `⚓ PLA pixel flotilla encircles Taiwan. The semiconductor supply chain: concerned. ` + _suffix(),
+  ],
+  '158:156': [ // Taiwan → China
+    () => `🇹🇼 Taiwan says: "We paint our own pixels." Beijing: "No you don't." ` + _suffix(),
+    () => `🗽 Taiwan takes the fight to the mainland! Pixel independence movement: real. ` + _suffix(),
+  ],
+  '156:608': [ // China → Philippines
+    () => `🇨🇳 China repaints the West Philippine Sea — one pixel at a time. Manila sends a pixel coast guard. ` + _suffix(),
+    () => `⛵ Second Thomas Shoal, Second Pixel Shoal. China pixels over the Philippines again. ` + _suffix(),
+  ],
+  '608:156': [ // Philippines → China
+    () => `🇵🇭 Philippines reclaims South China Sea pixels. Manila 1 – Beijing 0. ` + _suffix(),
+    () => `⚓ Philippine coast guard pixels back. BRP Sierra Madre: holding. ` + _suffix(),
+  ],
+  '156:356': [ // China → India
+    () => `🏔️ China pixels over the Galwan Valley — again. LAC tensions: pixel edition. ` + _suffix(),
+    () => `🇨🇳 PLA pixels across the Line of Actual Control. New Delhi is fuming. ` + _suffix(),
+  ],
+  '356:156': [ // India → China
+    () => `🇮🇳 India pushes back along the LAC — pixel by pixel. ` + _suffix(),
+    () => `🏔️ India reclaims the border ridge — in 2D. Doklam: re-pixelated. ` + _suffix(),
+  ],
+  '156:704': [ // China → Vietnam
+    () => `🐉 China pixels into Vietnam's EEZ. Hanoi files a strongly-worded pixel protest. ` + _suffix(),
+  ],
+  // ── Middle East ────────────────────────────────────────────────────────
+  '376:275': [ // Israel → Palestine
+    () => `🇮🇱 Israel expands the pixel buffer zone. Ceasefire negotiations: paused. ` + _suffix(),
+    () => `🕍 IDF pixel operation launched. Ground offensive starts at row 512. ` + _suffix(),
+  ],
+  '275:376': [ // Palestine → Israel
+    () => `🕌 Palestine reclaims pixels. Resistance in 2D. ` + _suffix(),
+  ],
+  '376:364': [ // Israel → Iran
+    () => `🇮🇱 Israel skips the proxies and goes direct on Iran. Mossad pixel division: active. ` + _suffix(),
+    () => `✡️ Israeli strikes reach Tehran — in 2D. F-35 pixel squadron deployed. ` + _suffix(),
+  ],
+  '364:376': [ // Iran → Israel
+    () => `🇮🇷 Iran fires pixel ballistic missiles at Israel. Iron Dome: bricked on a 2D map. ` + _suffix(),
+    () => `🕌 Iran goes direct on Israel, skipping the proxies. Pixel war: escalated. ` + _suffix(),
+  ],
+  '682:887': [ // Saudi Arabia → Yemen
+    () => `🇸🇦 Saudi pixel coalition strikes Yemen. Houthi pixel drones already inbound. ` + _suffix(),
+    () => `✈️ Saudi airstrikes go digital. Red Sea pixel shipping: disrupted. ` + _suffix(),
+  ],
+  '887:682': [ // Yemen (Houthis) → Saudi Arabia
+    () => `⚓ Houthis pixel-strike Saudi Arabia. Red Sea routes: somehow even more disrupted. ` + _suffix(),
+    () => `🚀 Yemen fires pixel cruise missiles at Riyadh. ARAMCO is watching nervously. ` + _suffix(),
+  ],
+  '887:376': [ // Yemen → Israel
+    () => `🚀 Houthis launch pixels at Israel. Iron Dome intercepts 94% of them. ` + _suffix(),
+  ],
+  // ── South Asia ─────────────────────────────────────────────────────────
+  '356:586': [ // India → Pakistan
+    () => `🇮🇳 India pixels across the Line of Control. The pixel Kashmir dispute: heated. ` + _suffix(),
+    () => `🏔️ Two nuclear neighbours settle it on the pixel map. Bold. ` + _suffix(),
+    () => `🇮🇳 India launches pixel strikes into Pakistan. Operation Sindoor: 2D edition. ` + _suffix(),
+  ],
+  '586:356': [ // Pakistan → India
+    () => `🇵🇰 Pakistan crosses the LoC in pixel form. India responds with 1.4 billion pixels of disapproval. ` + _suffix(),
+    () => `✈️ PAF pixel jets cross into India. New Delhi: not having it. ` + _suffix(),
+  ],
+  // ── Korean Peninsula ───────────────────────────────────────────────────
+  '408:410': [ // North Korea → South Korea
+    () => `🇰🇵 Kim Jong-un crosses the pixel DMZ! The sirens are very confused. ` + _suffix(),
+    () => `💣 DPRK pixel strike on the South. K-pop plays louder in response. ` + _suffix(),
+    () => `🪖 North Korea activates the pixel artillery. Seoul: refreshing the PixelAnnex tab anxiously. ` + _suffix(),
+  ],
+  '410:408': [ // South Korea → North Korea
+    () => `🇰🇷 South Korea pixels into the North. Pyongyang is not logging it in state media. ` + _suffix(),
+    () => `📺 ROK pushes past the DMZ in 2D. Kim Jong-un: very displeased. ` + _suffix(),
+  ],
+  // ── Europe ─────────────────────────────────────────────────────────────
+  '792:300': [ // Turkey → Greece
+    () => `🇹🇷 Turkey pixels into Greek airspace. Greece calls it a violation. Erdoğan: "It's fine." ` + _suffix(),
+    () => `🏛️ Aegean dispute goes pixel. Turkey and Greece fight over 2D islands now. ` + _suffix(),
+  ],
+  '300:792': [ // Greece → Turkey
+    () => `🇬🇷 Greece pixels back at Turkey. The Aegean dispute has entered its 2D phase. ` + _suffix(),
+  ],
+  '688:383': [ // Serbia → Kosovo
+    () => `🇷🇸 Serbia pixels over Kosovo. Pristina does not recognise this conquest. ` + _suffix(),
+  ],
+  '383:688': [ // Kosovo → Serbia
+    () => `🇽🇰 Kosovo pixels into Serbia. Belgrade is calling an emergency session. ` + _suffix(),
+  ],
+  '31:51': [ // Azerbaijan → Armenia
+    () => `🇦🇿 Azerbaijan pixels over Armenia. Nagorno-Karabakh is now just a pixel. ` + _suffix(),
+    () => `🏔️ Baku advances — again. The pixel Caucasus: contested. ` + _suffix(),
+  ],
+  '51:31': [ // Armenia → Azerbaijan
+    () => `🇦🇲 Armenia reclaims Karabakh pixels. The resistance continues in 2D. ` + _suffix(),
+  ],
+  // ── Americas ───────────────────────────────────────────────────────────
+  '826:32': [ // UK → Argentina
+    () => `🇬🇧 Britain repaints the Falklands again. Argentina is already writing a strongly-worded pixel protest. ` + _suffix(),
+    () => `⚓ UK pixels the South Atlantic. Las Malvinas discourse: reignited. ` + _suffix(),
+  ],
+  '32:826': [ // Argentina → UK
+    () => `🇦🇷 Argentina claims Las Malvinas in pixel form. The Falklands War: rebooted. ` + _suffix(),
+    () => `🇦🇷 Milei launches a pixel offensive on the Falklands. Thatcher could not be reached for comment. ` + _suffix(),
+  ],
+  '862:170': [ // Venezuela → Colombia
+    () => `🇻🇪 Venezuela pixels into Colombia. Maduro calls it a "Bolivarian pixel operation." ` + _suffix(),
+  ],
+  // ── Africa ─────────────────────────────────────────────────────────────
+  '231:232': [ // Ethiopia → Eritrea
+    () => `🇪🇹 Ethiopia and Eritrea — back at it again, this time in pixel form. ` + _suffix(),
+  ],
+  '504:12': [ // Morocco → Algeria
+    () => `🇲🇦 Morocco pixels into Algeria. The Western Sahara dispute: going regional. ` + _suffix(),
+  ],
+};
+
+// Returns a context-aware sassy string for a conquest pair, or null if no match.
+function _geoContextSassy(attackerId, defenderId) {
+  const pool = GEO_CONTEXT[String(attackerId) + ':' + String(defenderId)];
+  if (!pool || !pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)]();
+}
 
 function tweetForConquest(attackerId, defenderGeoId) {
   const a = _countryName(attackerId);
   const d = _countryName(defenderGeoId);
+  const contextual = _geoContextSassy(attackerId, defenderGeoId);
+  if (contextual) return contextual;
   let conquestsHeld = 0;
   for (const key of conqueredSet) {
     const parts = String(key).split(':');
@@ -2191,7 +2388,7 @@ function applyPixels(pixels, countryId) {
       // Skip self-conquest (country reclaiming its own native territory)
       if (countryId !== geoToId(geo)) {
         const _defId = geoToId(geo);
-        const _sassyConq = _pickSassy(SASS_CONQUEST)({
+        const _sassyConq = _geoContextSassy(countryId, _defId) || _pickSassy(SASS_CONQUEST)({
           a: _countryName(countryId),
           d: _countryName(_defId),
           held: Array.from(conqueredSet).filter(k => String(k).split(':')[1] === String(countryId)).length,
