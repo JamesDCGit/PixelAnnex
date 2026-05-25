@@ -3085,7 +3085,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-25-v45';
+const CODE_VERSION = '2026-05-25-v46';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4520,8 +4520,10 @@ async function boot(){
   const bd=borderImg.data;
   bordPixel=new Uint8Array(MAP_PX);
   sandPixel=new Uint8Array(MAP_PX);
-  // Country border colour: light sandy so borders read as soft inland lines
-  const [_br0, _bg0, _bb0] = [228, 208, 152];
+  // Country border colour — dark so inland borders are clearly legible
+  const [_br0, _bg0, _bb0] = borderDark ? [63, 50, 30] : [182, 157, 107];
+  // Sandy shore colour used for all ocean-side pixels (shore ring + dilation)
+  const [_sr, _sg, _sb] = [228, 208, 152];
   function wb(i){bd[i*4]=_br0;bd[i*4+1]=_bg0;bd[i*4+2]=_bb0;bd[i*4+3]=255;bordPixel[i]=1;}
 
   const CHUNK2=262144;
@@ -4554,18 +4556,18 @@ async function boot(){
     }
     for (const i of toAdd) {
       bordPixel[i] = 1;
+      sandPixel[i] = 1; // ocean-side — painted sandy, same as shore
       const p = i*4;
-      bd[p]=_br0; bd[p+1]=_bg0; bd[p+2]=_bb0; bd[p+3]=255; // v35
+      bd[p]=_sr; bd[p+1]=_sg; bd[p+2]=_sb; bd[p+3]=255;
     }
     await sleep(1);
   }
   console.log("[Borders] Dilation done — " + DILATION_PASSES + " passes, ocean gaps filled");
 
-  // Shore outline: paint the exact 1px ocean ring touching land — runs LAST so it
-  // overwrites any dilation pixels that landed on these ocean-edge pixels, ensuring
-  // the shore always sits on the ocean side of the coastline (outward, not inward).
-  // Uses a darker colour than inland borders to make coastlines visually prominent.
-  const SHORE_R = 63, SHORE_G = 50, SHORE_B = 30;
+  // Shore outline: paint the exact 1px ocean ring touching land with the sandy
+  // colour — runs LAST so it is always flush with the coastline regardless of
+  // dilation. Together with the sandy dilation pixels this forms a unified
+  // "beach" band: ocean → sandy (1–3 px) → dark country border → land.
   for (let i = 0; i < MAP_PX; i++) {
     if (featByPixel[i] !== -1) continue; // land — skip
     const x = i % MAP_W, y = (i / MAP_W) | 0;
@@ -4576,12 +4578,12 @@ async function boot(){
     else if (y < MAP_H-1 && featByPixel[i + MAP_W] !== -1) touchesLand = true;
     if (touchesLand) {
       const p = i * 4;
-      bd[p] = SHORE_R; bd[p+1] = SHORE_G; bd[p+2] = SHORE_B; bd[p+3] = 255;
+      bd[p] = _sr; bd[p+1] = _sg; bd[p+2] = _sb; bd[p+3] = 255;
       bordPixel[i] = 1;
       sandPixel[i] = 1;
     }
   }
-  console.log("[Borders] Shore outline drawn (ocean-side)");
+  console.log("[Borders] Shore outline drawn (ocean-side, sandy)");
 
   bordCtx.putImageData(borderImg,0,0);
   console.log("Borders drawn – pixel-perfect with ocean-gap fix");
@@ -8818,12 +8820,12 @@ function showConquestToast(geoIdx, claimerIdx){
 
 // ── Redraw border canvas in the currently selected colour ────────
 // Called by the colour toggle; reads bordPixel[] and repaints.
-// Shore pixels (sandPixel[]) always use the dark coastal colour;
-// inland country border pixels use the light sandy colour.
+// Ocean-side pixels (sandPixel[]) use the sandy shore colour;
+// land border pixels use the dark toggle colour.
 function reborderCanvas(){
   if(!bordPixel) return;
-  const [sr,sg,sb] = borderDark ? [63,50,30] : [182,157,107]; // shore colour
-  const [br,bg,bb] = [228,208,152]; // inland border colour (always sandy)
+  const [br,bg,bb] = borderDark ? [63,50,30] : [182,157,107]; // land border
+  const [sr,sg,sb] = [228,208,152]; // shore / ocean-side (always sandy)
   const img = bordCtx.createImageData(MAP_W, MAP_H);
   const d   = img.data;
   for(let i=0;i<MAP_PX;i++){
