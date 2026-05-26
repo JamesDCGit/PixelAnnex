@@ -3111,7 +3111,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-26-v63';
+const CODE_VERSION = '2026-05-26-v64';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4010,7 +4010,8 @@ function finisherFill(geoIdx,claimerIdx){
 function checkConquest(geoIdx,claimerIdx){
   const key=geoIdx+":"+claimerIdx;
   if(conqueredSet.has(key))return false;
-  const owned=(geoClaimCnt[geoIdx]&&geoClaimCnt[geoIdx][claimerIdx])||0;
+  // v64: use combined alliance pixel count for conquest threshold
+  const owned=_getAllyOwned(geoIdx,claimerIdx);
   const total=geoTotal[geoIdx]||0;
   if(total===0||owned/total<CONQUEST_THRESHOLD)return false;
   conqueredSet.add(key);
@@ -4029,7 +4030,8 @@ function checkConquest(geoIdx,claimerIdx){
 function checkConquestReversal(geoIdx,prev){
   const key=geoIdx+":"+prev;
   if(!conqueredSet.has(key))return;
-  const owned=(geoClaimCnt[geoIdx]&&geoClaimCnt[geoIdx][prev])||0;
+  // v64: use combined alliance count — conquest only breaks when whole alliance drops below threshold
+  const owned=_getAllyOwned(geoIdx,prev);
   const total=geoTotal[geoIdx]||0;
   if(total===0||owned/total<CONQUEST_THRESHOLD){conqueredSet.delete(key);eraseFlag(geoIdx);refreshCsel();}
 }
@@ -4956,6 +4958,23 @@ function screenToMap(sx,sy){const r=vp.getBoundingClientRect();return{x:Math.flo
 //   - Small border completes a loop → only the loop interior fills
 const MAX_FILL_PX = 500000; // safety cap
 const CONQUEST_THRESHOLD = 0.7; // v35: was 0.8
+
+// v64: return combined pixel count for claimerIdx + all its alliance partners
+// inside geoIdx.  geoClaimCnt keys are featList indices (numbers).
+function _getAllyOwned(geoIdx, claimerIdx) {
+  const own = (geoClaimCnt[geoIdx] && geoClaimCnt[geoIdx][claimerIdx]) || 0;
+  const claimerId = featList[claimerIdx] && String(featList[claimerIdx].id);
+  if (!claimerId) return own;
+  const ally = _allianceByCountry[claimerId];
+  if (!ally) return own;
+  let sum = own;
+  for (const memberId of ally.countries) {
+    if (String(memberId) === claimerId) continue;
+    const fi = featList.findIndex(f => String(f.id) === String(memberId));
+    if (fi >= 0) sum += (geoClaimCnt[geoIdx] && geoClaimCnt[geoIdx][fi]) || 0;
+  }
+  return sum;
+}
 
 function isWallFill(i){
   if(!landMask[i]) return true;                          // ocean: wall
@@ -9920,6 +9939,27 @@ vp.addEventListener("mousemove",e=>{
           +"<span style='color:#334155;font-size:9px'>───────────────</span><br>";
       }
 
+      // v64: alliance block — show partners for the hovered country
+      if(gi>=0){
+        const _hovId = String(featList[gi].id);
+        const _hovAlly = _allianceByCountry[_hovId];
+        if(_hovAlly && _hovAlly.countries.length > 1){
+          const _partners = _hovAlly.countries
+            .filter(c => String(c) !== _hovId)
+            .map(c => {
+              const fi = featList.findIndex(f => String(f.id) === String(c));
+              return fi >= 0 ? featList[fi] : null;
+            }).filter(Boolean);
+          if(_partners.length){
+            html2 += "<span style='color:#94a3b8;font-size:9px;text-transform:uppercase;letter-spacing:.07em'>+ Allies</span><br>";
+            for(const p of _partners){
+              html2 += flagAny(p.id,1)
+                + "<span style='color:" + p.color + "'>" + p.name + "</span><br>";
+            }
+            html2 += "<span style='color:#334155;font-size:9px'>───────────────</span><br>";
+          }
+        }
+      }
       if(gi>=0){
         const total=geoTotal[gi]||1;
         const gc=geoClaimCnt[gi]||{};

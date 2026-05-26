@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-26-v63';
+const SERVER_VERSION       = '2026-05-26-v64';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1537,8 +1537,8 @@ function _clearMonsterArea(cx, cy, radius) {
     for (const key of [...conqueredSet]) {
       if (!key.startsWith(geo + ':')) continue;
       const ownerId = key.split(':')[1];
-      const ownerOwned = (geoClaimCnt[geo] && geoClaimCnt[geo][ownerId]) || 0;
-      if (ownerOwned / total < CONQUEST_THRESHOLD) {
+      // v64: check combined alliance count — monster damage doesn't break an alliance conquest
+      if (getAllyOwnedCount(geo, ownerId) / total < CONQUEST_THRESHOLD) {
         conqueredSet.delete(key);
         broadcast(JSON.stringify({
           type:        'reversal',
@@ -1851,6 +1851,22 @@ function getAllianceForCountry(countryId) {
     if (alliance.countries.includes(countryId)) return { key, ...alliance };
   }
   return null;
+}
+
+// v64: sum pixel count for countryId + all its alliance partners in a given geo.
+// Used so allied countries share conquest credit (any one member painting pushes
+// the combined total towards the threshold).
+function getAllyOwnedCount(geo, countryId) {
+  const own = geoClaimCnt[geo]?.[String(countryId)] || 0;
+  const ally = getAllianceForCountry(countryId);
+  if (!ally) return own;
+  let sum = own;
+  for (const memberId of ally.countries) {
+    if (String(memberId) !== String(countryId)) {
+      sum += geoClaimCnt[geo]?.[String(memberId)] || 0;
+    }
+  }
+  return sum;
 }
 
 // ── Map state ─────────────────────────────────────────────────────
@@ -2367,7 +2383,8 @@ function applyPixels(pixels, countryId) {
   for (const geo of affected) {
     const total = geoTotal[geo] || 0;
     if (!total) continue;
-    const owned = geoClaimCnt[geo]?.[countryId] || 0;
+    // v64: use combined alliance pixel count so allied countries share conquest credit
+    const owned = getAllyOwnedCount(geo, countryId);
     const key   = geo + ':' + countryId;
     // Skip self-conquest — a country can't conquer itself
     if (countryId === geoToId(geo)) continue;
@@ -2431,7 +2448,9 @@ function applyPixels(pixels, countryId) {
     }
     for (const [cId, cnt] of Object.entries(geoClaimCnt[geo] || {})) {
       const rk = geo + ':' + cId;
-      if (cId !== countryId && conqueredSet.has(rk) && (cnt || 0) / total < CONQUEST_THRESHOLD) {
+      // v64: use combined alliance count for reversal — conquest only breaks when
+      // the whole alliance drops below the threshold, not just one member.
+      if (cId !== countryId && conqueredSet.has(rk) && getAllyOwnedCount(geo, cId) / total < CONQUEST_THRESHOLD) {
         conqueredSet.delete(rk);
         reversals.push({ geoIdx: geo, countryId: cId });
         // Queue a tweet draft for the reversal (liberation)
