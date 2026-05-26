@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-26-v60';
+const SERVER_VERSION       = '2026-05-26-v61';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1342,6 +1342,8 @@ const WORLD_CONQUEST_THRESHOLD = 0.70;
 const WORLD_RESET_COUNTDOWN_MS = 5 * 60 * 1000;
 let _worldConquestActive = false;
 let _worldResetAt = 0;
+// v61: persist the conquest payload so late-joiners and refreshes get the same screen
+let _worldConquestPayload = null;
 
 function _countDistinctConquered() {
   const set = new Set();
@@ -1378,11 +1380,9 @@ function _checkWorldConquest() {
     .slice(0, 5)
     .map(p => ({ username: p.username, points: p.points || 0, avatar: p.avatar, country: p.countryMain }));
   console.log('[v38] WORLD CONQUERED! ratio=' + (ratio*100).toFixed(1) + '% top=' + topCountries.map(c => c.name).join(','));
-  broadcast(JSON.stringify({
-    type:           'world_conquest',
-    conquered, total, topCountries, topPlayers,
-    resetAt:        _worldResetAt,
-  }));
+  // v61: store payload so late-joiners and refreshers get the same screen
+  _worldConquestPayload = { type: 'world_conquest', conquered, total, topCountries, topPlayers, resetAt: _worldResetAt };
+  broadcast(JSON.stringify(_worldConquestPayload));
   emitBotEvent({
     type:        'world_conquest',
     tier:        3,
@@ -1412,6 +1412,7 @@ function _resetWorld() {
   if (typeof _nukeZones !== 'undefined') _nukeZones.length = 0;
   _worldConquestActive = false;
   _worldResetAt = 0;
+  _worldConquestPayload = null; // v61: clear so new sessions don't see stale overlay
   broadcast(JSON.stringify({ type: 'world_reset' }));
   console.log('[v38] World reset complete — broadcasting fresh state');
   try {
@@ -3333,14 +3334,9 @@ const httpServer = http.createServer(async (req, res) => {
     const conquered = _countDistinctConquered();
     const total     = _totalCountries();
     console.log('[Admin] force-win triggered — winner by pixel count:', topCountriesByPx[0]?.name || '?');
-    broadcast(JSON.stringify({
-      type: 'world_conquest',
-      conquered, total,
-      topCountries: topCountriesByPx,
-      topPlayers,
-      resetAt: _worldResetAt,
-      forceWin: true,
-    }));
+    // v61: store payload so late-joiners/refreshers see the same screen
+    _worldConquestPayload = { type: 'world_conquest', conquered, total, topCountries: topCountriesByPx, topPlayers, resetAt: _worldResetAt, forceWin: true };
+    broadcast(JSON.stringify(_worldConquestPayload));
     emitBotEvent({
       type:      'world_conquest',
       tier:       3,
@@ -3871,6 +3867,11 @@ wss.on('connection', (ws, req) => {
           serverVersion: SERVER_VERSION,
           nukeZones: (_pruneServerNukeZones(), _nukeZones.slice()),
         }));
+        // v61: if a world conquest is active, immediately replay it for this client
+        // so refreshers and late-joiners see the conquest screen rather than the map
+        if (_worldConquestActive && _worldConquestPayload) {
+          try { ws.send(JSON.stringify(_worldConquestPayload)); } catch(e) {}
+        }
         broadcastPlayers();
         break;
       }
