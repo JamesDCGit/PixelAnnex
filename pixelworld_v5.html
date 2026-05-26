@@ -3202,7 +3202,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-27-v70';
+const CODE_VERSION = '2026-05-27-v71';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3220,6 +3220,9 @@ if ('serviceWorker' in navigator) {
 }
 
 let claimerCount={},geoClaimCnt={},geoTotal={};
+// v70: per-geo pixel index — avoids O(MAP_PX) scans in runAutoFill
+let geoPixelList = {};   // geoIdx → Int32Array of pixel offsets (built once at load)
+let _autoFillOutside = null; // Uint8Array(MAP_PX), reused across runAutoFill calls
 // ── Pixel inventory ──────────────────────────────────────────────
 const BUCKET_MAX       = 1000;  // max pixels a player can hold
 const REGEN_INTERVAL   = 5;     // seconds between +1 pixel — TEST MODE (production: 60)
@@ -4770,6 +4773,8 @@ async function boot(){
     $('px-count').textContent = totalClaimed.toLocaleString();
     markOutlineDirty();
   }
+  // v70: build per-geo pixel index for runAutoFill (after all pixel removals are done)
+  buildGeoPixelList();
   $("loading").style.display="none";
 // Render landmarks once the map is fully prepared
 if (typeof renderLandmarks === 'function') {
@@ -5117,31 +5122,56 @@ function _buildStrokeWall(buf) {
   return wall;
 }
 
+// v70: Build per-geo pixel index so runAutoFill can iterate only relevant pixels.
+// Called once after all pixel removals (Antarctica, artifacts) are done.
+// O(MAP_PX) build cost; saves O(MAP_PX) per geo per stroke inside runAutoFill.
+function buildGeoPixelList() {
+  geoPixelList = {};
+  const fillIdx = {};
+  // Allocate: one Int32Array per geo, sized to current geoTotal
+  for(const [gStr, cnt] of Object.entries(geoTotal)) {
+    const g = +gStr;
+    if(cnt > 0){ geoPixelList[g] = new Int32Array(cnt); fillIdx[g] = 0; }
+  }
+  // Fill: one pass over MAP_PX
+  for(let i=0;i<MAP_PX;i++){
+    const g=featByPixel[i];
+    if(g>=0 && geoPixelList[g] && fillIdx[g] < geoPixelList[g].length)
+      geoPixelList[g][fillIdx[g]++] = i;
+  }
+  console.log('[GeoIndex] built for', Object.keys(geoPixelList).length, 'geos');
+}
+
 function runAutoFill(){
   if(!bordPixel||strokeGeos.size===0)return;
   const geosToCheck = new Set(strokeGeos);
   strokeGeos = new Set(); // reset for next stroke
+
+  // v70: reuse outside array — avoid 2MB allocation per geo per stroke
+  if(!_autoFillOutside) _autoFillOutside = new Uint8Array(MAP_PX);
+  const outside = _autoFillOutside;
 
   const DX=[-1,1,0,0], DY=[0,0,-1,1];
 
   for(const geo of geosToCheck){
     if(geo<0) continue;
 
-    // BFS seeded from geo-country border pixels (adjacent to outside/other country)
-    // that are accessible (not blocked by own claimed pixels)
-    const outside=new Uint8Array(MAP_PX);
-    const queue=new Int32Array(geoTotal[geo]||100000);
+    // v70: use pre-built geo pixel list — avoids two O(MAP_PX) scans per geo
+    const geoPixArr = geoPixelList[geo];
+    if(!geoPixArr || geoPixArr.length===0) continue;
+
+    // Reset only this geo's pixels in the shared outside array
+    for(let pi=0; pi<geoPixArr.length; pi++) outside[geoPixArr[pi]] = 0;
+
+    const queue=new Int32Array(geoPixArr.length);
     let head=0, tail=0;
 
-    function enqGeo(i){
-      if(outside[i]||isWallFill(i))return;
+    // Seed: only iterate geo's own pixels (O(geoTotal) not O(MAP_PX))
+    for(let pi=0; pi<geoPixArr.length; pi++){
+      const i=geoPixArr[pi];
+      if(bordPixel[i]!==1) continue;
+      if(outside[i]||isWallFill(i)) continue;
       outside[i]=1; queue[tail++]=i;
-    }
-
-    // Seed: scan all pixels of this geo country for border pixels
-    // bordPixel[i]=1 means adjacent to different geo or ocean
-    for(let i=0;i<MAP_PX;i++){
-      if(featByPixel[i]===geo && bordPixel[i]===1) enqGeo(i);
     }
 
     // BFS inward through the geo country
@@ -5157,12 +5187,13 @@ function runAutoFill(){
       }
     }
 
-    // Collect enclosed: in this geo country, not reachable from border, not own pixel.
-    // v70: early-exit once we exceed MAX_FILL_PX to avoid a huge push() scan.
+    // Collect enclosed: iterate geo pixels only (O(geoTotal) not O(MAP_PX))
+    // Early-exit once we exceed MAX_FILL_PX.
     const enclosed=[];
     let encTooLarge = false;
-    for(let i=0;i<MAP_PX;i++){
-      if(featByPixel[i]===geo && !outside[i] && !isWallFill(i) && claimByPixel[i]!==currentIdx){
+    for(let pi=0; pi<geoPixArr.length; pi++){
+      const i=geoPixArr[pi];
+      if(!outside[i] && !isWallFill(i) && claimByPixel[i]!==currentIdx){
         enclosed.push(i);
         if(enclosed.length > MAX_FILL_PX){ encTooLarge = true; break; }
       }
