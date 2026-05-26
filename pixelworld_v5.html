@@ -4932,16 +4932,21 @@ const MAX_FILL_PX = 500000; // safety cap
 const CONQUEST_THRESHOLD = 0.7; // v35: was 0.8
 
 function isWallFill(i){
-  if(!landMask[i]) return true;               // ocean: wall
-  if(claimByPixel[i]===currentIdx) return true; // own pixels: wall
-  // border pixels are NOT walls for seeding (they're the seeds themselves)
-  // enemy pixels are passable (get captured)
+  if(!landMask[i]) return true;                          // ocean: wall
+  if(_strokeWall && _strokeWall[i]) return true;         // v59: only THIS stroke's pixels are walls
+  // Pre-existing own territory is NOT a wall. Without this fix, clicking one pixel
+  // inside an already-owned territory caused the entire interior to be "enclosed"
+  // because the player's own pixels formed a complete ring blocking the BFS.
   return false;
 }
 
 // Track which geo countries the current stroke has painted in
 let strokeGeos = new Set();
 let strokePixelBuffer = [];
+// v59 fix: snapshot of current-stroke pixels used as BFS walls in runAutoFill.
+// Populated synchronously on mouseup/touchend (before strokePixelBuffer is cleared),
+// consumed by the async runAutoFill call.
+let _strokeWall = null;
 
 function runAutoFill(){
   if(!bordPixel||strokeGeos.size===0)return;
@@ -4984,9 +4989,10 @@ function runAutoFill(){
     }
 
     // Collect enclosed: in this geo country, not reachable from border, not own pixel
+    // v59: explicitly exclude own pixels (no longer implicitly excluded via isWallFill)
     const enclosed=[];
     for(let i=0;i<MAP_PX;i++){
-      if(featByPixel[i]===geo && !outside[i] && !isWallFill(i)) enclosed.push(i);
+      if(featByPixel[i]===geo && !outside[i] && !isWallFill(i) && claimByPixel[i]!==currentIdx) enclosed.push(i);
     }
 
     if(enclosed.length===0||enclosed.length>MAX_FILL_PX) continue;
@@ -9898,6 +9904,15 @@ vp.addEventListener("mousemove",e=>{
 });
 window.addEventListener("mouseup",()=>{
   if(isPainting){
+    // v59: build stroke wall BEFORE clearing strokePixelBuffer — runAutoFill is async
+    _strokeWall = null;
+    if (strokePixelBuffer.length > 0) {
+      _strokeWall = new Uint8Array(MAP_PX);
+      for (const p of strokePixelBuffer) {
+        const _si = p.y * MAP_W + p.x;
+        if (_si >= 0 && _si < MAP_PX) _strokeWall[_si] = 1;
+      }
+    }
     setTimeout(runAutoFill, 10);
     // Send the full stroke buffer to the server so it can detect encirclement.
     // (Individual per-pixel strokes don't carry enough info for closed-loop detection.)
@@ -10075,6 +10090,15 @@ vp.addEventListener('touchmove', e => {
 vp.addEventListener('touchend', e => {
   // touchend fires when ANY finger leaves; e.touches has the remaining ones.
   if (_touchMode === 'paint' && isPainting) {
+    // v59: build stroke wall BEFORE clearing strokePixelBuffer — runAutoFill is async
+    _strokeWall = null;
+    if (strokePixelBuffer.length > 0) {
+      _strokeWall = new Uint8Array(MAP_PX);
+      for (const p of strokePixelBuffer) {
+        const _si = p.y * MAP_W + p.x;
+        if (_si >= 0 && _si < MAP_PX) _strokeWall[_si] = 1;
+      }
+    }
     setTimeout(runAutoFill, 0);
     if (strokePixelBuffer.length >= 4 && wsReady) {
       try { ws.send(JSON.stringify({ type:'stroke-end', pixels: strokePixelBuffer.slice() })); } catch (err) {}
