@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-26-v61';
+const SERVER_VERSION       = '2026-05-26-v62';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3295,10 +3295,11 @@ const httpServer = http.createServer(async (req, res) => {
     const activeBots = _activeBotCount();
     res.end(JSON.stringify({
       topCountries,
-      conqueredCount: distinctConquered.size,
+      conqueredCount:  distinctConquered.size,
+      totalCountries:  _totalCountries(), // v62: for "X countries remain" stat
       topPlayers,
-      totalPlayers:  realHumans + activeBots,
-      totalBots:     activeBots,
+      totalPlayers:    realHumans + activeBots,
+      totalBots:       activeBots,
     }));
     return;
   }

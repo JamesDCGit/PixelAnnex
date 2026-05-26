@@ -1459,6 +1459,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
       <div class="ws-cell"><span class="ws-val" id="ws-players">—</span><span class="ws-lbl" data-i18n="hud.players">players</span></div>
       <div class="ws-cell"><span class="ws-val" id="ws-conquered">—</span><span class="ws-lbl" data-i18n="hud.conquered">conquered</span></div>
       <div class="ws-cell"><span class="ws-val" id="ws-alliances">—</span><span class="ws-lbl" data-i18n="hud.alliances">alliances</span></div>
+      <div class="ws-cell"><span class="ws-val" id="ws-remaining">—</span><span class="ws-lbl">countries remain</span></div>
     </div>
     <div id="encircle-banner">
       <span class="enc-icon">🎯</span>
@@ -3110,7 +3111,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-26-v61';
+const CODE_VERSION = '2026-05-26-v62';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5660,13 +5661,17 @@ async function fetchWorldStats() {
   // and the persistent bottom-centre bar with the same data.
   // v39c: use /api/world-state.totalPlayers (humans + active bots) so the bottom
   // panel reflects the world's total activity, not just Discord-logged-in users.
-  let players = 0, alliances = 0, conquered = 0;
+  let players = 0, alliances = 0, conquered = 0, remaining = null, totalCountries = 0;
   try {
     const [ws, al] = await Promise.all([
       fetch('/api/world-state').then(r => r.json()).catch(() => ({})),
       fetch('/api/alliances').then(r => r.json()).catch(() => ({})),
     ]);
-    players   = (ws && typeof ws.totalPlayers === 'number') ? ws.totalPlayers : 0;
+    players        = (ws && typeof ws.totalPlayers   === 'number') ? ws.totalPlayers   : 0;
+    totalCountries = (ws && typeof ws.totalCountries === 'number') ? ws.totalCountries : 0;
+    if (ws && typeof ws.conqueredCount === 'number' && totalCountries > 0) {
+      remaining = Math.max(0, totalCountries - ws.conqueredCount);
+    }
     alliances = (al && al.alliances) ? al.alliances.length : 0;
   } catch (e) { /* silent */ }
   // Conquered count comes from client-side state — the size of conqueredSet
@@ -5677,6 +5682,7 @@ async function fetchWorldStats() {
   const playersStr   = players.toLocaleString();
   const conqueredStr = conquered.toLocaleString();
   const alliancesStr = alliances.toString();
+  const remainingStr = remaining !== null ? remaining.toLocaleString() : '—';
 
   // Update tutorial header stats
   const t1 = document.getElementById('tut-stat-players');
@@ -5690,9 +5696,11 @@ async function fetchWorldStats() {
   const b1 = document.getElementById('ws-players');
   const b2 = document.getElementById('ws-conquered');
   const b3 = document.getElementById('ws-alliances');
+  const b4 = document.getElementById('ws-remaining');
   if (b1) b1.textContent = playersStr;
   if (b2) b2.textContent = conqueredStr;
   if (b3) b3.textContent = alliancesStr;
+  if (b4) b4.textContent = remainingStr;
 }
 // Legacy alias for any leftover callers in tutorial code
 const fetchTutWorldStats = fetchWorldStats;
