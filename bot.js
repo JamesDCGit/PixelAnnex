@@ -637,7 +637,7 @@ async function dissolveAllianceRole(guild, key) {
 }
 
 async function announceAlliance(guild, type, key, countryIds, extra) {
-  const channelName = process.env.ALLIANCE_CHANNEL || process.env.PROMOTION_CHANNEL || 'general';
+  const channelName = process.env.ALLIANCE_CHANNEL || 'alliance-updates';
   const channel = guild.channels.cache.find(c => c.name === channelName && c.isTextBased());
   if (!channel) {
     console.log(`[Alliance] Channel #${channelName} not found — not announced`);
@@ -657,8 +657,16 @@ async function announceAlliance(guild, type, key, countryIds, extra) {
     color = 0x3b82f6; // blue
   } else return;
 
+  // Ping the alliance role (if it exists) so members are notified
+  const roleId = _allianceRoleCache[key];
+  const roleMention = roleId ? '<@&' + roleId + '>' : null;
+
   try {
-    await channel.send({ embeds: [{ color, description }] });
+    await channel.send({
+      content: roleMention || undefined,
+      embeds: [{ color, description }],
+      allowedMentions: roleMention ? { roles: [roleId] } : { parse: [] },
+    });
   } catch (e) {
     console.error('[Alliance] Announce failed:', e.message);
   }
