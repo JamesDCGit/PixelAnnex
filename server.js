@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-26-v59';
+const SERVER_VERSION       = '2026-05-26-v60';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2677,17 +2677,17 @@ function buildGeoIndex() {
   console.log(`[Bot] Geo index built: ${Object.keys(geoPixels).length} countries`);
 }
 
-// Get target pixels for a bot — v58 strategic AI
+// Get target pixels for a bot — v60 strategic AI
 // ─────────────────────────────────────────────
 // Priority:
-//   0. Roaming scout (3% chance) — seed a pixel in a distant large/contested country
+//   0. Roaming scout (1% chance) — seed a pixel in a distant large/contested country
 //   1. Defend        — reclaim enemy pixels inside home territory
 //   2. Strategic attack — pick the highest-scoring neighbouring geo and push into it
 //   3. Expand        — fill unclaimed pixels inside home territory (last resort)
 //
 // Attack scoring per neighbouring geo (higher = more desirable):
-//   • Opportunistic:        +4 if ≥40% already foreign-held, +2 if ≥20%, +1 if ≥5%
-//   • Size-weighted:        small bots get +3/+2/+1 for attacking larger neighbours
+//   • Opportunistic:        +5 if ≥40% already foreign-held, +3 if ≥20%, +1 if ≥5%
+//   • Size-weighted:        bots always prefer large neighbours (max +6 bonus)
 //   • Alliance coordination: +3 if an alliance partner already has pixels there
 const DX4 = [-1,1,0,0], DY4 = [0,0,-1,1];
 function getBotTargets(countryId, limit) {
@@ -2696,8 +2696,8 @@ function getBotTargets(countryId, limit) {
   const homePixels = geoPixels[geoIdx];
   if (!homePixels || homePixels.length === 0) return [];
 
-  // ── 0. Roaming scout — 3% chance to seed in a distant appealing territory ──
-  if (Math.random() < 0.03) {
+  // ── 0. Roaming scout — 1% chance to seed in a distant appealing territory ──
+  if (Math.random() < 0.01) {
     const geoKeys = Object.keys(geoPixels);
     let bestGeo = -1, bestScore = -1;
     // Sample 15 random geos and score them
@@ -2754,7 +2754,7 @@ function getBotTargets(countryId, limit) {
   }
 
   // ── 2. Strategic attack — score all neighbouring geos ────────
-  const homeStable = homeOwned / homeSampleSize >= 0.7;
+  const homeStable = homeOwned / homeSampleSize >= 0.4; // v60: attack even when home is only 40% secured
   if (homeStable && ownerPixels[cidx]) {
     const geoScores    = new Map(); // targetGeoIdx → score
     const geoCandidates = new Map(); // targetGeoIdx → [{x,y}]
@@ -2783,23 +2783,20 @@ function getBotTargets(countryId, limit) {
           const nHomeId  = geoToId(ngeo);
           const nClaims  = geoClaimCnt[ngeo] || {};
 
-          // Opportunistic: pile on contested territories
+          // Opportunistic: pile on contested territories (v60: raised bonuses)
           const foreign = Object.entries(nClaims)
             .filter(([c]) => c !== nHomeId).reduce((s, [, v]) => s + v, 0);
           const contested = foreign / nTotal;
-          if      (contested >= 0.40) score += 4;
-          else if (contested >= 0.20) score += 2;
+          if      (contested >= 0.40) score += 5;
+          else if (contested >= 0.20) score += 3;
           else if (contested >= 0.05) score += 1;
 
-          // Size-weighted: small bots prefer large neighbours
+          // Size-weighted: ALL bots prefer large neighbours (v60: no myShare gate)
           const theirShare = getWorldShare(nHomeId);
-          if (myShare <= 0.005) {
-            if      (theirShare >= 0.05) score += 3;
-            else if (theirShare >= 0.01) score += 1;
-          } else if (myShare <= 0.02) {
-            if      (theirShare >= 0.03) score += 2;
-            else if (theirShare >= 0.01) score += 1;
-          }
+          if      (theirShare >= 0.05)  score += 6;
+          else if (theirShare >= 0.02)  score += 4;
+          else if (theirShare >= 0.01)  score += 2;
+          else if (theirShare >= 0.005) score += 1;
 
           // Alliance coordination: join where allies are already painting
           if (ally) {
@@ -3302,6 +3299,61 @@ const httpServer = http.createServer(async (req, res) => {
       totalPlayers:  realHumans + activeBots,
       totalBots:     activeBots,
     }));
+    return;
+  }
+
+  // ── /api/admin/force-win — end game now, winner by pixel count ─────
+  // Protected by the same TWEETS_ADMIN_SECRET used for the tweet panel.
+  if (url.pathname === '/api/admin/force-win' && req.method === 'POST') {
+    const expected = process.env.TWEETS_ADMIN_SECRET;
+    const key = url.searchParams.get('key') || (req.headers['x-admin-key'] || '');
+    if (!expected || key !== expected) {
+      res.writeHead(expected ? 401 : 503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: expected ? 'unauthorized' : 'admin disabled' }));
+      return;
+    }
+    if (_worldConquestActive) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'world conquest already active' }));
+      return;
+    }
+    // Determine winner by raw pixel count
+    const topCountriesByPx = Object.entries(countryPxCount)
+      .filter(([, cnt]) => cnt > 0)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([cid, px]) => ({ countryId: cid, name: _countryName(cid), conquests: px, pixels: px }));
+    const topPlayers = [...profiles.values()]
+      .filter(p => p.username && p.points > 0 && !p.isBot)
+      .sort((a, b) => (b.points || 0) - (a.points || 0))
+      .slice(0, 5)
+      .map(p => ({ username: p.username, points: p.points || 0, avatar: p.avatar, country: p.countryMain }));
+    _worldConquestActive = true;
+    _worldResetAt = Date.now() + WORLD_RESET_COUNTDOWN_MS;
+    const conquered = _countDistinctConquered();
+    const total     = _totalCountries();
+    console.log('[Admin] force-win triggered — winner by pixel count:', topCountriesByPx[0]?.name || '?');
+    broadcast(JSON.stringify({
+      type: 'world_conquest',
+      conquered, total,
+      topCountries: topCountriesByPx,
+      topPlayers,
+      resetAt: _worldResetAt,
+      forceWin: true,
+    }));
+    emitBotEvent({
+      type:      'world_conquest',
+      tier:       3,
+      conquered, total,
+      topCountries: topCountriesByPx,
+      topPlayers,
+      timestamp:  Date.now(),
+      sassyText:  '🏆 GAME OVER (forced)! Winner by pixel count: ' + (topCountriesByPx[0]?.name || '?') + '. Resetting in 5 minutes.',
+      forceWin:  true,
+    });
+    setTimeout(_resetWorld, WORLD_RESET_COUNTDOWN_MS);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, winner: topCountriesByPx[0] || null }));
     return;
   }
 
@@ -3892,8 +3944,19 @@ wss.on('connection', (ws, req) => {
         if (msg.pixels.length < 4 || msg.pixels.length > 5000) return;
         const enc = detectEncirclement(msg.pixels, player.countryId);
         if (!enc) return;
-        const encApplied = applyPixels(enc.enclosed, player.countryId);
-        if (encApplied.changed.length) queueDelta(encApplied.changed);
+        const { changed: encChanged, conquests: encConquests, reversals: encReversals } =
+          applyPixels(enc.enclosed, player.countryId);
+        if (encChanged.length) queueDelta(encChanged);
+        // v60: broadcast any conquest/reversal triggered by encirclement
+        encConquests.forEach(c => broadcast(JSON.stringify({ type: 'conquest', ...c })));
+        encReversals.forEach(r => broadcast(JSON.stringify({ type: 'reversal', ...r })));
+        if (player.discordId && encConquests.length) {
+          updateProfileXP(player.discordId, encConquests.length * 50);
+          const _ep = getProfile(player.discordId);
+          _ep.conquestsMade += encConquests.length;
+          _ep.points        += encConquests.length * 50;
+          markProfilesDirty();
+        }
         const bonus = getEncircleBonus(enc.count);
         encircleBonuses.set(String(player.countryId), {
           mult:      bonus.mult,

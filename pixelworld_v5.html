@@ -1531,7 +1531,32 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   </div><!-- /viewport -->
   <div id="tip"><div id="tip-name"></div><div id="tip-sub"></div></div>
 
-<!-- debug-panel removed in v27 -->
+<!-- v60: Admin debug panel — toggle with Ctrl+Shift+D -->
+<div id="admin-debug-panel" style="display:none;position:fixed;bottom:70px;right:16px;z-index:9999;
+  background:#0d1117;border:1px solid rgba(239,68,68,.5);border-radius:8px;
+  padding:12px 16px;min-width:260px;font-family:'Courier New',monospace;font-size:12px;color:#e2e8f0;
+  box-shadow:0 4px 24px rgba(0,0,0,.7);">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+    <span style="color:#f87171;font-weight:700;letter-spacing:.06em;">🔧 ADMIN DEBUG</span>
+    <span id="admin-debug-close" style="cursor:pointer;color:#94a3b8;font-size:14px;padding:0 4px;" title="Close (Ctrl+Shift+D)">✕</span>
+  </div>
+  <div style="margin-bottom:8px;">
+    <label style="color:#94a3b8;font-size:10px;display:block;margin-bottom:4px;">ADMIN KEY</label>
+    <input id="admin-key-input" type="password" placeholder="TWEETS_ADMIN_SECRET"
+      style="width:100%;box-sizing:border-box;background:#1e293b;border:1px solid #334155;
+      border-radius:4px;color:#e2e8f0;padding:5px 8px;font-size:11px;font-family:inherit;"/>
+  </div>
+  <button id="btn-force-win"
+    style="width:100%;padding:8px;background:linear-gradient(90deg,#7f1d1d,#991b1b);
+    border:1px solid rgba(239,68,68,.6);border-radius:5px;color:#fca5a5;font-weight:700;
+    font-size:12px;cursor:pointer;letter-spacing:.05em;margin-bottom:6px;">
+    🏆 END GAME NOW (by pixel count)
+  </button>
+  <div id="admin-debug-status" style="color:#94a3b8;font-size:10px;min-height:14px;text-align:center;"></div>
+  <div style="color:#475569;font-size:9px;margin-top:8px;text-align:center;">
+    Ctrl+Shift+D to toggle · winner = highest pixel count
+  </div>
+</div>
 
   </div><!-- /main -->
 </div>
@@ -3085,7 +3110,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-26-v59';
+const CODE_VERSION = '2026-05-26-v60';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10168,6 +10193,58 @@ function mkNoise(pm){
   const fd=t=>t*t*t*(t*(t*6-15)+10),lp=(a,b,t)=>a+t*(b-a),gr=(h,x,y)=>{switch(h&3){case 0:return x+y;case 1:return -x+y;case 2:return x-y;default:return -x-y;}};
   return(x,y)=>{const X=Math.floor(x)&255,Y=Math.floor(y)&255;x-=Math.floor(x);y-=Math.floor(y);const u=fd(x),v=fd(y),a=pm[X]+Y,b=pm[X+1]+Y;return lp(lp(gr(pm[a],x,y),gr(pm[b],x-1,y),u),lp(gr(pm[a+1],x,y-1),gr(pm[b+1],x-1,y-1),u),v);};
 }
+
+// ── v60: Admin debug panel ────────────────────────────────────────
+(function(){
+  const panel   = document.getElementById('admin-debug-panel');
+  const closeBtn= document.getElementById('admin-debug-close');
+  const keyInput= document.getElementById('admin-key-input');
+  const fwBtn   = document.getElementById('btn-force-win');
+  const status  = document.getElementById('admin-debug-status');
+
+  function togglePanel(){
+    const open = panel.style.display !== 'none';
+    panel.style.display = open ? 'none' : 'block';
+    if (!open) {
+      // Restore saved key
+      const saved = localStorage.getItem('pa_admin_key') || '';
+      keyInput.value = saved;
+      status.textContent = '';
+      keyInput.focus();
+    }
+  }
+  if(closeBtn) closeBtn.addEventListener('click', togglePanel);
+
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'D') { e.preventDefault(); togglePanel(); }
+  });
+
+  if(fwBtn) fwBtn.addEventListener('click', () => {
+    const key = keyInput.value.trim();
+    if (!key) { status.style.color='#f87171'; status.textContent = '⚠ Enter admin key first'; return; }
+    localStorage.setItem('pa_admin_key', key);
+    fwBtn.disabled = true;
+    status.style.color = '#94a3b8';
+    status.textContent = 'Sending…';
+    fetch('/api/admin/force-win?key=' + encodeURIComponent(key), { method: 'POST' })
+      .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+      .then(({ ok, data }) => {
+        if (ok) {
+          status.style.color = '#86efac';
+          status.textContent = '✓ Done — winner: ' + (data.winner ? data.winner.name : '?');
+        } else {
+          status.style.color = '#f87171';
+          status.textContent = '✗ ' + (data.error || 'error');
+          fwBtn.disabled = false;
+        }
+      })
+      .catch(err => {
+        status.style.color = '#f87171';
+        status.textContent = '✗ Network error';
+        fwBtn.disabled = false;
+      });
+  });
+})();
 
 // ── Start — no external library loading needed! ───────────────────
 (async()=>{
