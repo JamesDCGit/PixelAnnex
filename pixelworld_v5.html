@@ -3111,7 +3111,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-26-v62';
+const CODE_VERSION = '2026-05-26-v63';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4974,6 +4974,38 @@ let strokePixelBuffer = [];
 // consumed by the async runAutoFill call.
 let _strokeWall = null;
 
+// v63: build stroke wall with Bresenham interpolation so fast mouse-drags don't
+// leave gaps that let the BFS flood through, causing encirclement to silently fail.
+// Only interpolates gaps ≤30px (larger jumps are likely non-consecutive positions).
+function _buildStrokeWall(buf) {
+  if (!buf || buf.length === 0) return null;
+  const wall = new Uint8Array(MAP_PX);
+  for (let i = 0; i < buf.length; i++) {
+    const p = buf[i];
+    if (p.x >= 0 && p.x < MAP_W && p.y >= 0 && p.y < MAP_H)
+      wall[p.y * MAP_W + p.x] = 1;
+    if (i > 0) {
+      const prev = buf[i - 1];
+      const dx = Math.abs(p.x - prev.x), dy = Math.abs(p.y - prev.y);
+      if ((dx > 1 || dy > 1) && dx <= 30 && dy <= 30) {
+        // Bresenham line — fills the gap between prev and current point
+        let x0 = prev.x, y0 = prev.y, x1 = p.x, y1 = p.y;
+        const steep = dy > dx;
+        if (steep)  { let t=x0;x0=y0;y0=t; t=x1;x1=y1;y1=t; }
+        if (x0>x1)  { let t=x0;x0=x1;x1=t; t=y0;y0=y1;y1=t; }
+        const dxB=x1-x0, dyB=Math.abs(y1-y0);
+        let err=dxB>>1, y=y0, ystep=y0<y1?1:-1;
+        for (let x=x0; x<=x1; x++) {
+          const bx=steep?y:x, by=steep?x:y;
+          if (bx>=0&&bx<MAP_W&&by>=0&&by<MAP_H) wall[by*MAP_W+bx]=1;
+          err-=dyB; if(err<0){y+=ystep;err+=dxB;}
+        }
+      }
+    }
+  }
+  return wall;
+}
+
 function runAutoFill(){
   if(!bordPixel||strokeGeos.size===0)return;
   const geosToCheck = new Set(strokeGeos);
@@ -5060,9 +5092,7 @@ function runAutoFill(){
 
   $("px-count").textContent=totalClaimed.toLocaleString();
   scheduleLegend();
-  // Check conquest for all geo countries affected by this fill
-  const affectedGeos=new Set(enclosed.map(gi=>featByPixel[gi]).filter(g=>g>=0));
-  for(const geoIdx of affectedGeos) checkConquest(geoIdx,currentIdx);
+  // (checkConquest is already called per-geo inside the loop above)
 }
 
 
@@ -9937,15 +9967,8 @@ vp.addEventListener("mousemove",e=>{
 });
 window.addEventListener("mouseup",()=>{
   if(isPainting){
-    // v59: build stroke wall BEFORE clearing strokePixelBuffer — runAutoFill is async
-    _strokeWall = null;
-    if (strokePixelBuffer.length > 0) {
-      _strokeWall = new Uint8Array(MAP_PX);
-      for (const p of strokePixelBuffer) {
-        const _si = p.y * MAP_W + p.x;
-        if (_si >= 0 && _si < MAP_PX) _strokeWall[_si] = 1;
-      }
-    }
+    // v63: build interpolated stroke wall before clearing buffer (runAutoFill is async)
+    _strokeWall = _buildStrokeWall(strokePixelBuffer);
     setTimeout(runAutoFill, 10);
     // Send the full stroke buffer to the server so it can detect encirclement.
     // (Individual per-pixel strokes don't carry enough info for closed-loop detection.)
@@ -10123,15 +10146,8 @@ vp.addEventListener('touchmove', e => {
 vp.addEventListener('touchend', e => {
   // touchend fires when ANY finger leaves; e.touches has the remaining ones.
   if (_touchMode === 'paint' && isPainting) {
-    // v59: build stroke wall BEFORE clearing strokePixelBuffer — runAutoFill is async
-    _strokeWall = null;
-    if (strokePixelBuffer.length > 0) {
-      _strokeWall = new Uint8Array(MAP_PX);
-      for (const p of strokePixelBuffer) {
-        const _si = p.y * MAP_W + p.x;
-        if (_si >= 0 && _si < MAP_PX) _strokeWall[_si] = 1;
-      }
-    }
+    // v63: build interpolated stroke wall before clearing buffer (runAutoFill is async)
+    _strokeWall = _buildStrokeWall(strokePixelBuffer);
     setTimeout(runAutoFill, 0);
     if (strokePixelBuffer.length >= 4 && wsReady) {
       try { ws.send(JSON.stringify({ type:'stroke-end', pixels: strokePixelBuffer.slice() })); } catch (err) {}
