@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-26-v64';
+const SERVER_VERSION       = '2026-05-26-v65';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -281,6 +281,27 @@ const SASS_COMMUNITY = [
   () => `🚨 Conquering the world, one pixel at a time. Join the Discord for war updates + alliance plays: ${DISCORD_INVITE} · ${GAME_URL} #PixelAnnex`,
   () => `🎖️ Climb the ranks. Drop nukes. Form alliances. PixelAnnex is live: ${GAME_URL} · Community: ${DISCORD_INVITE} #PixelAnnex`,
   () => `🗺️ Today on PixelAnnex: same map, fresh chaos. ${GAME_URL} · ${DISCORD_INVITE} #PixelAnnex`,
+];
+
+// WORLD STATUS REPORT — {leader, leaderPx, conquered, allianceLine}
+const SASS_STATUS_REPORT = [
+  v => `📊 Standings: ${v.leader} leads with ${v.leaderPx.toLocaleString()} pixels · ${v.conquered} countries conquered · ${v.allianceLine}${GAME_URL} #PixelAnnex`,
+  v => `🌍 World intel: ${v.leader} on top (${v.leaderPx.toLocaleString()} px). ${v.allianceLine}${v.conquered} nations under occupation. ${GAME_URL} #PixelAnnex`,
+  v => `🗺️ Pixel report: ${v.leader} controls the board (${v.leaderPx.toLocaleString()} px). ${v.allianceLine}${v.conquered} countries conquered. ${GAME_URL} #PixelAnnex`,
+];
+
+// TOP PLAYERS 24H — {lines}
+const SASS_TOP_PLAYERS = [
+  v => `🏆 Most active players (24h): ${v.lines}. Top spot is up for grabs: ${GAME_URL} #PixelAnnex`,
+  v => `🎖️ Pixel warriors (last 24h): ${v.lines}. ${GAME_URL} #PixelAnnex`,
+  v => `🔥 24h leaderboard: ${v.lines}. Get in the game: ${GAME_URL} #PixelAnnex`,
+];
+
+// MOST ACTIVE COUNTRIES 24H — {lines}
+const SASS_ACTIVE_COUNTRIES = [
+  v => `⚔️ Most active countries (24h): ${v.lines}. Join the fight: ${GAME_URL} #PixelAnnex`,
+  v => `🎨 Hottest territories today: ${v.lines}. Where does your country rank? ${GAME_URL} #PixelAnnex`,
+  v => `🌍 Activity report: ${v.lines}. ${GAME_URL} #PixelAnnex`,
 ];
 
 // NEWS variants — {country} {headline}
@@ -564,6 +585,182 @@ function scheduleDailySummary() {
 
 loadTweetQueue();
 scheduleDailySummary();
+
+// ── v65: Rolling 24h activity tracker (hourly buckets) ───────────
+// Tracks pixels painted by human players per-player and per-country.
+// Used for status reports: top players (24h), most active countries (24h).
+const _playerHourly  = new Map(); // discordId → Map(hourKey → count)
+const _countryHourly = new Map(); // countryId → Map(hourKey → count)
+
+function _recordActivity(discordId, countryId, pixelCount) {
+  const hour = Math.floor(Date.now() / 3600000);
+  const addBucket = (map, key) => {
+    if (!map.has(key)) map.set(key, new Map());
+    const b = map.get(key);
+    b.set(hour, (b.get(hour) || 0) + pixelCount);
+    for (const [h] of b) if (h < hour - 25) b.delete(h); // keep 25h
+  };
+  if (discordId) addBucket(_playerHourly, discordId);
+  if (countryId) addBucket(_countryHourly, String(countryId));
+}
+
+function _get24hCount(buckets) {
+  const cutoff = Math.floor(Date.now() / 3600000) - 24;
+  let sum = 0;
+  for (const [h, c] of buckets) if (h > cutoff) sum += c;
+  return sum;
+}
+
+// ── v65: World status report ─────────────────────────────────────
+// Builds a snapshot of current world standings for tweets + Discord.
+function _buildWorldStatus() {
+  // Top countries by current pixel count
+  const topByPx = Object.entries(countryPxCount)
+    .filter(([, c]) => c > 0)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 10)
+    .map(([id, px]) => ({ id, name: _countryName(id), px }));
+
+  // Top alliances by combined pixel count
+  const allianceRanks = [];
+  for (const [key, ally] of alliances) {
+    const totalPx = ally.countries.reduce((s, c) => s + (countryPxCount[String(c)] || 0), 0);
+    if (totalPx > 0) allianceRanks.push({ key, names: ally.countries.map(c => _countryName(c)), totalPx });
+  }
+  allianceRanks.sort((a, b) => b.totalPx - a.totalPx);
+
+  // Conquests per country + total countries under foreign rule
+  const conquestsByCountry = {};
+  const conqueredGeos = new Set();
+  for (const key of conqueredSet) {
+    const parts = String(key).split(':');
+    const aid = parts[1];
+    if (aid) conquestsByCountry[aid] = (conquestsByCountry[aid] || 0) + 1;
+    if (parts[0]) conqueredGeos.add(parts[0]);
+  }
+  const topByConquests = Object.entries(conquestsByCountry)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([id, n]) => ({ id, name: _countryName(id), conquests: n }));
+
+  // Top players 24h (human players with discordId)
+  const topPlayers24h = [..._playerHourly.entries()]
+    .map(([dId, buckets]) => {
+      const p = profiles.get(dId);
+      return { username: p?.username || '?', px24h: _get24hCount(buckets) };
+    })
+    .filter(e => e.px24h > 0 && e.username !== '?')
+    .sort((a, b) => b.px24h - a.px24h)
+    .slice(0, 10);
+
+  // Most active countries 24h (by human player painting activity)
+  const topCountries24h = [..._countryHourly.entries()]
+    .map(([cId, buckets]) => ({ id: cId, name: _countryName(cId), px24h: _get24hCount(buckets) }))
+    .filter(e => e.px24h > 0)
+    .sort((a, b) => b.px24h - a.px24h)
+    .slice(0, 5);
+
+  return { topByPx, allianceRanks, topByConquests, topPlayers24h, topCountries24h, totalConquered: conqueredGeos.size };
+}
+
+// Emit a full standings report (country leaders + alliance leaders + conquests)
+function _emitStatusReport() {
+  const s = _buildWorldStatus();
+  if (!s.topByPx.length) return;
+
+  const leader  = s.topByPx[0];
+  const topAlly = s.allianceRanks[0];
+  const allianceLine = topAlly
+    ? `Alliance lead: ${topAlly.names.slice(0, 3).join('+')}${topAlly.names.length > 3 ? '+' + (topAlly.names.length - 3) + ' more' : ''} (${topAlly.totalPx.toLocaleString()} px combined). `
+    : '';
+
+  // Discord — rich multi-section embed
+  const topPxLines      = s.topByPx.slice(0, 5).map((c, i) => `${i + 1}. **${c.name}** — ${c.px.toLocaleString()} px`).join('\n');
+  const conquestLines   = s.topByConquests.slice(0, 3).map((c, i) => `${i + 1}. **${c.name}** — ${c.conquests} countries`).join('\n');
+  const allyBlock       = topAlly ? `\n🤝 **Alliance Leaders**\n${topAlly.names.slice(0, 4).join(' + ')} — ${topAlly.totalPx.toLocaleString()} px combined` : '';
+  const discordText = [
+    `🗺️ **Top Countries by Pixels**\n${topPxLines}`,
+    allyBlock,
+    conquestLines ? `\n⚔️ **Top Conquerors**\n${conquestLines}` : '',
+    `\n${s.totalConquered} countries currently under foreign rule · [Play now](${GAME_URL})`,
+  ].filter(Boolean).join('');
+
+  emitBotEvent({ type: 'world_status_report', tier: 1, timestamp: Date.now(), sassyText: discordText });
+
+  // Tweet — compact version
+  pushTweetDraft({
+    type:      'status_report',
+    text:      _pickSassy(SASS_STATUS_REPORT)({ leader: leader.name, leaderPx: leader.px, conquered: s.totalConquered, allianceLine }),
+    dedupeKey: 'status_report:' + Math.floor(Date.now() / (6 * 3600000)),
+  });
+}
+
+// Emit an activity report (top players 24h + most active countries 24h)
+function _emitActiveReport() {
+  const s = _buildWorldStatus();
+
+  // Tweet — top players
+  if (s.topPlayers24h.length >= 2) {
+    const lines = s.topPlayers24h.slice(0, 5)
+      .map((p, i) => `${i + 1}. ${p.username} (${p.px24h.toLocaleString()} px)`).join(' · ');
+    pushTweetDraft({
+      type:      'top_players',
+      text:      _pickSassy(SASS_TOP_PLAYERS)({ lines }),
+      dedupeKey: 'top_players:' + Math.floor(Date.now() / (6 * 3600000)),
+    });
+  }
+
+  // Tweet — most active countries
+  if (s.topCountries24h.length >= 2) {
+    const lines = s.topCountries24h.slice(0, 5)
+      .map((c, i) => `${i + 1}. ${c.name} (${c.px24h.toLocaleString()} px)`).join(' · ');
+    pushTweetDraft({
+      type:      'active_countries',
+      text:      _pickSassy(SASS_ACTIVE_COUNTRIES)({ lines }),
+      dedupeKey: 'active_countries:' + Math.floor(Date.now() / (6 * 3600000)),
+    });
+  }
+
+  // Discord — combined active report
+  const playerLines  = s.topPlayers24h.slice(0, 10).map((p, i) => `${i + 1}. **${p.username}** — ${p.px24h.toLocaleString()} px`).join('\n');
+  const countryLines = s.topCountries24h.slice(0, 5).map((c, i) => `${i + 1}. **${c.name}** — ${c.px24h.toLocaleString()} px`).join('\n');
+  if (!playerLines && !countryLines) return;
+
+  const discordText = [
+    playerLines  ? `🏆 **Most Active Players (24h)**\n${playerLines}` : '',
+    countryLines ? `\n🎨 **Most Active Countries (24h)**\n${countryLines}` : '',
+    `\n[Play at PixelAnnex](${GAME_URL})`,
+  ].filter(Boolean).join('');
+
+  emitBotEvent({ type: 'world_status_report', tier: 1, timestamp: Date.now(), sassyText: discordText });
+}
+
+// Fire at 0:00, 6:00, and 18:00 UTC (12:00 is the existing daily summary)
+function scheduleStatusReports() {
+  const REPORT_HOURS = [0, 6, 18]; // UTC hours
+
+  function _scheduleNext() {
+    const now      = new Date();
+    const nowHour  = now.getUTCHours() + now.getUTCMinutes() / 60;
+    let   nextHour = REPORT_HOURS.find(h => h > nowHour) ?? (REPORT_HOURS[0] + 24);
+    const next     = new Date(now);
+    if (nextHour >= 24) { next.setUTCDate(next.getUTCDate() + 1); nextHour -= 24; }
+    next.setUTCHours(nextHour, 5, 0, 0); // :05 past the hour to avoid collisions
+    if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+
+    setTimeout(() => {
+      const h = new Date().getUTCHours();
+      if (h === 6) _emitActiveReport();  // 6:00 UTC — player/country activity
+      else         _emitStatusReport();  // 0:00 & 18:00 UTC — standings
+      _scheduleNext();
+    }, next - now);
+    console.log('[Status] Next report at', next.toISOString());
+  }
+
+  _scheduleNext();
+}
+
+scheduleStatusReports();
 
 // ── v37: Daily news scraper ──────────────────────────────────────
 // Pulls BBC World News RSS once per day, matches headlines against game
@@ -1288,8 +1485,14 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
   entry.attackers.set(String(attackerCountryId), now);
   if (entry.attackers.size >= MULTI_ATTACK_THRESHOLD &&
       now - entry.lastNotifyAt > MULTI_ATTACK_COOLDOWN_MS) {
-    entry.lastNotifyAt = now;
     const attackerIds = [...entry.attackers.keys()];
+    // v65: only emit if attackers have COLLECTIVELY claimed >5% of the defender's
+    // territory — filters out momentary pings and ensures this is a sustained assault.
+    const defTotal = geoTotal[defenderGeoIdx] || 1;
+    const claimedByAttackers = attackerIds.reduce(
+      (sum, aid) => sum + (geoClaimCnt[defenderGeoIdx]?.[aid] || 0), 0);
+    if (claimedByAttackers / defTotal < 0.05) return;
+    entry.lastNotifyAt = now;
     const defenderId = geoToId(defenderGeoIdx);
     const _sassyMulti = _pickSassy(SASS_MULTI)({
       n:   attackerIds.length,
@@ -3934,6 +4137,8 @@ wss.on('connection', (ws, req) => {
           profile.points       += changed.length;
           profile.pixelsPlaced += changed.length;
           profile.lastSeen     =  Date.now();
+          // v65: track 24h activity for status reports
+          _recordActivity(player.discordId, player.countryId, changed.length);
           // Per-country pixel painting count
           for (const px of changed) {
             const geo = geoAtPixel[px.y * MAP_W + px.x];

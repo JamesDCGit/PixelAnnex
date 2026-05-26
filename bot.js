@@ -904,6 +904,12 @@ async function postWarEvent(guild, event) {
       color   = 0xfbbf24;
       break;
 
+    case 'world_status_report':
+      title   = '📊 World Status Update';
+      content = event.sassyText || 'Current world standings.';
+      color   = 0x3b82f6; // blue
+      break;
+
     default:
       return;
   }
@@ -986,7 +992,8 @@ function handleGameEvent(event) {
     case 'war_siege_start':
     case 'war_siege_end':
     case 'war_bomb':
-    case 'monster_event':   // v40
+    case 'monster_event':       // v40
+    case 'world_status_report': // v65: periodic standings + activity reports
       queueWarEvent(event);
       break;
   }
