@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-26-v58';
+const SERVER_VERSION       = '2026-05-26-v59';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2545,8 +2545,9 @@ function detectEncirclement(strokePixels, countryId) {
     const li = ly * bw + lx;
     if (visited[li]) return;
     if (wall[li]) return;
-    const gi = (minY + ly) * MAP_W + (minX + lx);
-    if (claimByPixel[gi] === cidx) return; // our existing territory also blocks
+    // v59 fix: do NOT treat existing own pixels as walls — only the current
+    // stroke forms the enclosure boundary. Without this, clicking a single
+    // pixel inside already-owned territory claimed the entire interior.
     visited[li] = 1;
     queue.push(li);
   };
@@ -2563,8 +2564,7 @@ function detectEncirclement(strokePixels, countryId) {
       const nli = ny * bw + nx;
       if (visited[nli]) continue;
       if (wall[nli]) continue;
-      const ngi = (minY + ny) * MAP_W + (minX + nx);
-      if (claimByPixel[ngi] === cidx) continue;
+      // v59: own pixels are not walls — only stroke walls seal the loop
       visited[nli] = 1;
       queue.push(nli);
     }
