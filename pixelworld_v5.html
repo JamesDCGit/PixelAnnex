@@ -2698,52 +2698,62 @@ function switchLegTab(panel) {
   if (panel === 'conquests') loadLegConquests();
 }
 
-// v66: Load conquests into territory panel tab
-async function loadLegConquests() {
+// v69: Load conquests from client-side placedFlags so count always matches visual flags
+function loadLegConquests() {
   const el = document.getElementById('leg-conquests-content');
   if (!el) return;
-  el.innerHTML = '<span class="leg-cnt">Loading…</span>';
-  try {
-    const res = await fetch('/api/stats/conquests');
-    const data = await res.json();
-    if (!data.conquests || data.conquests.length === 0) {
-      el.innerHTML = '<div class="lb-empty">No conquests yet ⚔️</div>';
-      return;
-    }
-    el.innerHTML = '';
-    const rankColors = ['#fbbf24','#cbd5e1','#d97706'];
-    data.conquests.forEach((c, i) => {
-      const fi = featList.findIndex(f => String(f.id) === String(c.countryId));
-      const feat = fi >= 0 ? featList[fi] : null;
-      const row = document.createElement('div');
-      row.className = 'leg-row';
-      if (feat) {
-        const flg = createFlagEl(feat.id, 1);
-        if (flg) row.appendChild(flg);
-        const dot = document.createElement('div');
-        dot.className = 'leg-dot';
-        dot.style.cssText = 'background:' + feat.color + ';box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4)';
-        row.appendChild(dot);
-      }
-      const nameSpan = document.createElement('span');
-      nameSpan.style.color = feat ? feat.color : '#e2e8f0';
-      nameSpan.textContent = c.name;
-      row.appendChild(nameSpan);
-      const cntSpan = document.createElement('span');
-      cntSpan.className = 'leg-pct';
-      cntSpan.style.color = i < 3 ? rankColors[i] : '#64748b';
-      cntSpan.textContent = '⚔️ ' + c.count;
-      cntSpan.title = c.count + ' conquest' + (c.count === 1 ? '' : 's');
-      row.appendChild(cntSpan);
-      el.appendChild(row);
-    });
-    const totalEl = document.createElement('div');
-    totalEl.style.cssText = 'font-size:9px;color:#334155;text-align:center;margin-top:5px;';
-    totalEl.textContent = data.total + ' conquest' + (data.total === 1 ? '' : 's') + ' active';
-    el.appendChild(totalEl);
-  } catch(e) {
-    el.innerHTML = '<span class="lb-empty">Load failed</span>';
+
+  // Tally conquests by attacker country (claimerIdx → count)
+  const tally = {}; // claimerIdx → count
+  for (const { claimerIdx } of Object.values(placedFlags)) {
+    if (claimerIdx == null || claimerIdx < 0) continue;
+    tally[claimerIdx] = (tally[claimerIdx] || 0) + 1;
   }
+
+  const entries = Object.entries(tally); // [[claimerIdx, count], ...]
+  if (entries.length === 0) {
+    el.innerHTML = '<div class="lb-empty">No conquests yet ⚔️</div>';
+    return;
+  }
+
+  // Sort descending by count, cap at top 20
+  entries.sort((a, b) => b[1] - a[1]);
+  const top = entries.slice(0, 20);
+  const total = entries.reduce((s, [, c]) => s + c, 0);
+
+  el.innerHTML = '';
+  const rankColors = ['#fbbf24','#cbd5e1','#d97706'];
+
+  top.forEach(([idxStr, count], i) => {
+    const claimerIdx = +idxStr;
+    const feat = featList[claimerIdx] || null;
+    const row = document.createElement('div');
+    row.className = 'leg-row';
+    if (feat) {
+      const flg = createFlagEl(feat.id, 1);
+      if (flg) row.appendChild(flg);
+      const dot = document.createElement('div');
+      dot.className = 'leg-dot';
+      dot.style.cssText = 'background:' + feat.color + ';box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4)';
+      row.appendChild(dot);
+    }
+    const nameSpan = document.createElement('span');
+    nameSpan.style.color = feat ? feat.color : '#e2e8f0';
+    nameSpan.textContent = feat ? feat.name : ('Player ' + claimerIdx);
+    row.appendChild(nameSpan);
+    const cntSpan = document.createElement('span');
+    cntSpan.className = 'leg-pct';
+    cntSpan.style.color = i < 3 ? rankColors[i] : '#64748b';
+    cntSpan.textContent = '⚔️ ' + count;
+    cntSpan.title = count + ' conquest' + (count === 1 ? '' : 's');
+    row.appendChild(cntSpan);
+    el.appendChild(row);
+  });
+
+  const totalEl = document.createElement('div');
+  totalEl.style.cssText = 'font-size:9px;color:#334155;text-align:center;margin-top:5px;';
+  totalEl.textContent = total + ' conquest' + (total === 1 ? '' : 's') + ' active';
+  el.appendChild(totalEl);
 }
 
 // Audio HUD collapse: tap to expand/collapse on mobile
@@ -3192,7 +3202,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-26-v68';
+const CODE_VERSION = '2026-05-27-v69';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
