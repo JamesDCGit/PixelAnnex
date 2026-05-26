@@ -41,10 +41,14 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #retry-btn{display:none;background:#162035;border:1px solid rgba(255,255,255,0.15);color:#93c5fd;padding:6px 16px;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit}
 #retry-btn:hover{background:#1e2e4a}
 .hud{position:absolute;background:rgba(7,13,26,.9);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:9px 12px;}
-#legend{bottom:12px;left:12px;max-width:200px;max-height:260px;overflow-y:auto}
-#legend::-webkit-scrollbar{width:6px}
-#legend::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:3px}
-#legend h3{font-size:9px;color:#334155;letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px}
+#legend{bottom:12px;left:12px;max-width:200px;max-height:260px;overflow-y:auto;overflow-x:hidden}
+#legend::-webkit-scrollbar{width:6px;height:6px}
+#legend::-webkit-scrollbar-thumb{background:#2e5a8a;border-radius:3px}
+/* Territory panel tab bar — h3 becomes the tab strip */
+#legend h3{display:flex;gap:0;padding-bottom:5px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.07);font-size:9px;color:#334155;letter-spacing:.08em;text-transform:uppercase}
+.leg-tab{flex:1;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-6px;color:#475569;font-family:inherit;font-size:9px;letter-spacing:.07em;text-transform:uppercase;padding:0 2px 5px;cursor:pointer;transition:color .15s,border-color .15s;white-space:nowrap;text-align:left;}
+.leg-tab.active{color:#93c5fd;border-bottom-color:#3b82f6;}
+.leg-tab:hover:not(.active){color:#94a3b8;}
 .leg-row{display:flex;align-items:center;gap:5px;margin-bottom:3px;font-size:10px;color:#64748b;white-space:nowrap}
 .leg-pct{margin-left:auto;color:#22c55e;font-size:10px;font-weight:600;padding-left:4px;}
 .leg-cnt{color:#475569;font-size:10px;}
@@ -804,15 +808,18 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   #legend h3 {
     display: flex; align-items: center; justify-content: center;
     width: 44px; height: 44px;
-    margin: 0;
+    margin: 0; padding-bottom: 0; border-bottom: none;
     font-size: 16px;
   }
   #legend.expanded h3 {
     width: auto; height: auto; justify-content: flex-start;
-    margin-bottom: 7px; font-size: 9px;
+    margin-bottom: 6px; font-size: 9px;
+    padding-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,0.07);
   }
   /* Hide legend content unless expanded; show emoji icon when collapsed */
-  #legend:not(.expanded) #leg-items { display: none; }
+  #legend:not(.expanded) #leg-panel-territory,
+  #legend:not(.expanded) #leg-panel-conquests { display: none; }
+  #legend:not(.expanded) #server-status { display: none; }
   #legend:not(.expanded) h3::before { content: '🗺️'; }
   #legend:not(.expanded) h3 { text-indent: -9999px; }
   #legend:not(.expanded) h3::before { text-indent: 0; display: block; }
@@ -1519,14 +1526,25 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   <h3><span>Discord Leaderboard</span><span class="lb-count" id="lb-count">0 players</span></h3>
   <div id="lb-items" class="lb-empty">Loading…</div>
 </div>
-<div class="hud" id="legend"><h3 data-i18n="hud.territory">Territory</h3><div id="leg-items"></div>
-    <div id="server-status" style="margin-top:6px;padding-top:6px;border-top:1px solid #1e293b;font-size:9px;display:flex;flex-direction:column;gap:3px;">
-      <div style="display:flex;align-items:center;gap:5px;">
-        <span id="mp-dot" style="width:6px;height:6px;border-radius:50%;background:#334155;flex-shrink:0"></span>
-        <span id="mp-status" style="color:#334155">Offline</span>
-      </div>
-      <div id="bot-list" style="display:none;color:#475569;line-height:1.6"></div>
-    </div></div>
+<div class="hud" id="legend">
+  <h3>
+    <button class="leg-tab active" data-leg="territory" onclick="switchLegTab('territory')" data-i18n="hud.territory">Territory</button>
+    <button class="leg-tab" data-leg="conquests" onclick="switchLegTab('conquests')">⚔️ Conquests</button>
+  </h3>
+  <div id="leg-panel-territory">
+    <div id="leg-items"></div>
+  </div>
+  <div id="leg-panel-conquests" style="display:none">
+    <div id="leg-conquests-content" class="lb-empty">Loading…</div>
+  </div>
+  <div id="server-status" style="margin-top:6px;padding-top:6px;border-top:1px solid #1e293b;font-size:9px;display:flex;flex-direction:column;gap:3px;">
+    <div style="display:flex;align-items:center;gap:5px;">
+      <span id="mp-dot" style="width:6px;height:6px;border-radius:50%;background:#334155;flex-shrink:0"></span>
+      <span id="mp-status" style="color:#334155">Offline</span>
+    </div>
+    <div id="bot-list" style="display:none;color:#475569;line-height:1.6"></div>
+  </div>
+</div>
 <!-- v36: zoom HUD moved to toolbar -->
 <!-- v36: audio HUD moved to toolbar -->
   </div><!-- /viewport -->
@@ -2659,11 +2677,74 @@ if (isMobile) document.documentElement.classList.add('is-mobile');
   if (!legend) return;
   legend.addEventListener('click', e => {
     if (!isMobile) return;
-    // Don't toggle if user clicked an item inside the expanded panel (let event continue)
-    if (legend.classList.contains('expanded') && e.target.closest('#leg-items')) return;
+    // Don't toggle if user clicked content inside the expanded panel
+    if (legend.classList.contains('expanded') &&
+        (e.target.closest('#leg-items') ||
+         e.target.closest('#leg-panel-conquests') ||
+         e.target.closest('.leg-tab'))) return;
     legend.classList.toggle('expanded');
   });
 })();
+
+// v66: Territory panel tab switcher
+function switchLegTab(panel) {
+  document.querySelectorAll('.leg-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.leg === panel);
+  });
+  const terr = document.getElementById('leg-panel-territory');
+  const conq = document.getElementById('leg-panel-conquests');
+  if (terr) terr.style.display = panel === 'territory' ? '' : 'none';
+  if (conq) conq.style.display = panel === 'conquests' ? '' : 'none';
+  if (panel === 'conquests') loadLegConquests();
+}
+
+// v66: Load conquests into territory panel tab
+async function loadLegConquests() {
+  const el = document.getElementById('leg-conquests-content');
+  if (!el) return;
+  el.innerHTML = '<span class="leg-cnt">Loading…</span>';
+  try {
+    const res = await fetch('/api/stats/conquests');
+    const data = await res.json();
+    if (!data.conquests || data.conquests.length === 0) {
+      el.innerHTML = '<div class="lb-empty">No conquests yet ⚔️</div>';
+      return;
+    }
+    el.innerHTML = '';
+    const rankColors = ['#fbbf24','#cbd5e1','#d97706'];
+    data.conquests.forEach((c, i) => {
+      const fi = featList.findIndex(f => String(f.id) === String(c.countryId));
+      const feat = fi >= 0 ? featList[fi] : null;
+      const row = document.createElement('div');
+      row.className = 'leg-row';
+      if (feat) {
+        const flg = createFlagEl(feat.id, 1);
+        if (flg) row.appendChild(flg);
+        const dot = document.createElement('div');
+        dot.className = 'leg-dot';
+        dot.style.cssText = 'background:' + feat.color + ';box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4)';
+        row.appendChild(dot);
+      }
+      const nameSpan = document.createElement('span');
+      nameSpan.style.color = feat ? feat.color : '#e2e8f0';
+      nameSpan.textContent = c.name;
+      row.appendChild(nameSpan);
+      const cntSpan = document.createElement('span');
+      cntSpan.className = 'leg-pct';
+      cntSpan.style.color = i < 3 ? rankColors[i] : '#64748b';
+      cntSpan.textContent = '⚔️ ' + c.count;
+      cntSpan.title = c.count + ' conquest' + (c.count === 1 ? '' : 's');
+      row.appendChild(cntSpan);
+      el.appendChild(row);
+    });
+    const totalEl = document.createElement('div');
+    totalEl.style.cssText = 'font-size:9px;color:#334155;text-align:center;margin-top:5px;';
+    totalEl.textContent = data.total + ' conquest' + (data.total === 1 ? '' : 's') + ' active';
+    el.appendChild(totalEl);
+  } catch(e) {
+    el.innerHTML = '<span class="lb-empty">Load failed</span>';
+  }
+}
 
 // Audio HUD collapse: tap to expand/collapse on mobile
 (function setupAudioCollapse() {
@@ -3111,7 +3192,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-26-v66';
+const CODE_VERSION = '2026-05-26-v67';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8200,7 +8281,6 @@ async function openStats() {
   document.getElementById('stats-overlay').classList.add('open');
   loadStatsMe();
   loadStatsLeaderboard();
-  loadStatsConquests();
 }
 function closeStats() {
   document.getElementById('stats-overlay').classList.remove('open');
@@ -8213,7 +8293,6 @@ function switchStatsTab(panel) {
     p.classList.toggle('active', p.id === 'stats-panel-' + panel);
   });
   if (panel === 'lb') loadStatsLeaderboard();
-  if (panel === 'cq') loadStatsConquests();
 }
 
 async function loadStatsMe() {
@@ -8283,41 +8362,6 @@ async function loadStatsLeaderboard() {
     el.innerHTML = rows + '<div style="text-align:center;color:#475569;font-size:10px;margin-top:14px;">' + t('stats.total_players', { n: data.totalPlayers }) + '</div>';
   } catch (e) {
     el.innerHTML = '<div class="lb-empty">' + t('stats.lb_load_error') + '</div>';
-  }
-}
-
-// v66: conquests tab — top 20 countries by number of territories conquered
-async function loadStatsConquests() {
-  const el = document.getElementById('stats-cq-content');
-  try {
-    const res = await fetch('/api/stats/conquests');
-    const data = await res.json();
-    if (!data.conquests || data.conquests.length === 0) {
-      el.innerHTML = '<div class="lb-empty">No conquests recorded yet — be the first! ⚔️</div>';
-      return;
-    }
-    const rows = data.conquests.map(c => {
-      let rankClass = '';
-      if (c.rank === 1) rankClass = ' gold';
-      else if (c.rank === 2) rankClass = ' silver';
-      else if (c.rank === 3) rankClass = ' bronze';
-      const fi = featList.findIndex(f => String(f.id) === String(c.countryId));
-      const feat = fi >= 0 ? featList[fi] : null;
-      const flag = feat ? flagAny(feat.id, 1) : '';
-      const nameColor = feat ? feat.color : '#94a3b8';
-      const conquestWord = c.count === 1 ? 'Conquer' : 'Conquers';
-      return '<div class="lb-row">' +
-        '<span class="lb-rank' + rankClass + '">#' + c.rank + '</span>' +
-        flag +
-        '<span class="lb-name" style="color:' + nameColor + '">' + escapeHtml(c.name) + '</span>' +
-        '<span class="lb-points">⚔️ ' + c.count + ' ' + conquestWord + '</span>' +
-        '</div>';
-    }).join('');
-    const totalLine = '<div style="text-align:center;color:#475569;font-size:10px;margin-top:14px;">' +
-      data.total + ' active conquest' + (data.total === 1 ? '' : 's') + ' worldwide</div>';
-    el.innerHTML = rows + totalLine;
-  } catch (e) {
-    el.innerHTML = '<div class="lb-empty">Could not load conquests.</div>';
   }
 }
 
@@ -10865,16 +10909,12 @@ function _showMonsterBanner(type) {
     <div class="stats-tabs">
       <button class="stats-tab active" data-panel="me" onclick="switchStatsTab('me')" data-i18n="stats.tab_me">My Stats</button>
       <button class="stats-tab" data-panel="lb" onclick="switchStatsTab('lb')" data-i18n="stats.tab_lb">Leaderboard</button>
-      <button class="stats-tab" data-panel="cq" onclick="switchStatsTab('cq')">Conquests</button>
     </div>
     <div class="stats-panel active" id="stats-panel-me">
       <div id="stats-me-content" data-i18n="stats.loading">Loading…</div>
     </div>
     <div class="stats-panel" id="stats-panel-lb">
       <div id="stats-lb-content" data-i18n="stats.loading">Loading…</div>
-    </div>
-    <div class="stats-panel" id="stats-panel-cq">
-      <div id="stats-cq-content" data-i18n="stats.loading">Loading…</div>
     </div>
   </div>
 </div>
