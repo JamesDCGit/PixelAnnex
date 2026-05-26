@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-26-v57';
+const SERVER_VERSION       = '2026-05-26-v58';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2677,7 +2677,18 @@ function buildGeoIndex() {
   console.log(`[Bot] Geo index built: ${Object.keys(geoPixels).length} countries`);
 }
 
-// Get random frontier pixels for a bot (pixels adjacent to non-owned land)
+// Get target pixels for a bot — v58 strategic AI
+// ─────────────────────────────────────────────
+// Priority:
+//   0. Roaming scout (3% chance) — seed a pixel in a distant large/contested country
+//   1. Defend        — reclaim enemy pixels inside home territory
+//   2. Strategic attack — pick the highest-scoring neighbouring geo and push into it
+//   3. Expand        — fill unclaimed pixels inside home territory (last resort)
+//
+// Attack scoring per neighbouring geo (higher = more desirable):
+//   • Opportunistic:        +4 if ≥40% already foreign-held, +2 if ≥20%, +1 if ≥5%
+//   • Size-weighted:        small bots get +3/+2/+1 for attacking larger neighbours
+//   • Alliance coordination: +3 if an alliance partner already has pixels there
 const DX4 = [-1,1,0,0], DY4 = [0,0,-1,1];
 function getBotTargets(countryId, limit) {
   const cidx       = getIdx(countryId);
@@ -2685,71 +2696,153 @@ function getBotTargets(countryId, limit) {
   const homePixels = geoPixels[geoIdx];
   if (!homePixels || homePixels.length === 0) return [];
 
-  // Three target pools, scanned in priority order:
-  //   1. defend — enemy-held pixels inside our home country (reclaim our land)
-  //   2. expand — unclaimed pixels inside our home country (grow into vacant land)
-  //   3. attack — pixels in neighbouring countries, adjacent to our existing territory
-  const defend = [], expand = [], attack = [];
+  // ── 0. Roaming scout — 3% chance to seed in a distant appealing territory ──
+  if (Math.random() < 0.03) {
+    const geoKeys = Object.keys(geoPixels);
+    let bestGeo = -1, bestScore = -1;
+    // Sample 15 random geos and score them
+    for (let attempt = 0; attempt < 15; attempt++) {
+      const gi = parseInt(geoKeys[Math.floor(Math.random() * geoKeys.length)], 10);
+      if (gi === geoIdx) continue;
+      const total   = geoTotal[gi] || 1;
+      const homeId  = geoToId(gi);
+      const claims  = geoClaimCnt[gi] || {};
+      const foreign = Object.entries(claims)
+        .filter(([c]) => c !== homeId).reduce((s, [, v]) => s + v, 0);
+      // Prefer large countries; bonus if already contested
+      let score = Math.round(getWorldShare(homeId) * 1000);
+      if (foreign / total >= 0.2) score += 3;
+      if (score > bestScore) { bestScore = score; bestGeo = gi; }
+    }
+    if (bestGeo >= 0 && geoPixels[bestGeo]) {
+      const tp = geoPixels[bestGeo];
+      const i  = tp[Math.floor(Math.random() * tp.length)];
+      if (claimByPixel[i] !== cidx)
+        return [{ x: i % MAP_W, y: (i / MAP_W) | 0 }];
+    }
+  }
 
-  // ── Phase 1: scan home country ────────────────────────────────
+  // ── 1. Scan home territory ────────────────────────────────────
+  const defend = [], expand = [];
   const homeSampleSize = Math.min(200, homePixels.length);
   const homeStep = Math.max(1, Math.floor(homePixels.length / homeSampleSize));
   let homeOwned = 0;
   for (let s = 0; s < homePixels.length; s += homeStep) {
-    const i = homePixels[s];
+    const i     = homePixels[s];
     const owner = claimByPixel[i];
     if (owner === cidx) { homeOwned++; continue; }
 
     const x = i % MAP_W, y = (i / MAP_W) | 0;
     let adjacent = false;
     for (let d = 0; d < 4; d++) {
-      const nx = x+DX4[d], ny = y+DY4[d];
-      if (nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
-      if (claimByPixel[ny*MAP_W+nx] === cidx) { adjacent = true; break; }
+      const nx = x + DX4[d], ny = y + DY4[d];
+      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+      if (claimByPixel[ny * MAP_W + nx] === cidx) { adjacent = true; break; }
     }
-    if (!adjacent) {
-      // No foothold yet → seed anywhere if home is currently empty
-      if ((ownerPixels[cidx]?.size || 0) > 0) continue;
-    }
-    if (owner >= 0 && owner !== cidx) defend.push({x,y});
-    else                              expand.push({x,y});
+    if (!adjacent && (ownerPixels[cidx]?.size || 0) > 0) continue;
+    if (owner >= 0 && owner !== cidx) defend.push({ x, y });
+    else                              expand.push({ x, y });
   }
 
-  // ── Phase 2: hunt for attack targets in adjacent countries ────
-  // Only attack if we have a strong home base — otherwise focus on defending.
-  // Threshold: 70%+ of sampled home pixels owned (we're stable).
-  const homeStableEnough = homeOwned / homeSampleSize >= 0.7;
-  if (homeStableEnough && defend.length === 0 && ownerPixels[cidx]) {
-    // Walk a sample of our owned pixels and look for 4-neighbour enemy land
-    const owned = [...ownerPixels[cidx]];
+  // Defend always wins — bots never attack while being pushed back
+  if (defend.length > 0) {
+    for (let i = defend.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [defend[i], defend[j]] = [defend[j], defend[i]];
+    }
+    return defend.slice(0, limit);
+  }
+
+  // ── 2. Strategic attack — score all neighbouring geos ────────
+  const homeStable = homeOwned / homeSampleSize >= 0.7;
+  if (homeStable && ownerPixels[cidx]) {
+    const geoScores    = new Map(); // targetGeoIdx → score
+    const geoCandidates = new Map(); // targetGeoIdx → [{x,y}]
+    const myShare      = getWorldShare(countryId);
+    const ally         = getAllianceForCountry(String(countryId));
+
+    const owned      = [...ownerPixels[cidx]];
     const ownedSample = Math.min(150, owned.length);
-    const ownedStep = Math.max(1, Math.floor(owned.length / ownedSample));
-    for (let s = 0; s < owned.length && attack.length < limit * 4; s += ownedStep) {
+    const ownedStep  = Math.max(1, Math.floor(owned.length / ownedSample));
+
+    for (let s = 0; s < owned.length; s += ownedStep) {
       const i = owned[s];
       const x = i % MAP_W, y = (i / MAP_W) | 0;
       for (let d = 0; d < 4; d++) {
-        const nx = x+DX4[d], ny = y+DY4[d];
-        if (nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
-        const ni = ny*MAP_W+nx;
-        if (!landMask[ni]) continue;          // ocean
+        const nx = x + DX4[d], ny = y + DY4[d];
+        if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+        const ni = ny * MAP_W + nx;
+        if (!landMask[ni]) continue;
         const ngeo = geoAtPixel[ni];
-        if (ngeo === geoIdx) continue;        // still our home — handled above
-        if (claimByPixel[ni] === cidx) continue; // already ours
-        attack.push({ x: nx, y: ny });
-        if (attack.length >= limit * 4) break;
+        if (ngeo === geoIdx) continue;
+        if (claimByPixel[ni] === cidx) continue;
+
+        if (!geoScores.has(ngeo)) {
+          let score = 1;
+          const nTotal   = geoTotal[ngeo] || 1;
+          const nHomeId  = geoToId(ngeo);
+          const nClaims  = geoClaimCnt[ngeo] || {};
+
+          // Opportunistic: pile on contested territories
+          const foreign = Object.entries(nClaims)
+            .filter(([c]) => c !== nHomeId).reduce((s, [, v]) => s + v, 0);
+          const contested = foreign / nTotal;
+          if      (contested >= 0.40) score += 4;
+          else if (contested >= 0.20) score += 2;
+          else if (contested >= 0.05) score += 1;
+
+          // Size-weighted: small bots prefer large neighbours
+          const theirShare = getWorldShare(nHomeId);
+          if (myShare <= 0.005) {
+            if      (theirShare >= 0.05) score += 3;
+            else if (theirShare >= 0.01) score += 1;
+          } else if (myShare <= 0.02) {
+            if      (theirShare >= 0.03) score += 2;
+            else if (theirShare >= 0.01) score += 1;
+          }
+
+          // Alliance coordination: join where allies are already painting
+          if (ally) {
+            const allyPx = ally.countries
+              .filter(c => String(c) !== String(countryId))
+              .reduce((sum, c) => sum + (nClaims[String(c)] || 0), 0);
+            if (allyPx > 0) score += 3;
+          }
+
+          geoScores.set(ngeo, score);
+          geoCandidates.set(ngeo, []);
+        }
+
+        const cands = geoCandidates.get(ngeo);
+        if (cands.length < limit * 8) cands.push({ x: nx, y: ny });
+      }
+    }
+
+    if (geoScores.size > 0) {
+      // Pick the highest-scoring neighbouring geo
+      let bestGeo = -1, bestScore = -1;
+      for (const [g, sc] of geoScores) {
+        if (sc > bestScore) { bestScore = sc; bestGeo = g; }
+      }
+      if (bestGeo >= 0) {
+        const attack = geoCandidates.get(bestGeo);
+        if (attack.length > 0) {
+          for (let i = attack.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [attack[i], attack[j]] = [attack[j], attack[i]];
+          }
+          return attack.slice(0, limit);
+        }
       }
     }
   }
 
-  // Priority: defend > attack > expand
-  // (Attack is now BEFORE expand so bots don't just slowly fill empty home; they push outward)
-  const pool = defend.length > 0 ? defend
-             : attack.length > 0 ? attack
-             : expand;
-
-  // Shuffle to spread paint around so bots don't always hit the same border pixels
-  for (let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
-  return pool.slice(0, limit);
+  // ── 3. Expand into unclaimed home pixels ─────────────────────
+  for (let i = expand.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [expand[i], expand[j]] = [expand[j], expand[i]];
+  }
+  return expand.slice(0, limit);
 }
 
 function botInit(countryId) {
