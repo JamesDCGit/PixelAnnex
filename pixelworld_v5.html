@@ -3202,7 +3202,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-27-v69';
+const CODE_VERSION = '2026-05-27-v70';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5047,7 +5047,8 @@ function screenToMap(sx,sy){const r=vp.getBoundingClientRect();return{x:Math.flo
 //   - Fills are bounded by the geographic country border automatically
 //   - You cannot fill across country borders
 //   - Small border completes a loop → only the loop interior fills
-const MAX_FILL_PX = 500000; // safety cap
+const MAX_FILL_PX = 10000;  // v70: cap at 10k — prevents slow GPU readback on large false-fills
+const FILL_MIN_PX = 10;     // v70: ignore tiny accidental enclosures
 const CONQUEST_THRESHOLD = 0.7; // v35: was 0.8
 
 // v64: return combined pixel count for claimerIdx + all its alliance partners
@@ -5156,14 +5157,19 @@ function runAutoFill(){
       }
     }
 
-    // Collect enclosed: in this geo country, not reachable from border, not own pixel
-    // v59: explicitly exclude own pixels (no longer implicitly excluded via isWallFill)
+    // Collect enclosed: in this geo country, not reachable from border, not own pixel.
+    // v70: early-exit once we exceed MAX_FILL_PX to avoid a huge push() scan.
     const enclosed=[];
+    let encTooLarge = false;
     for(let i=0;i<MAP_PX;i++){
-      if(featByPixel[i]===geo && !outside[i] && !isWallFill(i) && claimByPixel[i]!==currentIdx) enclosed.push(i);
+      if(featByPixel[i]===geo && !outside[i] && !isWallFill(i) && claimByPixel[i]!==currentIdx){
+        enclosed.push(i);
+        if(enclosed.length > MAX_FILL_PX){ encTooLarge = true; break; }
+      }
     }
 
-    if(enclosed.length===0||enclosed.length>MAX_FILL_PX) continue;
+    // v70: skip if empty, too large, or too small (< FILL_MIN_PX avoids tiny false fills)
+    if(enclosed.length < FILL_MIN_PX || encTooLarge) continue;
 
     // Claim enclosed pixels
     const [r,g,b]=hexRgb(featList[currentIdx].color);
@@ -5182,20 +5188,25 @@ function runAutoFill(){
       geoClaimCnt[geo][currentIdx]=(geoClaimCnt[geo][currentIdx]||0)+1;
     }
 
-    // Batch paint enclosed pixels to claim canvas
-    const fillX0=enclosed.reduce((m,gi)=>Math.min(m,gi%MAP_W),MAP_W);
-    const fillY0=enclosed.reduce((m,gi)=>Math.min(m,(gi/MAP_W)|0),MAP_H);
-    const fillX1=enclosed.reduce((m,gi)=>Math.max(m,gi%MAP_W),0);
-    const fillY1=enclosed.reduce((m,gi)=>Math.max(m,(gi/MAP_W)|0),0);
-    const fw=fillX1-fillX0+1, fh=fillY1-fillY0+1;
-    const fillImg=claimCtx.getImageData(fillX0,fillY0,fw,fh);
-    const fd=fillImg.data;
-    for(const gi of enclosed){
-      const fx=(gi%MAP_W)-fillX0, fy=((gi/MAP_W)|0)-fillY0;
-      const fp=(fy*fw+fx)*4;
-      fd[fp]=r;fd[fp+1]=g;fd[fp+2]=b;fd[fp+3]=215;
+    // Batch paint enclosed pixels to claim canvas.
+    // v70: bounded to MAX_FILL_PX=10k so bbox is always small → fast getImageData.
+    {
+      let fillX0=MAP_W,fillY0=MAP_H,fillX1=0,fillY1=0;
+      for(const gi of enclosed){
+        const gx=gi%MAP_W, gy=(gi/MAP_W)|0;
+        if(gx<fillX0)fillX0=gx; if(gx>fillX1)fillX1=gx;
+        if(gy<fillY0)fillY0=gy; if(gy>fillY1)fillY1=gy;
+      }
+      const fw=fillX1-fillX0+1, fh=fillY1-fillY0+1;
+      const fillImg=claimCtx.getImageData(fillX0,fillY0,fw,fh);
+      const fd=fillImg.data;
+      for(const gi of enclosed){
+        const fx=(gi%MAP_W)-fillX0, fy=((gi/MAP_W)|0)-fillY0;
+        const fp=(fy*fw+fx)*4;
+        fd[fp]=r;fd[fp+1]=g;fd[fp+2]=b;fd[fp+3]=215;
+      }
+      claimCtx.putImageData(fillImg,fillX0,fillY0);
     }
-    claimCtx.putImageData(fillImg,fillX0,fillY0);
     sfxFillSuccess();
     checkConquest(geo,currentIdx);
   }
@@ -6954,6 +6965,8 @@ function scheduleMusicTrack3(ctx, masterGain, startT){
 // Only redrawn when pixels change (throttled via rAF + dirty flag).
 let _outlineDirty = false;
 let _outlineScheduled = false;
+// v70: reuse this ImageData buffer instead of allocating 8MB every RAF frame.
+let _outlineImgData = null;
 
 function markOutlineDirty(){
   _outlineDirty = true;
@@ -6971,9 +6984,14 @@ function flushOutline(){
 }
 
 function redrawOutline(){
-  if(!claimByPixel || !landMask) return;
-  const img = outlineCtx.createImageData(MAP_W, MAP_H);
+  if(!claimByPixel || !landMask || !outlineCtx) return;
+  // v70: skip outline on mobile — 8MB scan every frame is too expensive.
+  if(_isMobileForMemory){ outlineCtx.clearRect(0,0,MAP_W,MAP_H); return; }
+  // v70: allocate once, reuse. fill(0) to clear is a fast typed-array memset (~2ms for 8MB).
+  if(!_outlineImgData) _outlineImgData = outlineCtx.createImageData(MAP_W, MAP_H);
+  const img = _outlineImgData;
   const d   = img.data;
+  d.fill(0); // clear previous outline
   const DX=[-1,1,0,0], DY=[0,0,-1,1];
   for(let y=0;y<MAP_H;y++){
     for(let x=0;x<MAP_W;x++){
