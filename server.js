@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-26-v67';
+const SERVER_VERSION       = '2026-05-26-v68';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2684,14 +2684,16 @@ function applyPixels(pixels, countryId) {
 
 // ── Encirclement detection ────────────────────────────────────────
 // After a stroke, detect any closed region the player has enclosed and
-// auto-claim those pixels. Returns {enclosedCount, enclosedPixels}.
+// auto-claim those pixels. Returns {enclosed, count, centerX, centerY}.
 //
-// Performance: limited to strokes whose bbox is < 150×150 pixels, and caps
-// the enclosed claim count at 500 pixels to prevent runaway claims.
-const ENCIRCLE_MAX_BBOX  = 150;    // bbox upper limit (was 80; loosened for real-world strokes)
-const ENCIRCLE_MIN_PX    = 50;     // min enclosed pixels for any reward
-const ENCIRCLE_MAX_PX    = 500;    // cap on auto-claimed enclosed pixels
-const ENCIRCLE_BBOX_PAD  = 4;      // buffer around stroke bbox
+// v68 algorithm: uses the bounding box of ALL own pixels in the touched geo
+// (not just the current stroke) so rings built pixel-by-pixel over multiple
+// clicks are detected the moment the ring closes.
+// Performance: BFS is bounded by own-pixel bbox area capped at 200k cells.
+const ENCIRCLE_MIN_PX      = 50;    // min enclosed pixels for any reward
+const ENCIRCLE_MAX_PX      = 500;   // cap on auto-claimed enclosed pixels
+const ENCIRCLE_BBOX_PAD    = 8;     // padding around own-pixel bbox
+const ENCIRCLE_MAX_BBOX_AREA = 200000; // bail if bbox area exceeds this
 
 // Bresenham line between two pixels — used to seal gaps where the mouse
 // moved fast between samples. Returns all pixels on the line.
@@ -2713,108 +2715,126 @@ function _bresenhamLine(x0, y0, x1, y1) {
 }
 
 function detectEncirclement(strokePixels, countryId) {
-  if (!strokePixels || strokePixels.length < 4) return null;
+  if (!strokePixels || strokePixels.length < 1) return null;
   const cidx = getIdx(countryId);
 
-  // 1. Bounding box of the stroke
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  // 1. Which geos does this stroke touch?
+  const touchedGeos = new Set();
   for (const { x, y } of strokePixels) {
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
+    const gi = y * MAP_W + x;
+    if (gi >= 0 && gi < MAP_PX && landMask[gi]) {
+      const g = geoAtPixel[gi];
+      if (g >= 0) touchedGeos.add(g);
+    }
   }
-  minX = Math.max(0, minX - ENCIRCLE_BBOX_PAD);
-  minY = Math.max(0, minY - ENCIRCLE_BBOX_PAD);
-  maxX = Math.min(MAP_W - 1, maxX + ENCIRCLE_BBOX_PAD);
-  maxY = Math.min(MAP_H - 1, maxY + ENCIRCLE_BBOX_PAD);
-  const bw = maxX - minX + 1;
-  const bh = maxY - minY + 1;
-  if (bw > ENCIRCLE_MAX_BBOX || bh > ENCIRCLE_MAX_BBOX) return null;
+  if (touchedGeos.size === 0) return null;
 
-  // 2. Build a "wall" mask covering the stroke + interpolated gaps.
-  //    This patches over fast-moving cursor gaps so a near-closed loop
-  //    still seals the BFS.
-  const wall = new Uint8Array(bw * bh);
-  const setWall = (gx, gy) => {
-    const lx = gx - minX, ly = gy - minY;
-    if (lx < 0 || lx >= bw || ly < 0 || ly >= bh) return;
-    wall[ly * bw + lx] = 1;
-  };
+  // 2. Build Bresenham-interpolated stroke wall once (seals fast-drag gaps).
+  //    These interpolated pixels are NOT in claimByPixel yet but must block BFS.
+  // We build a sparse map indexed by (y*MAP_W+x) for quick lookup.
+  const strokeWallMap = new Set();
   for (let s = 0; s < strokePixels.length; s++) {
     const p = strokePixels[s];
-    setWall(p.x, p.y);
-    // Interpolate to previous point — seals gaps from fast mouse moves.
-    // BUT only do this for SMALL gaps (≤ 30 pixels). Larger jumps probably
-    // mean the stroke pixels aren't actually consecutive in the drag
-    // (e.g. client packs them in batches or out of order), and drawing
-    // a Bresenham line between them would cut through the interior.
+    strokeWallMap.add(p.y * MAP_W + p.x);
     if (s > 0) {
       const prev = strokePixels[s - 1];
       const dx = Math.abs(p.x - prev.x), dy = Math.abs(p.y - prev.y);
       if ((dx > 1 || dy > 1) && dx <= 30 && dy <= 30) {
-        const line = _bresenhamLine(prev.x, prev.y, p.x, p.y);
-        for (const pt of line) setWall(pt.x, pt.y);
+        for (const pt of _bresenhamLine(prev.x, prev.y, p.x, p.y))
+          strokeWallMap.add(pt.y * MAP_W + pt.x);
       }
     }
   }
 
-  // 3. BFS flood-fill from bbox edges, marking outside-reachable pixels.
-  //    Walls block the flood (acts like our painted stroke).
-  const visited = new Uint8Array(bw * bh);
-  const queue = [];
-  const seed = (lx, ly) => {
-    if (lx < 0 || lx >= bw || ly < 0 || ly >= bh) return;
-    const li = ly * bw + lx;
-    if (visited[li]) return;
-    if (wall[li]) return;
-    // v59 fix: do NOT treat existing own pixels as walls — only the current
-    // stroke forms the enclosure boundary. Without this, clicking a single
-    // pixel inside already-owned territory claimed the entire interior.
-    visited[li] = 1;
-    queue.push(li);
-  };
+  let bestResult = null;
 
-  for (let lx = 0; lx < bw; lx++) { seed(lx, 0); seed(lx, bh - 1); }
-  for (let ly = 0; ly < bh; ly++) { seed(0, ly); seed(bw - 1, ly); }
+  for (const geoIdx of touchedGeos) {
+    const geoPxArr = geoPixels[geoIdx];
+    if (!geoPxArr || geoPxArr.length === 0) continue;
 
-  while (queue.length) {
-    const li = queue.shift();
-    const lx = li % bw, ly = (li / bw) | 0;
-    for (let d = 0; d < 4; d++) {
-      const nx = lx + DX4[d], ny = ly + DY4[d];
-      if (nx < 0 || nx >= bw || ny < 0 || ny >= bh) continue;
-      const nli = ny * bw + nx;
-      if (visited[nli]) continue;
-      if (wall[nli]) continue;
-      // v59: own pixels are not walls — only stroke walls seal the loop
-      visited[nli] = 1;
-      queue.push(nli);
+    // 3. Bounding box of all OWN pixels in this geo.
+    //    This works for rings built over many separate strokes because
+    //    claimByPixel reflects the full cumulative paint history.
+    let ownMinX = MAP_W, ownMinY = MAP_H, ownMaxX = 0, ownMaxY = 0, hasOwn = false;
+    for (let pi = 0; pi < geoPxArr.length; pi++) {
+      const i = geoPxArr[pi];
+      if (claimByPixel[i] !== cidx && !strokeWallMap.has(i)) continue;
+      const x = i % MAP_W, y = (i / MAP_W) | 0;
+      if (x < ownMinX) ownMinX = x; if (x > ownMaxX) ownMaxX = x;
+      if (y < ownMinY) ownMinY = y; if (y > ownMaxY) ownMaxY = y;
+      hasOwn = true;
     }
-  }
+    if (!hasOwn) continue;
 
-  // 4. Collect enclosed pixels: land, not painter-owned, not visited from outside
-  const enclosed = [];
-  for (let ly = 0; ly < bh && enclosed.length < ENCIRCLE_MAX_PX; ly++) {
-    for (let lx = 0; lx < bw && enclosed.length < ENCIRCLE_MAX_PX; lx++) {
-      const li = ly * bw + lx;
-      if (visited[li]) continue;
-      if (wall[li]) continue; // wall pixels are already painted by us
-      const gx = minX + lx, gy = minY + ly;
+    const minX = Math.max(0, ownMinX - ENCIRCLE_BBOX_PAD);
+    const minY = Math.max(0, ownMinY - ENCIRCLE_BBOX_PAD);
+    const maxX = Math.min(MAP_W - 1, ownMaxX + ENCIRCLE_BBOX_PAD);
+    const maxY = Math.min(MAP_H - 1, ownMaxY + ENCIRCLE_BBOX_PAD);
+    const bw = maxX - minX + 1, bh = maxY - minY + 1;
+    if (bw * bh > ENCIRCLE_MAX_BBOX_AREA) continue; // too large, skip
+
+    // 4. Inline wall check: Bresenham gaps OR all own pixels (cumulative).
+    const isWall = (gx, gy) => {
       const gi = gy * MAP_W + gx;
-      if (!landMask[gi]) continue;
-      if (claimByPixel[gi] === cidx) continue;
-      enclosed.push({ x: gx, y: gy });
+      return strokeWallMap.has(gi) || claimByPixel[gi] === cidx;
+    };
+
+    // 5. BFS from bbox edges — anything reachable = "outside the ring".
+    const visited = new Uint8Array(bw * bh);
+    const queue   = new Int32Array(bw * bh);
+    let head = 0, tail = 0;
+    const seed = (lx, ly) => {
+      if (lx < 0 || lx >= bw || ly < 0 || ly >= bh) return;
+      const li = ly * bw + lx;
+      if (visited[li]) return;
+      if (isWall(minX + lx, minY + ly)) return;
+      visited[li] = 1; queue[tail++] = li;
+    };
+    for (let lx = 0; lx < bw; lx++) { seed(lx, 0); seed(lx, bh - 1); }
+    for (let ly = 0; ly < bh; ly++) { seed(0, ly); seed(bw - 1, ly); }
+    while (head < tail) {
+      const li = queue[head++];
+      const lx = li % bw, ly = (li / bw) | 0;
+      for (let d = 0; d < 4; d++) {
+        const nx = lx + DX4[d], ny = ly + DY4[d];
+        if (nx < 0 || nx >= bw || ny < 0 || ny >= bh) continue;
+        const nli = ny * bw + nx;
+        if (visited[nli]) continue;
+        if (isWall(minX + nx, minY + ny)) continue;
+        visited[nli] = 1; queue[tail++] = nli;
+      }
+    }
+
+    // 6. Collect enclosed: same geo, land, not own, not reachable from outside.
+    const enclosed = [];
+    for (let ly = 0; ly < bh && enclosed.length < ENCIRCLE_MAX_PX; ly++) {
+      for (let lx = 0; lx < bw && enclosed.length < ENCIRCLE_MAX_PX; lx++) {
+        const li = ly * bw + lx;
+        if (visited[li]) continue;
+        const gx = minX + lx, gy = minY + ly;
+        const gi = gy * MAP_W + gx;
+        if (!landMask[gi]) continue;
+        if (geoAtPixel[gi] !== geoIdx) continue; // stay within this geo
+        if (claimByPixel[gi] === cidx) continue; // exclude own pixels
+        if (strokeWallMap.has(gi)) continue;      // exclude Bresenham wall pixels
+        enclosed.push({ x: gx, y: gy });
+      }
+    }
+
+    if (enclosed.length >= ENCIRCLE_MIN_PX) {
+      if (!bestResult || enclosed.length > bestResult.count) {
+        let sumX = 0, sumY = 0;
+        for (const p of enclosed) { sumX += p.x; sumY += p.y; }
+        bestResult = {
+          enclosed, count: enclosed.length,
+          centerX: Math.round(sumX / enclosed.length),
+          centerY: Math.round(sumY / enclosed.length),
+        };
+      }
     }
   }
 
-  if (enclosed.length < ENCIRCLE_MIN_PX) return null;
-  // Compute centroid (average position) of enclosed pixels
-  let sumX = 0, sumY = 0;
-  for (const p of enclosed) { sumX += p.x; sumY += p.y; }
-  const centerX = Math.round(sumX / enclosed.length);
-  const centerY = Math.round(sumY / enclosed.length);
-  return { enclosed, count: enclosed.length, centerX, centerY };
+  return bestResult;
 }
 
 // Map enclosed pixel count → regen multiplier and duration
@@ -2877,6 +2897,7 @@ const bots = new Map(); // countryId → { countryId, bucket, geoIdx, frontierId
 
 const geoPixels    = {};  // geoIdx → Int32Array (built once)
 const ownerPixels  = {};  // countryIdx → Set<pixelOffset> (maintained live)
+const geoBbox      = {};  // geoIdx → {minX,minY,maxX,maxY} (built once in buildGeoIndex)
 
 function getGeoForCountry(countryId) {
   return parseInt(countryId, 10);
@@ -2896,6 +2917,18 @@ function buildGeoIndex() {
   }
   for (const [g, arr] of Object.entries(temp)) {
     geoPixels[+g] = new Int32Array(arr);
+  }
+  // v68: Build per-geo bounding boxes used by detectEncirclement
+  for (const k of Object.keys(geoBbox)) delete geoBbox[k];
+  for (const [gStr, pixels] of Object.entries(geoPixels)) {
+    const g = +gStr;
+    let minX = MAP_W, minY = MAP_H, maxX = 0, maxY = 0;
+    for (const pi of pixels) {
+      const x = pi % MAP_W, y = (pi / MAP_W) | 0;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+    geoBbox[g] = { minX, minY, maxX, maxY };
   }
   console.log(`[Bot] Geo index built: ${Object.keys(geoPixels).length} countries`);
 }
@@ -4184,7 +4217,7 @@ wss.on('connection', (ws, req) => {
         // Pixels have ALREADY been applied via per-pixel 'stroke' events.
         // We only run encirclement detection here.
         if (!player.countryId || !Array.isArray(msg.pixels)) return;
-        if (msg.pixels.length < 4 || msg.pixels.length > 5000) return;
+        if (msg.pixels.length < 1 || msg.pixels.length > 5000) return; // v68: ≥1 (was ≥4)
         const enc = detectEncirclement(msg.pixels, player.countryId);
         if (!enc) return;
         const { changed: encChanged, conquests: encConquests, reversals: encReversals } =
