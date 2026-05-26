@@ -3111,7 +3111,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-26-v65';
+const CODE_VERSION = '2026-05-26-v66';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8200,6 +8200,7 @@ async function openStats() {
   document.getElementById('stats-overlay').classList.add('open');
   loadStatsMe();
   loadStatsLeaderboard();
+  loadStatsConquests();
 }
 function closeStats() {
   document.getElementById('stats-overlay').classList.remove('open');
@@ -8212,6 +8213,7 @@ function switchStatsTab(panel) {
     p.classList.toggle('active', p.id === 'stats-panel-' + panel);
   });
   if (panel === 'lb') loadStatsLeaderboard();
+  if (panel === 'cq') loadStatsConquests();
 }
 
 async function loadStatsMe() {
@@ -8281,6 +8283,41 @@ async function loadStatsLeaderboard() {
     el.innerHTML = rows + '<div style="text-align:center;color:#475569;font-size:10px;margin-top:14px;">' + t('stats.total_players', { n: data.totalPlayers }) + '</div>';
   } catch (e) {
     el.innerHTML = '<div class="lb-empty">' + t('stats.lb_load_error') + '</div>';
+  }
+}
+
+// v66: conquests tab — top 20 countries by number of territories conquered
+async function loadStatsConquests() {
+  const el = document.getElementById('stats-cq-content');
+  try {
+    const res = await fetch('/api/stats/conquests');
+    const data = await res.json();
+    if (!data.conquests || data.conquests.length === 0) {
+      el.innerHTML = '<div class="lb-empty">No conquests recorded yet — be the first! ⚔️</div>';
+      return;
+    }
+    const rows = data.conquests.map(c => {
+      let rankClass = '';
+      if (c.rank === 1) rankClass = ' gold';
+      else if (c.rank === 2) rankClass = ' silver';
+      else if (c.rank === 3) rankClass = ' bronze';
+      const fi = featList.findIndex(f => String(f.id) === String(c.countryId));
+      const feat = fi >= 0 ? featList[fi] : null;
+      const flag = feat ? flagAny(feat.id, 1) : '';
+      const nameColor = feat ? feat.color : '#94a3b8';
+      const conquestWord = c.count === 1 ? 'Conquer' : 'Conquers';
+      return '<div class="lb-row">' +
+        '<span class="lb-rank' + rankClass + '">#' + c.rank + '</span>' +
+        flag +
+        '<span class="lb-name" style="color:' + nameColor + '">' + escapeHtml(c.name) + '</span>' +
+        '<span class="lb-points">⚔️ ' + c.count + ' ' + conquestWord + '</span>' +
+        '</div>';
+    }).join('');
+    const totalLine = '<div style="text-align:center;color:#475569;font-size:10px;margin-top:14px;">' +
+      data.total + ' active conquest' + (data.total === 1 ? '' : 's') + ' worldwide</div>';
+    el.innerHTML = rows + totalLine;
+  } catch (e) {
+    el.innerHTML = '<div class="lb-empty">Could not load conquests.</div>';
   }
 }
 
@@ -10828,12 +10865,16 @@ function _showMonsterBanner(type) {
     <div class="stats-tabs">
       <button class="stats-tab active" data-panel="me" onclick="switchStatsTab('me')" data-i18n="stats.tab_me">My Stats</button>
       <button class="stats-tab" data-panel="lb" onclick="switchStatsTab('lb')" data-i18n="stats.tab_lb">Leaderboard</button>
+      <button class="stats-tab" data-panel="cq" onclick="switchStatsTab('cq')">Conquests</button>
     </div>
     <div class="stats-panel active" id="stats-panel-me">
       <div id="stats-me-content" data-i18n="stats.loading">Loading…</div>
     </div>
     <div class="stats-panel" id="stats-panel-lb">
       <div id="stats-lb-content" data-i18n="stats.loading">Loading…</div>
+    </div>
+    <div class="stats-panel" id="stats-panel-cq">
+      <div id="stats-cq-content" data-i18n="stats.loading">Loading…</div>
     </div>
   </div>
 </div>

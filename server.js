@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-26-v65';
+const SERVER_VERSION       = '2026-05-26-v66';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3666,6 +3666,23 @@ const httpServer = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ leaderboard: sorted, totalPlayers: allRanked.length, viewer }));
+    return;
+  }
+
+  // ── v66: /api/stats/conquests — top 20 countries by conquest count ──
+  if (url.pathname === '/api/stats/conquests') {
+    const conquestCounts = {};
+    for (const key of conqueredSet) {
+      const parts = String(key).split(':');
+      const attackerId = parts[1];
+      if (attackerId) conquestCounts[attackerId] = (conquestCounts[attackerId] || 0) + 1;
+    }
+    const top20 = Object.entries(conquestCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 20)
+      .map(([id, count], i) => ({ rank: i + 1, countryId: id, name: _countryName(id), count }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ conquests: top20, total: conqueredSet.size }));
     return;
   }
 
