@@ -3202,7 +3202,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-27-v71';
+const CODE_VERSION = '2026-05-27-v72';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6993,9 +6993,12 @@ function scheduleMusicTrack3(ctx, masterGain, startT){
 
 // ── Player pixel outline ──────────────────────────────────────────
 // Draws a 1px white outline around all pixels belonging to currentIdx.
-// Only redrawn when pixels change (throttled via rAF + dirty flag).
+// v71: throttled to max 10fps — 191 bots constantly call markOutlineDirty
+//      via server deltas, pinning it at 60fps = 720ms/sec of main-thread work.
 let _outlineDirty = false;
 let _outlineScheduled = false;
+let _outlineLastDraw  = 0;
+const OUTLINE_MIN_INTERVAL_MS = 100; // max 10fps
 // v70: reuse this ImageData buffer instead of allocating 8MB every RAF frame.
 let _outlineImgData = null;
 
@@ -7010,37 +7013,42 @@ function markOutlineDirty(){
 function flushOutline(){
   _outlineScheduled = false;
   if(!_outlineDirty) return;
+  const now = performance.now();
+  const wait = OUTLINE_MIN_INTERVAL_MS - (now - _outlineLastDraw);
+  if(wait > 0){
+    // Too soon — defer by the remaining wait, then retry via RAF
+    _outlineScheduled = true;
+    setTimeout(() => requestAnimationFrame(flushOutline), wait);
+    return;
+  }
   _outlineDirty = false;
+  _outlineLastDraw = now;
   redrawOutline();
 }
 
 function redrawOutline(){
   if(!claimByPixel || !landMask || !outlineCtx) return;
-  // v70: skip outline on mobile — 8MB scan every frame is too expensive.
+  // v70: skip on mobile — too expensive.
   if(_isMobileForMemory){ outlineCtx.clearRect(0,0,MAP_W,MAP_H); return; }
-  // v70: allocate once, reuse. fill(0) to clear is a fast typed-array memset (~2ms for 8MB).
+  // v70: reuse ImageData buffer — allocate once, fill(0) is a fast memset.
   if(!_outlineImgData) _outlineImgData = outlineCtx.createImageData(MAP_W, MAP_H);
-  const img = _outlineImgData;
-  const d   = img.data;
-  d.fill(0); // clear previous outline
+  const d = _outlineImgData.data;
+  d.fill(0);
   const DX=[-1,1,0,0], DY=[0,0,-1,1];
-  for(let y=0;y<MAP_H;y++){
-    for(let x=0;x<MAP_W;x++){
-      const i=y*MAP_W+x;
-      if(claimByPixel[i]!==currentIdx) continue;
-      // Check 4 neighbours — if any is NOT currentIdx, draw white there
-      for(let d4=0;d4<4;d4++){
-        const nx=x+DX[d4], ny=y+DY[d4];
-        if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
-        const ni=ny*MAP_W+nx;
-        if(claimByPixel[ni]===currentIdx) continue;
-        // Draw white outline pixel at neighbour position
-        const p=ni*4;
-        d[p]=255; d[p+1]=255; d[p+2]=255; d[p+3]=180;
-      }
+  // Full scan: own pixels can be in any geo (invaded territory), so we must check all.
+  // This runs at most 10fps (throttled by flushOutline) so the ~12ms cost is tolerable.
+  for(let i=0;i<MAP_PX;i++){
+    if(claimByPixel[i]!==currentIdx) continue;
+    const x=i%MAP_W, y=(i/MAP_W)|0;
+    for(let d4=0;d4<4;d4++){
+      const nx=x+DX[d4], ny=y+DY[d4];
+      if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
+      const ni=ny*MAP_W+nx;
+      if(claimByPixel[ni]===currentIdx) continue;
+      const p=ni*4; d[p]=255; d[p+1]=255; d[p+2]=255; d[p+3]=180;
     }
   }
-  outlineCtx.putImageData(img, 0, 0);
+  outlineCtx.putImageData(_outlineImgData, 0, 0);
 }
 
 // ── Font scale ────────────────────────────────────────────────────
