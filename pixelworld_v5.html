@@ -3202,7 +3202,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-28-v73';
+const CODE_VERSION = '2026-05-28-v74';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4066,12 +4066,24 @@ function eraseFlag(geoIdx){
 
 
 // ── finisherFill: claim all remaining pixels when 80% hit ───────────────────
+// v74: use geoPixelList (per-geo Int32Array) instead of scanning MAP_PX (2M)
+// pixels. With aggressive bot conquests, this was firing repeatedly via
+// setTimeout chains and burning the main thread for hundreds of ms each.
 function finisherFill(geoIdx,claimerIdx){
   const [r,g,b]=hexRgb(featList[claimerIdx].color);
   const toFill=[];
-  for(let i=0;i<MAP_PX;i++){
-    if(featByPixel[i]!==geoIdx||claimByPixel[i]===claimerIdx||!landMask[i])continue;
-    toFill.push(i);
+  const src = geoPixelList && geoPixelList[geoIdx];
+  if(src){
+    for(let pi=0; pi<src.length; pi++){
+      const i = src[pi];
+      if(claimByPixel[i]===claimerIdx || !landMask[i]) continue;
+      toFill.push(i);
+    }
+  } else {
+    for(let i=0;i<MAP_PX;i++){
+      if(featByPixel[i]!==geoIdx||claimByPixel[i]===claimerIdx||!landMask[i])continue;
+      toFill.push(i);
+    }
   }
   for(const gi of toFill){
     const prev=claimByPixel[gi];
@@ -5590,13 +5602,18 @@ const geoLastAlert = {};
 function recordPixelLoss(geoIdx, painterIdx){
   if(geoIdx < 0) return;
   if(!geoLossLog[geoIdx]) geoLossLog[geoIdx] = [];
+  const log = geoLossLog[geoIdx];
   const now = Date.now();
-  geoLossLog[geoIdx].push(now);
-  // Prune entries outside the window
+  log.push(now);
+  // v74: in-place prune (was .filter() which allocated a new array per call)
   const cutoff = now - ATTACK_WINDOW_MS;
-  geoLossLog[geoIdx] = geoLossLog[geoIdx].filter(t => t >= cutoff);
+  let w = 0;
+  for(let r = 0; r < log.length; r++){
+    if(log[r] >= cutoff){ log[w++] = log[r]; }
+  }
+  log.length = w;
   // Check rate
-  const count  = geoLossLog[geoIdx].length;
+  const count  = w;
   const rate   = count / (ATTACK_WINDOW_MS / 1000); // px/s
   if(rate >= ATTACK_RATE_PX_S){
     const lastAlert = geoLastAlert[geoIdx] || 0;
@@ -6323,27 +6340,42 @@ function getFightBackBonus(geoIdx, painterIdx){
 
 function isUnderSiege(geoIdx){
   // Flash only when: >50% enemy-held, actively being attacked, not fully conquered
+  // v74: zero-allocation rewrite — was Object.entries + .filter per call,
+  //      called 191×5fps = 955/sec → was burning GC under bot load.
   const total = geoTotal[geoIdx] || 0;
   if(total === 0) return false;
-  // Stop flashing if fully conquered by any single enemy
-  for(const key of conqueredSet){
-    const [g,c]=key.split(':');
-    if(+g===geoIdx && +c!==geoIdx) return false; // fully conquered — no flash
-  }
-  // Check enemy fraction > 50%
-  let enemy = 0;
-  if(geoClaimCnt[geoIdx]){
-    for(const [k,cnt] of Object.entries(geoClaimCnt[geoIdx])){
-      if(+k !== geoIdx) enemy += cnt;
-    }
-  }
-  if(enemy / total < 0.50) return false;
-  // Only flash if actively being attacked (pixels lost in last 10s)
+  // Cheap log-presence gate first — if no recent loss, can't be sieged.
   const log = geoLossLog[geoIdx];
   if(!log || log.length === 0) return false;
+  // In-place stale-entry prune (no allocation)
   const cutoff = Date.now() - ATTACK_WINDOW_MS;
-  const recent = log.filter(t => t >= cutoff);
-  return recent.length > 0;
+  let w = 0;
+  for(let r = 0; r < log.length; r++){
+    if(log[r] >= cutoff){ log[w++] = log[r]; }
+  }
+  log.length = w;
+  if(w === 0) return false;
+  // Stop flashing if fully conquered by another country (string-compare key form)
+  // Conquest keys are "geoCountryId:claimerCountryId" — both are COUNTRY IDs, not indices.
+  // Use the country ID for this geo for matching.
+  const geoFeat = featList[geoIdx];
+  if(geoFeat){
+    const prefix = geoFeat.id + ':';
+    for(const key of conqueredSet){
+      if(key.length > prefix.length && key.startsWith(prefix)){
+        // Check that claimer is not this same country
+        if(key.substring(prefix.length) !== geoFeat.id) return false;
+      }
+    }
+  }
+  // Check enemy fraction > 50% — for-in instead of Object.entries
+  const cnts = geoClaimCnt[geoIdx];
+  if(!cnts) return false;
+  let enemy = 0;
+  for(const k in cnts){
+    if((k|0) !== geoIdx) enemy += cnts[k];
+  }
+  return enemy / total >= 0.50;
 }
 
 // ── Red siege flash on c-highlight ────────────────────────────────
@@ -6354,48 +6386,73 @@ let _siegePixelCache = {}; // geoIdx → [pixel indices]
 let _siegedSet = new Set(); // currently sieged country indices
 
 function buildSiegeCache(geoIdx){
+  // v74: use geoPixelList (per-geo Int32Array built at load) instead of
+  // scanning all MAP_PX (2M) pixels. landMask filter still needed because
+  // geoPixelList includes the country's full pixel set.
+  const src = geoPixelList && geoPixelList[geoIdx];
   const arr = [];
-  for(let i=0;i<MAP_PX;i++){
-    if(featByPixel[i]===geoIdx && landMask[i]) arr.push(i);
+  if(src){
+    for(let pi = 0; pi < src.length; pi++){
+      const i = src[pi];
+      if(landMask[i]) arr.push(i);
+    }
+  } else {
+    for(let i=0;i<MAP_PX;i++){
+      if(featByPixel[i]===geoIdx && landMask[i]) arr.push(i);
+    }
   }
   _siegePixelCache[geoIdx] = arr;
   return arr;
 }
 
+// v74: throttle to ~5fps (was 30fps) — siege pulse doesn't need higher.
+// Detection scan is the costly part (191 isUnderSiege checks).
+let _siegeLastTick = 0;
+const SIEGE_TICK_MIN_MS = 200; // 5fps
+
 function tickSiegeFlash(){
   requestAnimationFrame(tickSiegeFlash);
-  _siegeFrame++;
-  if(_siegeFrame % 2 !== 0) return; // ~30fps
   if(!featList || !featList.length) return;
+  const now = performance.now();
+  if(now - _siegeLastTick < SIEGE_TICK_MIN_MS) return;
+  _siegeLastTick = now;
 
-  // Find all countries currently under siege
-  const sieged = [];
-  for(let gi=0;gi<featList.length;gi++){
+  // Find all countries currently under siege (reuses _siegeScratch to avoid alloc)
+  if(!_siegeScratch) _siegeScratch = [];
+  const sieged = _siegeScratch;
+  sieged.length = 0;
+  for(let gi=0; gi<featList.length; gi++){
     if(isUnderSiege(gi)) sieged.push(gi);
   }
 
-  // Detect countries that just entered siege state → play alert
-  for(const gi of sieged){
+  // Detect newly sieged countries (entered state) → play alert
+  for(let i=0; i<sieged.length; i++){
+    const gi = sieged[i];
     if(!_siegedSet.has(gi)){
       _siegedSet.add(gi);
-      sfxUnderAttack(); // fire once when crossing 50% threshold
+      sfxUnderAttack();
     }
   }
-  // Remove countries that are no longer sieged
+  // Build current-frame Set for diffing (small N — only sieged countries)
+  if(!_siegeNewSet) _siegeNewSet = new Set();
+  _siegeNewSet.clear();
+  for(let i=0; i<sieged.length; i++) _siegeNewSet.add(sieged[i]);
+  // Remove countries no longer sieged
   for(const gi of _siegedSet){
-    if(!sieged.includes(gi)) _siegedSet.delete(gi);
+    if(!_siegeNewSet.has(gi)) _siegedSet.delete(gi);
   }
 
-  // Always clear siege canvas first (full clear once per frame)
+  // Always clear siege canvas first
   siegeCtx.clearRect(0,0,MAP_W,MAP_H);
-
   if(sieged.length === 0){ _siegePixelCache = {}; return; }
 
   // Pulse: strong red, alpha 0.25–0.60
   const t = Date.now() / 1000;
   const alpha = 0.125 + 0.175 * (0.5 + 0.5 * Math.sin(t * Math.PI * 1.5));
+  const a = Math.round(alpha*255);
 
-  for(const gi of sieged){
+  for(let si=0; si<sieged.length; si++){
+    const gi = sieged[si];
     let pixels = _siegePixelCache[gi];
     if(!pixels) pixels = buildSiegeCache(gi);
     if(!pixels || pixels.length === 0) continue;
@@ -6403,7 +6460,8 @@ function tickSiegeFlash(){
     // Build bounding box once
     if(!pixels._bbox){
       let x0=MAP_W,y0=MAP_H,x1=0,y1=0;
-      for(const i of pixels){
+      for(let pi=0; pi<pixels.length; pi++){
+        const i = pixels[pi];
         const x=i%MAP_W, y=(i/MAP_W)|0;
         if(x<x0)x0=x; if(x>x1)x1=x;
         if(y<y0)y0=y; if(y>y1)y1=y;
@@ -6413,16 +6471,17 @@ function tickSiegeFlash(){
     const {x0,y0,w,h} = pixels._bbox;
     const img = siegeCtx.createImageData(w,h);
     const d = img.data;
-    const a = Math.round(alpha*255);
-    for(const i of pixels){
+    for(let pi=0; pi<pixels.length; pi++){
+      const i = pixels[pi];
       const px=(i%MAP_W)-x0, py=((i/MAP_W)|0)-y0;
       const p=(py*w+px)*4;
       d[p]=230; d[p+1]=20; d[p+2]=20; d[p+3]=a;
     }
-    // No clearRect here — canvas already cleared once above
     siegeCtx.putImageData(img,x0,y0);
   }
 }
+let _siegeScratch = null;
+let _siegeNewSet = null;
 
 // ── Chiptune background music ─────────────────────────────────────
 // Procedural 4/4 track: bass + melody + arp, ~90s loop
@@ -7319,27 +7378,34 @@ function mpHandleMessage(msg) {
       }
 if (msg.state?.conquered) {
         for (const key of msg.state.conquered) conqueredSet.add(key);
-        // Replay flood-fills for every conquered country so the canvas reflects
-        // the persistent state. Server's "geoIdx:countryId" keys actually store COUNTRY IDs
-        // for both halves, so we must map both to featList indices.
-        setTimeout(() => {
-          for (const key of conqueredSet) {
-            const parts = String(key).split(':');
-            if (parts.length !== 2) continue;
-            const geoCountryId = parts[0];
-            const claimerId    = parts[1];
-            // Skip self-conquests (legacy data from older versions where countries "conquered themselves")
-            if (geoCountryId === claimerId) continue;
-            const geoFi    = featList.findIndex(f => f.id === String(geoCountryId));
-            const claimerFi= featList.findIndex(f => f.id === String(claimerId));
-            if (geoFi >= 0 && claimerFi >= 0) {
-              finisherFill(geoFi, claimerFi);
-              if (typeof placeFlag === 'function') placeFlag(geoFi, claimerFi);
-            }
+        // v74: chunk the replay — one conquest per RAF (was: all in one
+        // synchronous setTimeout, which froze the browser for seconds when
+        // 50+ countries had been conquered before page load).
+        const replayQueue = [];
+        for (const key of conqueredSet) {
+          const parts = String(key).split(':');
+          if (parts.length !== 2) continue;
+          if (parts[0] === parts[1]) continue; // skip self-conquests
+          const geoFi    = featList.findIndex(f => f.id === String(parts[0]));
+          const claimerFi= featList.findIndex(f => f.id === String(parts[1]));
+          if (geoFi >= 0 && claimerFi >= 0) replayQueue.push([geoFi, claimerFi]);
+        }
+        let qi = 0;
+        const replayStep = () => {
+          // Process up to 3 conquests per frame — keeps frame budget under ~30ms
+          for (let n = 0; n < 3 && qi < replayQueue.length; n++, qi++) {
+            const [geoFi, claimerFi] = replayQueue[qi];
+            finisherFill(geoFi, claimerFi);
+            if (typeof placeFlag === 'function') placeFlag(geoFi, claimerFi);
           }
-          markOutlineDirty();
-          scheduleLegend();
-        }, 100);
+          if (qi < replayQueue.length) {
+            requestAnimationFrame(replayStep);
+          } else {
+            markOutlineDirty();
+            scheduleLegend();
+          }
+        };
+        requestAnimationFrame(replayStep);
       }
       scheduleLegend();
       break;
