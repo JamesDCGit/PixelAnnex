@@ -3196,7 +3196,14 @@ function _isCountryConquered(countryId) {
 // reversal check never immediately undoes the conquest (reversal fires at <60%).
 const BOT_SURRENDER_THRESHOLD = 0.50;
 
+// v75-debug: hard kill-switch for bot activity to isolate stall causes.
+// Set DISABLE_BOTS=1 in env to keep all bots dormant (no painting, no migration,
+// no _tickBotActivity drift). They still exist in players list for UI counts.
+const _BOTS_DISABLED = process.env.DISABLE_BOTS === '1' || process.env.DISABLE_BOTS === 'true';
+if (_BOTS_DISABLED) console.log('[Bot] *** BOTS DISABLED via DISABLE_BOTS env var ***');
+
 function botTickSingle(countryId) {
+  if (_BOTS_DISABLED) return;
   if (!mapReady) return;
   // Once permanently conquered this cycle the bot never resumes — even if a
   // monster/nuke reversal temporarily drops the attacker below the threshold.
