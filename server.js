@@ -31,14 +31,18 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-28-v76';
+const SERVER_VERSION       = '2026-05-28-v77';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
 const MAP_PX             = MAP_W * MAP_H;
 const CONQUEST_THRESHOLD = 0.60; // v56: lowered from 70% → 60% to match bot surrender mechanics
 const MAX_STROKE_PX      = 500;
-const BROADCAST_MS       = 50;    // delta broadcast debounce
+const BROADCAST_MS       = 1000;  // v77: 1Hz delta broadcast (was 20Hz/50ms).
+                                    // Client visually staggers paints over ~900ms
+                                    // so users see smooth ambient activity at
+                                    // 1/20th the bandwidth. Player's own paints
+                                    // remain instant client-side (claimPixel).
 const PING_MS            = 10000;
 const TIMEOUT_MS         = 30000;
 

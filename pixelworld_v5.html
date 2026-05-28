@@ -3217,7 +3217,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-28-v76';
+const CODE_VERSION = '2026-05-28-v77';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4114,13 +4114,14 @@ function finisherFill(geoIdx,claimerIdx){
     if(!geoClaimCnt[geoIdx])geoClaimCnt[geoIdx]={};
     geoClaimCnt[geoIdx][claimerIdx]=(geoClaimCnt[geoIdx][claimerIdx]||0)+1;
   }
+  // v77: animated diagonal-sweep paint instead of synchronous flood-fill.
+  // State is already updated above (claimByPixel etc.) so game logic is correct;
+  // visually the conquered country paints in a wave over ~1s — cinematic without
+  // a frame stall. Uses the global paint queue's deterministic sweep variant.
   if(toFill.length>0){
-    let fx0=MAP_W,fy0=MAP_H,fx1=0,fy1=0;
-    for(const gi of toFill){const px=gi%MAP_W,py=(gi/MAP_W)|0;if(px<fx0)fx0=px;if(px>fx1)fx1=px;if(py<fy0)fy0=py;if(py>fy1)fy1=py;}
-    const fw=fx1-fx0+1,fh=fy1-fy0+1;
-    const img=claimCtx.getImageData(fx0,fy0,fw,fh);const d=img.data;
-    for(const gi of toFill){const px=(gi%MAP_W)-fx0,py=((gi/MAP_W)|0)-fy0;const p=(py*fw+px)*4;d[p]=r;d[p+1]=g;d[p+2]=b;d[p+3]=215;}
-    claimCtx.putImageData(img,fx0,fy0);
+    enqueuePaintsSweep(toFill, claimerIdx, 1000);
+    // Also mark outline dirty if YOU are the claimer or you owned land here
+    if(claimerIdx === currentIdx) markOutlineDirty();
   }
   $("px-count").textContent=totalClaimed.toLocaleString();
   scheduleLegend();
@@ -7327,6 +7328,123 @@ function mpSendJoin() {
   }));
 }
 
+// ── v77: Staggered paint queue ────────────────────────────────────
+// Decouples network tick (now 1Hz) from visual paint rate. When a delta
+// packet arrives with N pixels, state (claimByPixel etc.) updates IMMEDIATELY
+// so game logic stays correct, but the visual fillRect calls are spread
+// across the next ~900ms via random scheduling. Result: ambient activity
+// looks smooth (~constant trickle) at 1/20th the bandwidth.
+//
+// Queue layout: flat Int32Array-backed. Each entry occupies 3 slots:
+//   [0] pixelIdx (y*MAP_W+x)
+//   [1] fi       (featList index — owner. -1 means "clear pixel".)
+//   [2] scheduledTime (performance.now() ms when this paint should fire)
+//
+// Stale-check: before painting, we verify claimByPixel[pi] === fi. If state
+// has moved on (e.g. another delta or own paint overwrote this pixel), the
+// queued paint is skipped — no flicker.
+//
+// Own paints (claimPixel) BYPASS this queue and paint instantly for
+// responsive feedback.
+const PAINT_STAGGER_MS = 900;    // spread incoming deltas across this window
+const PAINT_QUEUE_MAX  = 50000;  // safety cap; drop oldest if exceeded
+const _paintQ = [];              // flat array of triples
+let _paintRaf = null;
+
+function enqueuePaints(pixels, getFi, staggerMs) {
+  // pixels: caller-provided iterable yielding { pi, fi } (or [pi, fi] tuples)
+  // getFi:  optional fn(p) → fi when pixels is a different shape
+  // staggerMs: width of the random delay window
+  const now = performance.now();
+  const span = staggerMs || PAINT_STAGGER_MS;
+  for (let k = 0; k < pixels.length; k++) {
+    const p = pixels[k];
+    const pi = p[0], fi = p[1];
+    const t = now + Math.random() * span;
+    _paintQ.push(pi, fi, t);
+  }
+  if (_paintQ.length / 3 > PAINT_QUEUE_MAX) {
+    // Drop the oldest half — backpressure under extreme load
+    _paintQ.splice(0, _paintQ.length / 2 | 0);
+  }
+  if (!_paintRaf) _paintRaf = requestAnimationFrame(flushPaintQueue);
+}
+
+// Sweep variant: paints in a deterministic diagonal wipe (x+y order)
+// over the full stagger window. Used for finisherFill conquest animation.
+function enqueuePaintsSweep(pixelArr, fi, staggerMs) {
+  if (!pixelArr || !pixelArr.length) return;
+  // Sort by x+y diagonal so the sweep travels from one corner to the other
+  const sorted = pixelArr.slice().sort((a, b) => {
+    const ax = a % MAP_W, ay = (a / MAP_W) | 0;
+    const bx = b % MAP_W, by = (b / MAP_W) | 0;
+    return (ax + ay) - (bx + by);
+  });
+  const now = performance.now();
+  const span = staggerMs || PAINT_STAGGER_MS;
+  const n = sorted.length;
+  for (let k = 0; k < n; k++) {
+    // Time proportional to position in sorted order — deterministic wipe
+    const t = now + (k / n) * span;
+    _paintQ.push(sorted[k], fi, t);
+  }
+  if (!_paintRaf) _paintRaf = requestAnimationFrame(flushPaintQueue);
+}
+
+function flushPaintQueue() {
+  _paintRaf = null;
+  if (_paintQ.length === 0) return;
+  if (!claimCtx) return;
+  const now = performance.now();
+  // Single-pass: keep items whose time hasn't come yet; collect ready ones grouped by fi
+  const readyByFi = new Map();  // fi → array of pixel indices
+  let clears = null;            // array of pixel indices to clearRect
+  let writeIdx = 0;
+  const q = _paintQ;
+  for (let r = 0; r < q.length; r += 3) {
+    const t = q[r + 2];
+    if (t > now) {
+      // Keep in queue
+      q[writeIdx]     = q[r];
+      q[writeIdx + 1] = q[r + 1];
+      q[writeIdx + 2] = q[r + 2];
+      writeIdx += 3;
+      continue;
+    }
+    const pi = q[r], fi = q[r + 1];
+    // Stale-check: skip if state no longer matches expected owner
+    if (claimByPixel[pi] !== fi) continue;
+    if (fi === -1) {
+      if (!clears) clears = [];
+      clears.push(pi);
+    } else {
+      let arr = readyByFi.get(fi);
+      if (!arr) { arr = []; readyByFi.set(fi, arr); }
+      arr.push(pi);
+    }
+  }
+  q.length = writeIdx;
+  // Render clears first (cheaper)
+  if (clears) {
+    for (let k = 0; k < clears.length; k++) {
+      const pi = clears[k];
+      claimCtx.clearRect(pi % MAP_W, (pi / MAP_W) | 0, 1, 1);
+    }
+  }
+  // Render paints grouped by owner — fillStyle set once per owner
+  for (const [fi, arr] of readyByFi) {
+    const rgb = colorCache[fi];
+    if (!rgb) continue;
+    claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.843)';
+    for (let k = 0; k < arr.length; k++) {
+      const pi = arr[k];
+      claimCtx.fillRect(pi % MAP_W, (pi / MAP_W) | 0, 1, 1);
+    }
+  }
+  // Keep RAF alive while queue still has work
+  if (q.length > 0) _paintRaf = requestAnimationFrame(flushPaintQueue);
+}
+
 function mpHandleMessage(msg) {
   switch (msg.type) {
 
@@ -7447,14 +7565,12 @@ if (msg.state?.conquered) {
     case 'delta': {
       if (!_localPlayerId) return; // discard deltas that arrive before welcome
       if (!msg.pixels?.length) return;
-      // v75 scaling rewrite: gated for hundreds/thousands of bots+players.
-      //  - idToFeatIdx replaces O(N) findIndex per pixel
-      //  - colorCache replaces hexRgb string-parse per owner
-      //  - flashPixel removed entirely from delta path: it was triggering a
-      //    60fps full-canvas (2M-pixel) destination-out RAF that never stopped
-      //    while bots were painting — that was the real continuous stall.
-      //  - byOwner keyed by Int instead of string conversion
-      const byOwner = new Map();
+      // v77: state updates immediate (claimByPixel, claimerCount, geoClaimCnt)
+      // so game logic stays correct, but canvas paints are queued and staggered
+      // over PAINT_STAGGER_MS via the paint queue. Own pixels (claimPixel)
+      // bypass the queue and paint instantly.
+      const queuedPaints = [];   // flat [pi, fi, pi, fi, ...] — gets fanned out
+      const queuedClears = [];   // [pi, pi, ...]
       let outlineMinX = -1, outlineMinY = -1, outlineMaxX = -1, outlineMaxY = -1;
       const pixels = msg.pixels;
       for (let pi = 0; pi < pixels.length; pi++) {
@@ -7476,11 +7592,11 @@ if (msg.state?.conquered) {
                    if (y < outlineMinY) outlineMinY = y; if (y > outlineMaxY) outlineMaxY = y; }
           }
           claimByPixel[i] = -1;
-          claimCtx.clearRect(x, y, 1, 1);
+          // Clear own-stroke mark immediately (no queue) so high-zoom view doesn't show grey residue
           clearOwnPixel(x, y);
+          queuedClears.push([i, -1]);
           continue;
         }
-        // O(1) lookup instead of findIndex (was O(N) string compare per pixel)
         const fi = idToFeatIdx.get(typeof owner === 'string' ? owner : String(owner));
         if (fi === undefined) continue;
         if (prevFi === fi) continue;
@@ -7502,20 +7618,11 @@ if (msg.state?.conquered) {
           else { if (x < outlineMinX) outlineMinX = x; if (x > outlineMaxX) outlineMaxX = x;
                  if (y < outlineMinY) outlineMinY = y; if (y > outlineMaxY) outlineMaxY = y; }
         }
-        let arr = byOwner.get(fi);
-        if (!arr) { arr = []; byOwner.set(fi, arr); }
-        arr.push(x, y); // flat array — half the allocation of {x,y} objects
+        queuedPaints.push([i, fi]);
       }
-      // Paint with fillRect — fillStyle set once per owner, no allocations.
-      // NOTE: flashPixel deliberately omitted — see comment above.
-      for (const [fi, arr] of byOwner) {
-        const rgb = colorCache[fi];
-        if (!rgb) continue;
-        claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.843)';
-        for (let k = 0; k < arr.length; k += 2) {
-          claimCtx.fillRect(arr[k], arr[k+1], 1, 1);
-        }
-      }
+      // Queue both paints and clears for staggered rendering
+      if (queuedPaints.length) enqueuePaints(queuedPaints);
+      if (queuedClears.length) enqueuePaints(queuedClears);
       if (outlineMinX >= 0) {
         markOutlineDirty(outlineMinX, outlineMinY);
         if (outlineMaxX !== outlineMinX || outlineMaxY !== outlineMinY) {
