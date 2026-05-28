@@ -3217,7 +3217,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-28-v75';
+const CODE_VERSION = '2026-05-28-v76';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7343,8 +7343,22 @@ function mpHandleMessage(msg) {
       console.log('[MP] Welcome, player', _localPlayerId, '· server', window.SERVER_VERSION, '· client', CODE_VERSION);
       if (msg.serverVersion && msg.serverVersion !== CODE_VERSION) {
         console.warn('[MP] Version mismatch — client', CODE_VERSION, 'vs server', msg.serverVersion);
-        // Auto-refresh: new build deployed — reload after 4s to pick up fresh HTML
-        setTimeout(() => window.location.reload(true), 4000);
+        // v75 fix: only auto-reload ONCE per tab. Previously this caused an
+        // infinite reload loop whenever CODE_VERSION and SERVER_VERSION
+        // drifted (e.g. client deployed but server forgot to bump): page
+        // would load, get a welcome, mismatch, reload after 4s, repeat
+        // forever — making the game appear to "stall" after ~5s.
+        let alreadyTriedReload = false;
+        try { alreadyTriedReload = sessionStorage.getItem('pa_version_reload') === msg.serverVersion; } catch(e){}
+        if (!alreadyTriedReload) {
+          try { sessionStorage.setItem('pa_version_reload', msg.serverVersion); } catch(e){}
+          setTimeout(() => window.location.reload(true), 4000);
+        } else {
+          console.warn('[MP] Already tried reload for this server version — staying on stale client to avoid loop. Hard-refresh the page (Ctrl+Shift+R) to load the latest.');
+        }
+      } else {
+        // Versions match — clear any stale reload-attempt marker
+        try { sessionStorage.removeItem('pa_version_reload'); } catch(e){}
       }
       // Apply server state — overlay server's actively-painted pixels.
       // Pixels in state.runs were painted by a player or bot; paint them at full alpha.
