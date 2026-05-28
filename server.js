@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-28-v79';
+const SERVER_VERSION       = '2026-05-28-v80';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -4074,9 +4074,24 @@ const httpServer = http.createServer(async (req, res) => {
 
 const wss = new WebSocket.Server({ server: httpServer, maxPayload: 4 * 1024 * 1024 });
 
+// v79: prefer real client IP when behind Cloudflare / nginx.
+// Header preference order:
+//   1. CF-Connecting-IP  — set by Cloudflare; always the original client
+//   2. X-Real-IP         — set by our nginx config
+//   3. X-Forwarded-For   — falls back to first IP in the chain
+//   4. socket.remoteAddress — direct connection (only when nothing else)
+function getClientIP(req) {
+  const h = req.headers || {};
+  if (h['cf-connecting-ip']) return h['cf-connecting-ip'];
+  if (h['x-real-ip']) return h['x-real-ip'];
+  const xff = h['x-forwarded-for'];
+  if (xff) return String(xff).split(',')[0].trim();
+  return req.socket && req.socket.remoteAddress;
+}
+
 wss.on('connection', (ws, req) => {
   const pid = nextPid++;
-  const ip  = req.socket.remoteAddress;
+  const ip  = getClientIP(req);
   console.log(`[+] Player ${pid} connected from ${ip}`);
 
   const player = { ws, countryId: null, countryIdx: -1, lastSeen: Date.now(), isBot: false };
