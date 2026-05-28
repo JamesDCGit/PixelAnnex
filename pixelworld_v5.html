@@ -3202,7 +3202,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-27-v72';
+const CODE_VERSION = '2026-05-28-v73';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4856,10 +4856,11 @@ function clearOwnPixel(x, y) {
 function flushOwnStroke() {
   if (!ownCtx || !_ownStrokeQueue.length) return;
   if (_ownStrokeQueue.length > 2000) _ownStrokeQueue = _ownStrokeQueue.slice(-500);
+  // v73: set fillStyle once, then batch fillRect calls (no allocations).
+  // Alpha 90/255 ≈ 0.353.
+  ownCtx.fillStyle = 'rgba(255,255,255,0.353)';
   for (const { x, y } of _ownStrokeQueue) {
-    const id = ownCtx.createImageData(1, 1);
-    id.data[0] = 255; id.data[1] = 255; id.data[2] = 255; id.data[3] = 90;
-    ownCtx.putImageData(id, x, y);
+    ownCtx.fillRect(x, y, 1, 1);
   }
   _ownStrokeQueue = [];
 }
@@ -4913,11 +4914,12 @@ function claimPixel(px,py){
        checkConquest(geo,currentIdx);
   }
   const [r,g,b]=hexRgb(featList[currentIdx].color);
-  const id=claimCtx.createImageData(1,1);
-  id.data[0]=r;id.data[1]=g;id.data[2]=b;id.data[3]=215;
-  claimCtx.putImageData(id,px,py);
+  // v73: fillRect is far cheaper than createImageData(1,1)+putImageData
+  // (no allocation, GPU-accelerated). Alpha 215/255 ≈ 0.843.
+  claimCtx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.843)';
+  claimCtx.fillRect(px, py, 1, 1);
   flashPixel(px, py);
-  markOutlineDirty();
+  markOutlineDirty(px, py);
 }
 
 function paintBrush(px,py){
@@ -6993,16 +6995,39 @@ function scheduleMusicTrack3(ctx, masterGain, startT){
 
 // ── Player pixel outline ──────────────────────────────────────────
 // Draws a 1px white outline around all pixels belonging to currentIdx.
-// v71: throttled to max 10fps — 191 bots constantly call markOutlineDirty
-//      via server deltas, pinning it at 60fps = 720ms/sec of main-thread work.
+// v73 holistic rebuild:
+//   - 1fps cap (was 10fps in v72) — outline is cosmetic, doesn't need higher
+//   - Incremental dirty-bbox tracking — only scan/flush the changed region
+//   - Per-pixel markOutlineDirty(x,y) API — call sites pass coords when known
+//   - Whole-map fallback for events that touch many regions (country switch, init)
 let _outlineDirty = false;
 let _outlineScheduled = false;
 let _outlineLastDraw  = 0;
-const OUTLINE_MIN_INTERVAL_MS = 100; // max 10fps
-// v70: reuse this ImageData buffer instead of allocating 8MB every RAF frame.
-let _outlineImgData = null;
+const OUTLINE_MIN_INTERVAL_MS = 1000; // 1fps cap (user request)
+// Dirty bbox in map-pixel coords; -1 = clean
+let _outlineDx0 = -1, _outlineDy0 = -1, _outlineDx1 = -1, _outlineDy1 = -1;
 
-function markOutlineDirty(){
+function markOutlineDirty(x, y){
+  if(x === undefined){
+    // Whole-map dirty (country switch, init, conquered replay)
+    _outlineDx0 = 0; _outlineDy0 = 0;
+    _outlineDx1 = MAP_W - 1; _outlineDy1 = MAP_H - 1;
+  } else {
+    // Expand bbox by 1 — outline draws on neighbor pixels of own pixels
+    const x0 = x > 0 ? x - 1 : 0;
+    const y0 = y > 0 ? y - 1 : 0;
+    const x1 = x < MAP_W - 1 ? x + 1 : MAP_W - 1;
+    const y1 = y < MAP_H - 1 ? y + 1 : MAP_H - 1;
+    if(_outlineDx0 < 0){
+      _outlineDx0 = x0; _outlineDy0 = y0;
+      _outlineDx1 = x1; _outlineDy1 = y1;
+    } else {
+      if(x0 < _outlineDx0) _outlineDx0 = x0;
+      if(y0 < _outlineDy0) _outlineDy0 = y0;
+      if(x1 > _outlineDx1) _outlineDx1 = x1;
+      if(y1 > _outlineDy1) _outlineDy1 = y1;
+    }
+  }
   _outlineDirty = true;
   if(!_outlineScheduled){
     _outlineScheduled = true;
@@ -7028,27 +7053,36 @@ function flushOutline(){
 
 function redrawOutline(){
   if(!claimByPixel || !landMask || !outlineCtx) return;
-  // v70: skip on mobile — too expensive.
+  // Skip on mobile — too expensive.
   if(_isMobileForMemory){ outlineCtx.clearRect(0,0,MAP_W,MAP_H); return; }
-  // v70: reuse ImageData buffer — allocate once, fill(0) is a fast memset.
-  if(!_outlineImgData) _outlineImgData = outlineCtx.createImageData(MAP_W, MAP_H);
-  const d = _outlineImgData.data;
-  d.fill(0);
+  // Snapshot + reset bbox (atomic — new dirties accumulate for next flush)
+  const x0 = _outlineDx0, y0 = _outlineDy0, x1 = _outlineDx1, y1 = _outlineDy1;
+  _outlineDx0 = _outlineDy0 = _outlineDx1 = _outlineDy1 = -1;
+  if(x0 < 0) return;
+  const w = x1 - x0 + 1, h = y1 - y0 + 1;
+  // Allocate ImageData only for the dirty region (much smaller than 8MB full-map).
+  const img = outlineCtx.createImageData(w, h);
+  const d = img.data; // already zeroed
   const DX=[-1,1,0,0], DY=[0,0,-1,1];
-  // Full scan: own pixels can be in any geo (invaded territory), so we must check all.
-  // This runs at most 10fps (throttled by flushOutline) so the ~12ms cost is tolerable.
-  for(let i=0;i<MAP_PX;i++){
-    if(claimByPixel[i]!==currentIdx) continue;
-    const x=i%MAP_W, y=(i/MAP_W)|0;
-    for(let d4=0;d4<4;d4++){
-      const nx=x+DX[d4], ny=y+DY[d4];
-      if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
-      const ni=ny*MAP_W+nx;
-      if(claimByPixel[ni]===currentIdx) continue;
-      const p=ni*4; d[p]=255; d[p+1]=255; d[p+2]=255; d[p+3]=180;
+  // Scan only within bbox; for each own pixel draw outline on its non-own neighbors
+  // that fall inside the bbox. (Pixels outside bbox keep their previous outline.)
+  for(let y = y0; y <= y1; y++){
+    const rowOff = y * MAP_W;
+    for(let x = x0; x <= x1; x++){
+      if(claimByPixel[rowOff + x] !== currentIdx) continue;
+      for(let d4 = 0; d4 < 4; d4++){
+        const nx = x + DX[d4], ny = y + DY[d4];
+        if(nx < x0 || nx > x1 || ny < y0 || ny > y1) continue;
+        if(claimByPixel[ny * MAP_W + nx] === currentIdx) continue;
+        const lx = nx - x0, ly = ny - y0;
+        const p = (ly * w + lx) * 4;
+        d[p]=255; d[p+1]=255; d[p+2]=255; d[p+3]=180;
+      }
     }
   }
-  outlineCtx.putImageData(_outlineImgData, 0, 0);
+  // Clear old outline in dirty region, then write new
+  outlineCtx.clearRect(x0, y0, w, h);
+  outlineCtx.putImageData(img, x0, y0);
 }
 
 // ── Font scale ────────────────────────────────────────────────────
@@ -7315,6 +7349,9 @@ if (msg.state?.conquered) {
       if (!_localPlayerId) return; // discard deltas that arrive before welcome
       if (!msg.pixels?.length) return;
       const byOwner = {};
+      // v73: track outline-relevant pixels (only those involving currentIdx affect the outline).
+      // With 191 bots painting all over the world, this gates 99% of outline redraws.
+      let outlineMinX = -1, outlineMinY = -1, outlineMaxX = -1, outlineMaxY = -1;
       for (const { x, y, owner } of msg.pixels) {
         const i = y * MAP_W + x;
         const prevFi = claimByPixel[i];
@@ -7326,6 +7363,12 @@ if (msg.state?.conquered) {
             if (geo >= 0 && geoClaimCnt[geo]?.[prevFi] !== undefined) {
               geoClaimCnt[geo][prevFi] = Math.max(0, geoClaimCnt[geo][prevFi] - 1);
             }
+          }
+          if (prevFi === currentIdx) {
+            // Player just lost a pixel — outline affected.
+            if (outlineMinX < 0) { outlineMinX = outlineMaxX = x; outlineMinY = outlineMaxY = y; }
+            else { if (x < outlineMinX) outlineMinX = x; if (x > outlineMaxX) outlineMaxX = x;
+                   if (y < outlineMinY) outlineMinY = y; if (y > outlineMaxY) outlineMaxY = y; }
           }
           claimByPixel[i] = -1;
           claimCtx.clearRect(x, y, 1, 1);
@@ -7351,20 +7394,32 @@ if (msg.state?.conquered) {
           geoClaimCnt[geo][fi] = (geoClaimCnt[geo][fi] || 0) + 1;
         }
         claimByPixel[i] = fi;
+        // Outline only changes when currentIdx gains/loses a pixel
+        if (prevFi === currentIdx || fi === currentIdx) {
+          if (outlineMinX < 0) { outlineMinX = outlineMaxX = x; outlineMinY = outlineMaxY = y; }
+          else { if (x < outlineMinX) outlineMinX = x; if (x > outlineMaxX) outlineMaxX = x;
+                 if (y < outlineMinY) outlineMinY = y; if (y > outlineMaxY) outlineMaxY = y; }
+        }
         (byOwner[fi] ??= []).push({ x, y });
       }
-      // Paint batched pixels — all active paint strokes (player or bot) at full strength.
-      // Flash each pixel white for visibility (v29).
+      // v73: Paint batched pixels with fillRect — no per-pixel ImageData allocation.
+      // fillStyle set once per owner; fillRect is GPU-accelerated.
       for (const [fi, pixels] of Object.entries(byOwner)) {
         const [r,g,b] = hexRgb(featList[+fi].color);
+        claimCtx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.843)';
         for (const { x, y } of pixels) {
-          const id = claimCtx.createImageData(1,1);
-          id.data[0]=r; id.data[1]=g; id.data[2]=b; id.data[3]=215;
-          claimCtx.putImageData(id, x, y);
+          claimCtx.fillRect(x, y, 1, 1);
           if (typeof flashPixel === 'function') flashPixel(x, y);
         }
       }
-      markOutlineDirty();
+      // v73: only mark outline dirty when currentIdx was actually involved.
+      // Use bbox of the affected region so redrawOutline only scans/flushes that area.
+      if (outlineMinX >= 0) {
+        markOutlineDirty(outlineMinX, outlineMinY);
+        if (outlineMaxX !== outlineMinX || outlineMaxY !== outlineMinY) {
+          markOutlineDirty(outlineMaxX, outlineMaxY);
+        }
+      }
       scheduleLegend();
       break;
     }
