@@ -3276,7 +3276,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-29-v86';
+const CODE_VERSION = '2026-05-29-v86a';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10285,8 +10285,12 @@ function tickHighlightFlash(){
   }
 
   if(highlightGeoIdx < 0){
-    // Always clear the canvas when not highlighting (no pixel cache needed)
-    hlCtx.clearRect(0,0,MAP_W,MAP_H);
+    // Clear the canvas when not highlighting — UNLESS the v86 right-click
+    // inspect overlay is currently active. Both systems share hlCtx; without
+    // this guard, tickHighlightFlash wipes the inspect overlay every frame.
+    if (!_inspectGeoSet || performance.now() >= _inspectExpiry) {
+      hlCtx.clearRect(0,0,MAP_W,MAP_H);
+    }
     _hlPixelCache = null;
     return;
   }
@@ -10657,8 +10661,12 @@ const INSPECT_DURATION_MS = 3000;
 
 vp.addEventListener("contextmenu", e => {
   e.preventDefault();
-  const p = toMap(e.clientX, e.clientY);
+  // v86 fix: was `toMap()` which is undefined — the correct helper is screenToMap.
+  // The old context-menu handler had the same typo but was gated behind a rank
+  // check that never passed for most users, so the bug went undetected.
+  const p = screenToMap(e.clientX, e.clientY);
   if (!p) return;
+  if (p.x < 0 || p.x >= MAP_W || p.y < 0 || p.y >= MAP_H) return;
   const i = p.y * MAP_W + p.x;
   const geo = featByPixel[i];
   if (geo < 0) return;
@@ -10692,19 +10700,29 @@ vp.addEventListener("contextmenu", e => {
 
 // Renderer: piggyback on the highlight flash RAF tick.
 // Draws a soft cyan wash over all inspected territory until expiry.
+// v86 fix: clear hlCtx at the start of each tick — otherwise the per-pixel
+// fillRect calls stack frame after frame and saturate the overlay to opaque
+// cyan within ~10 frames.
+// Throttled to ~15fps to keep GPU cost bounded (cyan pulse is slow anyway).
+let _lastInspectTick = 0;
 function tickInspectHighlight() {
   requestAnimationFrame(tickInspectHighlight);
-  if (!hlCtx || !_inspectGeoSet) return;
+  if (!hlCtx) return;
   const now = performance.now();
-  if (now >= _inspectExpiry) {
+  // Expired? clear our overlay one last time then stop.
+  if (_inspectGeoSet && now >= _inspectExpiry) {
+    hlCtx.clearRect(0, 0, MAP_W, MAP_H);
     _inspectGeoSet = null;
-    return; // don't clear here — tickHighlightFlash also writes to hlCtx
+    return;
   }
-  // Pulse alpha 0.15 → 0.30 → 0.15 over the lifetime
+  if (!_inspectGeoSet) return;
+  if (now - _lastInspectTick < 66) return; // ~15fps throttle
+  _lastInspectTick = now;
+  // Clear before redraw so the alpha doesn't accumulate frame-on-frame.
+  hlCtx.clearRect(0, 0, MAP_W, MAP_H);
+  // Pulse alpha 0.18 → 0.42 → 0.18 over the lifetime
   const t = (now - (_inspectExpiry - INSPECT_DURATION_MS)) / INSPECT_DURATION_MS;
-  const alpha = 0.15 + 0.15 * Math.abs(Math.sin(t * Math.PI * 2));
-  hlCtx.save();
-  hlCtx.globalCompositeOperation = 'source-over';
+  const alpha = 0.18 + 0.24 * Math.abs(Math.sin(t * Math.PI * 2));
   hlCtx.fillStyle = 'rgba(34, 211, 238, ' + alpha.toFixed(3) + ')';  // cyan
   for (const fi of _inspectGeoSet) {
     const src = geoPixelList && geoPixelList[fi];
@@ -10714,7 +10732,6 @@ function tickInspectHighlight() {
       hlCtx.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1);
     }
   }
-  hlCtx.restore();
 }
 requestAnimationFrame(tickInspectHighlight);
 // v85: wheel handler distinguishes touchpad gestures from mouse-wheel.
