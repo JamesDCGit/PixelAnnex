@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-29-v85';
+const SERVER_VERSION       = '2026-05-29-v86';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2086,7 +2086,9 @@ if (MONSTER_DEBUG) {
 // preferences (countryMain, countryB, countryC).
 // Recomputed every 30 seconds from current profiles.
 
-const ALLIANCE_MIN_MEMBERS = 3;
+// v86: alliances now require 10+ members (was 3). Discourages tiny clique-
+// alliances and means alliances only form when there's real shared interest.
+const ALLIANCE_MIN_MEMBERS = 10;
 const ALLIANCE_RECOMPUTE_MS = 30000;
 
 // Active alliances: alliance_key (sorted country IDs joined by '-') → { countries:[], members:[discordIds] }
@@ -3107,6 +3109,78 @@ const BOT_SCOUT_CHANCE      = 0.005;  // was 0.01 — halve random distant scout
 const BOT_HOMESTABLE_THRESH = 0.25;   // was 0.40 — attack while home is still 25% secured (was 40%)
 const BOT_DEFEND_THRESHOLD  = 8;      // require at least this many sampled-invaded pixels before dropping attacks to defend (was: defend always wins)
 
+// v86: Random rotating rivalries. Every ~3 days the server picks a fresh set
+// of country-vs-country rivalries from the notable-countries pool. Bots whose
+// home country is on either side of a rivalry get a strong attack bias toward
+// the rival's territory. Makes the world feel "topical" without scraping news
+// (avoids the political-sensitivity pitfalls discussed in v84).
+//
+// Deterministic per 3-day window using a seeded RNG, so the rivalry roster is
+// stable for ~3 days and identical across all bot ticks within that window.
+const RIVALRY_REFRESH_MS = 3 * 24 * 3600 * 1000; // 3 days
+const RIVALRY_COUNT      = 8;                      // pairs to keep active
+const RIVALRY_BIAS_SCORE = 12;                     // score boost when target is a rival (huge — outranks contested+size)
+
+const RIVALRY_POOL = [
+  // Curated apolitical-leaning pairs that have well-known geographic friction
+  // but aren't tied to a specific active hot conflict. Server picks RIVALRY_COUNT
+  // of these per 3-day window.
+  ['840', '156'], // USA vs China (the classic)
+  ['840', '643'], // USA vs Russia (cold war energy)
+  ['156', '356'], // China vs India
+  ['356', '586'], // India vs Pakistan
+  ['410', '408'], // South Korea vs North Korea
+  ['376', '364'], // Israel vs Iran
+  ['792', '300'], // Turkey vs Greece
+  ['724', '826'], // Spain vs UK (Gibraltar etc.)
+  ['484', '840'], // Mexico vs USA
+  ['076', '032'], // Brazil vs Argentina
+  ['250', '826'], // France vs UK
+  ['392', '410'], // Japan vs South Korea
+  ['392', '156'], // Japan vs China
+  ['276', '250'], // Germany vs France (friendly)
+  ['158', '156'], // Taiwan vs China
+  ['804', '643'], // Ukraine vs Russia (current real conflict — included by user mandate)
+  ['682', '364'], // Saudi Arabia vs Iran (regional)
+  ['566', '710'], // Nigeria vs South Africa (continental)
+];
+
+function _activeRivalries() {
+  const windowKey = Math.floor(Date.now() / RIVALRY_REFRESH_MS);
+  // Deterministic shuffle seeded by windowKey
+  const shuffled = RIVALRY_POOL.slice();
+  let seed = (windowKey * 2654435761) >>> 0;
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    const j = seed % (i + 1);
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled.slice(0, RIVALRY_COUNT);
+}
+// Build per-countryId Set<rivalCountryId> for O(1) lookup in getBotTargets.
+let _rivalryByCountry = new Map();
+let _rivalryWindow = -1;
+function _refreshRivalryIndex() {
+  const windowKey = Math.floor(Date.now() / RIVALRY_REFRESH_MS);
+  if (windowKey === _rivalryWindow) return _rivalryByCountry;
+  _rivalryWindow = windowKey;
+  _rivalryByCountry = new Map();
+  for (const [a, b] of _activeRivalries()) {
+    if (!_rivalryByCountry.has(a)) _rivalryByCountry.set(a, new Set());
+    if (!_rivalryByCountry.has(b)) _rivalryByCountry.set(b, new Set());
+    _rivalryByCountry.get(a).add(b);
+    _rivalryByCountry.get(b).add(a);
+  }
+  const names = _activeRivalries().map(([a,b]) => _countryName(a) + ' vs ' + _countryName(b)).join(' · ');
+  console.log('[Rivalry] Active for window ' + windowKey + ': ' + names);
+  return _rivalryByCountry;
+}
+function _isRival(countryId, targetCountryId) {
+  _refreshRivalryIndex();
+  const set = _rivalryByCountry.get(String(countryId));
+  return set ? set.has(String(targetCountryId)) : false;
+}
+
 function getBotTargets(countryId, limit) {
   const cidx       = getIdx(countryId);
   const geoIdx     = getGeoForCountry(countryId);
@@ -3212,6 +3286,11 @@ function getBotTargets(countryId, limit) {
           else if (contested >= 0.05) score += 3;
           else if (contested >= 0.01) score += 1;
 
+          // v86: rivalry bias — if this neighbour is one of our current
+          // 3-day rivals, score it WAY up. This is what makes the world feel
+          // "live" with rotating tensions, without scraping real news.
+          if (_isRival(countryId, nHomeId)) score += RIVALRY_BIAS_SCORE;
+
           // Size-weighted: ALL bots prefer large neighbours (v60: no myShare gate)
           const theirShare = getWorldShare(nHomeId);
           if      (theirShare >= 0.05)  score += 6;
@@ -3285,33 +3364,66 @@ function botInit(countryId) {
   if (cleared > 0) console.log('[v36] Cleared', cleared, 'stale multi-country bot profiles');
 })();
 
-// v36: bot profile bootstrap — single random country pref to participate in alliances without forming mega-alliances
+// v86: bot alliance availability — only 5-15% of bots set countryMain (and
+// hence participate in alliance formation). The available fraction varies
+// daily based on the UTC date so the world feels organic. This shrinks bot-
+// driven alliances significantly while leaving the alliance system intact
+// for human players.
+//
+// Combined with ALLIANCE_MIN_MEMBERS = 10, this means bots almost never form
+// alliances by themselves; alliances mostly form when real players coordinate.
+function _isBotAllianceEligibleToday(countryId) {
+  // Daily-seeded RNG so the eligible set is stable for the calendar day (UTC)
+  const dayKey = Math.floor(Date.now() / (24 * 3600 * 1000));
+  // Pick a daily fraction in [0.05, 0.15]
+  const dailyFrac = 0.05 + (((dayKey * 2654435761) >>> 0) % 1000) / 1000 * 0.10;
+  // Per-bot stable hash combined with day
+  let h = 2166136261;
+  const s = String(countryId) + ':' + dayKey;
+  for (let i = 0; i < s.length; i++) h = (h ^ s.charCodeAt(i)) * 16777619 >>> 0;
+  return (h % 1000) / 1000 < dailyFrac;
+}
+
+// v36/v86: bot profile bootstrap. Most bots now get null countryMain (no
+// alliance participation); only the daily-eligible subset gets a random ally.
 function _initBotProfile(countryId) {
   const synthId = 'bot:' + countryId;
   if (profiles.has(synthId)) return;
   const allIds = [...bots.keys()];
   if (allIds.length < 4) return;
-  // v36: only assign a single random ally to prevent mega-alliances of all bots
-  const others = allIds.filter(id => id !== countryId);
-  const pick = others.length > 0 ? others[Math.floor(Math.random() * others.length)] : null;
+  let pick = null;
+  if (_isBotAllianceEligibleToday(countryId)) {
+    const others = allIds.filter(id => id !== countryId);
+    pick = others.length > 0 ? others[Math.floor(Math.random() * others.length)] : null;
+  }
   profiles.set(synthId, {
     discordId:   synthId,
     username:    'Bot ' + (countryNames[countryId] || countryId),
     rank:        'Soldier',
     points:      0,
     xp:          0,
-    countryMain: pick,
+    countryMain: pick,  // null = no alliance participation today
     countryB:    null,
     countryC:    null,
     joinedAt:    Date.now(),
     isBot:       true,
   });
 }
+// v86: re-evaluate alliance eligibility on day rollover. Bots that lose
+// eligibility have their countryMain cleared; newly-eligible bots get one.
 setInterval(() => {
   for (const countryId of bots.keys()) {
     const synthId = 'bot:' + countryId;
-    const p = profiles.get(synthId);
-    if (!p || !p.countryMain) _initBotProfile(countryId);
+    let p = profiles.get(synthId);
+    if (!p) { _initBotProfile(countryId); continue; }
+    const eligible = _isBotAllianceEligibleToday(countryId);
+    if (eligible && !p.countryMain) {
+      // Newly eligible — pick a random ally
+      const allIds = [...bots.keys()].filter(id => id !== countryId);
+      if (allIds.length > 0) p.countryMain = allIds[Math.floor(Math.random() * allIds.length)];
+    } else if (!eligible && p.countryMain) {
+      p.countryMain = null;  // drop out for the day
+    }
   }
 }, 60 * 1000);
 

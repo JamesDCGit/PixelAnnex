@@ -3276,7 +3276,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-29-v85';
+const CODE_VERSION = '2026-05-29-v86';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8781,6 +8781,13 @@ function switchStatsTab(panel) {
     p.classList.toggle('active', p.id === 'stats-panel-' + panel);
   });
   if (panel === 'lb') loadStatsLeaderboard();
+  if (panel === 'about') {
+    // v86: populate live version info when About tab opens
+    const v1 = document.getElementById('about-version');
+    const v2 = document.getElementById('about-server-version');
+    if (v1) v1.textContent = CODE_VERSION;
+    if (v2) v2.textContent = window.SERVER_VERSION || '—';
+  }
 }
 
 async function loadStatsMe() {
@@ -10641,19 +10648,75 @@ window.addEventListener("mouseup",()=>{
   isPainting=false;isDragging=false;vp.style.cursor="crosshair";
 });
 vp.addEventListener("mouseleave",()=>{$("tip").style.display="none";isPainting=false;ovCtx.clearRect(0,0,MAP_W,MAP_H);});
-vp.addEventListener("contextmenu",e=>{
+// v86: right-click inspects the country at the cursor + highlights any allied
+// countries. Available to all ranks (no longer a back-door for Select Target —
+// that's now Admiral-only via the toolbar button).
+let _inspectGeoSet = null;          // Set<featIdx> currently inspected
+let _inspectExpiry = 0;
+const INSPECT_DURATION_MS = 3000;
+
+vp.addEventListener("contextmenu", e => {
   e.preventDefault();
-  const rank=getCurrentRank();
-  if(rank.highlightMult < 2) return; // General+ only
-  const p=toMap(e.clientX,e.clientY);
-  if(!p) return;
-  const i=p.y*MAP_W+p.x;
-  const geo=featByPixel[i];
-  if(geo>=0){
-    setHighlight(geo);
-    sfxUIClick();
+  const p = toMap(e.clientX, e.clientY);
+  if (!p) return;
+  const i = p.y * MAP_W + p.x;
+  const geo = featByPixel[i];
+  if (geo < 0) return;
+  const targetCountry = featList[geo];
+  if (!targetCountry) return;
+  // Build the set of featIdx to highlight: this country + any allies
+  const set = new Set();
+  set.add(geo);
+  let allyCount = 0;
+  const ally = _allianceByCountry[targetCountry.id];
+  if (ally && Array.isArray(ally.countries)) {
+    for (const cId of ally.countries) {
+      const fi = idToFeatIdx.get(String(cId));
+      if (fi !== undefined && fi !== geo) { set.add(fi); allyCount++; }
+    }
+  }
+  _inspectGeoSet = set;
+  _inspectExpiry = performance.now() + INSPECT_DURATION_MS;
+  sfxUIClick();
+  // Toast: country + alliance summary
+  if (typeof actPushCard === 'function') {
+    actPushCard({
+      variant: 'info',
+      title:   '🔍 ' + targetCountry.name,
+      html:    allyCount > 0
+        ? 'Allied with <b>' + allyCount + '</b> countr' + (allyCount === 1 ? 'y' : 'ies') + ' · highlighting combined territory'
+        : 'No alliance · highlighting country territory only',
+    });
   }
 });
+
+// Renderer: piggyback on the highlight flash RAF tick.
+// Draws a soft cyan wash over all inspected territory until expiry.
+function tickInspectHighlight() {
+  requestAnimationFrame(tickInspectHighlight);
+  if (!hlCtx || !_inspectGeoSet) return;
+  const now = performance.now();
+  if (now >= _inspectExpiry) {
+    _inspectGeoSet = null;
+    return; // don't clear here — tickHighlightFlash also writes to hlCtx
+  }
+  // Pulse alpha 0.15 → 0.30 → 0.15 over the lifetime
+  const t = (now - (_inspectExpiry - INSPECT_DURATION_MS)) / INSPECT_DURATION_MS;
+  const alpha = 0.15 + 0.15 * Math.abs(Math.sin(t * Math.PI * 2));
+  hlCtx.save();
+  hlCtx.globalCompositeOperation = 'source-over';
+  hlCtx.fillStyle = 'rgba(34, 211, 238, ' + alpha.toFixed(3) + ')';  // cyan
+  for (const fi of _inspectGeoSet) {
+    const src = geoPixelList && geoPixelList[fi];
+    if (!src) continue;
+    for (let pi = 0; pi < src.length; pi++) {
+      const idx = src[pi];
+      hlCtx.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1);
+    }
+  }
+  hlCtx.restore();
+}
+requestAnimationFrame(tickInspectHighlight);
 // v85: wheel handler distinguishes touchpad gestures from mouse-wheel.
 //   • ctrlKey  → touchpad pinch  → zoom (browsers represent pinch this way)
 //   • small continuous deltas (touchpad scroll) with no ctrlKey → pan
@@ -11231,6 +11294,49 @@ function _renderMonsters() {
   monCtx.clearRect(0, 0, MAP_W, MAP_H);
   monCtx.imageSmoothingEnabled = false;
 
+  // v86: Pass 0 — dark outline + red spawn pulse for UFO & Godzilla (the Radioactive Lizard).
+  // Kraken is a sea creature and reads fine without an outline.
+  const MONSTER_SPAWN_PULSE_MS = 1500;
+  for (const id in _activeMonsters) {
+    const s = _activeMonsters[id];
+    if (!s || !s._canvas) continue;
+    if (s.type !== 'ufo' && s.type !== 'godzilla') continue;
+    if (s._despawnStart !== null) continue;
+    const cx = Math.round(s.x + s.w / 2);
+    const cy = Math.round(s.y + s.h / 2);
+    const r  = Math.max(s.w, s.h) * 0.55;
+    // Spawn pulse ring — red, expanding, fading out over MONSTER_SPAWN_PULSE_MS
+    if (s._spawnTime && now - s._spawnTime < MONSTER_SPAWN_PULSE_MS) {
+      const t = (now - s._spawnTime) / MONSTER_SPAWN_PULSE_MS;
+      const pulseR = r + t * r * 1.8;
+      const alpha  = 1 - t;
+      monCtx.save();
+      monCtx.globalAlpha = alpha * 0.7;
+      monCtx.strokeStyle = '#ef4444';
+      monCtx.lineWidth   = 3;
+      monCtx.beginPath();
+      monCtx.arc(cx, cy, pulseR, 0, Math.PI * 2);
+      monCtx.stroke();
+      // Inner softer ring for depth
+      monCtx.globalAlpha = alpha * 0.4;
+      monCtx.strokeStyle = '#fca5a5';
+      monCtx.lineWidth   = 1;
+      monCtx.beginPath();
+      monCtx.arc(cx, cy, pulseR * 0.85, 0, Math.PI * 2);
+      monCtx.stroke();
+      monCtx.restore();
+    }
+    // Permanent dark outline so the sprite reads against any background
+    monCtx.save();
+    monCtx.globalAlpha = 0.55;
+    monCtx.strokeStyle = '#000';
+    monCtx.lineWidth   = 2;
+    monCtx.beginPath();
+    monCtx.arc(cx, cy, r, 0, Math.PI * 2);
+    monCtx.stroke();
+    monCtx.restore();
+  }
+
   // ── Pass 1: sprite drawImage with pop-in / pop-out scale ──────
   for (const id in _activeMonsters) {
     const s = _activeMonsters[id];
@@ -11465,12 +11571,40 @@ function _showMonsterBanner(type) {
     <div class="stats-tabs">
       <button class="stats-tab active" data-panel="me" onclick="switchStatsTab('me')" data-i18n="stats.tab_me">My Stats</button>
       <button class="stats-tab" data-panel="lb" onclick="switchStatsTab('lb')" data-i18n="stats.tab_lb">Leaderboard</button>
+      <button class="stats-tab" data-panel="about" onclick="switchStatsTab('about')">About</button>
     </div>
     <div class="stats-panel active" id="stats-panel-me">
       <div id="stats-me-content" data-i18n="stats.loading">Loading…</div>
     </div>
     <div class="stats-panel" id="stats-panel-lb">
       <div id="stats-lb-content" data-i18n="stats.loading">Loading…</div>
+    </div>
+    <!-- v86: About page -->
+    <div class="stats-panel" id="stats-panel-about">
+      <div style="text-align:center;padding:20px 16px;">
+        <div style="font-size:32px;margin-bottom:8px;">🌍</div>
+        <h3 style="color:#fff;font-size:18px;margin-bottom:4px;letter-spacing:.05em;">PixelAnnex</h3>
+        <div style="color:#94a3b8;font-size:11px;font-style:italic;letter-spacing:.08em;margin-bottom:24px;">Global Domination, Pixel style.</div>
+        <div style="display:inline-block;text-align:left;background:#0f1729;border:1px solid #1e293b;border-radius:8px;padding:16px 20px;font-size:12px;line-height:1.7;color:#cbd5e1;max-width:360px;">
+          <div style="color:#fff;font-weight:600;margin-bottom:8px;">A real-time multiplayer pixel-conquest game</div>
+          <div style="color:#94a3b8;font-size:11px;">240+ countries · live deltas · global Discord community · daily login bonuses · alliances · monsters</div>
+          <hr style="border:none;border-top:1px solid #1e293b;margin:14px 0;">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:4px;">
+            <span>Version</span>
+            <span id="about-version" style="color:#94a3b8;font-family:monospace;">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;">
+            <span>Server</span>
+            <span id="about-server-version" style="color:#94a3b8;font-family:monospace;">—</span>
+          </div>
+        </div>
+        <div style="margin-top:24px;font-size:10px;color:#475569;letter-spacing:.12em;text-transform:uppercase;">Created by JDC · 2026</div>
+        <div style="margin-top:8px;font-size:10px;color:#64748b;">
+          <a href="https://discord.gg/FcbzWCY2F" target="_blank" rel="noopener" style="color:#5865f2;text-decoration:none;">Discord</a>
+          ·
+          <a href="https://pixelannex.com" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none;">pixelannex.com</a>
+        </div>
+      </div>
     </div>
   </div>
 </div>
