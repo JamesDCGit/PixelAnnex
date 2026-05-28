@@ -1355,6 +1355,30 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <h2 data-i18n="daily.heading">Welcome Back</h2>
     <div style="text-align:center;color:#94a3b8;font-size:11px;font-style:italic;letter-spacing:.08em;margin:-8px 0 12px;">Global Domination, Pixel style.</div>
     <div class="dp-sub" id="dp-greeting">PixelAnnex</div>
+
+    <!-- v83b: Discord login CTA — shown only when not signed in -->
+    <div id="dp-discord-cta" class="dp-section" style="display:none;background:#0f1729;border-radius:8px;padding:12px 14px;">
+      <div style="font-weight:600;color:#fff;margin-bottom:4px;font-size:12px;">💬 Sign in with Discord</div>
+      <div style="font-size:11px;color:#94a3b8;line-height:1.5;margin-bottom:10px;">
+        Save your <b>rank, points and stats</b> across sessions · form <b>alliances</b> with friends · earn <b>daily login bonuses</b>.
+      </div>
+      <button onclick="window.location.href='/auth/login'" style="background:#5865f2;border:none;color:white;padding:8px 14px;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;font-size:11px;width:100%;">
+        Sign in with Discord
+      </button>
+    </div>
+
+    <!-- v83b: Playing-as country selector -->
+    <div id="dp-country" class="dp-section" style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:#0f1729;border-radius:8px;padding:10px 14px;">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;">
+        <span style="color:#64748b;text-transform:uppercase;letter-spacing:.08em;font-size:10px;">Playing as</span>
+        <span id="dp-country-flag"></span>
+        <span id="dp-country-name" style="color:#fff;font-weight:600;">—</span>
+      </div>
+      <button id="dp-country-change" onclick="changeCountryFromDaily()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:4px 10px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:10px;letter-spacing:.04em;">
+        Change
+      </button>
+    </div>
+
     <div class="dp-section">
       <div class="dp-section-title" data-i18n="daily.bonuses_section">Bonuses</div>
       <div id="dp-bonus-list"></div>
@@ -3248,7 +3272,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-29-v83';
+const CODE_VERSION = '2026-05-29-v83b';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6086,6 +6110,23 @@ function showDailyPopup(bonus, world) {
   const worldStats = document.getElementById('dp-world-stats');
   if (!overlay) return;
 
+  // ── v83b: Discord login CTA visibility ──
+  const discordCta = document.getElementById('dp-discord-cta');
+  if (discordCta) {
+    // Show only when NOT logged in (bonus.loggedIn = false)
+    discordCta.style.display = (bonus && bonus.loggedIn) ? 'none' : '';
+  }
+
+  // ── v83b: Populate current country in the Playing-as row ──
+  const cFlag = document.getElementById('dp-country-flag');
+  const cName = document.getElementById('dp-country-name');
+  if (cFlag && cName && typeof featList !== 'undefined' && featList[currentIdx]) {
+    const f = featList[currentIdx];
+    cFlag.innerHTML = (typeof flagAny === 'function') ? flagAny(f.id, 1) : '';
+    cName.textContent = f.name;
+    cName.style.color = f.color || '#fff';
+  }
+
   // ── Bonuses section ──
   let totalGranted = 0;
   const rows = [];
@@ -6167,6 +6208,16 @@ function showDailyPopup(bonus, world) {
     worldStats.innerHTML = '<div class="dp-world-row"><span class="dp-label">' + t('daily.world_unavail') + '</span><span></span></div>';
   }
   overlay.classList.add('open');
+}
+
+// v83b: close daily popup and open the in-game country picker so user can switch
+function changeCountryFromDaily() {
+  closeDailyPopup();
+  // Defer so the popup close animation completes before opening the picker
+  setTimeout(() => {
+    const btn = document.getElementById('csel-btn');
+    if (btn) btn.click();
+  }, 100);
 }
 
 function closeDailyPopup() {

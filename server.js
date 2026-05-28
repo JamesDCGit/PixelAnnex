@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-29-v83';
+const SERVER_VERSION       = '2026-05-29-v83b';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -381,14 +381,14 @@ const GEO_CONTEXT = {
   ],
   // ── Russia (643) ───────────────────────────────────────────────────────
   '643:804': [ // Russia → Ukraine
-    () => `🇷🇺 Russia advances on Ukraine — again. Zelensky is typing... ` + _suffix(),
+    () => `🇷🇺 Russia advances on Ukraine — again. Kyiv is typing... ` + _suffix(),
     () => `🚀 Pixel blitzkrieg in Ukraine. Someone call NATO. ` + _suffix(),
     () => `🌻 Eastern Ukraine just turned Russian pixels. The ICC is watching. ` + _suffix(),
     () => `🛡️ Russia pushes to the Dnipro — one pixel at a time. ` + _suffix(),
   ],
   '804:643': [ // Ukraine → Russia
     () => `🇺🇦 Ukraine counter-pixels into Russia! The Kursk offensive: now in 2D. ` + _suffix(),
-    () => `⚡ Zelensky pixel update: Ukraine is winning on the map at least. ` + _suffix(),
+    () => `⚡ Kyiv pixel update: Ukraine is winning on the map at least. ` + _suffix(),
     () => `🌻 Ukraine strikes deep into Russian territory. One pixel at a time. ` + _suffix(),
   ],
   '643:246': [ // Russia → Finland
@@ -410,7 +410,7 @@ const GEO_CONTEXT = {
   ],
   // ── China (156) ────────────────────────────────────────────────────────
   '156:158': [ // China → Taiwan
-    () => `🇨🇳 China achieves pixel reunification with Taiwan. Xi counted those pixels twice. ` + _suffix(),
+    () => `🇨🇳 China achieves pixel reunification with Taiwan. Beijing counted those pixels twice. ` + _suffix(),
     () => `🎆 One China Policy: now enforced in pixel form. TSMC pixel fabs at risk. ` + _suffix(),
     () => `⚓ PLA pixel flotilla encircles Taiwan. The semiconductor supply chain: concerned. ` + _suffix(),
   ],
@@ -476,17 +476,17 @@ const GEO_CONTEXT = {
   ],
   // ── Korean Peninsula ───────────────────────────────────────────────────
   '408:410': [ // North Korea → South Korea
-    () => `🇰🇵 Kim Jong-un crosses the pixel DMZ! The sirens are very confused. ` + _suffix(),
+    () => `🇰🇵 The North crosses the pixel DMZ! The sirens are very confused. ` + _suffix(),
     () => `💣 DPRK pixel strike on the South. K-pop plays louder in response. ` + _suffix(),
     () => `🪖 North Korea activates the pixel artillery. Seoul: refreshing the PixelAnnex tab anxiously. ` + _suffix(),
   ],
   '410:408': [ // South Korea → North Korea
     () => `🇰🇷 South Korea pixels into the North. Pyongyang is not logging it in state media. ` + _suffix(),
-    () => `📺 ROK pushes past the DMZ in 2D. Kim Jong-un: very displeased. ` + _suffix(),
+    () => `📺 ROK pushes past the DMZ in 2D. Pyongyang: very displeased. ` + _suffix(),
   ],
   // ── Europe ─────────────────────────────────────────────────────────────
   '792:300': [ // Turkey → Greece
-    () => `🇹🇷 Turkey pixels into Greek airspace. Greece calls it a violation. Erdoğan: "It's fine." ` + _suffix(),
+    () => `🇹🇷 Turkey pixels into Greek airspace. Greece calls it a violation. Ankara: "It's fine." ` + _suffix(),
     () => `🏛️ Aegean dispute goes pixel. Turkey and Greece fight over 2D islands now. ` + _suffix(),
   ],
   '300:792': [ // Greece → Turkey
@@ -515,7 +515,7 @@ const GEO_CONTEXT = {
     () => `🇦🇷 Milei launches a pixel offensive on the Falklands. Thatcher could not be reached for comment. ` + _suffix(),
   ],
   '862:170': [ // Venezuela → Colombia
-    () => `🇻🇪 Venezuela pixels into Colombia. Maduro calls it a "Bolivarian pixel operation." ` + _suffix(),
+    () => `🇻🇪 Venezuela pixels into Colombia. Caracas calls it a "Bolivarian pixel operation." ` + _suffix(),
   ],
   // ── Africa ─────────────────────────────────────────────────────────────
   '231:232': [ // Ethiopia → Eritrea
