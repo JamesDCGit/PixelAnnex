@@ -281,9 +281,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* ── Highlight button ── */
 #btn-highlight{background:#0f1a0f;border:1px solid rgba(251,191,36,.3);color:#fbbf24;}
 #btn-highlight:hover{background:#1a2a1a;border-color:#fbbf24;}
-#btn-ownstroke{background:#0f1a0f;border:1px solid rgba(96,165,250,.3);color:#60a5fa;}
-#btn-ownstroke:hover{background:#1a2a3a;border-color:#60a5fa;color:#93c5fd;}
-#btn-ownstroke.active{background:#1a2a3a;border-color:#60a5fa;box-shadow:0 0 8px rgba(96,165,250,.3);}
+/* v82: btn-ownstroke removed */
 #btn-highlight.active{background:#1a2a1a;border-color:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.3);}
 
 
@@ -767,10 +765,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   #toolbar .sep { display: none; }
   /* The mobile drawer holds the secondary tools */
   #toolbar #btn-brd,
-  #toolbar #btn-rst,
-  #toolbar #btn-clr,
-  #toolbar #btn-debug,
-  #toolbar #btn-ownstroke { display: none; }
+  #toolbar #btn-rst { display: none; }
+  /* v82: btn-clr / btn-debug / btn-ownstroke removed from HTML entirely */
   /* Show mobile-only hamburger */
   #btn-mobile-menu { display: inline-flex !important; }
 
@@ -1284,13 +1280,10 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <div class="sep"></div>
     <button class="btn" id="btn-brd">Borders Dark</button>
     <button class="btn" id="btn-rst">Reset View</button>
-    <button class="btn" id="btn-clr">Clear All</button>
     <div class="sep"></div>
-    <button class="btn" id="btn-debug" style="background:#1a2510;border:1px solid rgba(134,239,172,0.3);color:#86efac;">&#43;100px</button>
-    <button class="btn" id="btn-bomb">&#128163; Bomb</button>
+    <button class="btn" id="btn-bomb">&#128165; Nuke</button>
     <div id="bomb-menu"></div>
-    <button class="btn" id="btn-highlight" title="General/Admiral: click to enter highlight mode, then click a country to designate attack target">&#127919; Highlight</button>
-    <button class="btn" id="btn-ownstroke" title="Toggle visibility of pixels you personally painted">&#9999;&#65039; My pixels</button>
+    <button class="btn" id="btn-highlight" title="Admiral: click to enter target-select mode, then click a country to designate as your attack target">&#127919; Select Target</button>
     <div class="sep"></div>
     <div id="bucket-hud">
       <div id="bucket-bar"><div id="bucket-fill"></div></div>
@@ -1418,7 +1411,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
             </div>
           </div>
           <div class="tut-btn-row">
-            <button class="tut-btn skip" onclick="closeTutorial()" data-i18n="tut.btn_skip">Skip</button>
+            <!-- v82: Skip button removed - users now must walk through tutorial -->
             <button class="tut-btn primary" onclick="nextTutStep()" data-i18n="tut.btn_next">Next →</button>
           </div>
         </div>
@@ -1436,7 +1429,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
           </div>
           <div class="tut-btn-row">
             <button class="tut-btn" onclick="prevTutStep()" data-i18n="tut.btn_back">← Back</button>
-            <button class="tut-btn skip" onclick="closeTutorial()">Skip</button>
+            <!-- v82: Skip button removed -->
             <button class="tut-btn primary" id="tut-step1-next" onclick="nextTutStep()" disabled data-i18n="tut.btn_pick_country">Pick a country</button>
           </div>
         </div>
@@ -2662,11 +2655,9 @@ if (isMobile) document.documentElement.classList.add('is-mobile');
     setTimeout(() => {
       if (act === 'stats')        { const b = document.getElementById('btn-stats');     if (b) b.click(); }
       else if (act === 'font-scale')  { if (typeof cycleFontScale === 'function') cycleFontScale(); }
-      else if (act === 'ownstroke')   { const b = document.getElementById('btn-ownstroke'); if (b) b.click(); }
       else if (act === 'borders')     { const b = document.getElementById('btn-brd');     if (b) b.click(); }
       else if (act === 'reset-view')  { const b = document.getElementById('btn-rst');     if (b) b.click(); }
-      else if (act === 'clear')       { const b = document.getElementById('btn-clr');     if (b) b.click(); }
-      else if (act === 'debug')       { const b = document.getElementById('btn-debug');   if (b) b.click(); }
+      // v82: removed ownstroke / clear / debug actions — buttons deleted from toolbar
     }, 200);
   });
 })();
@@ -3217,7 +3208,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-28-v81';
+const CODE_VERSION = '2026-05-28-v82';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6734,7 +6725,7 @@ function startMusic(){
   }
 
   _musicGain = ctx.createGain();
-  _musicGain.gain.value = 0.16;
+  _musicGain.gain.value = 0.08;  // v82: halved from 0.16
   _musicGain.connect(ctx.destination);
 
   _musicSource = ctx.createBufferSource();
@@ -7176,14 +7167,15 @@ function redrawOutline(){
 }
 
 // ── Font scale ────────────────────────────────────────────────────
+// v82: Mid is now the default (was Normal). Reordered so [0] = Mid. Also fixed
+// a pre-existing `dx = 0` stray global assignment that was on the same line.
 const _fontScales = [
-  {label:'Normal', val:'1.1'},
-  {label:'Mid',    val:'1.2'},
+  {label:'Mid',    val:'1.2'},  // default
   {label:'Large',  val:'1.3'},
+  {label:'Normal', val:'1.1'},
 ];
-let _fontScaleIdx = 0;dx = 0;
-function cycleFontScale(){
-  _fontScaleIdx = (_fontScaleIdx + 1) % _fontScales.length;
+let _fontScaleIdx = 0;
+function _applyFontScale(){
   const s = _fontScales[_fontScaleIdx];
   // Apply zoom to all UI panels — zoom scales px values, borders, everything
   // NOTE: #tip is excluded — it uses position:fixed and must not be zoomed
@@ -7206,6 +7198,16 @@ function cycleFontScale(){
   if(lbl) lbl.textContent = s.label;
   const btn = document.getElementById('btn-font-scale');
   if(btn) btn.style.color = _fontScaleIdx===0 ? '' : '#818cf8';
+}
+function cycleFontScale(){
+  _fontScaleIdx = (_fontScaleIdx + 1) % _fontScales.length;
+  _applyFontScale();
+}
+// v82: apply default Mid font scale once the DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _applyFontScale);
+} else {
+  _applyFontScale();
 }
 
 // ── Multiplayer client ────────────────────────────────────────────
@@ -10150,7 +10152,7 @@ function tickHighlightFlash(){
   hlCtx.putImageData(img,x0,y0);
 }
 $("btn-highlight").addEventListener("click",()=>{ sfxUIClick(); enterHighlightMode(); });
-$("btn-ownstroke").addEventListener("click",()=>{ sfxUIClick(); toggleOwnStroke(); });
+// v82: removed btn-ownstroke (My Pixels button) and its handler
 
 // ── Custom country picker ─────────────────────────────────────────
 let _cselOpen = false;
@@ -10491,13 +10493,7 @@ $("zi").addEventListener("click",()=>doZoom(1.5,vp.clientWidth/2,vp.clientHeight
 $("zo").addEventListener("click",()=>doZoom(1/1.5,vp.clientWidth/2,vp.clientHeight/2));
 $("btn-rst").addEventListener("click",resetView);
 
-$("btn-debug").addEventListener("click",()=>{
-  sfxUIClick();
-  sfxUIClick();
-  pixelBucket=Math.min(BUCKET_MAX,pixelBucket+100);
-  regenSecsLeft=REGEN_INTERVAL;
-  updateBucketHUD();
-});
+// v82: removed btn-debug (+100 pixel debug button) and its handler
 
 $("btn-bomb").addEventListener("click",function(){
   sfxUIClick();
@@ -10554,13 +10550,8 @@ $("btn-brd").addEventListener("click",function(){
     this.textContent="Borders Dark";
   }
 });
-$("btn-clr").addEventListener("click",()=>{
-  sfxUIClick();
-  if(claimByPixel)claimByPixel.fill(-1);claimerCount={};geoClaimCnt={};conqueredSet.clear();totalClaimed=0;
-  $("px-count").textContent="0";claimCtx.clearRect(0,0,MAP_W,MAP_H);flagCtx.clearRect(0,0,MAP_W,MAP_H);for(const k in placedFlags)delete placedFlags[k];strokeGeos=new Set();$("leg-items").innerHTML="";refreshCsel();
-  const _wcm=document.getElementById('world-conquest-modal');if(_wcm)_wcm.remove();
-  const _cel=document.getElementById('c-celeb');if(_cel){_cel.remove();celebCanvas=null;}
-});
+// v82: removed btn-clr (Clear All button) and its handler — was a debug feature that
+// wiped local state but didn't notify the server; created desync between client/server.
 // brush slider removed in v27; brushSize is fixed at 3
 
 // ── v30: Touch model — 1 finger paint, 2 finger pan+zoom ─────────
