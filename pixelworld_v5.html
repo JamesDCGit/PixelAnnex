@@ -281,6 +281,10 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* ── Highlight button ── */
 #btn-highlight{background:#0f1a0f;border:1px solid rgba(251,191,36,.3);color:#fbbf24;}
 #btn-highlight:hover{background:#1a2a1a;border-color:#fbbf24;}
+/* v85: locked state for non-Admiral ranks */
+#btn-highlight.locked{background:#1a1010;border-color:rgba(239,68,68,0.25);color:#7c5050;cursor:not-allowed;}
+#btn-highlight.locked:hover{background:#2a1515;border-color:rgba(239,68,68,0.5);color:#fca5a5;}
+#btn-highlight.locked:hover::after{content:" 🔒";font-size:10px;}
 /* v82: btn-ownstroke removed */
 #btn-highlight.active{background:#1a2a1a;border-color:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.3);}
 
@@ -3272,7 +3276,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-29-v84';
+const CODE_VERSION = '2026-05-29-v85';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6264,16 +6268,17 @@ function updateFightBackBanner() {
   const frac = enemyPixels / total;
   if (frac >= FIGHTBACK_THRESHOLD) {
     banner.classList.add('active');
-    // Scaling explosive brush info: heavier loss → bigger paint
     const pct = Math.round(frac * 100);
     const fbText = document.getElementById('fb-text');
     const fbPower = document.getElementById('fb-power');
     if (fbText)  fbText.textContent  = t('fightback.banner_pct', { pct });
     if (fbPower) {
-      // Show effective bonus: base +4 + explosive multiplier hint
+      // v85: show the ACTUAL progressive bonus (varies 1-5 based on loss %)
+      // alongside the explosive brush tier.
+      const bonus = Math.min(5, Math.max(1, Math.floor((frac - 0.40) * 10)));
       const explosiveLevel = getExplosiveLevel(frac);
-      const brush = explosiveLevel === 1 ? '1×1' : explosiveLevel === 2 ? '3×3' : '5×5';
-      fbPower.textContent = t('fightback.power_brush', { brush });
+      const brush = explosiveLevel >= 3 ? '5×5' : explosiveLevel === 2 ? '3×3' : '1×1';
+      fbPower.textContent = '+' + bonus + ' px/stroke · ' + brush + ' brush';
     }
   } else {
     banner.classList.remove('active');
@@ -6283,13 +6288,16 @@ function updateFightBackBanner() {
 // Run banner check every 2s
 setInterval(updateFightBackBanner, 2000);
 
-// ── Explosive brush scaling ──────────────────────────────────────
+// ── Explosive brush scaling (v85: smoother progressive tiers) ────
 // When in fight-back mode, painting in YOUR country lays down a bigger pixel cluster.
-// Heavier loss → bigger explosion area.
+// Now ties to the same 50%-up curve as the bonus:
+//   50-69% lost → 1×1 (normal brush, but with bonus pixels)
+//   70-84% lost → 3×3 brush
+//   85%+   lost → 5×5 brush (desperately overrun)
 function getExplosiveLevel(enemyFrac) {
-  if (enemyFrac >= 0.90) return 3; // 5×5 — desperately overrun
-  if (enemyFrac >= 0.80) return 2; // 3×3 — heavily lost
-  if (enemyFrac >= FIGHTBACK_THRESHOLD) return 1; // 1×1 normal
+  if (enemyFrac >= 0.85) return 3;
+  if (enemyFrac >= 0.70) return 2;
+  if (enemyFrac >= FIGHTBACK_THRESHOLD) return 1;
   return 0;
 }
 
@@ -6441,21 +6449,22 @@ function sfxUnderAttack(){
   pulse(now + 0.9,  0.14); // second pulse — softer
 }
 
-// ── Fight-back power-up ───────────────────────────────────────────
-// If >70% of your country's pixels are taken by enemies,
-// you earn +4 bucket pixels per pixel placed in your own territory (5× net).
-// Also flash that country red on the c-highlight canvas.
-const FIGHTBACK_THRESHOLD = 0.70; // 70%
+// ── Fight-back power-up (progressive — v85) ──────────────────────
+// v85: was a binary threshold (≥70% enemy-held → flat +4 bonus). Now scales
+// progressively from 50% lost upward:
+//   50% lost → +1 bonus (2× net)
+//   60% lost → +2 bonus (3× net)
+//   70% lost → +3 bonus (4× net)
+//   80% lost → +4 bonus (5× net)
+//   90% lost → +5 bonus (6× net)
+// The more you've lost, the bigger the boost — rewards comeback play and
+// gives players a fighting chance even at lower invasion levels.
+const FIGHTBACK_THRESHOLD = 0.50; // was 0.70
 
 function getFightBackBonus(geoIdx, painterIdx){
-  // painterIdx = currentIdx (who is painting)
-  // geoIdx = the country being painted in
-  if(geoIdx < 0 || geoIdx !== painterIdx) return 0; // must be painting in own country
+  if(geoIdx < 0 || geoIdx !== painterIdx) return 0;
   const total = geoTotal[geoIdx] || 0;
   if(total === 0) return 0;
-  // Count pixels owned by painter in this country
-  const ownedByMe = (geoClaimCnt[geoIdx] && geoClaimCnt[geoIdx][painterIdx]) || 0;
-  // Pixels held by enemies = total claimed minus own
   let enemyPixels = 0;
   if(geoClaimCnt[geoIdx]){
     for(const [claimerKey, cnt] of Object.entries(geoClaimCnt[geoIdx])){
@@ -6463,7 +6472,11 @@ function getFightBackBonus(geoIdx, painterIdx){
     }
   }
   const enemyFrac = enemyPixels / total;
-  return enemyFrac >= FIGHTBACK_THRESHOLD ? 4 : 0; // +4 = net 5× (1 spent + 4 bonus)
+  if (enemyFrac < FIGHTBACK_THRESHOLD) return 0;
+  // Progressive: +1 at 50%, +2 at 60%, +3 at 70%, +4 at 80%, +5 at 90%+
+  // Formula: floor((enemyFrac - 0.40) * 10) capped at 5
+  const tier = Math.min(5, Math.max(1, Math.floor((enemyFrac - 0.40) * 10)));
+  return tier;
 }
 
 function isUnderSiege(geoIdx){
@@ -10056,9 +10069,9 @@ let highlightTimer     = null; // setInterval for countdown
 let _highlightBonusClaimed = false; // v27: tracks the one-shot +10 highlight bonus
 
 function setHighlight(geoIdx){
-  // v28: highlight is gated to General+ ranks.
+  // v85: highlight is now gated to Admiral-only (was General+).
   const ri = getRankIndex();
-  if(ri < 3) return;
+  if(ri < 4) return;
   if(highlightTimer) clearInterval(highlightTimer);
   highlightGeoIdx = geoIdx;
   highlightExpiry = Date.now() + 30000;
@@ -10160,6 +10173,16 @@ function refreshRankUI(){
   const rankColours = ['#64748b','#3b82f6','#f59e0b','#22c55e','#a855f7'];
   const col = rankColours[ri];
 
+  // v85: build rank perk summary — was misleading (showed nothing for
+  // Lieutenant/Captain/General; only showed Admiral's Nuke). Now reflects
+  // the actual RANKS[] fields: regenMult and bombType.
+  const regenPct = Math.round(((rank.regenMult || 1) - 1) * 100);
+  const perks = [];
+  if (regenPct > 0) perks.push('⚡ +' + regenPct + '% pixel regen');
+  if (rank.bombType) perks.push('☢️ ' + rank.bombType + ' unlocked');
+  // Highlight (Select Target) is Admiral-only in v85
+  if (ri >= 4) perks.push('🎯 Select Target unlocked');
+
   el.innerHTML = `
     <div class="rank-name" style="color:${col}">&#9670; ${tRank(rank.name)}</div>
     <div class="rank-bar-wrap">
@@ -10169,8 +10192,7 @@ function refreshRankUI(){
       ${t('rank.pixels_placed', { n: totalPixelsEverPlaced.toLocaleString() })}
       ${next ? ' · ' + t('rank.next_rank_inline', { name: tRank(next.name), min: next.min }) : ' · <b>' + t('hud.max_rank') + '</b>'}
     </div>
-    ${rank.bombType ? '<div class="rank-bomb">&#128163; ' + t('rank.bomb_unlocked', { bomb: tBomb(rank.bombType) }) + '</div>' : ''}
-    ${rank.bonus>0 ? '<div class="rank-bonus">' + t('rank.bonus_stroke', { n: rank.bonus }) + '</div>' : ''}
+    ${perks.length ? '<div class="rank-perks" style="font-size:10px;color:#94a3b8;margin-top:4px;line-height:1.5;">' + perks.join(' · ') + '</div>' : ''}
   `;
   refreshBombMenu();
 }
@@ -10180,17 +10202,55 @@ let highlightMode = false;
 let _mouseScreenX = 0, _mouseScreenY = 0; // live cursor position  // true = next map click designates a country
 
 function enterHighlightMode(){
-  // v28: highlight is gated to General+ ranks again.
-  const rank = getCurrentRank();
+  // v85: highlight is now Admiral-only (was General+).
   const ri = getRankIndex();
-  if(ri < 3){ // General is index 3, Admiral is 4
+  if(ri < 4){
     const btn = document.getElementById('btn-highlight');
-    if(btn){ btn.style.borderColor='#ef4444'; setTimeout(()=>btn.style.borderColor='',800); }
+    if(btn){
+      btn.style.borderColor='#ef4444';
+      setTimeout(()=>btn.style.borderColor='',800);
+      // Hover banner: explain the gate
+      if (typeof actPushCard === 'function') {
+        actPushCard({
+          variant: 'alert',
+          title:   '🔒 Admiral rank required',
+          html:    'Select Target is reserved for the Admiral rank (1,500+ pixels placed). Keep painting to unlock it.',
+        });
+      }
+    }
     return;
   }
   highlightMode = true;
   document.getElementById('btn-highlight').classList.add('active');
   document.getElementById('viewport').style.cursor = 'crosshair';
+}
+
+// v85: update the Select Target button's hover state to reflect rank gate.
+// Admirals see the normal gold-glow tooltip; lower ranks see a red-lock state.
+function _refreshHighlightBtnLockState(){
+  const btn = document.getElementById('btn-highlight');
+  if(!btn) return;
+  const locked = getRankIndex() < 4;
+  btn.classList.toggle('locked', locked);
+  if (locked) {
+    btn.title = '🔒 Locked — reach Admiral rank (1,500 px) to unlock Select Target';
+    btn.style.opacity = '0.55';
+  } else {
+    btn.title = 'Admiral: click to enter target-select mode, then click a country to designate as your attack target';
+    btn.style.opacity = '';
+  }
+}
+// Call on rank changes (refreshRankUI runs on every paint via awardXP)
+const _origRefreshRankUI = refreshRankUI;
+refreshRankUI = function(){
+  _origRefreshRankUI.apply(this, arguments);
+  _refreshHighlightBtnLockState();
+};
+// Apply once on init
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _refreshHighlightBtnLockState);
+} else {
+  _refreshHighlightBtnLockState();
 }
 
 // ── Highlight country flash overlay ──────────────────────────────
@@ -10594,7 +10654,39 @@ vp.addEventListener("contextmenu",e=>{
     sfxUIClick();
   }
 });
-vp.addEventListener("wheel",e=>{e.preventDefault();const r=vp.getBoundingClientRect();doZoom(e.deltaY<0?1.12:1/1.12,e.clientX-r.left,e.clientY-r.top);},{passive:false});
+// v85: wheel handler distinguishes touchpad gestures from mouse-wheel.
+//   • ctrlKey  → touchpad pinch  → zoom (browsers represent pinch this way)
+//   • small continuous deltas (touchpad scroll) with no ctrlKey → pan
+//   • discrete chunky deltas (mouse wheel) → zoom (unchanged behaviour)
+// Heuristic for "is touchpad scroll":
+//   - deltaMode === 0 (DOM_DELTA_PIXEL) AND
+//   - magnitude < 50 (touchpad emits many small events, mouse wheel emits big jumps)
+vp.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = vp.getBoundingClientRect();
+  // Pinch zoom (Cmd/Ctrl + scroll, or trackpad pinch which browsers fake with ctrlKey)
+  if (e.ctrlKey) {
+    // Pinch uses small per-tick deltas — make zoom less aggressive
+    const factor = e.deltaY < 0 ? 1 + Math.min(0.15, Math.abs(e.deltaY) / 100)
+                                : 1 / (1 + Math.min(0.15, Math.abs(e.deltaY) / 100));
+    doZoom(factor, e.clientX - r.left, e.clientY - r.top);
+    return;
+  }
+  // Touchpad two-finger pan: small continuous deltas, often with deltaX too
+  const isTouchpad = e.deltaMode === 0 &&
+                     Math.abs(e.deltaY) < 50 &&
+                     (Math.abs(e.deltaX) > 0 || Math.abs(e.deltaY) < 25);
+  if (isTouchpad) {
+    // Invert sign: scrolling up/left moves view down/right (natural pan)
+    ox -= e.deltaX;
+    oy -= e.deltaY;
+    clamp();
+    applyT();
+    return;
+  }
+  // Fallback: mouse wheel → zoom (original behaviour)
+  doZoom(e.deltaY < 0 ? 1.12 : 1/1.12, e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
 $("zi").addEventListener("click",()=>doZoom(1.5,vp.clientWidth/2,vp.clientHeight/2));
 $("zo").addEventListener("click",()=>doZoom(1/1.5,vp.clientWidth/2,vp.clientHeight/2));
 $("btn-rst").addEventListener("click",resetView);
