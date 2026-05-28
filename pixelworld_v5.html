@@ -3217,7 +3217,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-28-v77';
+const CODE_VERSION = '2026-05-28-v78';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7351,6 +7351,8 @@ const PAINT_QUEUE_MAX  = 50000;  // safety cap; drop oldest if exceeded
 const _paintQ = [];              // flat array of triples
 let _paintRaf = null;
 
+// v77-debug: counters for diagnostic readout via window._paintStats
+window._paintStats = { enqueued: 0, painted: 0, stale: 0, deltasIn: 0, lastDeltaSize: 0, lastEnqueueAt: 0, lastFlushAt: 0 };
 function enqueuePaints(pixels, getFi, staggerMs) {
   // pixels: caller-provided iterable yielding { pi, fi } (or [pi, fi] tuples)
   // getFi:  optional fn(p) → fi when pixels is a different shape
@@ -7363,6 +7365,8 @@ function enqueuePaints(pixels, getFi, staggerMs) {
     const t = now + Math.random() * span;
     _paintQ.push(pi, fi, t);
   }
+  window._paintStats.enqueued += pixels.length;
+  window._paintStats.lastEnqueueAt = now;
   if (_paintQ.length / 3 > PAINT_QUEUE_MAX) {
     // Drop the oldest half — backpressure under extreme load
     _paintQ.splice(0, _paintQ.length / 2 | 0);
@@ -7413,7 +7417,7 @@ function flushPaintQueue() {
     }
     const pi = q[r], fi = q[r + 1];
     // Stale-check: skip if state no longer matches expected owner
-    if (claimByPixel[pi] !== fi) continue;
+    if (claimByPixel[pi] !== fi) { window._paintStats.stale++; continue; }
     if (fi === -1) {
       if (!clears) clears = [];
       clears.push(pi);
@@ -7422,8 +7426,10 @@ function flushPaintQueue() {
       if (!arr) { arr = []; readyByFi.set(fi, arr); }
       arr.push(pi);
     }
+    window._paintStats.painted++;
   }
   q.length = writeIdx;
+  window._paintStats.lastFlushAt = now;
   // Render clears first (cheaper)
   if (clears) {
     for (let k = 0; k < clears.length; k++) {
@@ -7565,6 +7571,8 @@ if (msg.state?.conquered) {
     case 'delta': {
       if (!_localPlayerId) return; // discard deltas that arrive before welcome
       if (!msg.pixels?.length) return;
+      window._paintStats.deltasIn++;
+      window._paintStats.lastDeltaSize = msg.pixels.length;
       // v77: state updates immediate (claimByPixel, claimerCount, geoClaimCnt)
       // so game logic stays correct, but canvas paints are queued and staggered
       // over PAINT_STAGGER_MS via the paint queue. Own pixels (claimPixel)

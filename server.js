@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-28-v77';
+const SERVER_VERSION       = '2026-05-28-v78';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2443,12 +2443,26 @@ function queueDelta(pixels) {
   if (!deltaTimer) deltaTimer = setTimeout(flushDelta, BROADCAST_MS);
 }
 
+let _deltaStatLast = 0, _deltaStatBytes = 0, _deltaStatPx = 0, _deltaStatCount = 0;
 function flushDelta() {
   deltaTimer = null;
   if (!pendingDelta.length) return;
   const msg = JSON.stringify({ type: 'delta', pixels: pendingDelta });
+  const pxCount = pendingDelta.length;
   pendingDelta = [];
   broadcast(msg);
+  // v78-debug: summary every 10s to confirm deltas are flowing
+  _deltaStatBytes += msg.length;
+  _deltaStatPx    += pxCount;
+  _deltaStatCount += 1;
+  const now = Date.now();
+  if (now - _deltaStatLast > 10000) {
+    if (_deltaStatLast > 0) {
+      console.log('[Delta] ' + _deltaStatCount + ' broadcasts in 10s, ' + _deltaStatPx + ' pixels, ' + (_deltaStatBytes/1024).toFixed(1) + ' KB');
+    }
+    _deltaStatLast = now;
+    _deltaStatBytes = 0; _deltaStatPx = 0; _deltaStatCount = 0;
+  }
 }
 
 function broadcast(msg, excludePid = -1) {
