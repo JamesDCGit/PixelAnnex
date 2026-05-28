@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-29-v83b';
+const SERVER_VERSION       = '2026-05-29-v84';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -204,8 +204,56 @@ function saveTweetQueue() {
   }, 2000);
 }
 
-function pushTweetDraft({ type, text, dedupeKey, throttleKey }) {
+// v84: notable-countries filter for tweets. Event tweets (conquest, multi-attack,
+// nuke, reversal) only push if at least one of the involved countries is in this
+// set. Daily/status/community tweets pass through unaffected (they're not country-
+// specific). Set is ~30 globally recognised countries — covers the headlines we
+// want to amplify, drops the obscure ones that wouldn't engage a Twitter audience.
+const NOTABLE_COUNTRY_IDS = new Set([
+  '840', // USA
+  '156', // China
+  '643', // Russia
+  '826', // United Kingdom
+  '276', // Germany
+  '250', // France
+  '392', // Japan
+  '356', // India
+  '076', // Brazil
+  '036', // Australia
+  '124', // Canada
+  '380', // Italy
+  '724', // Spain
+  '484', // Mexico
+  '410', // South Korea
+  '364', // Iran
+  '376', // Israel
+  '792', // Turkey
+  '682', // Saudi Arabia
+  '360', // Indonesia
+  '586', // Pakistan
+  '408', // North Korea
+  '804', // Ukraine
+  '616', // Poland
+  '710', // South Africa
+  '818', // Egypt
+  '566', // Nigeria
+  '032', // Argentina
+  '170', // Colombia
+  '764', // Thailand
+  '704', // Vietnam
+  '275', // Palestine
+  '158', // Taiwan
+]);
+
+function pushTweetDraft({ type, text, dedupeKey, throttleKey, countries }) {
   const now = Date.now();
+  // v84: notable-countries filter — only fire event tweets if at least one
+  // involved country is notable. Calls without `countries` (community,
+  // daily, status) pass through.
+  if (Array.isArray(countries) && countries.length > 0) {
+    const hasNotable = countries.some(c => NOTABLE_COUNTRY_IDS.has(String(c)));
+    if (!hasNotable) return null;
+  }
   // Dedupe: same event recently? skip.
   if (dedupeKey) {
     const last = _tweetLastByKey.get(dedupeKey);
@@ -252,6 +300,11 @@ function _pickSassy(pool) { return pool[Math.floor(Math.random() * pool.length)]
 function _suffix() { return GAME_URL + ' #PixelAnnex'; }
 
 // CONQUEST variants — {attacker} {defender} {held}
+// v84: pool expanded with paraphrased war/strategy tropes. Rules:
+//   • No exact quotes from copyrighted films
+//   • No real political leader names
+//   • Generic titles (the General, the High Command, the Politburo) are fine
+//   • References to historical/public-domain figures (Caesar, Sun Tzu) are fine
 const SASS_CONQUEST = [
   v => `🗡️ ${v.a} has conquered ${v.d}! ${v.a} now controls ${v.held} ${v.held === 1 ? 'country' : 'countries'}. ` + _suffix(),
   v => `📢 ${v.d} just got rebranded by ${v.a}. New management, same map. ` + _suffix(),
@@ -259,6 +312,24 @@ const SASS_CONQUEST = [
   v => `🗺️ ${v.d} is now part of the ${v.a} extended universe. Tough day for the locals. ` + _suffix(),
   v => `⚔️ ${v.a} has annexed ${v.d}. Diplomacy was tried — briefly. ` + _suffix(),
   v => `🚩 New flag dropped: ${v.a} over ${v.d}. ${v.held} down. ` + _suffix(),
+  // v84 additions ↓
+  v => `🏛️ ${v.a} came, ${v.a} saw, ${v.a} re-coloured. ${v.held} flags planted. ` + _suffix(),
+  v => `🎯 ${v.a} just ran the table on ${v.d}. ${v.held} countries to their name. ` + _suffix(),
+  v => `🚁 ${v.a} loves the smell of fresh pixels in the morning — ${v.d} is theirs. ` + _suffix(),
+  v => `🛡️ ${v.a} chose violence. ${v.d} chose to lose. ${v.held} on the wall. ` + _suffix(),
+  v => `🚀 ${v.a} just rebranded ${v.d}. Welcome to ${v.a}-stan, population: you. ` + _suffix(),
+  v => `🌅 Sun never sets on the ${v.a} pixel empire. ${v.d} is the latest dawn. ${v.held} held. ` + _suffix(),
+  v => `📡 ${v.d}'s walls came down. ${v.a} planted ${v.held} flags and counting. ` + _suffix(),
+  v => `🔱 ${v.a} took ${v.d} the way nature intended — by overwhelming pixel count. ` + _suffix(),
+  v => `📜 The High Command of ${v.a} decrees: ${v.d} is now theirs. Effective immediately. ` + _suffix(),
+  v => `🏴 ${v.a} planted the flag on ${v.d}. The cartographers are crying. ` + _suffix(),
+  v => `🐉 ${v.a} burned through ${v.d}. There is no peace at the end of pixel war, only more pixels. ` + _suffix(),
+  v => `🗡️ ${v.a} swept ${v.d} clean. The map has spoken. ${v.held} territories. ` + _suffix(),
+  v => `🎬 ${v.a} cut a long story short with ${v.d}. ${v.held} held, none returned. ` + _suffix(),
+  v => `📯 Service guaranteed pixels for the ${v.a} legions. ${v.d}: claimed. ` + _suffix(),
+  v => `⚒️ ${v.a} hammered ${v.d} flat. ${v.held} in the trophy case. ` + _suffix(),
+  v => `🧭 Strategy guide for ${v.d}: it's too late. ${v.a} already painted it. ` + _suffix(),
+  v => `🪖 ${v.a}'s pixel battalion marched into ${v.d}. The defenders went home. ` + _suffix(),
 ];
 
 // REVERSAL variants — {victim} {oppressor}
@@ -267,6 +338,15 @@ const SASS_REVERSAL = [
   v => `🔥 ${v.v} just kicked ${v.o} to the curb. Liberation tastes sweet. ` + _suffix(),
   v => `📢 Plot twist: ${v.v} is back. ${v.o} loses the chokehold. ` + _suffix(),
   v => `✊ ${v.v} reclaimed itself. ${v.o} is going to need a moment. ` + _suffix(),
+  // v84 additions ↓
+  v => `🦅 ${v.v} liberated. Phoenix mode: engaged. ${v.o} is left holding the brush. ` + _suffix(),
+  v => `⚡ ${v.v} flipped the script on ${v.o}. The map is mightier than the empire. ` + _suffix(),
+  v => `🎬 ${v.v} returns from the ashes. ${v.o}'s pixel reign was short. ` + _suffix(),
+  v => `🌅 A new pixel dawn for ${v.v}. ${v.o} retreats to the strategy room. ` + _suffix(),
+  v => `🪓 ${v.v} chopped the ${v.o} chain. Freedom isn't free — it costs pixels. ` + _suffix(),
+  v => `📜 The chronicles will note: ${v.v} rose. ${v.o} fell. The map turned. ` + _suffix(),
+  v => `🛶 ${v.v} sailed out from under ${v.o}. The pixel tide always turns. ` + _suffix(),
+  v => `🥁 Drums of war beat for ${v.v}. ${v.o}'s grip slips. Liberation complete. ` + _suffix(),
 ];
 
 // NUKE variants — {attacker} {target}
@@ -276,6 +356,14 @@ const SASS_NUKE = [
   v => `🚨 BREAKING: ${v.a} went nuclear on ${v.target}. Literally. ` + _suffix(),
   v => `☢️ Diplomatic resolution attempted via ${v.a}'s nuke at ${v.target}. ` + _suffix(),
   v => `☢️ ${v.a} fired off a nuke at ${v.target}. The 2-minute lockout will give everyone time to reflect. ` + _suffix(),
+  // v84 additions ↓
+  v => `💀 ${v.a} dropped the big one on ${v.target}. Some pixels you can't unpaint. ` + _suffix(),
+  v => `🎆 ${v.a} delivered an unforgettable light show to ${v.target}. RSVP: declined. ` + _suffix(),
+  v => `☣️ ${v.a} went thermonuclear at ${v.target}. The cockroaches are taking notes. ` + _suffix(),
+  v => `🚀 ${v.a} launched the big payload at ${v.target}. No-paint lockout: 2 minutes of regret. ` + _suffix(),
+  v => `🔥 ${v.a} ended the conversation with ${v.target} — using a 50-megapixel exclamation mark. ` + _suffix(),
+  v => `📛 ${v.a} solved ${v.target} the old-fashioned way. Loudly. ` + _suffix(),
+  v => `🏔️ ${v.a} ended the day with a mushroom cloud over ${v.target}. War room: very loud. ` + _suffix(),
 ];
 
 // MULTI-ATTACK variants — {n} {defender} {attackers}
@@ -285,6 +373,14 @@ const SASS_MULTI = [
   v => `🔥 ${v.d} is hosting an uninvited party. ${v.n} RSVPs: ${v.atk}. ` + _suffix(),
   v => `⚠️ Today's group project subject: ${v.d}. ${v.n} contributors: ${v.atk}. ` + _suffix(),
   v => `🚨 ${v.n}-on-1 right now against ${v.d}. (${v.atk}) Reinforcements?? ` + _suffix(),
+  // v84 additions ↓
+  v => `🚨 ${v.d} is surrounded. ${v.n} attackers closing in: ${v.atk}. Alamo vibes. ` + _suffix(),
+  v => `⚔️ ${v.n} flags converged on ${v.d}: ${v.atk}. Sun Tzu probably warned about this. ` + _suffix(),
+  v => `🛡️ ${v.d} defending ${v.n} simultaneous fronts (${v.atk}). Hold the line. ` + _suffix(),
+  v => `🎯 ${v.d} = today's piñata. ${v.n} swingers: ${v.atk}. ` + _suffix(),
+  v => `🌪️ A perfect storm hits ${v.d}: ${v.n} attackers (${v.atk}). Brace for impact. ` + _suffix(),
+  v => `📯 ${v.n} horns blow on the borders of ${v.d}. (${v.atk}) The defenders sleep no more. ` + _suffix(),
+  v => `🪖 ${v.d} requests reinforcements: ${v.n} attackers (${v.atk}) on the perimeter. ` + _suffix(),
 ];
 
 // ADMIRAL promotion variants — {username} {country?}
@@ -957,6 +1053,7 @@ async function _scrapeNewsAndQueue() {
         type:      'news',
         text:      tweetForNews(m.countryName, m.headline),
         dedupeKey: 'news:' + m.headline.slice(0, 60),
+        countries: [m.countryId], // v84: only news about notable countries
       });
     }
   } catch (e) {
@@ -1487,13 +1584,20 @@ function checkSiegeState(geoIdx) {
 
 
 // ── v34: Multi-attacker detection ────────────────────────────────
-// When 5+ distinct attacker countries paint into the same defender geo within
-// a rolling 60-second window, emit a 'war_multi_attack' event once per defender
-// per 5-minute cooldown.
-const MULTI_ATTACK_THRESHOLD   = 5;
-const MULTI_ATTACK_WINDOW_MS   = 60 * 1000;
-const MULTI_ATTACK_COOLDOWN_MS = 5 * 60 * 1000;
-const _multiAttackTracker = new Map(); // defenderGeoIdx → { attackers: Map(attackerId → ts), lastNotifyAt }
+// When 5+ distinct attacker countries paint into the same defender geo AND
+// they've collectively painted ≥200 pixels in a rolling 5-minute window,
+// emit a 'war_multi_attack' event once per defender per 5-minute cooldown.
+//
+// v84: rewrote rate-limit. Was: 5 attackers in 60s + ≥5% of territory claimed.
+// That fired on transient swarms even when they barely painted anything.
+// Now: 5 attackers in 5min + ≥200 pixels painted in window — proves it's a
+// sustained assault, not a flyby. Cuts notification noise dramatically.
+const MULTI_ATTACK_THRESHOLD    = 5;
+const MULTI_ATTACK_WINDOW_MS    = 5 * 60 * 1000; // was 60s
+const MULTI_ATTACK_MIN_PIXELS   = 200;            // new — total px painted by all attackers in window
+const MULTI_ATTACK_COOLDOWN_MS  = 5 * 60 * 1000;
+// defenderGeoIdx → { attackers: Map(attackerId → { lastTs, pixels }), lastNotifyAt }
+const _multiAttackTracker = new Map();
 
 function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
   // Skip self-paint (resident bot painting own country)
@@ -1504,20 +1608,27 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
     entry = { attackers: new Map(), lastNotifyAt: 0 };
     _multiAttackTracker.set(defenderGeoIdx, entry);
   }
-  // Prune expired
-  for (const [aid, ts] of entry.attackers) {
-    if (now - ts > MULTI_ATTACK_WINDOW_MS) entry.attackers.delete(aid);
+  // Prune expired (v84: by lastTs)
+  for (const [aid, info] of entry.attackers) {
+    if (now - info.lastTs > MULTI_ATTACK_WINDOW_MS) entry.attackers.delete(aid);
   }
-  entry.attackers.set(String(attackerCountryId), now);
+  // Update attacker's pixel count + lastTs (each call = 1 pixel painted)
+  const aidStr = String(attackerCountryId);
+  let info = entry.attackers.get(aidStr);
+  if (!info) {
+    info = { lastTs: now, pixels: 1 };
+    entry.attackers.set(aidStr, info);
+  } else {
+    info.lastTs = now;
+    info.pixels++;
+  }
+  // Eligibility: enough attackers AND enough pixels
   if (entry.attackers.size >= MULTI_ATTACK_THRESHOLD &&
       now - entry.lastNotifyAt > MULTI_ATTACK_COOLDOWN_MS) {
     const attackerIds = [...entry.attackers.keys()];
-    // v65: only emit if attackers have COLLECTIVELY claimed >5% of the defender's
-    // territory — filters out momentary pings and ensures this is a sustained assault.
-    const defTotal = geoTotal[defenderGeoIdx] || 1;
-    const claimedByAttackers = attackerIds.reduce(
-      (sum, aid) => sum + (geoClaimCnt[defenderGeoIdx]?.[aid] || 0), 0);
-    if (claimedByAttackers / defTotal < 0.05) return;
+    const totalPixels = attackerIds.reduce(
+      (sum, aid) => sum + (entry.attackers.get(aid)?.pixels || 0), 0);
+    if (totalPixels < MULTI_ATTACK_MIN_PIXELS) return;
     entry.lastNotifyAt = now;
     const defenderId = geoToId(defenderGeoIdx);
     const _sassyMulti = _pickSassy(SASS_MULTI)({
@@ -1548,16 +1659,17 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
         text:        sassyMulti,
         dedupeKey:   'multi_attack:' + defenderId + ':' + Math.floor(now / 60000),
         throttleKey: 'multi_attack_def:' + defenderId,
+        countries:   [defenderId, ...attackerIds], // v84: notable if defender OR any attacker is notable
       });
     } catch (e) { /* ignore */ }
   }
 }
-// Periodic cleanup
+// Periodic cleanup (v84: uses new attacker shape { lastTs, pixels })
 setInterval(() => {
   const now = Date.now();
   for (const [defId, entry] of _multiAttackTracker) {
-    for (const [aid, ts] of entry.attackers) {
-      if (now - ts > MULTI_ATTACK_WINDOW_MS) entry.attackers.delete(aid);
+    for (const [aid, info] of entry.attackers) {
+      if (now - info.lastTs > MULTI_ATTACK_WINDOW_MS) entry.attackers.delete(aid);
     }
     if (entry.attackers.size === 0 && now - entry.lastNotifyAt > MULTI_ATTACK_COOLDOWN_MS * 2) {
       _multiAttackTracker.delete(defId);
@@ -2685,6 +2797,7 @@ function applyPixels(pixels, countryId) {
             text:        tweetForConquest(countryId, geoToId(geo)),
             dedupeKey:   'conquest:' + countryId + ':' + geoToId(geo),
             throttleKey: 'conquest_attacker:' + countryId,
+            countries:   [countryId, geoToId(geo)], // v84: notable-country filter
           });
         } catch (e) { console.warn('[Tweets] conquest draft failed:', e.message); }
       }
@@ -2703,6 +2816,7 @@ function applyPixels(pixels, countryId) {
             text:        tweetForReversal(geoToId(geo), cId),
             dedupeKey:   'reversal:' + geoToId(geo) + ':' + cId,
             throttleKey: 'reversal_geo:' + geoToId(geo),
+            countries:   [geoToId(geo), cId], // v84
           });
         } catch (e) { console.warn('[Tweets] reversal draft failed:', e.message); }
       }
@@ -4358,6 +4472,7 @@ wss.on('connection', (ws, req) => {
               text:        tweetForNuke(player.countryId, cx, cy),
               dedupeKey:   'nuke:' + player.countryId + ':' + Math.floor(cx/30) + ':' + Math.floor(cy/30),
               throttleKey: 'nuke_attacker:' + player.countryId,
+              countries:   [player.countryId], // v84
             });
           } catch (e) { console.warn('[Tweets] nuke draft failed:', e.message); }
           // Skip the normal apply path
