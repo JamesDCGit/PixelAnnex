@@ -3217,7 +3217,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-28-v78';
+const CODE_VERSION = '2026-05-28-v79';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3505,9 +3505,16 @@ if(_isMobileForMemory){
 // global alpha decrement via 'destination-out' — O(1) per frame regardless of
 // the number of in-flight flashes.
 const FLASH_DURATION_MS = 500;  // total fade time per pixel (v29: halved from 1s)
+// v78: throttle decay tick to ~15fps (was 60fps). The decay does a full-canvas
+// destination-out composite (2M pixels), which at 60fps × continuous bot
+// activity was 300-900ms of GPU work per second — the original "stuck in loop"
+// stall. At 15fps it's 1/4 that cost, with no perceptible difference in fade
+// quality (human flicker fusion is ~16-24fps).
+const FLASH_DECAY_INTERVAL_MS = 66;  // ~15fps decay rate
 let _flashHasPixels = false;     // true while the rAF loop should keep running
 let _flashRaf = null;
 let _flashLastTs = 0;
+let _flashLastDecayTs = 0;
 
 function flashPixel(px, py) {
   if (!flashCtx) return;
@@ -3517,6 +3524,7 @@ function flashPixel(px, py) {
   _flashHasPixels = true;
   if (!_flashRaf) {
     _flashLastTs = performance.now();
+    _flashLastDecayTs = _flashLastTs;
     _flashRaf = requestAnimationFrame(_flashTick);
   }
 }
@@ -3525,17 +3533,21 @@ function _flashTick(ts) {
   if (!flashCtx) { _flashRaf = null; return; }
   const dt = Math.min(50, ts - _flashLastTs);
   _flashLastTs = ts;
-  // Linear alpha decrement: full canvas should fade in FLASH_DURATION_MS.
-  // destination-out with alpha A removes A from each pixel's alpha.
-  const fade = dt / FLASH_DURATION_MS;
-  if (fade > 0) {
-    flashCtx.globalCompositeOperation = 'destination-out';
-    flashCtx.fillStyle = 'rgba(0,0,0,' + fade + ')';
-    flashCtx.fillRect(0, 0, MAP_W, MAP_H);
-    flashCtx.globalCompositeOperation = 'source-over';
+  // Throttled decay: only run destination-out composite every ~66ms.
+  // RAF still runs at 60fps so we can detect "no more flashes" promptly,
+  // but the GPU-heavy composite happens 4x less often.
+  const sinceLastDecay = ts - _flashLastDecayTs;
+  if (sinceLastDecay >= FLASH_DECAY_INTERVAL_MS) {
+    const fade = sinceLastDecay / FLASH_DURATION_MS;
+    if (fade > 0) {
+      flashCtx.globalCompositeOperation = 'destination-out';
+      flashCtx.fillStyle = 'rgba(0,0,0,' + fade + ')';
+      flashCtx.fillRect(0, 0, MAP_W, MAP_H);
+      flashCtx.globalCompositeOperation = 'source-over';
+    }
+    _flashLastDecayTs = ts;
   }
   // After ~1.1s with no new flashes the canvas is effectively empty; stop rAF.
-  // We use a soft heuristic: if no new pixels added recently, decay timer.
   if (_flashHasPixels) {
     _flashHasPixels = false;
     _flashDecayCounter = 0;
@@ -7438,13 +7450,28 @@ function flushPaintQueue() {
     }
   }
   // Render paints grouped by owner — fillStyle set once per owner
+  // v78: also write white flash to flashCtx for each pixel (decay is throttled to 15fps).
+  // flashCtx fillStyle set once for the whole flush (always white).
+  if (flashCtx) flashCtx.fillStyle = '#ffffff';
+  let anyFlash = false;
   for (const [fi, arr] of readyByFi) {
     const rgb = colorCache[fi];
     if (!rgb) continue;
     claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.843)';
     for (let k = 0; k < arr.length; k++) {
       const pi = arr[k];
-      claimCtx.fillRect(pi % MAP_W, (pi / MAP_W) | 0, 1, 1);
+      const x = pi % MAP_W, y = (pi / MAP_W) | 0;
+      claimCtx.fillRect(x, y, 1, 1);
+      if (flashCtx) { flashCtx.fillRect(x, y, 1, 1); anyFlash = true; }
+    }
+  }
+  // Wake up the flash decay RAF if we just added new flashes
+  if (anyFlash) {
+    _flashHasPixels = true;
+    if (!_flashRaf) {
+      _flashLastTs = performance.now();
+      _flashLastDecayTs = _flashLastTs;
+      _flashRaf = requestAnimationFrame(_flashTick);
     }
   }
   // Keep RAF alive while queue still has work
