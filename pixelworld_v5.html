@@ -3179,6 +3179,21 @@ function topoFeatures(topo){
 
 // ── State ─────────────────────────────────────────────────────────
 let featList=[],featByPixel=null,claimByPixel=null,landMask=null;
+// v75: O(1) country-id → feat-index lookup + cached RGB per index.
+// Eliminates per-pixel featList.findIndex (O(N) string compare across 200
+// countries) and per-pixel hexRgb parse — both were called for every bot
+// pixel in the delta handler, burning tens of thousands of allocs/sec.
+const idToFeatIdx = new Map();   // String(id) → featList index
+const colorCache = [];           // featList index → [r,g,b]
+function rebuildFeatIndex(){
+  idToFeatIdx.clear();
+  colorCache.length = 0;
+  for(let i = 0; i < featList.length; i++){
+    const f = featList[i];
+    if(f && f.id !== undefined) idToFeatIdx.set(String(f.id), i);
+    colorCache[i] = f && f.color ? hexRgb(f.color) : [128,128,128];
+  }
+}
 
 // v40: cull helper — countries with 0 land pixels (Antarctica + tiny artifact-removed
 // islands) shouldn't be selectable since they have no playable territory.
@@ -3202,7 +3217,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-28-v74';
+const CODE_VERSION = '2026-05-28-v75';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4343,6 +4358,9 @@ async function boot(){
     const db=DB[dbKey] || DB[f.id];
     return{id:f.id, name:db?db.n:(f.name||"Territory "+f.id), color:db?db.c:seededColor(f.id), geometry:f.geometry};
   });
+  // v75: build O(1) id-lookup + RGB cache so delta handler doesn't burn
+  // hundreds of findIndex+hexRgb calls per second.
+  rebuildFeatIndex();
 
   // Populate country selector (alphabetical)
   const usaIdx=featList.findIndex(f=>f.id==="840");
@@ -7345,8 +7363,9 @@ function mpHandleMessage(msg) {
           geoClaimCnt[geoFi] = { [geoFi]: 0 };
         }
         for (const { s, l, o } of msg.state.runs) {
-          const fi = featList.findIndex(f => f.id === String(o));
-          if (fi < 0) continue;
+          // v75: O(1) lookup
+          const fi = idToFeatIdx.get(typeof o === 'string' ? o : String(o));
+          if (fi === undefined) continue;
           // Update claimerCount in bulk for this run
           claimerCount[fi] = (claimerCount[fi] || 0) + l;
           // Per-pixel walk to update per-geo counts (each pixel's geo may differ)
@@ -7386,9 +7405,9 @@ if (msg.state?.conquered) {
           const parts = String(key).split(':');
           if (parts.length !== 2) continue;
           if (parts[0] === parts[1]) continue; // skip self-conquests
-          const geoFi    = featList.findIndex(f => f.id === String(parts[0]));
-          const claimerFi= featList.findIndex(f => f.id === String(parts[1]));
-          if (geoFi >= 0 && claimerFi >= 0) replayQueue.push([geoFi, claimerFi]);
+          const geoFi    = idToFeatIdx.get(parts[0]);
+          const claimerFi= idToFeatIdx.get(parts[1]);
+          if (geoFi !== undefined && claimerFi !== undefined) replayQueue.push([geoFi, claimerFi]);
         }
         let qi = 0;
         const replayStep = () => {
@@ -7414,72 +7433,75 @@ if (msg.state?.conquered) {
     case 'delta': {
       if (!_localPlayerId) return; // discard deltas that arrive before welcome
       if (!msg.pixels?.length) return;
-      const byOwner = {};
-      // v73: track outline-relevant pixels (only those involving currentIdx affect the outline).
-      // With 191 bots painting all over the world, this gates 99% of outline redraws.
+      // v75 scaling rewrite: gated for hundreds/thousands of bots+players.
+      //  - idToFeatIdx replaces O(N) findIndex per pixel
+      //  - colorCache replaces hexRgb string-parse per owner
+      //  - flashPixel removed entirely from delta path: it was triggering a
+      //    60fps full-canvas (2M-pixel) destination-out RAF that never stopped
+      //    while bots were painting — that was the real continuous stall.
+      //  - byOwner keyed by Int instead of string conversion
+      const byOwner = new Map();
       let outlineMinX = -1, outlineMinY = -1, outlineMaxX = -1, outlineMaxY = -1;
-      for (const { x, y, owner } of msg.pixels) {
+      const pixels = msg.pixels;
+      for (let pi = 0; pi < pixels.length; pi++) {
+        const p = pixels[pi];
+        const x = p.x, y = p.y, owner = p.owner;
         const i = y * MAP_W + x;
         const prevFi = claimByPixel[i];
-        const geo = featByPixel[i]; // geographic country this pixel sits in
+        const geo = featByPixel[i];
         if (owner === null) {
-          // Cleared pixel — decrement prev owner's counts (both global + per-geo)
           if (prevFi >= 0) {
-            claimerCount[prevFi] = Math.max(0, (claimerCount[prevFi] || 1) - 1);
-            if (geo >= 0 && geoClaimCnt[geo]?.[prevFi] !== undefined) {
-              geoClaimCnt[geo][prevFi] = Math.max(0, geoClaimCnt[geo][prevFi] - 1);
-            }
+            const pc = claimerCount[prevFi] || 0;
+            if (pc > 0) claimerCount[prevFi] = pc - 1;
+            const gc = geo >= 0 ? geoClaimCnt[geo] : null;
+            if (gc && gc[prevFi] > 0) gc[prevFi]--;
           }
           if (prevFi === currentIdx) {
-            // Player just lost a pixel — outline affected.
             if (outlineMinX < 0) { outlineMinX = outlineMaxX = x; outlineMinY = outlineMaxY = y; }
             else { if (x < outlineMinX) outlineMinX = x; if (x > outlineMaxX) outlineMaxX = x;
                    if (y < outlineMinY) outlineMinY = y; if (y > outlineMaxY) outlineMaxY = y; }
           }
           claimByPixel[i] = -1;
           claimCtx.clearRect(x, y, 1, 1);
-          // Also clear own-stroke marks — when pixels get wiped (e.g. by nukes),
-          // the white "my pixels" overlay would otherwise linger and look like
-          // grey residue at high zoom.
           clearOwnPixel(x, y);
           continue;
         }
-        const fi = featList.findIndex(f => f.id === String(owner));
-        if (fi < 0) continue;
+        // O(1) lookup instead of findIndex (was O(N) string compare per pixel)
+        const fi = idToFeatIdx.get(typeof owner === 'string' ? owner : String(owner));
+        if (fi === undefined) continue;
         if (prevFi === fi) continue;
-        // Ownership change — update both global claimerCount AND per-geo geoClaimCnt
         if (prevFi >= 0) {
-          claimerCount[prevFi] = Math.max(0, (claimerCount[prevFi] || 1) - 1);
-          if (geo >= 0 && geoClaimCnt[geo]?.[prevFi] !== undefined) {
-            geoClaimCnt[geo][prevFi] = Math.max(0, geoClaimCnt[geo][prevFi] - 1);
-          }
+          const pc = claimerCount[prevFi] || 0;
+          if (pc > 0) claimerCount[prevFi] = pc - 1;
+          const gc = geo >= 0 ? geoClaimCnt[geo] : null;
+          if (gc && gc[prevFi] > 0) gc[prevFi]--;
         }
         claimerCount[fi] = (claimerCount[fi] || 0) + 1;
         if (geo >= 0) {
-          if (!geoClaimCnt[geo]) geoClaimCnt[geo] = {};
-          geoClaimCnt[geo][fi] = (geoClaimCnt[geo][fi] || 0) + 1;
+          let gc = geoClaimCnt[geo];
+          if (!gc) gc = geoClaimCnt[geo] = {};
+          gc[fi] = (gc[fi] || 0) + 1;
         }
         claimByPixel[i] = fi;
-        // Outline only changes when currentIdx gains/loses a pixel
         if (prevFi === currentIdx || fi === currentIdx) {
           if (outlineMinX < 0) { outlineMinX = outlineMaxX = x; outlineMinY = outlineMaxY = y; }
           else { if (x < outlineMinX) outlineMinX = x; if (x > outlineMaxX) outlineMaxX = x;
                  if (y < outlineMinY) outlineMinY = y; if (y > outlineMaxY) outlineMaxY = y; }
         }
-        (byOwner[fi] ??= []).push({ x, y });
+        let arr = byOwner.get(fi);
+        if (!arr) { arr = []; byOwner.set(fi, arr); }
+        arr.push(x, y); // flat array — half the allocation of {x,y} objects
       }
-      // v73: Paint batched pixels with fillRect — no per-pixel ImageData allocation.
-      // fillStyle set once per owner; fillRect is GPU-accelerated.
-      for (const [fi, pixels] of Object.entries(byOwner)) {
-        const [r,g,b] = hexRgb(featList[+fi].color);
-        claimCtx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.843)';
-        for (const { x, y } of pixels) {
-          claimCtx.fillRect(x, y, 1, 1);
-          if (typeof flashPixel === 'function') flashPixel(x, y);
+      // Paint with fillRect — fillStyle set once per owner, no allocations.
+      // NOTE: flashPixel deliberately omitted — see comment above.
+      for (const [fi, arr] of byOwner) {
+        const rgb = colorCache[fi];
+        if (!rgb) continue;
+        claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.843)';
+        for (let k = 0; k < arr.length; k += 2) {
+          claimCtx.fillRect(arr[k], arr[k+1], 1, 1);
         }
       }
-      // v73: only mark outline dirty when currentIdx was actually involved.
-      // Use bbox of the affected region so redrawOutline only scans/flushes that area.
       if (outlineMinX >= 0) {
         markOutlineDirty(outlineMinX, outlineMinY);
         if (outlineMaxX !== outlineMinX || outlineMaxY !== outlineMinY) {
@@ -7495,9 +7517,10 @@ if (msg.state?.conquered) {
       // Convert to featList indices for client-side use.
       const { geoIdx: geoCountryId, countryId } = msg;
       conqueredSet.add(geoCountryId + ':' + countryId);
-      const fi = featList.findIndex(f => f.id === String(countryId));
-      const targetFi = featList.findIndex(f => f.id === String(geoCountryId));
-      if (targetFi < 0 || fi < 0) { scheduleLegend(); break; }
+      // v75: O(1) lookups via idToFeatIdx
+      const fi = idToFeatIdx.get(String(countryId));
+      const targetFi = idToFeatIdx.get(String(geoCountryId));
+      if (targetFi === undefined || fi === undefined) { scheduleLegend(); break; }
       // Attack detection: if WE were conquered, show direction arrow + card + force repick
       if(targetFi === currentIdx && fi !== currentIdx){
         showAttackArrow(fi);
@@ -7540,8 +7563,8 @@ if (msg.state?.conquered) {
     case 'reversal': {
       const { geoIdx: geoCountryId, countryId } = msg;
       conqueredSet.delete(geoCountryId + ':' + countryId);
-      const targetFi = featList.findIndex(f => f.id === String(geoCountryId));
-      if (targetFi >= 0) eraseFlag(targetFi);
+      const targetFi = idToFeatIdx.get(String(geoCountryId));
+      if (targetFi !== undefined) eraseFlag(targetFi);
       scheduleLegend();
       break;
     }
