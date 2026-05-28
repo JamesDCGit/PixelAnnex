@@ -3276,7 +3276,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-29-v86a';
+const CODE_VERSION = '2026-05-29-v86b';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10288,7 +10288,8 @@ function tickHighlightFlash(){
     // Clear the canvas when not highlighting — UNLESS the v86 right-click
     // inspect overlay is currently active. Both systems share hlCtx; without
     // this guard, tickHighlightFlash wipes the inspect overlay every frame.
-    if (!_inspectGeoSet || performance.now() >= _inspectExpiry) {
+    // (v86b: variable renamed from _inspectGeoSet to _inspectPainted.)
+    if (!_inspectPainted || performance.now() >= _inspectExpiry) {
       hlCtx.clearRect(0,0,MAP_W,MAP_H);
     }
     _hlPixelCache = null;
@@ -10652,85 +10653,126 @@ window.addEventListener("mouseup",()=>{
   isPainting=false;isDragging=false;vp.style.cursor="crosshair";
 });
 vp.addEventListener("mouseleave",()=>{$("tip").style.display="none";isPainting=false;ovCtx.clearRect(0,0,MAP_W,MAP_H);});
-// v86: right-click inspects the country at the cursor + highlights any allied
-// countries. Available to all ranks (no longer a back-door for Select Target —
-// that's now Admiral-only via the toolbar button).
-let _inspectGeoSet = null;          // Set<featIdx> currently inspected
+// v86b: right-click inspect — shows the OWNER of the clicked painted pixel
+// and ALL pixels they (+ their alliance) have painted anywhere on the map.
+// Plus a faint gold wash over their home (geographic) country so the user
+// sees "where it came from".
+//
+// Aim: answer "this pixel belongs to USA — where else has USA painted?
+// how big is their footprint? are they allied with anyone?"
+//
+// Cost: one O(MAP_PX) scan per right-click to find all owned pixels.
+// Result cached in _inspectPainted (Int32Array of pixel offsets); render
+// throttled to ~15fps so per-frame cost is bounded.
+let _inspectPainted = null;     // Int32Array — owner+ally painted pixels (everywhere)
+let _inspectHomeSet = null;     // Set<featIdx> — home territories for gold wash
 let _inspectExpiry = 0;
-const INSPECT_DURATION_MS = 3000;
+let _lastInspectTick = 0;
+const INSPECT_DURATION_MS = 3500;
 
 vp.addEventListener("contextmenu", e => {
   e.preventDefault();
-  // v86 fix: was `toMap()` which is undefined — the correct helper is screenToMap.
-  // The old context-menu handler had the same typo but was gated behind a rank
-  // check that never passed for most users, so the bug went undetected.
   const p = screenToMap(e.clientX, e.clientY);
   if (!p) return;
   if (p.x < 0 || p.x >= MAP_W || p.y < 0 || p.y >= MAP_H) return;
   const i = p.y * MAP_W + p.x;
-  const geo = featByPixel[i];
-  if (geo < 0) return;
-  const targetCountry = featList[geo];
-  if (!targetCountry) return;
-  // Build the set of featIdx to highlight: this country + any allies
-  const set = new Set();
-  set.add(geo);
+
+  // Identify the OWNER (who painted this pixel), not the geographic country
+  const ownerFi = claimByPixel[i];
+  if (ownerFi < 0) {
+    if (typeof actPushCard === 'function') {
+      actPushCard({
+        variant: 'info',
+        title: '🔍 Unpainted pixel',
+        html: 'Right-click a painted pixel to inspect its country + alliance footprint.',
+      });
+    }
+    return;
+  }
+  const owner = featList[ownerFi];
+  if (!owner) return;
+
+  // Build owner-set: the painter + any alliance members
+  const ownerSet = new Set();
+  ownerSet.add(ownerFi);
   let allyCount = 0;
-  const ally = _allianceByCountry[targetCountry.id];
+  const ally = _allianceByCountry[owner.id];
   if (ally && Array.isArray(ally.countries)) {
     for (const cId of ally.countries) {
       const fi = idToFeatIdx.get(String(cId));
-      if (fi !== undefined && fi !== geo) { set.add(fi); allyCount++; }
+      if (fi !== undefined && fi !== ownerFi) { ownerSet.add(fi); allyCount++; }
     }
   }
-  _inspectGeoSet = set;
-  _inspectExpiry = performance.now() + INSPECT_DURATION_MS;
+
+  // Scan ONCE: find all painted pixels owned by anyone in ownerSet (full map).
+  // ~2M-pixel scan, takes a few ms on modern CPUs. Cached for the 3.5s window.
+  const painted = [];
+  for (let k = 0; k < MAP_PX; k++) {
+    if (ownerSet.has(claimByPixel[k])) painted.push(k);
+  }
+
+  _inspectPainted = new Int32Array(painted);
+  _inspectHomeSet = ownerSet;
+  _inspectExpiry  = performance.now() + INSPECT_DURATION_MS;
   sfxUIClick();
-  // Toast: country + alliance summary
+
   if (typeof actPushCard === 'function') {
+    const cnt = painted.length.toLocaleString();
     actPushCard({
       variant: 'info',
-      title:   '🔍 ' + targetCountry.name,
-      html:    allyCount > 0
-        ? 'Allied with <b>' + allyCount + '</b> countr' + (allyCount === 1 ? 'y' : 'ies') + ' · highlighting combined territory'
-        : 'No alliance · highlighting country territory only',
+      title: '🔍 ' + owner.name,
+      html: '<b>' + cnt + '</b> pixel' + (painted.length === 1 ? '' : 's') + ' painted across the map' +
+            (allyCount > 0
+              ? ' · combined with <b>' + allyCount + '</b> ally country' + (allyCount === 1 ? '' : 'ies')
+              : '') +
+            '<br><span style="color:#fbbf24;font-size:10px;">Gold</span> = home territory · <span style="color:#22d3ee;font-size:10px;">Cyan</span> = painted footprint',
     });
   }
 });
 
-// Renderer: piggyback on the highlight flash RAF tick.
-// Draws a soft cyan wash over all inspected territory until expiry.
-// v86 fix: clear hlCtx at the start of each tick — otherwise the per-pixel
-// fillRect calls stack frame after frame and saturate the overlay to opaque
-// cyan within ~10 frames.
-// Throttled to ~15fps to keep GPU cost bounded (cyan pulse is slow anyway).
-let _lastInspectTick = 0;
+// Renderer — two passes:
+//   Pass 1: faint gold wash over home country (shows origin)
+//   Pass 2: bright cyan over all painted pixels (shows footprint)
+// hlCtx is shared with tickHighlightFlash; we cleared the conflict in v86a.
 function tickInspectHighlight() {
   requestAnimationFrame(tickInspectHighlight);
   if (!hlCtx) return;
   const now = performance.now();
-  // Expired? clear our overlay one last time then stop.
-  if (_inspectGeoSet && now >= _inspectExpiry) {
+  // Expired? wipe overlay then stop until next right-click.
+  if (_inspectPainted && now >= _inspectExpiry) {
     hlCtx.clearRect(0, 0, MAP_W, MAP_H);
-    _inspectGeoSet = null;
+    _inspectPainted = null;
+    _inspectHomeSet = null;
     return;
   }
-  if (!_inspectGeoSet) return;
+  if (!_inspectPainted) return;
   if (now - _lastInspectTick < 66) return; // ~15fps throttle
   _lastInspectTick = now;
-  // Clear before redraw so the alpha doesn't accumulate frame-on-frame.
+  // Clear before redraw so alphas don't accumulate frame-on-frame.
   hlCtx.clearRect(0, 0, MAP_W, MAP_H);
-  // Pulse alpha 0.18 → 0.42 → 0.18 over the lifetime
+
   const t = (now - (_inspectExpiry - INSPECT_DURATION_MS)) / INSPECT_DURATION_MS;
-  const alpha = 0.18 + 0.24 * Math.abs(Math.sin(t * Math.PI * 2));
-  hlCtx.fillStyle = 'rgba(34, 211, 238, ' + alpha.toFixed(3) + ')';  // cyan
-  for (const fi of _inspectGeoSet) {
-    const src = geoPixelList && geoPixelList[fi];
-    if (!src) continue;
-    for (let pi = 0; pi < src.length; pi++) {
-      const idx = src[pi];
-      hlCtx.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1);
+  const pulse = Math.abs(Math.sin(t * Math.PI * 2));
+
+  // Pass 1: gold wash over home territory ("country of origin")
+  if (_inspectHomeSet) {
+    hlCtx.fillStyle = 'rgba(251, 191, 36, ' + (0.10 + 0.10 * pulse).toFixed(3) + ')';
+    for (const fi of _inspectHomeSet) {
+      const src = geoPixelList && geoPixelList[fi];
+      if (!src) continue;
+      for (let pi = 0; pi < src.length; pi++) {
+        const idx = src[pi];
+        hlCtx.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1);
+      }
     }
+  }
+
+  // Pass 2: bright cyan over all painted pixels (the footprint, anywhere on map)
+  hlCtx.fillStyle = 'rgba(34, 211, 238, ' + (0.35 + 0.25 * pulse).toFixed(3) + ')';
+  const arr = _inspectPainted;
+  for (let pi = 0; pi < arr.length; pi++) {
+    const idx = arr[pi];
+    hlCtx.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1);
   }
 }
 requestAnimationFrame(tickInspectHighlight);
