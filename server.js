@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-28-v80';
+const SERVER_VERSION       = '2026-05-28-v81';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -54,14 +54,32 @@ const BOT_BUCKET_MAX       = 60;   // smaller cap to prevent burst spikes
 // ── v34: Bot activity cycle — simulates "real player" login/logout ──
 // Each bot drifts between active and idle states. Only active bots paint and
 // are counted in the simulated player count. The target active-bot count
-// drifts slowly through the 50-200 range so the world feels alive.
+// follows a daily cycle (rush hours) so the world feels like real humans
+// logging in and out.
 const BOT_ACTIVE_MIN_MS = 5  * 60 * 1000;
 const BOT_ACTIVE_MAX_MS = 30 * 60 * 1000;
 const BOT_IDLE_MIN_MS   = 3  * 60 * 1000;
 const BOT_IDLE_MAX_MS   = 20 * 60 * 1000;
 const SIM_PLAYER_MIN    = 50;
 const SIM_PLAYER_MAX    = 200;
-let _simTargetActive = SIM_PLAYER_MIN + Math.floor(Math.random() * (SIM_PLAYER_MAX - SIM_PLAYER_MIN));
+// v80: daily rush-hour cycle (UTC).
+//   Peak (~200 active bots) at 21:00 UTC — that's evening in EU + afternoon in Americas
+//   Trough (~50 active bots) at 09:00 UTC — late night Americas, early morning Asia
+// Plus ±15 organic noise so the curve isn't too predictable.
+const SIM_NOISE_RANGE = 15;
+let _simNoise = 0; // wanders slowly via _tickBotActivity
+function _computeRushHourTarget() {
+  const hoursUTC = (Date.now() / 3600000) % 24;
+  const center   = (SIM_PLAYER_MIN + SIM_PLAYER_MAX) / 2; // 125
+  const amp      = (SIM_PLAYER_MAX - SIM_PLAYER_MIN) / 2; // 75
+  // sin peaks at hours=21 (tShift=15: 21-15=6, 6*2π/24 = π/2)
+  const wave     = Math.sin((hoursUTC - 15) * 2 * Math.PI / 24);
+  let target     = center + amp * wave + _simNoise;
+  if (target < SIM_PLAYER_MIN) target = SIM_PLAYER_MIN;
+  if (target > SIM_PLAYER_MAX) target = SIM_PLAYER_MAX;
+  return Math.round(target);
+}
+let _simTargetActive = _computeRushHourTarget();
 const _botActivity = new Map(); // countryId → { active: bool, expiresAt: number }
 function _rand(min, max) { return min + Math.random() * (max - min); }
 function _initBotActivity(countryId) {
@@ -93,13 +111,17 @@ function _tickBotActivity() {
     }
     if (a.active) currentActive++;
   }
-  // Drift target every ~3 minutes by ±10
+  // v80: recompute target from rush-hour cycle + slow-wandering noise.
+  // The wave updates every tick (smooth daily curve), noise drifts in chunks
+  // every ~3 min to add organic variation on top.
   if (!_tickBotActivity._lastDrift || now - _tickBotActivity._lastDrift > 3 * 60 * 1000) {
     _tickBotActivity._lastDrift = now;
-    _simTargetActive += Math.floor(_rand(-10, 11));
-    if (_simTargetActive < SIM_PLAYER_MIN) _simTargetActive = SIM_PLAYER_MIN;
-    if (_simTargetActive > SIM_PLAYER_MAX) _simTargetActive = SIM_PLAYER_MAX;
+    // Random walk on noise: -8..+8 each step, clamped to ±SIM_NOISE_RANGE
+    _simNoise += _rand(-8, 8);
+    if (_simNoise < -SIM_NOISE_RANGE) _simNoise = -SIM_NOISE_RANGE;
+    if (_simNoise >  SIM_NOISE_RANGE) _simNoise =  SIM_NOISE_RANGE;
   }
+  _simTargetActive = _computeRushHourTarget();
   // Nudge currentActive toward target (gradual)
   const drift = _simTargetActive - currentActive;
   if (Math.abs(drift) > 8) {
@@ -2964,14 +2986,21 @@ function buildGeoIndex() {
 //   • Size-weighted:        bots always prefer large neighbours (max +6 bonus)
 //   • Alliance coordination: +3 if an alliance partner already has pixels there
 const DX4 = [-1,1,0,0], DY4 = [0,0,-1,1];
+
+// v80: bot personality tunables — bumped aggression vs random exploration.
+// All three knobs make bots conquer-focused instead of wandering home-builders.
+const BOT_SCOUT_CHANCE      = 0.005;  // was 0.01 — halve random distant scouting
+const BOT_HOMESTABLE_THRESH = 0.25;   // was 0.40 — attack while home is still 25% secured (was 40%)
+const BOT_DEFEND_THRESHOLD  = 8;      // require at least this many sampled-invaded pixels before dropping attacks to defend (was: defend always wins)
+
 function getBotTargets(countryId, limit) {
   const cidx       = getIdx(countryId);
   const geoIdx     = getGeoForCountry(countryId);
   const homePixels = geoPixels[geoIdx];
   if (!homePixels || homePixels.length === 0) return [];
 
-  // ── 0. Roaming scout — 1% chance to seed in a distant appealing territory ──
-  if (Math.random() < 0.01) {
+  // ── 0. Roaming scout — small chance to seed in a distant appealing territory ──
+  if (Math.random() < BOT_SCOUT_CHANCE) {
     const geoKeys = Object.keys(geoPixels);
     let bestGeo = -1, bestScore = -1;
     // Sample 15 random geos and score them
@@ -3018,8 +3047,9 @@ function getBotTargets(countryId, limit) {
     else                              expand.push({ x, y });
   }
 
-  // Defend always wins — bots never attack while being pushed back
-  if (defend.length > 0) {
+  // v80: defend only when truly invaded (was: any defend.length > 0 wins).
+  // Now we tolerate small skirmishes and keep pressing the offensive.
+  if (defend.length >= BOT_DEFEND_THRESHOLD) {
     for (let i = defend.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [defend[i], defend[j]] = [defend[j], defend[i]];
@@ -3028,7 +3058,7 @@ function getBotTargets(countryId, limit) {
   }
 
   // ── 2. Strategic attack — score all neighbouring geos ────────
-  const homeStable = homeOwned / homeSampleSize >= 0.4; // v60: attack even when home is only 40% secured
+  const homeStable = homeOwned / homeSampleSize >= BOT_HOMESTABLE_THRESH;
   if (homeStable && ownerPixels[cidx]) {
     const geoScores    = new Map(); // targetGeoIdx → score
     const geoCandidates = new Map(); // targetGeoIdx → [{x,y}]
@@ -3057,13 +3087,16 @@ function getBotTargets(countryId, limit) {
           const nHomeId  = geoToId(ngeo);
           const nClaims  = geoClaimCnt[ngeo] || {};
 
-          // Opportunistic: pile on contested territories (v60: raised bonuses)
+          // Opportunistic: pile on contested territories
+          // v80: bumped tiers + added lowest bracket — bots pounce on even
+          // lightly-contested neighbours instead of waiting for big openings.
           const foreign = Object.entries(nClaims)
             .filter(([c]) => c !== nHomeId).reduce((s, [, v]) => s + v, 0);
           const contested = foreign / nTotal;
-          if      (contested >= 0.40) score += 5;
-          else if (contested >= 0.20) score += 3;
-          else if (contested >= 0.05) score += 1;
+          if      (contested >= 0.40) score += 7;
+          else if (contested >= 0.20) score += 5;
+          else if (contested >= 0.05) score += 3;
+          else if (contested >= 0.01) score += 1;
 
           // Size-weighted: ALL bots prefer large neighbours (v60: no myShare gate)
           const theirShare = getWorldShare(nHomeId);
