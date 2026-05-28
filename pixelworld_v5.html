@@ -428,6 +428,16 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .tut-tile .tut-tile-icon{font-size:22px;margin-bottom:6px;}
 .tut-tile .tut-tile-title{font-size:12px;color:#fff;font-weight:600;margin-bottom:4px;}
 .tut-tile .tut-tile-desc{font-size:10px;color:#94a3b8;line-height:1.5;}
+/* v83: page-flip controls for multi-page Step 1 */
+.tut-page-indicator{display:flex;justify-content:center;align-items:center;gap:14px;margin-top:6px;}
+.tut-page-btn{
+  background:#0f1729;border:1px solid #334155;color:#94a3b8;
+  width:28px;height:24px;border-radius:6px;cursor:pointer;font-size:14px;line-height:1;
+  display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s,color .15s;
+  font-family:inherit;padding:0;
+}
+.tut-page-btn:hover{background:#1e293b;border-color:#475569;color:#cbd5e1;}
+.tut-page-btn:active{transform:scale(.95);}
 
 /* Country picker tab */
 .tut-country-picker{margin-top:8px;}
@@ -1281,7 +1291,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <button class="btn" id="btn-brd">Borders Dark</button>
     <button class="btn" id="btn-rst">Reset View</button>
     <div class="sep"></div>
-    <button class="btn" id="btn-bomb">&#128165; Nuke</button>
+    <button class="btn" id="btn-bomb" title="Captain+ rank: click to arm your selected weapon (Mortar / MOAB / Nuke), then click the map to drop it. Higher ranks unlock bigger blasts.">&#128165; Nuke</button>
     <div id="bomb-menu"></div>
     <button class="btn" id="btn-highlight" title="Admiral: click to enter target-select mode, then click a country to designate as your attack target">&#127919; Select Target</button>
     <div class="sep"></div>
@@ -1343,6 +1353,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 <div id="daily-popup-overlay">
   <div id="daily-popup-card">
     <h2 data-i18n="daily.heading">Welcome Back</h2>
+    <div style="text-align:center;color:#94a3b8;font-size:11px;font-style:italic;letter-spacing:.08em;margin:-8px 0 12px;">Global Domination, Pixel style.</div>
     <div class="dp-sub" id="dp-greeting">PixelAnnex</div>
     <div class="dp-section">
       <div class="dp-section-title" data-i18n="daily.bonuses_section">Bonuses</div>
@@ -1367,6 +1378,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
           <select id="lang-picker-tut" onchange="setLanguage(this.value)"></select>
         </div>
         <h1>PixelAnnex</h1>
+        <div style="text-align:center;color:#94a3b8;font-size:11px;font-style:italic;letter-spacing:.08em;margin:-4px 0 14px;">Global Domination, Pixel style.</div>
         <div class="tut-sub" id="tut-sub-label" data-i18n="tut.welcome_sub">Welcome — let's get you set up</div>
         <div class="tut-stats" id="tut-header-stats">
           <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-players">—</div><div class="tut-stat-lbl" data-i18n="tut.stat_players">Players</div></div>
@@ -1379,10 +1391,11 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
           <div class="tut-dot" data-step="2"></div>
         </div>
 
-        <!-- Step 1: How to play -->
+        <!-- Step 1: How to play (multi-page) -->
         <div class="tut-section active" id="tut-step-0">
           <div class="tut-content">
-            <div class="tut-grid">
+            <!-- Page 1 of 2 -->
+            <div class="tut-grid tut-page" data-tut-page="1">
               <div class="tut-tile">
                 <div class="tut-tile-icon">🎨</div>
                 <div class="tut-tile-title" data-i18n="tut.tile_paint_title">Paint pixels</div>
@@ -1391,18 +1404,46 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
               <div class="tut-tile">
                 <div class="tut-tile-icon">⚔️</div>
                 <div class="tut-tile-title" data-i18n="tut.tile_conquer_title">Conquer countries</div>
-                <div class="tut-tile-desc" data-i18n="tut.tile_conquer_desc">Hold 70% of a country's pixels to claim it. Larger countries are tougher.</div>
+                <div class="tut-tile-desc" data-i18n="tut.tile_conquer_desc">Hold 60% of a country's pixels to claim it. Larger countries are tougher.</div>
               </div>
               <div class="tut-tile">
                 <div class="tut-tile-icon">💥</div>
-                <div class="tut-tile-title" data-i18n="tut.tile_bombs_title">Bombs &amp; ranks</div>
-                <div class="tut-tile-desc" data-i18n="tut.tile_bombs_desc">Earn XP per pixel. Higher ranks unlock Mortar, MOAB, and Nuke.</div>
+                <div class="tut-tile-title" data-i18n="tut.tile_bombs_title">Nukes &amp; ranks</div>
+                <div class="tut-tile-desc" data-i18n="tut.tile_bombs_desc">Earn XP per pixel painted. Higher ranks unlock Mortar, MOAB, and Nuke — and bigger bonuses across the board.</div>
               </div>
               <div class="tut-tile">
                 <div class="tut-tile-icon">🛡️</div>
                 <div class="tut-tile-title" data-i18n="tut.tile_fightback_title">Fight back</div>
-                <div class="tut-tile-desc" data-i18n="tut.tile_fightback_desc">When your country is &gt;70% lost, painting in your own land grants bonus pixels and a bigger brush.</div>
+                <div class="tut-tile-desc" data-i18n="tut.tile_fightback_desc">When your country is &gt;50% lost, painting your own land grants progressive bonus pixels — the more you've lost, the bigger the boost.</div>
               </div>
+            </div>
+            <!-- Page 2 of 2 -->
+            <div class="tut-grid tut-page" data-tut-page="2" style="display:none;">
+              <div class="tut-tile">
+                <div class="tut-tile-icon">🤝</div>
+                <div class="tut-tile-title">Alliances</div>
+                <div class="tut-tile-desc">Share a country preference with other players via Discord to form alliances. Allied pixels count toward conquest thresholds together.</div>
+              </div>
+              <div class="tut-tile">
+                <div class="tut-tile-icon">👹</div>
+                <div class="tut-tile-title">Monsters</div>
+                <div class="tut-tile-desc">UFOs, Krakens and Giant Lizards roam the map periodically — they wipe pixels in their path. Stay clear or strike while they're rampaging.</div>
+              </div>
+              <div class="tut-tile">
+                <div class="tut-tile-icon">🎯</div>
+                <div class="tut-tile-title">Select Target</div>
+                <div class="tut-tile-desc">Admiral rank: mark an enemy country as your attack target. The game highlights the front line so you know where to push.</div>
+              </div>
+              <div class="tut-tile">
+                <div class="tut-tile-icon">💬</div>
+                <div class="tut-tile-title">Discord login</div>
+                <div class="tut-tile-desc">Sign in to save rank, points and stats across sessions, claim daily login bonuses, and join the global Discord for live events.</div>
+              </div>
+            </div>
+            <div class="tut-page-indicator">
+              <button class="tut-page-btn" onclick="flipTutPage(-1)" title="Previous page">←</button>
+              <span style="font-size:10px;color:#64748b;letter-spacing:.08em;text-transform:uppercase;">Page <span id="tut-page-num">1</span> of 2</span>
+              <button class="tut-page-btn" onclick="flipTutPage(1)" title="Next page">→</button>
             </div>
             <div style="font-size:11px;color:#64748b;text-align:center;margin-top:14px;">
               <span class="tut-keypress">Drag</span> to pan ·
@@ -1411,7 +1452,6 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
             </div>
           </div>
           <div class="tut-btn-row">
-            <!-- v82: Skip button removed - users now must walk through tutorial -->
             <button class="tut-btn primary" onclick="nextTutStep()" data-i18n="tut.btn_next">Next →</button>
           </div>
         </div>
@@ -1634,7 +1674,7 @@ const LANGS = {
     'hud.bucket':            'Bucket',
     'hud.max_rank':          'MAX RANK',
     'hud.next_rank':         'next rank in {n} px',
-    'hud.unlock_captain':    'Unlock Captain rank to use bombs',
+    'hud.unlock_captain':    'Unlock ranks to get better bonuses',
     'hud.sign_in_discord':   'Sign in',
     'rank.soldier':          'Soldier',
     'rank.lieutenant':       'Lieutenant',
@@ -1737,7 +1777,7 @@ const LANGS = {
     'tip.8': '📊 1 pixel colocado = 1 ponto. Conquistar um país = 50 pontos bônus.',
     'tip.9': '🎖️ Suba 5 patentes: Soldado → Tenente → Capitão → General → Almirante.',
     'tip.10': '🚨 Países piscam vermelho quando sob cerco (>50% inimigo).',
-    'tip.11': '🤖 Cada país tem um bot IA defendendo. Eles ficam mais espertos com mais jogadores.',
+    'tip.11': '🛡️ Defenda territórios contestados — perder mais de 50% ativa o bônus progressivo de contra-ataque.',
     'tip.12': '🌐 O mapa tem ~2.4 milhões de pixels pintáveis em mais de 240 países.',
     'tip.13': '🎵 Três trilhas musicais: chiptune, clássica e militar. Alterne no HUD de áudio.',
     'tip.14': '👥 Entre com Discord para salvar progresso e ganhar promoções.',
@@ -1769,7 +1809,7 @@ const LANGS = {
     'tip.8': '📊 1 píxel colocado = 1 punto. Conquistar un país = 50 puntos extra.',
     'tip.9': '🎖️ Sube 5 rangos: Soldado → Teniente → Capitán → General → Almirante.',
     'tip.10': '🚨 Los países parpadean en rojo cuando están bajo asedio (>50% enemigo).',
-    'tip.11': '🤖 Cada país tiene un bot IA defendiéndolo. Mejoran con más jugadores.',
+    'tip.11': '🛡️ Defiende territorios disputados — perder más del 50% activa el bono progresivo de contraataque.',
     'tip.12': '🌐 El mapa tiene ~2.4 millones de píxeles pintables en más de 240 países.',
     'tip.13': '🎵 Tres pistas musicales: chiptune, clásica y militar. Alterna en el HUD de audio.',
     'tip.14': '👥 Inicia sesión con Discord para guardar tu progreso y ganar ascensos.',
@@ -1801,7 +1841,7 @@ const LANGS = {
     'tip.8': '📊 1 pixel placed = 1 point. Conquering a country = 50 bonus points.',
     'tip.9': '🎖️ Climb 5 ranks: Soldier → Lieutenant → Captain → General → Admiral.',
     'tip.10': '🚨 Countries flash red when under siege (>50% enemy-held and being attacked).',
-    'tip.11': '🤖 Every country has an AI bot defending it. They get smarter at higher player counts.',
+    'tip.11': '🛡️ Defend contested ground — losing more than 50% of your country activates progressive counter-attack bonuses.',
     'tip.12': '🌐 The map has ~2.4 million paintable pixels across 240+ countries.',
     'tip.13': '🎵 Three music tracks: chiptune, classical, and military. Toggle in the audio HUD.',
     'tip.14': '👥 Sign in with Discord to save your progress and earn rank promotions.',
@@ -1942,7 +1982,7 @@ const LANGS = {
     'tip.8': '📊 1ピクセル = 1ポイント。国を征服 = ボーナス50ポイント。',
     'tip.9': '🎖️ 5つの階級を上る: 兵士 → 中尉 → 大尉 → 将軍 → 提督。',
     'tip.10': '🚨 国が包囲されると赤く点滅 (>50%敵が保有)。',
-    'tip.11': '🤖 各国にAIボットが守ります。プレイヤーが多いほど賢くなります。',
+    'tip.11': '🛡️ 争われた領土を守りましょう — 50%以上失うと累進カウンター攻撃ボーナスが発動。',
     'tip.12': '🌐 マップには240以上の国に約240万の塗装可能ピクセル。',
     'tip.13': '🎵 3つの音楽トラック: チップチューン、クラシック、ミリタリー。オーディオHUDで切替。',
     'tip.14': '👥 Discordでログインして進行状況を保存し、階級昇進を獲得。',
@@ -1974,7 +2014,7 @@ const LANGS = {
     'tip.8': '📊 1 个像素 = 1 分。征服一个国家 = 50 奖励分。',
     'tip.9': '🎖️ 攀登 5 个军衔:士兵 → 中尉 → 上尉 → 将军 → 海军上将。',
     'tip.10': '🚨 国家被围攻时会闪红色 (>50% 敌占且正受攻击)。',
-    'tip.11': '🤖 每个国家都有 AI 机器人防守。玩家越多它们越聪明。',
+    'tip.11': '🛡️ 保卫争议领土 — 失去超过 50% 会激活渐进式反击奖励。',
     'tip.12': '🌐 地图拥有约 240 万可绘制像素,跨越 240 多个国家。',
     'tip.13': '🎵 三种音乐:芯片音乐、古典和军乐。在音频 HUD 中切换。',
     'tip.14': '👥 使用 Discord 登录以保存进度并获得军衔晋升。',
@@ -2060,7 +2100,7 @@ const LANGS = {
     'tip.8': '📊 1 पिक्सेल = 1 अंक। देश जीतना = 50 बोनस अंक।',
     'tip.9': '🎖️ 5 रैंक चढ़ें: सैनिक → लेफ्टिनेंट → कैप्टन → जनरल → एडमिरल।',
     'tip.10': '🚨 जब देश घेर में हो तो वे लाल चमकते हैं (>50% शत्रु-नियंत्रित)।',
-    'tip.11': '🤖 हर देश का एक AI बॉट रक्षक है। अधिक खिलाड़ी = ज्यादा चतुर।',
+    'tip.11': '🛡️ विवादित क्षेत्र की रक्षा करें — 50% से अधिक खोने पर प्रगतिशील पलटवार बोनस सक्रिय होता है।',
     'tip.12': '🌐 नक्शे में 240+ देशों में लगभग 24 लाख रंगने योग्य पिक्सेल हैं।',
     'tip.13': '🎵 तीन संगीत ट्रैक: चिपट्यून, शास्त्रीय और सैन्य। ऑडियो HUD में टॉगल करें।',
     'tip.14': '👥 प्रगति सहेजने और पदोन्नति पाने के लिए Discord से साइन इन करें।',
@@ -2146,7 +2186,7 @@ const LANGS = {
     'tip.8': '📊 1 بكسل = 1 نقطة. فتح بلد = 50 نقطة إضافية.',
     'tip.9': '🎖️ ارتقِ 5 رتب: جندي → ملازم → نقيب → جنرال → أميرال.',
     'tip.10': '🚨 تومض البلدان بالأحمر عند الحصار (>50% بأيدي العدو).',
-    'tip.11': '🤖 كل بلد لديه روبوت ذكاء اصطناعي يدافع عنه. يصبح أذكى مع زيادة اللاعبين.',
+    'tip.11': '🛡️ دافع عن الأراضي المتنازع عليها — فقدان أكثر من 50% يفعّل مكافآت الهجوم المضاد التصاعدية.',
     'tip.12': '🌐 الخريطة تحتوي على ~2.4 مليون بكسل قابل للرسم عبر 240+ بلد.',
     'tip.13': '🎵 ثلاث مقطوعات موسيقية: شيبتيون، كلاسيكي، عسكري. بدّل في HUD الصوت.',
     'tip.14': '👥 سجّل الدخول عبر Discord لحفظ تقدمك وكسب الترقيات.',
@@ -2286,7 +2326,7 @@ const LANGS = {
     'tip.8': '📊 1 пиксель = 1 очко. Завоевание страны = 50 бонусных очков.',
     'tip.9': '🎖️ Поднимитесь по 5 званиям: Солдат → Лейтенант → Капитан → Генерал → Адмирал.',
     'tip.10': '🚨 Страны мигают красным при осаде (>50% врага).',
-    'tip.11': '🤖 У каждой страны есть ИИ-бот-защитник. Они умнее при большем числе игроков.',
+    'tip.11': '🛡️ Защищайте оспариваемые территории — потеря более 50% активирует прогрессивный бонус контратаки.',
     'tip.12': '🌐 На карте ~2.4 миллиона рисуемых пикселей в 240+ странах.',
     'tip.13': '🎵 Три музыкальных трека: чиптюн, классика, военный. Переключайте в HUD аудио.',
     'tip.14': '👥 Войдите через Discord, чтобы сохранять прогресс и получать звания.',
@@ -2425,7 +2465,7 @@ const LANGS = {
     'tip.8': '📊 1 pixel = 1 point. Conquérir un pays = 50 points bonus.',
     'tip.9': '🎖️ Gravissez 5 grades : Soldat → Lieutenant → Capitaine → Général → Amiral.',
     'tip.10': '🚨 Les pays clignotent en rouge sous siège (>50% ennemi).',
-    'tip.11': '🤖 Chaque pays a un bot IA défenseur. Ils deviennent plus malins avec plus de joueurs.',
+    'tip.11': '🛡️ Défendez les territoires contestés — perdre plus de 50% active le bonus progressif de contre-attaque.',
     'tip.12': '🌐 La carte a ~2,4 millions de pixels peignables sur 240+ pays.',
     'tip.13': '🎵 Trois pistes musicales : chiptune, classique et militaire. Basculez dans le HUD audio.',
     'tip.14': '👥 Connectez-vous avec Discord pour sauvegarder vos progrès et gagner des promotions.',
@@ -2511,7 +2551,7 @@ const LANGS = {
     'tip.8': '📊 1 Pixel = 1 Punkt. Land erobern = 50 Bonus-Punkte.',
     'tip.9': '🎖️ Steige 5 Ränge auf: Soldat → Leutnant → Hauptmann → General → Admiral.',
     'tip.10': '🚨 Länder blinken rot bei Belagerung (>50% Feind).',
-    'tip.11': '🤖 Jedes Land hat einen KI-Bot-Verteidiger. Sie werden klüger mit mehr Spielern.',
+    'tip.11': '🛡️ Verteidige umkämpfte Gebiete — bei mehr als 50% Verlust greift der progressive Konter-Bonus.',
     'tip.12': '🌐 Die Karte hat ~2,4 Mio. bemalbare Pixel in 240+ Ländern.',
     'tip.13': '🎵 Drei Musikspuren: Chiptune, klassisch, militärisch. Im Audio-HUD umschalten.',
     'tip.14': '👥 Melde dich mit Discord an, um deinen Fortschritt zu speichern.',
@@ -3208,7 +3248,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-28-v82';
+const CODE_VERSION = '2026-05-29-v83';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5790,6 +5830,18 @@ function prevTutStep() {
   }
 }
 
+// v83: page flip within Step 1 (multi-page tile grid)
+let _tutPage = 1;
+const _TUT_PAGE_COUNT = 2;
+function flipTutPage(direction) {
+  _tutPage = ((_tutPage - 1 + direction) % _TUT_PAGE_COUNT + _TUT_PAGE_COUNT) % _TUT_PAGE_COUNT + 1;
+  document.querySelectorAll('.tut-page').forEach(el => {
+    el.style.display = (Number(el.dataset.tutPage) === _tutPage) ? '' : 'none';
+  });
+  const num = document.getElementById('tut-page-num');
+  if (num) num.textContent = String(_tutPage);
+}
+
 function updateTutStep() {
   document.querySelectorAll('.tut-dot').forEach((d, i) => {
     d.classList.toggle('active', i === _tutStep);
@@ -5892,13 +5944,16 @@ async function fetchWorldStats() {
     ]);
     players        = (ws && typeof ws.totalPlayers   === 'number') ? ws.totalPlayers   : 0;
     totalCountries = (ws && typeof ws.totalCountries === 'number') ? ws.totalCountries : 0;
-    if (ws && typeof ws.conqueredCount === 'number' && totalCountries > 0) {
-      remaining = Math.max(0, totalCountries - ws.conqueredCount);
+    if (ws && typeof ws.conqueredCount === 'number') {
+      conquered = ws.conqueredCount;
+      if (totalCountries > 0) remaining = Math.max(0, totalCountries - ws.conqueredCount);
     }
     alliances = (al && al.alliances) ? al.alliances.length : 0;
   } catch (e) { /* silent */ }
-  // Conquered count comes from client-side state — the size of conqueredSet
-  if (typeof conqueredSet !== 'undefined' && conqueredSet.size) {
+  // v83: server is the authoritative source. Only fall back to local
+  // conqueredSet if the server fetch failed AND we have local state
+  // (happens after WS connect; not at welcome time).
+  if (conquered === 0 && typeof conqueredSet !== 'undefined' && conqueredSet.size) {
     conquered = conqueredSet.size;
   }
 
