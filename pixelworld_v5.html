@@ -3276,7 +3276,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-29-v86b';
+const CODE_VERSION = '2026-05-29-v87';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3298,7 +3298,7 @@ let claimerCount={},geoClaimCnt={},geoTotal={};
 let geoPixelList = {};   // geoIdx → Int32Array of pixel offsets (built once at load)
 let _autoFillOutside = null; // Uint8Array(MAP_PX), reused across runAutoFill calls
 // ── Pixel inventory ──────────────────────────────────────────────
-const BUCKET_MAX       = 1000;  // max pixels a player can hold
+const BUCKET_MAX       = 100;   // v87: max pixels a player can hold (was 1000)
 const REGEN_INTERVAL   = 5;     // seconds between +1 pixel — TEST MODE (production: 60)
 let   pixelBucket      = 10;    // starting inventory
 
@@ -5371,9 +5371,10 @@ setInterval(()=>{
   regenSecsLeft--;
   if(regenSecsLeft<=0){
     // v38: rank multiplier × David multiplier (rounded so progression is visible)
+    // v87: × highlight temp-regen multiplier while a rally is active.
     const davidMult = getMyMultiplier();
     const rankMult  = getRankRegenMult();
-    const mult      = Math.max(1, Math.round(davidMult * rankMult));
+    const mult      = Math.max(1, Math.round(davidMult * rankMult * _highlightRegenMult));
     pixelBucket = Math.min(BUCKET_MAX, pixelBucket + mult);
     regenSecsLeft = REGEN_INTERVAL;
     updateBucketHUD();
@@ -5381,7 +5382,7 @@ setInterval(()=>{
   }
   const _davidMult = getMyMultiplier();
   const _rankMult  = getRankRegenMult();
-  const mult       = Math.max(1, Math.round(_davidMult * _rankMult));
+  const mult       = Math.max(1, Math.round(_davidMult * _rankMult * _highlightRegenMult));
   const suffix     = mult > 1 ? (' +' + mult) : '+1';
   $("bucket-timer").textContent = suffix+" in "+regenSecsLeft+"s";
 }, 1000);
@@ -8540,6 +8541,13 @@ function mpSendBomb(cx, cy, radius, bombKey) {
   startBombCooldown(); // anti-spam: 30s cooldown between bombs
 }
 
+// v87: tell the server about a rally call so it can emit a Discord "needs help"
+// notification. countryId = the highlighted (rallied) country's ID.
+function mpSendHighlight(countryId) {
+  if (!wsReady) return;
+  try { ws.send(JSON.stringify({ type: 'rally', countryId: String(countryId) })); } catch (e) {}
+}
+
 // Start connection attempt after map loads
 function mpInit() {
   // Small delay so map is fully ready before sending large bootstrap data
@@ -10075,15 +10083,52 @@ let highlightExpiry    = 0;    // timestamp when highlight expires
 let highlightTimer     = null; // setInterval for countdown
 let _highlightBonusClaimed = false; // v27: tracks the one-shot +10 highlight bonus
 
+// v87: progressive highlight perks by rank index.
+//   0 Soldier    — cannot highlight
+//   1 Lieutenant — highlight + "needs help" notification, no bonuses
+//   2 Captain    — + 1.5x temp regen while active + 10px once-per-highlight
+//   3 General     — + 2x temp regen + 20px
+//   4 Admiral     — + 3x temp regen + 30px
+// The temp regen multiplier stacks on top of the existing rank+David regen
+// only WHILE a highlight is active and only when painting in the highlighted
+// country. The initial bonus is awarded once per highlight session.
+const HIGHLIGHT_PERKS = [
+  null,                                   // Soldier
+  { regenMult: 1.0, initialBonus: 0  },   // Lieutenant
+  { regenMult: 1.5, initialBonus: 10 },   // Captain
+  { regenMult: 2.0, initialBonus: 20 },   // General
+  { regenMult: 3.0, initialBonus: 30 },   // Admiral
+];
+function getHighlightPerk(){ return HIGHLIGHT_PERKS[getRankIndex()] || null; }
+// Active temp-regen multiplier (1.0 when no highlight active). Read by the
+// regen ticker so the boost applies passively while a highlight is up.
+let _highlightRegenMult = 1.0;
+
 function setHighlight(geoIdx){
-  // v85: highlight is now gated to Admiral-only (was General+).
+  // v87: gated to Lieutenant+ (rank index >= 1). Soldiers cannot highlight.
   const ri = getRankIndex();
-  if(ri < 4) return;
+  const perk = HIGHLIGHT_PERKS[ri];
+  if(!perk) return;
   if(highlightTimer) clearInterval(highlightTimer);
   highlightGeoIdx = geoIdx;
   highlightExpiry = Date.now() + 30000;
-  _highlightBonusClaimed = false; // fresh session, +10 available again
+  _highlightBonusClaimed = false; // fresh session, initial bonus available again
+  _highlightRegenMult = perk.regenMult;
   updateHighlightBanner();
+  // v87: fire the "needs help on the front lines" notification (in-game toast +
+  // Discord via the server). mpSendHighlight tells the server who/where.
+  const country = featList[geoIdx];
+  if(country){
+    const who = (window._userProfile && window._userProfile.username) || tRank(getCurrentRank().name);
+    if(typeof actPushCard === 'function'){
+      actPushCard({
+        variant: 'fightback',
+        title: '📣 Rally call sent',
+        html: '<b>' + who + '</b> needs help on the front lines of <b>' + country.name + '</b>!',
+      });
+    }
+    if(typeof mpSendHighlight === 'function') mpSendHighlight(country.id);
+  }
   highlightTimer = setInterval(()=>{
     if(Date.now() >= highlightExpiry){
       clearHighlight();
@@ -10097,6 +10142,7 @@ function clearHighlight(){
   highlightGeoIdx = -1;
   highlightExpiry = 0;
   _highlightBonusClaimed = false;
+  _highlightRegenMult = 1.0;
   _hlPixelCache = null;
   if(highlightTimer){ clearInterval(highlightTimer); highlightTimer=null; }
   updateHighlightBanner();
@@ -10110,26 +10156,33 @@ function updateHighlightBanner(){
   }
   const remaining = Math.ceil((highlightExpiry - Date.now()) / 1000);
   const country = featList[highlightGeoIdx];
-  const mult = getCurrentRank().highlightMult;
+  const perk = getHighlightPerk();
+  const bonus = perk ? perk.initialBonus : 0;
+  const bonusLabel = bonus > 0
+    ? (_highlightBonusClaimed ? '+' + bonus + ' claimed' : '+' + bonus + ' first pixel')
+    : 'rally only';
+  const regenLabel = (perk && perk.regenMult > 1) ? (' · ' + perk.regenMult + '× regen') : '';
   el.style.display = 'block';
-  el.innerHTML = `<span style="color:#fbbf24">&#9733; HIGHLIGHT</span> · 
-    <span style="color:${country?.color||'#fff'}">${country?.name||'?'}</span> · 
-    <b style="color:${_highlightBonusClaimed ? '#64748b' : '#22c55e'}">${_highlightBonusClaimed ? '+10 claimed' : '+10 first pixel'}</b> · 
+  el.innerHTML = `<span style="color:#fbbf24">&#9733; RALLY</span> ·
+    <span style="color:${country?.color||'#fff'}">${country?.name||'?'}</span> ·
+    <b style="color:${(bonus>0 && _highlightBonusClaimed) ? '#64748b' : '#22c55e'}">${bonusLabel}</b>${regenLabel} ·
     <span style="color:#64748b">${remaining}s</span>`;
 }
 
-// Award the one-shot +10 bonus if the painted pixel falls inside the active
-// highlight and the bonus hasn't been claimed yet this highlight session.
+// Award the once-per-highlight initial bonus (rank-scaled) when the painted
+// pixel falls inside the active highlighted country.
 function claimHighlightBonus(px, py){
   if(highlightGeoIdx < 0 || Date.now() >= highlightExpiry) return;
   if(_highlightBonusClaimed) return;
+  const perk = getHighlightPerk();
+  if(!perk || perk.initialBonus <= 0) return;
   const i = py*MAP_W + px;
   if(i < 0 || i >= MAP_PX) return;
   if(featByPixel[i] !== highlightGeoIdx) return;
   _highlightBonusClaimed = true;
-  pixelBucket = Math.min(BUCKET_MAX, pixelBucket + 10);
+  pixelBucket = Math.min(BUCKET_MAX, pixelBucket + perk.initialBonus);
   updateBucketHUD();
-  showBonusPop(10, '⭐');
+  showBonusPop(perk.initialBonus, '⭐');
 }
 
 // ── Bomb types ────────────────────────────────────────────────────
@@ -10209,19 +10262,18 @@ let highlightMode = false;
 let _mouseScreenX = 0, _mouseScreenY = 0; // live cursor position  // true = next map click designates a country
 
 function enterHighlightMode(){
-  // v85: highlight is now Admiral-only (was General+).
+  // v87: gated to Lieutenant+ (rank index >= 1). Soldiers cannot rally.
   const ri = getRankIndex();
-  if(ri < 4){
+  if(ri < 1){
     const btn = document.getElementById('btn-highlight');
     if(btn){
       btn.style.borderColor='#ef4444';
       setTimeout(()=>btn.style.borderColor='',800);
-      // Hover banner: explain the gate
       if (typeof actPushCard === 'function') {
         actPushCard({
           variant: 'alert',
-          title:   '🔒 Admiral rank required',
-          html:    'Select Target is reserved for the Admiral rank (1,500+ pixels placed). Keep painting to unlock it.',
+          title:   '🔒 Lieutenant rank required',
+          html:    'Rally calls unlock at Lieutenant (50+ pixels placed). Higher ranks add regen + initial-pixel bonuses. Keep painting!',
         });
       }
     }
@@ -10232,18 +10284,23 @@ function enterHighlightMode(){
   document.getElementById('viewport').style.cursor = 'crosshair';
 }
 
-// v85: update the Select Target button's hover state to reflect rank gate.
-// Admirals see the normal gold-glow tooltip; lower ranks see a red-lock state.
+// v87: update the rally button's hover state to reflect the Lieutenant+ gate
+// and show the player's current-rank perks in the tooltip.
 function _refreshHighlightBtnLockState(){
   const btn = document.getElementById('btn-highlight');
   if(!btn) return;
-  const locked = getRankIndex() < 4;
+  const ri = getRankIndex();
+  const locked = ri < 1;
   btn.classList.toggle('locked', locked);
   if (locked) {
-    btn.title = '🔒 Locked — reach Admiral rank (1,500 px) to unlock Select Target';
+    btn.title = '🔒 Locked — reach Lieutenant (50 px) to call rallies';
     btn.style.opacity = '0.55';
   } else {
-    btn.title = 'Admiral: click to enter target-select mode, then click a country to designate as your attack target';
+    const perk = HIGHLIGHT_PERKS[ri];
+    const extra = perk && perk.initialBonus > 0
+      ? ' (' + perk.regenMult + '× regen + ' + perk.initialBonus + 'px first pixel while active)'
+      : ' (rally call only)';
+    btn.title = 'Click, then click a country to rally your forces there' + extra;
     btn.style.opacity = '';
   }
 }
@@ -11316,6 +11373,31 @@ let _monsterFrameTick  = 0;
 const MONSTER_SPAWN_ANIM_MS   = 350; // ms for pop-in
 const MONSTER_DESPAWN_ANIM_MS = 220; // ms for pop-out
 
+// v87: black-silhouette cache for the 1px shape-dilation outline.
+// Keyed by source frame canvas via WeakMap so each animation frame's
+// silhouette is built once and reused across render ticks.
+const _silhouetteCache = new WeakMap();
+function _getSilhouette(src) {
+  if (!src) return null;
+  let sil = _silhouetteCache.get(src);
+  if (sil) return sil;
+  try {
+    sil = document.createElement('canvas');
+    sil.width = src.width;
+    sil.height = src.height;
+    const sc = sil.getContext('2d');
+    sc.drawImage(src, 0, 0);
+    // Tint every opaque pixel solid black, preserving alpha shape
+    sc.globalCompositeOperation = 'source-in';
+    sc.fillStyle = '#000';
+    sc.fillRect(0, 0, sil.width, sil.height);
+    _silhouetteCache.set(src, sil);
+    return sil;
+  } catch (e) {
+    return null;
+  }
+}
+
 function _renderMonsters() {
   requestAnimationFrame(_renderMonsters);
   const now = performance.now();
@@ -11353,9 +11435,14 @@ function _renderMonsters() {
   monCtx.clearRect(0, 0, MAP_W, MAP_H);
   monCtx.imageSmoothingEnabled = false;
 
-  // v86: Pass 0 — dark outline + red spawn pulse for UFO & Godzilla (the Radioactive Lizard).
-  // Kraken is a sea creature and reads fine without an outline.
+  // v87: Pass 0 — 1px SHAPE-DILATION outline (matches sprite silhouette, not a
+  // circle) + red spawn pulse ring for UFO & Godzilla. Kraken reads fine on
+  // blue ocean so it's skipped.
+  // Dilation technique: draw a black silhouette of the sprite offset by 1px in
+  // 8 directions behind the real sprite (drawn in Pass 1). Silhouettes are
+  // cached per source frame canvas via _silhouetteCache (WeakMap).
   const MONSTER_SPAWN_PULSE_MS = 1500;
+  const _DILATE = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
   for (const id in _activeMonsters) {
     const s = _activeMonsters[id];
     if (!s || !s._canvas) continue;
@@ -11363,9 +11450,10 @@ function _renderMonsters() {
     if (s._despawnStart !== null) continue;
     const cx = Math.round(s.x + s.w / 2);
     const cy = Math.round(s.y + s.h / 2);
-    const r  = Math.max(s.w, s.h) * 0.55;
-    // Spawn pulse ring — red, expanding, fading out over MONSTER_SPAWN_PULSE_MS
+
+    // Spawn pulse ring — red, expanding, fading out (kept from v86)
     if (s._spawnTime && now - s._spawnTime < MONSTER_SPAWN_PULSE_MS) {
+      const r = Math.max(s.w, s.h) * 0.55;
       const t = (now - s._spawnTime) / MONSTER_SPAWN_PULSE_MS;
       const pulseR = r + t * r * 1.8;
       const alpha  = 1 - t;
@@ -11376,7 +11464,6 @@ function _renderMonsters() {
       monCtx.beginPath();
       monCtx.arc(cx, cy, pulseR, 0, Math.PI * 2);
       monCtx.stroke();
-      // Inner softer ring for depth
       monCtx.globalAlpha = alpha * 0.4;
       monCtx.strokeStyle = '#fca5a5';
       monCtx.lineWidth   = 1;
@@ -11385,15 +11472,25 @@ function _renderMonsters() {
       monCtx.stroke();
       monCtx.restore();
     }
-    // Permanent dark outline so the sprite reads against any background
-    monCtx.save();
-    monCtx.globalAlpha = 0.55;
-    monCtx.strokeStyle = '#000';
-    monCtx.lineWidth   = 2;
-    monCtx.beginPath();
-    monCtx.arc(cx, cy, r, 0, Math.PI * 2);
-    monCtx.stroke();
-    monCtx.restore();
+
+    // 1px shape-dilation outline — match the Pass 1 spawn pop-scale transform
+    const sil = _getSilhouette(s._canvas);
+    if (sil) {
+      let popScale = 1;
+      if (s._spawnTime) {
+        const t = (now - s._spawnTime) / MONSTER_SPAWN_ANIM_MS;
+        if (t < 1) popScale = t;
+      }
+      monCtx.save();
+      monCtx.globalAlpha = 0.7;
+      monCtx.translate(cx, cy);
+      monCtx.scale(popScale, popScale);
+      const ox = -(s.w / 2) | 0, oy = -(s.h / 2) | 0;
+      for (let d = 0; d < _DILATE.length; d++) {
+        monCtx.drawImage(sil, ox + _DILATE[d][0], oy + _DILATE[d][1], s.w, s.h);
+      }
+      monCtx.restore();
+    }
   }
 
   // ── Pass 1: sprite drawImage with pop-in / pop-out scale ──────

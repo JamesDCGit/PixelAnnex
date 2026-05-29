@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-29-v86b';
+const SERVER_VERSION       = '2026-05-29-v87';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1599,6 +1599,9 @@ const MULTI_ATTACK_COOLDOWN_MS  = 5 * 60 * 1000;
 // defenderGeoIdx → { attackers: Map(attackerId → { lastTs, pixels }), lastNotifyAt }
 const _multiAttackTracker = new Map();
 
+// v87: per-player rally-call cooldown tracker (pid → last rally timestamp).
+let _rallyLastByPid = new Map();
+
 function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
   // Skip self-paint (resident bot painting own country)
   if (String(attackerCountryId) === String(geoToId(defenderGeoIdx))) return;
@@ -2995,16 +2998,16 @@ function detectEncirclement(strokePixels, countryId) {
 
 // Map enclosed pixel count → regen multiplier and duration
 function getEncircleBonus(count) {
-  // Tier scale:
-  //   50–149   → 2×  for 60s
-  //   150–299  → 5×  for 60s
-  //   300–499  → 8×  for 60s
-  //   500+     → 10× for 60s
-  let mult = 2;
-  if (count >= 500) mult = 10;
-  else if (count >= 300) mult = 8;
-  else if (count >= 150) mult = 5;
-  else                    mult = 2;
+  // v87: tiers halved (was 2/5/8/10) — encirclement was over-rewarding.
+  //   50–149   → 1.5× for 60s
+  //   150–299  → 2.5× for 60s
+  //   300–499  → 4×   for 60s
+  //   500+     → 5×   for 60s
+  let mult = 1.5;
+  if (count >= 500) mult = 5;
+  else if (count >= 300) mult = 4;
+  else if (count >= 150) mult = 2.5;
+  else                    mult = 1.5;
   return { mult, durationMs: 60_000 };
 }
 
