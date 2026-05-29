@@ -144,11 +144,38 @@ Before editing any function:
 
 - [x] v77: 1Hz delta tick + client paint queue staggering
 - [x] v79: white flash restored with 15fps throttled decay
-- [ ] **Cloudflare CDN** — front static assets; biggest single concurrency win
+- [x] v80: Cloudflare CDN + deploy.ps1 version guard + CLAUDE.md
+- [x] v81: dynamic bot rush-hours + aggressive personality
+- [x] v82–v83b: UI cleanup, welcome rework, daily popup, leader-name scrub
+- [x] v84: notification rate-limits + notable-country tweet filter + sass pool
+- [x] v85: progressive fight-back, touchpad gestures, rank perks shown
+- [x] v86–v86b: monster outlines, right-click OWNER-footprint inspect, About page, alliance/rivalry overhaul
+- [x] v87: progressive Lieutenant+ rally system, bucket max 100, encircle halved, 1px monster shape outline
+- [x] v88: localized tweet tagging (flags + #hashtags) + server-side 256×256 PNG screenshots (pure-JS encoder, NO native dep)
 - [ ] Per-region viewport delta filter — ~90% bandwidth cut for zoomed players
 - [ ] Binary delta protocol (packed Uint16) — 4× smaller, no JSON.parse cost
-- [ ] Dynamic bot rush-hours — more lifelike active-count drift
 - [ ] Server snapshot RLE → binary — faster initial connection
+- [ ] **Alliance overhaul** (large, mostly Discord/bot.js) — underground-resistance progress bars, superpower event, faction threads, ping-the-general/strike, alliance vaults + daily surge, A/B/C reskin (Homeland/Coalition/Mercenary), 2-alliance onboarding. Design doc still owed.
+
+## Screenshots for tweets (v88)
+
+`mapshot.js` renders a 256×256 PNG of a country with a hand-rolled PNG
+encoder (zlib only). `@napi-rs/canvas` was dropped — its 0.1.80 publish
+declares `os:win32` and breaks `npm install` on the linux droplet, and a
+native dep isn't worth it for a flat image with no text. Client sends
+`geoColors` (id→hex) at join; server caches `geoColorsById`;
+`makeCountryShot()` writes to `/shots/` (pruned to 60), served at
+`/shots/{name}.png`. `makeNotableShot()` only renders when the event will
+actually tweet (notable country). Conquest + multi-attack attach `imageUrl`.
+
+## Droplet git hygiene
+
+The droplet working tree accumulates runtime-written files (`tweet_queue.json`,
+`countries-10m.json.gz`, `package-lock.json`, `ecosystem.config.js`). A stray
+`git checkout -- package.json` may be needed before `git pull` if a deploy
+ever modified a tracked file on the server. `deploy.ps1` does a plain `git
+pull`; if it reports "Please commit your changes," SSH in and
+`git checkout -- <file>` the offending tracked file, then re-deploy.
 
 Path B (10k users) and Path C (millions) are documented in chat history but
 not started.
