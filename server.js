@@ -31,7 +31,7 @@ const fs        = require('fs');
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-29-v87';
+const SERVER_VERSION       = '2026-05-29-v87a';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -4557,6 +4557,30 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
+      // v87: rally call — Lieutenant+ asks for help on a country. Throttled
+      // per-player to one notification per 60s. Emits a Discord 'rally_call'.
+      case 'rally': {
+        const rallyCountryId = msg.countryId ? String(msg.countryId) : null;
+        if (!rallyCountryId) break;
+        const nowR = Date.now();
+        const lastR = _rallyLastByPid.get(pid) || 0;
+        if (nowR - lastR < 60000) break; // 60s per-player cooldown
+        _rallyLastByPid.set(pid, nowR);
+        const whoName = (player.discordId && getProfile(player.discordId)?.username)
+          || ('A ' + (player.countryId ? _countryName(player.countryId) : 'player') + ' commander');
+        const targetName = _countryName(rallyCountryId);
+        emitBotEvent({
+          type:          'rally_call',
+          tier:          2,
+          caller:        whoName,
+          callerCountry: player.countryId || null,
+          targetId:      rallyCountryId,
+          targetName,
+          timestamp:     nowR,
+          sassyText:     '📣 ' + whoName + ' needs reinforcements on the front lines of ' + targetName + '! Deploy your pixels: ' + GAME_URL,
+        });
+        break;
+      }
       case 'bomb': {
         if (!player.countryId) return;
         const cdKey = player.discordId || player.countryId;
