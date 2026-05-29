@@ -3276,7 +3276,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-29-v87a';
+const CODE_VERSION = '2026-05-29-v88';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7448,6 +7448,17 @@ function mpSendJoin() {
     }
   }
 
+  // v88: send country colours (id → hex) so the server can render map
+  // screenshots for tweets. Keyed by numeric country ID to match geoAtPixel.
+  const geoColors = {};
+  for (let i = 0; i < featList.length; i++) {
+    const fi = featList[i];
+    if (fi && fi.id && fi.color) {
+      const cid = parseInt(fi.id, 10);
+      if (!Number.isNaN(cid)) geoColors[cid] = fi.color;
+    }
+  }
+
   _joinSent = true;
   ws.send(JSON.stringify({
     type: 'join',
@@ -7459,6 +7470,7 @@ function mpSendJoin() {
     indexToId,
     geoPixelRuns,
     landRuns,
+    geoColors,
   }));
 }
 

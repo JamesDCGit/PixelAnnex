@@ -28,10 +28,11 @@ const http      = require('http');
 const WebSocket = require('ws');
 const path      = require('path');
 const fs        = require('fs');
+const { renderCountryPNG } = require('./mapshot'); // v88: tweet screenshots
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-29-v87a';
+const SERVER_VERSION       = '2026-05-29-v88';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -245,7 +246,7 @@ const NOTABLE_COUNTRY_IDS = new Set([
   '158', // Taiwan
 ]);
 
-function pushTweetDraft({ type, text, dedupeKey, throttleKey, countries }) {
+function pushTweetDraft({ type, text, dedupeKey, throttleKey, countries, imageUrl }) {
   const now = Date.now();
   // v84: notable-countries filter — only fire event tweets if at least one
   // involved country is notable. Calls without `countries` (community,
@@ -269,6 +270,7 @@ function pushTweetDraft({ type, text, dedupeKey, throttleKey, countries }) {
     ts:     now,
     type,
     text:   String(text || '').slice(0, 280),
+    imageUrl: imageUrl || null,   // v88: optional screenshot URL for the post
     status: 'pending',  // 'pending' | 'posted' | 'dismissed'
   };
   tweetQueue.unshift(draft);
@@ -286,6 +288,79 @@ function _countryTag(id) {
   // ISO 3166-1 numeric → hashtag-safe name (alphanumeric only)
   const n = _countryName(id).replace(/[^A-Za-z0-9]/g, '');
   return n ? '#' + n : '';
+}
+
+// ── v88: localized tagging (flag emoji + national hashtags) ──────
+// ISO 3166-1 numeric → alpha-2 for the notable countries we tag (others
+// fall back to no flag). Numeric keys are unpadded strings to match the
+// numeric country IDs used everywhere on the server.
+const ISO_NUM_TO_A2 = {
+  '840':'US','156':'CN','643':'RU','826':'GB','276':'DE','250':'FR','392':'JP',
+  '356':'IN','76':'BR','36':'AU','124':'CA','380':'IT','724':'ES','484':'MX',
+  '410':'KR','364':'IR','376':'IL','792':'TR','682':'SA','360':'ID','586':'PK',
+  '408':'KP','804':'UA','616':'PL','710':'ZA','818':'EG','566':'NG','32':'AR',
+  '170':'CO','764':'TH','704':'VN','275':'PS','158':'TW','300':'GR','528':'NL',
+  '752':'SE','578':'NO','246':'FI','208':'DK','756':'CH','40':'AT','56':'BE',
+  '620':'PT','372':'IE','554':'NZ','152':'CL','604':'PE','862':'VE','886':'__',
+};
+// Short, recognisable hashtags for the biggest countries; fallback = stripped name.
+const NAT_HASHTAG = {
+  '840':'#USA','826':'#UK','156':'#China','643':'#Russia','276':'#Germany',
+  '250':'#France','392':'#Japan','356':'#India','76':'#Brazil','410':'#Korea',
+  '408':'#NorthKorea','364':'#Iran','376':'#Israel','804':'#Ukraine','792':'#Turkey',
+};
+// Convert alpha-2 to a regional-indicator flag emoji (🇺🇸 etc.).
+function _flagEmoji(id) {
+  const a2 = ISO_NUM_TO_A2[String(parseInt(id, 10))];
+  if (!a2 || a2.length !== 2 || a2 === '__') return '';
+  const A = 0x1F1E6;
+  return String.fromCodePoint(A + (a2.charCodeAt(0) - 65)) +
+         String.fromCodePoint(A + (a2.charCodeAt(1) - 65));
+}
+// "🇺🇸 USA" — flag + name for use inside tweet bodies.
+function _flagName(id) {
+  const flag = _flagEmoji(id);
+  return (flag ? flag + ' ' : '') + _countryName(id);
+}
+// National hashtag (short alias or stripped name).
+function _natHashtag(id) {
+  return NAT_HASHTAG[String(parseInt(id, 10))] || _countryTag(id);
+}
+
+// ── v88: tweet screenshots ───────────────────────────────────────
+// Render a 256x256 PNG of a country, save under /shots, return a public
+// URL path (served by the HTTP handler). Returns null if rendering fails
+// or @napi-rs/canvas isn't installed. Keeps only the most recent files.
+const SHOTS_DIR = path.join(__dirname, 'shots');
+const SHOTS_MAX = 60;
+try { if (!fs.existsSync(SHOTS_DIR)) fs.mkdirSync(SHOTS_DIR, { recursive: true }); } catch (e) {}
+function _pruneShots() {
+  try {
+    const files = fs.readdirSync(SHOTS_DIR)
+      .filter(f => f.endsWith('.png'))
+      .map(f => ({ f, t: fs.statSync(path.join(SHOTS_DIR, f)).mtimeMs }))
+      .sort((a, b) => b.t - a.t);
+    for (let i = SHOTS_MAX; i < files.length; i++) {
+      try { fs.unlinkSync(path.join(SHOTS_DIR, files[i].f)); } catch (e) {}
+    }
+  } catch (e) {}
+}
+function makeCountryShot(countryId) {
+  try {
+    const bbox = geoBbox[parseInt(countryId, 10)];
+    if (!bbox) return null;
+    const buf = renderCountryPNG({
+      MAP_W, MAP_H, geoAtPixel, claimByPixel, landMask, idxToId, geoColorsById, bbox,
+    });
+    if (!buf) return null;
+    const name = 'shot_' + countryId + '_' + Date.now().toString(36) + '.png';
+    fs.writeFileSync(path.join(SHOTS_DIR, name), buf);
+    _pruneShots();
+    return '/shots/' + name;
+  } catch (e) {
+    console.warn('[Mapshot] render failed for', countryId, e.message);
+    return null;
+  }
 }
 
 // ── Tweet template generators ────────────────────────────────────
@@ -1659,10 +1734,11 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
       });
       pushTweetDraft({
         type:        'multi_attack',
-        text:        sassyMulti,
+        text:        (sassyMulti + ' ' + _flagEmoji(defenderId) + _natHashtag(defenderId)).slice(0, 279),
         dedupeKey:   'multi_attack:' + defenderId + ':' + Math.floor(now / 60000),
         throttleKey: 'multi_attack_def:' + defenderId,
         countries:   [defenderId, ...attackerIds], // v84: notable if defender OR any attacker is notable
+        imageUrl:    makeCountryShot(defenderId) || undefined, // v88 screenshot
       });
     } catch (e) { /* ignore */ }
   }
@@ -2219,6 +2295,9 @@ function getAllyOwnedCount(geo, countryId) {
 const claimByPixel = new Int16Array(MAP_PX).fill(-1);
 const geoAtPixel   = new Int16Array(MAP_PX).fill(-1);
 const landMask     = new Uint8Array(MAP_PX).fill(0);
+// v88: country colours (numeric country id → '#rrggbb'), sent by client at join.
+// Used by the tweet-screenshot renderer to colour owned pixels authentically.
+const geoColorsById = {};
 const geoClaimCnt  = {};   // geoIdx → { countryId → count }
 const geoTotal     = {};   // geoIdx → total land pixels
 
@@ -2771,6 +2850,8 @@ function applyPixels(pixels, countryId) {
           d: _countryName(_defId),
           held: Array.from(conqueredSet).filter(k => String(k).split(':')[1] === String(countryId)).length,
         });
+        // v88: render a screenshot of the conquered country for the tweet/embed
+        const _conqShot = makeCountryShot(geoToId(geo));
         emitBotEvent({
           type:        'war_conquest',
           tier:        2,
@@ -2778,6 +2859,7 @@ function applyPixels(pixels, countryId) {
           defenderId:  _defId,
           timestamp:   Date.now(),
           sassyText:   _sassyConq,
+          imageUrl:    _conqShot || undefined,
         });
         // v38: notify players who were playing as the conquered country
         for (const [pid, p] of players) {
@@ -2803,6 +2885,7 @@ function applyPixels(pixels, countryId) {
             dedupeKey:   'conquest:' + countryId + ':' + geoToId(geo),
             throttleKey: 'conquest_attacker:' + countryId,
             countries:   [countryId, geoToId(geo)], // v84: notable-country filter
+            imageUrl:    _conqShot || undefined,    // v88: conquered-country screenshot
           });
         } catch (e) { console.warn('[Tweets] conquest draft failed:', e.message); }
       }
@@ -3647,6 +3730,21 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── v88: tweet screenshots at /shots/{name}.png ────────────────
+  if (url.pathname.startsWith('/shots/') && url.pathname.endsWith('.png')) {
+    const m = url.pathname.match(/^\/shots\/([A-Za-z0-9_]+\.png)$/);
+    if (!m) { res.writeHead(400); res.end('invalid shot path'); return; }
+    const f = path.join(SHOTS_DIR, m[1]);
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end('shot not found'); return; }
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=86400',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
+
   // ── Service worker (cached, compressed) ────────────────────────
   if (url.pathname === '/sw.js') {
     const f = path.join(__dirname, 'sw.js');
@@ -4430,6 +4528,10 @@ wss.on('connection', (ws, req) => {
           for (const { s, l } of msg.landRuns) {
             for (let i = s; i < s + l && i < MAP_PX; i++) landMask[i] = 1;
           }
+        }
+        // v88: cache country colours (numeric id → hex) for tweet screenshots
+        if (msg.geoColors && typeof msg.geoColors === 'object') {
+          for (const k of Object.keys(msg.geoColors)) geoColorsById[k] = msg.geoColors[k];
         }
         checkMapReady();
 

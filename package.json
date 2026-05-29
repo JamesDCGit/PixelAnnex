@@ -12,6 +12,7 @@
   "dependencies": {
     "ws": "^8.18.0",
     "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "@napi-rs/canvas": "^0.1.65"
   }
 }
