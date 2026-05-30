@@ -32,12 +32,33 @@ const { renderCountryPNG } = require('./mapshot'); // v88: tweet screenshots
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-30-v90b';
+const SERVER_VERSION       = '2026-05-30-v91';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
 const MAP_PX             = MAP_W * MAP_H;
-const CONQUEST_THRESHOLD = 0.60; // v56: lowered from 70% → 60% to match bot surrender mechanics
+const CONQUEST_THRESHOLD = 0.60; // legacy base — superseded by conquestThreshold() below (kept for any stray refs)
+// ── v91: progressive, size-scaled conquest threshold ──────────────
+// Small countries need a HIGHER share to conquer (90%) because 70% of a tiny
+// country is trivially reached; large countries need 70%. Log scale between
+// 500px (→0.90) and 50,000px (→0.70). This function MUST stay byte-identical
+// to the copy in pixelworld_v5.html so client prediction matches the server.
+function conquestThreshold(total) {
+  if (!total || total <= 500)   return 0.90;
+  if (total >= 50000)           return 0.70;
+  const t = (Math.log10(total) - Math.log10(500)) / (Math.log10(50000) - Math.log10(500));
+  return 0.90 - t * 0.20;
+}
+// Reversal sits 15 points below conquest (hysteresis) so a freshly-fallen
+// country doesn't flip back the instant it loses a single pixel.
+function reversalThreshold(total) {
+  return Math.max(0, conquestThreshold(total) - 0.15);
+}
+// v91: a country has "fallen by plurality" when its NATIVE holding drops to
+// this fraction or below — i.e. it's been carved up by 2+ attackers, none of
+// whom individually reached conquestThreshold(). The largest foreign holder
+// is then declared the conqueror.
+const FALLEN_NATIVE_FRAC = 0.05;
 const MAX_STROKE_PX      = 500;
 const BROADCAST_MS       = 1000;  // v77: 1Hz delta broadcast (was 20Hz/50ms).
                                     // Client visually staggers paints over ~900ms
@@ -1958,7 +1979,8 @@ function _clearMonsterArea(cx, cy, radius) {
       if (!key.startsWith(geo + ':')) continue;
       const ownerId = key.split(':')[1];
       // v64: check combined alliance count — monster damage doesn't break an alliance conquest
-      if (getAllyOwnedCount(geo, ownerId) / total < CONQUEST_THRESHOLD) {
+      // v91: use size-scaled reversal threshold (hysteresis below conquest)
+      if (getAllyOwnedCount(geo, ownerId) / total < reversalThreshold(total)) {
         conqueredSet.delete(key);
         broadcast(JSON.stringify({
           type:        'reversal',
@@ -2832,69 +2854,31 @@ function applyPixels(pixels, countryId) {
     if (immuneUntil && Date.now() < immuneUntil) {
       continue; // territory is still settling after a recent flip
     }
-    if (!conqueredSet.has(key) && owned / total >= CONQUEST_THRESHOLD) {
-      _conquestImmunity.set(geoToId(geo), Date.now() + CONQUEST_IMMUNITY_MS);
-      conqueredSet.add(key);
-      permanentlyConquered.add(geoToId(geo)); // persists through reversals until world reset
-      // Defer so applyPixels finishes before we mutate ownership data
-      const _cgid = geoToId(geo);
-      setTimeout(() => _onCountryConquered(_cgid), 0);
-      conquests.push({ geoIdx: geo, countryId });
-      changed.push(...finisherFill(geo, countryId));
-      // War reporter event — Tier 2 (role ping)
-      // Skip self-conquest (country reclaiming its own native territory)
-      if (countryId !== geoToId(geo)) {
-        const _defId = geoToId(geo);
-        const _sassyConq = _geoContextSassy(countryId, _defId) || _pickSassy(SASS_CONQUEST)({
-          a: _countryName(countryId),
-          d: _countryName(_defId),
-          held: Array.from(conqueredSet).filter(k => String(k).split(':')[1] === String(countryId)).length,
-        });
-        // v88: render a screenshot of the conquered country for the tweet/embed
-        const _conqShot = makeCountryShot(geoToId(geo));
-        emitBotEvent({
-          type:        'war_conquest',
-          tier:        2,
-          attackerId:  countryId,
-          defenderId:  _defId,
-          timestamp:   Date.now(),
-          sassyText:   _sassyConq,
-          imageUrl:    _conqShot || undefined,
-        });
-        // v38: notify players who were playing as the conquered country
-        for (const [pid, p] of players) {
-          if (p.isBot) continue;
-          if (!p.ws) continue;
-          if (String(p.countryId) === String(_defId)) {
-            try {
-              p.ws.send(JSON.stringify({
-                type:           'your_country_lost',
-                lostCountryId:  _defId,
-                attackerId:     countryId,
-                mercenaryBonus: 20,
-              }));
-            } catch (e) {}
-          }
+    const _geoId = geoToId(geo);
+    // Normal path: a single attacker (+allies) reaches the size-scaled threshold.
+    if (!conqueredSet.has(key) && owned / total >= conquestThreshold(total)) {
+      _conquerGeo(geo, countryId, conquests, changed);
+    } else if (!conqueredSet.has(key) && !permanentlyConquered.has(_geoId)) {
+      // v91: fallen-by-plurality — the native country has been carved up
+      // (native holding ≤ FALLEN_NATIVE_FRAC) but no single attacker reached
+      // conquestThreshold(). Declare the largest foreign holder the conqueror.
+      const nativeOwned = geoClaimCnt[geo]?.[_geoId] || 0;
+      if (nativeOwned / total <= FALLEN_NATIVE_FRAC) {
+        let topId = null, topCnt = 0;
+        for (const [cId, cnt] of Object.entries(geoClaimCnt[geo] || {})) {
+          if (cId === _geoId) continue;            // skip the native country
+          if (cnt > topCnt) { topCnt = cnt; topId = cId; }
         }
-        // Queue a tweet draft for the conquest. Throttle per attacker so a
-        // single dominant country doesn't flood the queue.
-        try {
-          pushTweetDraft({
-            type:        'conquest',
-            text:        tweetForConquest(countryId, geoToId(geo)),
-            dedupeKey:   'conquest:' + countryId + ':' + geoToId(geo),
-            throttleKey: 'conquest_attacker:' + countryId,
-            countries:   [countryId, geoToId(geo)], // v84: notable-country filter
-            imageUrl:    _conqShot || undefined,    // v88: conquered-country screenshot
-          });
-        } catch (e) { console.warn('[Tweets] conquest draft failed:', e.message); }
+        if (topId && topCnt > 0) {
+          _conquerGeo(geo, topId, conquests, changed);
+        }
       }
     }
     for (const [cId, cnt] of Object.entries(geoClaimCnt[geo] || {})) {
       const rk = geo + ':' + cId;
       // v64: use combined alliance count for reversal — conquest only breaks when
       // the whole alliance drops below the threshold, not just one member.
-      if (cId !== countryId && conqueredSet.has(rk) && getAllyOwnedCount(geo, cId) / total < CONQUEST_THRESHOLD) {
+      if (cId !== countryId && conqueredSet.has(rk) && getAllyOwnedCount(geo, cId) / total < reversalThreshold(total)) {
         conqueredSet.delete(rk);
         reversals.push({ geoIdx: geo, countryId: cId });
         // Queue a tweet draft for the reversal (liberation)
@@ -3552,11 +3536,12 @@ function _isCountryConquered(countryId) {
 }
 
 // v56: bot surrender threshold — once any single enemy holds this share of a
-// country's home territory the defending bot stands down completely.  This lets
+// country's home territory the defending bot stands down completely. This lets
 // the attacker accumulate pixels unopposed until applyPixels fires formal
-// conquest at CONQUEST_THRESHOLD (60%).  Keeping the two thresholds separate
-// (50% stand-down / 60% formal) means finisherFill runs properly and the
-// reversal check never immediately undoes the conquest (reversal fires at <60%).
+// conquest at conquestThreshold() (v91: size-scaled 70–90%). Surrender stays
+// well below conquest so the attacker can grind up to the (now higher) bar,
+// and reversalThreshold() sits 15 pts under conquest so a fresh conquest
+// isn't immediately undone.
 const BOT_SURRENDER_THRESHOLD = 0.50;
 
 // v75-debug: hard kill-switch for bot activity to isolate stall causes.

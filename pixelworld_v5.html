@@ -3283,7 +3283,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-30-v90b';
+const CODE_VERSION = '2026-05-30-v91';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4206,14 +4206,16 @@ function finisherFill(geoIdx,claimerIdx){
   setTimeout(()=>placeFlag(geoIdx,claimerIdx),0);
 }
 
-// ── checkConquest: 60% threshold check (CONQUEST_THRESHOLD) ───────────────────
+// ── checkConquest: size-scaled threshold check (v91) ─────────────────────────
+// Client-side prediction only — the server is authoritative and broadcasts the
+// real 'conquest' event. This just drives the local toast/banner.
 function checkConquest(geoIdx,claimerIdx){
   const key=geoIdx+":"+claimerIdx;
   if(conqueredSet.has(key))return false;
   // v64: use combined alliance pixel count for conquest threshold
   const owned=_getAllyOwned(geoIdx,claimerIdx);
   const total=geoTotal[geoIdx]||0;
-  if(total===0||owned/total<CONQUEST_THRESHOLD)return false;
+  if(total===0||owned/total<conquestThreshold(total))return false;
   conqueredSet.add(key);
   sfxConquestFor(claimerIdx);
   showConquestToast(geoIdx,claimerIdx);
@@ -4233,7 +4235,7 @@ function checkConquestReversal(geoIdx,prev){
   // v64: use combined alliance count — conquest only breaks when whole alliance drops below threshold
   const owned=_getAllyOwned(geoIdx,prev);
   const total=geoTotal[geoIdx]||0;
-  if(total===0||owned/total<CONQUEST_THRESHOLD){conqueredSet.delete(key);eraseFlag(geoIdx);refreshCsel();}
+  if(total===0||owned/total<reversalThreshold(total)){conqueredSet.delete(key);eraseFlag(geoIdx);refreshCsel();}
 }
 
 // ── Ocean zone colour — gradient-blended ──────────────────────
@@ -5130,7 +5132,19 @@ function screenToMap(sx,sy){const r=vp.getBoundingClientRect();return{x:Math.flo
 //   - Small border completes a loop → only the loop interior fills
 const MAX_FILL_PX = 10000;  // v70: cap at 10k — prevents slow GPU readback on large false-fills
 const FILL_MIN_PX = 10;     // v70: ignore tiny accidental enclosures
-const CONQUEST_THRESHOLD = 0.7; // v35: was 0.8
+// v91: progressive, size-scaled conquest threshold — MUST stay byte-identical
+// to the copy in server.js so local prediction matches the authoritative server.
+// Small countries need 90% (70% of a tiny country is trivial); large need 70%.
+function conquestThreshold(total) {
+  if (!total || total <= 500)   return 0.90;
+  if (total >= 50000)           return 0.70;
+  const t = (Math.log10(total) - Math.log10(500)) / (Math.log10(50000) - Math.log10(500));
+  return 0.90 - t * 0.20;
+}
+// Reversal 15 points below conquest (hysteresis).
+function reversalThreshold(total) {
+  return Math.max(0, conquestThreshold(total) - 0.15);
+}
 
 // v64: return combined pixel count for claimerIdx + all its alliance partners
 // inside geoIdx.  geoClaimCnt keys are featList indices (numbers).
