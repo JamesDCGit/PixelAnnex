@@ -1,7 +1,9 @@
 # Alliance System Design Doc
 
-Status: **proposal for review** — no code written yet.
+Status: **decisions resolved (2026-05-30) — ready to build, lowest-risk-first**.
 Author: drafted by AI assistant from the operator's spec (2026-05-29).
+All 5 open questions answered — see "Decisions — RESOLVED" near the bottom.
+Discord-required (no in-game alliance UI). Build order unchanged below.
 Scope: this is the single largest feature on the backlog and is **mostly
 Discord / `bot.js`-side**, with a handful of game-server hooks. Read the
 "Concerns & open questions" section before approving any phase.
@@ -185,11 +187,31 @@ country switcher labels, and any in-game profile UI. No server logic change.
 6. **3B — Vaults + Allied Surge** — highest risk/effort; do last, with
    persistence + server-side enforcement designed up front.
 
-## Decisions needed from operator before coding
+## Decisions — RESOLVED (operator, 2026-05-30)
 
-1. **Threads vs categories** for war rooms (I strongly recommend threads).
-2. **Definition of "alliance leader"** for surge triggering.
-3. **Vault percentage + surge magnitude/duration** (proposed 5% / +50% / 5min).
-4. Whether bots ever appear in the radar / counts (proposed: never).
-5. Is Discord the assumed social layer for *all* of this, or should any of it
-   degrade gracefully for players who never link Discord?
+1. **War rooms: THREADS** (private threads under a `#war-rooms` channel,
+   auto-archive on dissolution/reset). Categories rejected (500-channel cap).
+2. **Alliance leader = highest-rank linked member.** Ties broken by earliest
+   join / lowest pid (deterministic). Only this member can trigger Allied Surge.
+3. **Vault/surge tuning = proposed values:** 5% of allied passive regen into
+   the vault; Allied Surge = +50% regen for 5 min, once per day per alliance.
+4. **Bots NEVER appear** in the radar, member counts, vault accrual, or surge
+   eligibility. Alliance membership counts linked humans only.
+5. **Discord-required (no graceful degrade).** Alliances are a Discord-layer
+   social feature. Anonymous/browser-only players still get the PASSIVE
+   benefits (allied pixels count toward conquest; allied territory shows on
+   the map highlight), but all ACTIVE features — joining, war rooms,
+   `/strike` rally points, vault/surge — require a linked Discord account.
+   In-game, non-linked players see a "Sign in with Discord to join alliances"
+   prompt rather than a parallel in-game alliance UI. This reinforces the
+   existing Discord-link incentive (rank persistence, daily bonuses) and
+   avoids maintaining two front-ends.
+
+### Implications of "Discord-required" for the build
+- No in-game alliance panel / join UI is needed — saves significant work.
+- `/strike` rally points are broadcast only to clients whose linked Discord
+  user is in the alliance. Clients that never linked simply never receive
+  them (server already knows `player.discordId`).
+- Membership = set of linked Discord IDs whose profile has the alliance's
+  countries in a slot. The existing `recomputeAlliances()` already keys off
+  profiles, so this is consistent.
