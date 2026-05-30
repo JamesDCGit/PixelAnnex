@@ -155,7 +155,10 @@ Before editing any function:
 - [ ] Per-region viewport delta filter — ~90% bandwidth cut for zoomed players
 - [ ] Binary delta protocol (packed Uint16) — 4× smaller, no JSON.parse cost
 - [ ] Server snapshot RLE → binary — faster initial connection
-- [ ] **Alliance overhaul** (large, mostly Discord/bot.js) — underground-resistance progress bars, superpower event, faction threads, ping-the-general/strike, alliance vaults + daily surge, A/B/C reskin (Homeland/Coalition/Mercenary), 2-alliance onboarding. Design doc still owed.
+- [x] v89: cleanups — pixel-inspector popup layout fixed (bodyBlock + swatch legend), duplicate escapeHtml removed, English i18n thresholds corrected (60% conquest / 50% fightback / Nuke)
+- [ ] **Alliance overhaul** — design doc written (`docs/alliance-system-design.md`); awaiting operator decisions (threads vs categories, leader definition, vault tuning). Build not started.
+- [ ] Translate non-English i18n strings to current thresholds (9 locales still cite 70%/80% conquest, "Bombs"). English fixed in v89.
+- [ ] Remove dead `toggleOwnStroke` / `_ownStrokeVisible` / own-stroke layer (button gone since v82, layer always off)
 
 ## Screenshots for tweets (v88)
 
