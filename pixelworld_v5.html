@@ -3283,7 +3283,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-30-v90';
+const CODE_VERSION = '2026-05-30-v90a';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4931,33 +4931,16 @@ if (typeof renderLandmarks === 'function') {
 // ── Own-stroke highlight ──────────────────────────────────────────
 // Track pixels the local player has personally painted (vs country-prepopulate
 // or bot/other-player paints) so we can show them subtly.
-let ownPixels = null; // Uint8Array(MAP_PX) — 1 where local player painted
-let _ownStrokeVisible = false; // v35: off by default
-setTimeout(() => { const c = document.getElementById('c-ownstroke'); if (c) c.style.opacity = '0'; }, 0);
-let _ownStrokeQueue = []; // batched pixel paints
+// v90a: layer retired (see block comment above). No-op stubs kept for callers.
+let _ownStrokeVisible = false; // retained: read by updateOwnStrokeVisibility
+setTimeout(() => { const c = document.getElementById('c-ownstroke'); if (c) c.style.display = 'none'; }, 0);
 
-function initOwnStroke() {
-  ownPixels = new Uint8Array(MAP_PX);
-}
+function initOwnStroke() { /* no-op (v90a) */ }
 
-function markOwnPixel(x, y) {
-  if (!ownPixels) return;
-  if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return;
-  const i = y * MAP_W + x;
-  if (ownPixels[i]) return; // already marked
-  ownPixels[i] = 1;
-  _ownStrokeQueue.push({ x, y });
-}
+function markOwnPixel(x, y) { /* no-op (v90a) */ }
 
 // Clear the own-stroke mark at a given pixel (used when pixels get wiped — e.g. by nukes).
-function clearOwnPixel(x, y) {
-  if (!ownPixels || !ownCtx) return;
-  if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return;
-  const i = y * MAP_W + x;
-  if (!ownPixels[i]) return;
-  ownPixels[i] = 0;
-  ownCtx.clearRect(x, y, 1, 1);
-}
+function clearOwnPixel(x, y) { /* no-op (v90a) */ }
 
 
 // Flush queued pixels to the canvas. A small white-tinted dot at low alpha
@@ -7381,7 +7364,7 @@ function mpConnect() {
     _localPlayerId = null;
     for (const k in _activeMonsters) delete _activeMonsters[k];
     craters.length = 0;
-    _ownStrokeQueue = [];
+    // v90a: _ownStrokeQueue removed (own-stroke layer retired)
     if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
     setTimeout(mpConnect, 3000);
   });
