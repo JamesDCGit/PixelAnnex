@@ -4943,27 +4943,9 @@ function markOwnPixel(x, y) { /* no-op (v90a) */ }
 function clearOwnPixel(x, y) { /* no-op (v90a) */ }
 
 
-// Flush queued pixels to the canvas. A small white-tinted dot at low alpha
-// creates a subtle "I painted this" glow that's only really visible when zoomed in.
-function flushOwnStroke() {
-  if (!ownCtx || !_ownStrokeQueue.length) return;
-  if (_ownStrokeQueue.length > 2000) _ownStrokeQueue = _ownStrokeQueue.slice(-500);
-  // v73: set fillStyle once, then batch fillRect calls (no allocations).
-  // Alpha 90/255 ≈ 0.353.
-  ownCtx.fillStyle = 'rgba(255,255,255,0.353)';
-  for (const { x, y } of _ownStrokeQueue) {
-    ownCtx.fillRect(x, y, 1, 1);
-  }
-  _ownStrokeQueue = [];
-}
-setInterval(flushOwnStroke, 100);
-
-function toggleOwnStroke() {
-  _ownStrokeVisible = !_ownStrokeVisible;
-  cOwnStroke.style.display = _ownStrokeVisible ? '' : 'none';
-  const btn = document.getElementById('btn-ownstroke');
-  if (btn) btn.classList.toggle('active', _ownStrokeVisible);
-}
+// v90a: flushOwnStroke() + its 100ms setInterval + toggleOwnStroke() removed
+// (own-stroke layer retired; dead since v82). _ownStrokeQueue/ownPixels no
+// longer exist — see the no-op stubs above.
 
 // Hide own-stroke layer when zoomed out (visual noise at far zoom)
 function updateOwnStrokeVisibility() {
