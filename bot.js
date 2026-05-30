@@ -19,7 +19,7 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-05-17-war-cooldown-v1';
+const BOT_VERSION = '2026-05-30-rally+reskin-v89';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
@@ -332,15 +332,16 @@ client.on(Events.InteractionCreate, async interaction => {
         countryC:    c || null,
       });
 
+      // v89: A/B/C reskin — Homeland / Strategic Coalition / Mercenary Pact
       const embed = new EmbedBuilder()
         .setColor(0x6366f1)
         .setTitle('🌍 Country preferences updated')
         .addFields(
-          { name: '🏠 Main',          value: COUNTRY_BY_ID[main],                inline: true },
-          { name: '🤝 Allegiance B',  value: b ? COUNTRY_BY_ID[b] : '—',         inline: true },
-          { name: '🤝 Allegiance C',  value: c ? COUNTRY_BY_ID[c] : '—',         inline: true },
+          { name: '🎖️ Homeland',            value: COUNTRY_BY_ID[main],          inline: true },
+          { name: '🤝 Strategic Coalition',  value: b ? COUNTRY_BY_ID[b] : '—',   inline: true },
+          { name: '💰 Mercenary Pact',       value: c ? COUNTRY_BY_ID[c] : '—',   inline: true },
         )
-        .setFooter({ text: 'Alliances form when 3+ players share preferences' });
+        .setFooter({ text: 'Alliances lock in once 10+ players share a coalition' });
 
       await interaction.reply({ embeds: [embed], ephemeral: true });
       return;
@@ -352,15 +353,16 @@ client.on(Events.InteractionCreate, async interaction => {
         await interaction.reply({ content: 'You haven\'t set any countries yet. Use `/country set` to begin.', ephemeral: true });
         return;
       }
+      // v89: A/B/C reskin — Homeland / Strategic Coalition / Mercenary Pact
       const embed = new EmbedBuilder()
         .setColor(0x6366f1)
         .setTitle('🌍 Your country preferences')
         .addFields(
-          { name: '🏠 Main',          value: profile.countryMain ? COUNTRY_BY_ID[profile.countryMain] || profile.countryMain : '—',  inline: true },
-          { name: '🤝 Allegiance B',  value: profile.countryB    ? COUNTRY_BY_ID[profile.countryB]    || profile.countryB    : '—',  inline: true },
-          { name: '🤝 Allegiance C',  value: profile.countryC    ? COUNTRY_BY_ID[profile.countryC]    || profile.countryC    : '—',  inline: true },
-          { name: '🎖️ Rank',          value: profile.rank || 'Soldier',                                                               inline: true },
-          { name: '⭐ XP',             value: String(profile.xp || 0),                                                                 inline: true },
+          { name: '🎖️ Homeland',            value: profile.countryMain ? COUNTRY_BY_ID[profile.countryMain] || profile.countryMain : '—',  inline: true },
+          { name: '🤝 Strategic Coalition',  value: profile.countryB    ? COUNTRY_BY_ID[profile.countryB]    || profile.countryB    : '—',  inline: true },
+          { name: '💰 Mercenary Pact',       value: profile.countryC    ? COUNTRY_BY_ID[profile.countryC]    || profile.countryC    : '—',  inline: true },
+          { name: '🎖️ Rank',                 value: profile.rank || 'Soldier',                                                              inline: true },
+          { name: '⭐ XP',                    value: String(profile.xp || 0),                                                                inline: true },
         );
       await interaction.reply({ embeds: [embed], ephemeral: true });
       return;
@@ -897,6 +899,19 @@ async function postWarEvent(guild, event) {
       color   = 0x10b981; // green
       break;
 
+    case 'rally_call': {
+      // v87: a Lieutenant+ player called for reinforcements on a country.
+      // Ping users whose prefs include the rallied (target) country.
+      title   = '📣 Rally Call';
+      const _rallyTarget = event.targetName || (event.targetId ? getCountryName(event.targetId) : 'the front lines');
+      content = event.sassyText ||
+        `${event.caller || 'A commander'} needs reinforcements on the front lines of ${_rallyTarget}! Deploy your pixels.`;
+      color   = 0x22c55e; // green — rallying, not under attack
+      // Reuse the defender-mention path to ping players defending the target.
+      if (event.targetId) { event.defenderId = event.targetId; event._mentionDefenders = true; }
+      break;
+    }
+
     case 'war_bomb':
       const emojis = { 1: '💥', 2: '🔥', 3: '☢️' };
       title   = `${emojis[event.tier] || '💥'} ${event.bombName} Deployed`;
@@ -994,6 +1009,7 @@ function handleGameEvent(event) {
       announceAlliance(guild, 'dissolved', event.key, event.countries);
       break;
 
+    case 'rally_call':          // v87: player rally — completes the shipped feature
     case 'war_conquest':
     case 'world_conquest':
     case 'war_multi_attack':
