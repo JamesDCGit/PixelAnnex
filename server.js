@@ -32,7 +32,7 @@ const { renderCountryPNG } = require('./mapshot'); // v88: tweet screenshots
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-30-v91a';
+const SERVER_VERSION       = '2026-05-30-v91b';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2913,17 +2913,29 @@ function applyPixels(pixels, countryId) {
     if (!conqueredSet.has(key) && owned / total >= conquestThreshold(total)) {
       _conquerGeo(geo, countryId, conquests, changed);
     } else if (!conqueredSet.has(key) && !permanentlyConquered.has(_geoId)) {
-      // v91: fallen-by-plurality — the native country has been carved up
-      // (native holding ≤ FALLEN_NATIVE_FRAC) but no single attacker reached
-      // conquestThreshold(). Declare the largest foreign holder the conqueror.
-      const nativeOwned = geoClaimCnt[geo]?.[_geoId] || 0;
+      // v91a: fallen-by-plurality — a country CARVED UP by 2+ attackers where
+      // no single one hit conquestThreshold(). Declare the largest foreign
+      // holder the conqueror.
+      //
+      // v91a CRITICAL GUARD: the v91 version checked only native ≤5%, but
+      // geoClaimCnt[native] counts PAINTED pixels — a fresh country owns its
+      // whole territory via prepopulate while its painted-count is ~0. That
+      // made every barely-touched country "fall" to a one-pixel bot at world
+      // start, cascading mass conquests + a 100× delta flood. Now we require
+      // genuine occupation: foreign sum ≥ 90% of total AND ≥2 distinct foreign
+      // holders. At world start foreign≈0, so this can't false-fire.
+      const claims = geoClaimCnt[geo] || {};
+      const nativeOwned = claims[_geoId] || 0;
       if (nativeOwned / total <= FALLEN_NATIVE_FRAC) {
-        let topId = null, topCnt = 0;
-        for (const [cId, cnt] of Object.entries(geoClaimCnt[geo] || {})) {
+        let topId = null, topCnt = 0, foreignSum = 0, foreignHolders = 0;
+        for (const [cId, cnt] of Object.entries(claims)) {
           if (cId === _geoId) continue;            // skip the native country
+          if (cnt <= 0) continue;
+          foreignSum += cnt;
+          foreignHolders++;
           if (cnt > topCnt) { topCnt = cnt; topId = cId; }
         }
-        if (topId && topCnt > 0) {
+        if (topId && foreignHolders >= 2 && foreignSum / total >= 0.90) {
           _conquerGeo(geo, topId, conquests, changed);
         }
       }
