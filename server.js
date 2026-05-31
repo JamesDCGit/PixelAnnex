@@ -32,7 +32,7 @@ const { renderCountryPNG } = require('./mapshot'); // v88: tweet screenshots
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-30-v91c';
+const SERVER_VERSION       = '2026-05-31-v92';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2685,28 +2685,57 @@ function queueDelta(pixels) {
   if (!deltaTimer) deltaTimer = setTimeout(flushDelta, BROADCAST_MS);
 }
 
+// ── v92: binary delta encoder ─────────────────────────────────────
+// Layout: [uint8 tag=1][ repeating 6-byte records: x u16le, y u16le, owner u16le ]
+// owner sentinel 0xFFFF = cleared pixel (JSON had owner:null). Country IDs fit
+// u16 (max ISO numeric 894); x<=2047, y<=1023 also fit. ~6 bytes/pixel vs ~30
+// in JSON, and the client skips JSON.parse entirely on the hot path.
+const DELTA_CLEAR_OWNER = 0xFFFF;
+function encodeDelta(pixels) {
+  const buf = Buffer.allocUnsafe(1 + pixels.length * 6);
+  buf.writeUInt8(1, 0); // message-type tag: 1 = binary delta
+  let off = 1;
+  for (let i = 0; i < pixels.length; i++) {
+    const p = pixels[i];
+    buf.writeUInt16LE(p.x & 0xFFFF, off); off += 2;
+    buf.writeUInt16LE(p.y & 0xFFFF, off); off += 2;
+    // owner is a country-ID string|number, or null for a clear
+    let o = DELTA_CLEAR_OWNER;
+    if (p.owner !== null && p.owner !== undefined) {
+      const n = typeof p.owner === 'number' ? p.owner : parseInt(p.owner, 10);
+      o = (Number.isFinite(n) && n >= 0 && n < DELTA_CLEAR_OWNER) ? n : DELTA_CLEAR_OWNER;
+    }
+    buf.writeUInt16LE(o, off); off += 2;
+  }
+  return buf;
+}
+
 let _deltaStatLast = 0, _deltaStatBytes = 0, _deltaStatPx = 0, _deltaStatCount = 0;
 function flushDelta() {
   deltaTimer = null;
   if (!pendingDelta.length) return;
-  const msg = JSON.stringify({ type: 'delta', pixels: pendingDelta });
   const pxCount = pendingDelta.length;
+  // v92: binary delta. Buffer.send sets the WS frame opcode to binary; the
+  // client branches on ArrayBuffer vs string to route here vs the JSON path.
+  const buf = encodeDelta(pendingDelta);
   pendingDelta = [];
-  broadcast(msg);
+  broadcast(buf);
   // v78-debug: summary every 10s to confirm deltas are flowing
-  _deltaStatBytes += msg.length;
+  _deltaStatBytes += buf.length;
   _deltaStatPx    += pxCount;
   _deltaStatCount += 1;
   const now = Date.now();
   if (now - _deltaStatLast > 10000) {
     if (_deltaStatLast > 0) {
-      console.log('[Delta] ' + _deltaStatCount + ' broadcasts in 10s, ' + _deltaStatPx + ' pixels, ' + (_deltaStatBytes/1024).toFixed(1) + ' KB');
+      console.log('[Delta] ' + _deltaStatCount + ' broadcasts in 10s, ' + _deltaStatPx + ' pixels, ' + (_deltaStatBytes/1024).toFixed(1) + ' KB (binary)');
     }
     _deltaStatLast = now;
     _deltaStatBytes = 0; _deltaStatPx = 0; _deltaStatCount = 0;
   }
 }
 
+// broadcast accepts a string (JSON) OR a Buffer (binary delta). ws.send handles
+// both; Buffers are framed as binary, strings as text.
 function broadcast(msg, excludePid = -1) {
   for (const [pid, p] of players) {
     if (pid === excludePid || p.isBot) continue;

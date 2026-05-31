@@ -3283,7 +3283,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-30-v91c';
+const CODE_VERSION = '2026-05-31-v92';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7343,6 +7343,9 @@ function mpConnect() {
     console.log('[MP] WebSocket not available, running single-player');
     return;
   }
+  // v92: receive binary delta frames as ArrayBuffer (not Blob) so we can
+  // decode them synchronously without an async .arrayBuffer() round-trip.
+  ws.binaryType = 'arraybuffer';
 
   ws.addEventListener('open', () => {
     console.log('[MP] Connected to', WS_URL);
@@ -7370,10 +7373,41 @@ function mpConnect() {
   });
 
   ws.addEventListener('message', e => {
+    // v92: binary frame = packed delta (ArrayBuffer). Decode + route to the
+    // delta handler directly. Everything else (welcome, conquest, players,
+    // monsters, etc.) is still JSON text.
+    if (e.data instanceof ArrayBuffer) {
+      const decoded = decodeBinaryDelta(e.data);
+      if (decoded) mpHandleMessage(decoded);
+      return;
+    }
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
     mpHandleMessage(msg);
   });
+}
+
+// v92: decode a binary delta frame into the same shape the 'delta' case expects.
+// Layout: [uint8 tag][ x u16le, y u16le, owner u16le ]*  — owner 0xFFFF = clear.
+// Returns { type:'delta', pixels:[{x,y,owner}] } or null if tag/length invalid.
+const _DELTA_CLEAR_OWNER = 0xFFFF;
+function decodeBinaryDelta(ab) {
+  const dv = new DataView(ab);
+  if (dv.byteLength < 1 || dv.getUint8(0) !== 1) return null; // not a binary delta
+  const recBytes = dv.byteLength - 1;
+  if (recBytes % 6 !== 0) return null;
+  const n = recBytes / 6;
+  const pixels = new Array(n);
+  let off = 1;
+  for (let i = 0; i < n; i++) {
+    const x = dv.getUint16(off, true); off += 2;
+    const y = dv.getUint16(off, true); off += 2;
+    const o = dv.getUint16(off, true); off += 2;
+    // owner: numeric country ID, or null for a clear. The delta handler does
+    // idToFeatIdx.get(String(owner)) so a numeric owner is fine.
+    pixels[i] = { x, y, owner: (o === _DELTA_CLEAR_OWNER) ? null : o };
+  }
+  return { type: 'delta', pixels };
 }
 
 let _joinSent = false;
