@@ -32,22 +32,24 @@ const { renderCountryPNG } = require('./mapshot'); // v88: tweet screenshots
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-30-v91b';
+const SERVER_VERSION       = '2026-05-30-v91c';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
 const MAP_PX             = MAP_W * MAP_H;
 const CONQUEST_THRESHOLD = 0.60; // legacy base — superseded by conquestThreshold() below (kept for any stray refs)
 // ── v91: progressive, size-scaled conquest threshold ──────────────
-// Small countries need a HIGHER share to conquer (90%) because 70% of a tiny
+// Small countries need a HIGHER share to conquer (75%) because 70% of a tiny
 // country is trivially reached; large countries need 70%. Log scale between
-// 500px (→0.90) and 50,000px (→0.70). This function MUST stay byte-identical
+// 500px (→0.75) and 50,000px (→0.70). This function MUST stay byte-identical
 // to the copy in pixelworld_v5.html so client prediction matches the server.
+// v91c: small-country cap lowered 0.90 → 0.75 — 90% was too hard to reach when
+// unclaimed pixels are scarce in a small territory.
 function conquestThreshold(total) {
-  if (!total || total <= 500)   return 0.90;
+  if (!total || total <= 500)   return 0.75;
   if (total >= 50000)           return 0.70;
   const t = (Math.log10(total) - Math.log10(500)) / (Math.log10(50000) - Math.log10(500));
-  return 0.90 - t * 0.20;
+  return 0.75 - t * 0.05;
 }
 // Reversal sits 15 points below conquest (hysteresis) so a freshly-fallen
 // country doesn't flip back the instant it loses a single pixel.

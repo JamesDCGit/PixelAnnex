@@ -3283,7 +3283,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-30-v91b';
+const CODE_VERSION = '2026-05-30-v91c';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5134,12 +5134,12 @@ const MAX_FILL_PX = 10000;  // v70: cap at 10k — prevents slow GPU readback on
 const FILL_MIN_PX = 10;     // v70: ignore tiny accidental enclosures
 // v91: progressive, size-scaled conquest threshold — MUST stay byte-identical
 // to the copy in server.js so local prediction matches the authoritative server.
-// Small countries need 90% (70% of a tiny country is trivial); large need 70%.
+// v91c: small=75% (was 90% — too hard), large=70%.
 function conquestThreshold(total) {
-  if (!total || total <= 500)   return 0.90;
+  if (!total || total <= 500)   return 0.75;
   if (total >= 50000)           return 0.70;
   const t = (Math.log10(total) - Math.log10(500)) / (Math.log10(50000) - Math.log10(500));
-  return 0.90 - t * 0.20;
+  return 0.75 - t * 0.05;
 }
 // Reversal 15 points below conquest (hysteresis).
 function reversalThreshold(total) {

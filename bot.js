@@ -659,8 +659,17 @@ async function announceAlliance(guild, type, key, countryIds, extra) {
     color = 0x3b82f6; // blue
   } else return;
 
-  // Ping the alliance role (if it exists) so members are notified
-  const roleId = _allianceRoleCache[key];
+  // Ping the alliance role only if it STILL EXISTS in the guild.
+  // Fix (@unknown-role): alliances flap (form/dissolve every 30s recompute),
+  // so the cached role ID can point at a role that dissolveAllianceRole() has
+  // already deleted — Discord then renders the mention as "@unknown-role".
+  // Also never ping on a 'dissolved' announce (the role is being removed).
+  let roleId = (type !== 'dissolved') ? _allianceRoleCache[key] : null;
+  if (roleId && !guild.roles.cache.has(roleId)) {
+    // Stale cache entry — the role no longer exists. Drop the mention.
+    delete _allianceRoleCache[key];
+    roleId = null;
+  }
   const roleMention = roleId ? '<@&' + roleId + '>' : null;
 
   try {
