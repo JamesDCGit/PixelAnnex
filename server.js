@@ -32,7 +32,7 @@ const { renderCountryPNG } = require('./mapshot'); // v88: tweet screenshots
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-30-v91';
+const SERVER_VERSION       = '2026-05-30-v91a';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2796,6 +2796,60 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 // ── Core pixel logic ──────────────────────────────────────────────
+// ── v91: shared conquest performer (definition was lost in the v91 edit;
+// restored in v91a). Marks the geo conquered by conquerorId, runs finisherFill,
+// fires war event + player notifications + tweet draft. Pushes into the
+// caller's conquests[] and changed[] arrays.
+function _conquerGeo(geo, conquerorId, conquests, changed) {
+  const geoId = geoToId(geo);
+  _conquestImmunity.set(geoId, Date.now() + CONQUEST_IMMUNITY_MS);
+  conqueredSet.add(geo + ':' + conquerorId);
+  permanentlyConquered.add(geoId); // persists through reversals until world reset
+  setTimeout(() => _onCountryConquered(geoId), 0);
+  conquests.push({ geoIdx: geo, countryId: conquerorId });
+  changed.push(...finisherFill(geo, conquerorId));
+  // Skip reporting for self-conquest (country reclaiming its own native land)
+  if (String(conquerorId) === String(geoId)) return;
+  const _sassyConq = _geoContextSassy(conquerorId, geoId) || _pickSassy(SASS_CONQUEST)({
+    a: _countryName(conquerorId),
+    d: _countryName(geoId),
+    held: Array.from(conqueredSet).filter(k => String(k).split(':')[1] === String(conquerorId)).length,
+  });
+  const _conqShot = makeCountryShot(geoId); // v88 screenshot
+  emitBotEvent({
+    type:        'war_conquest',
+    tier:        2,
+    attackerId:  conquerorId,
+    defenderId:  geoId,
+    timestamp:   Date.now(),
+    sassyText:   _sassyConq,
+    imageUrl:    _conqShot || undefined,
+  });
+  for (const [pid, p] of players) {
+    if (p.isBot || !p.ws) continue;
+    if (String(p.countryId) === String(geoId)) {
+      try {
+        p.ws.send(JSON.stringify({
+          type:           'your_country_lost',
+          lostCountryId:  geoId,
+          attackerId:     conquerorId,
+          mercenaryBonus: 20,
+        }));
+      } catch (e) {}
+    }
+  }
+  try {
+    pushTweetDraft({
+      type:        'conquest',
+      text:        tweetForConquest(conquerorId, geoId),
+      dedupeKey:   'conquest:' + conquerorId + ':' + geoId,
+      throttleKey: 'conquest_attacker:' + conquerorId,
+      countries:   [conquerorId, geoId],
+      imageUrl:    _conqShot || undefined,
+    });
+  } catch (e) { console.warn('[Tweets] conquest draft failed:', e.message); }
+}
+
 function applyPixels(pixels, countryId) {
   // v38: paint locked during world-conquest fanfare countdown
   if (typeof _isPaintLocked === 'function' && _isPaintLocked()) {
