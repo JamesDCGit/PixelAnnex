@@ -32,7 +32,7 @@ const { renderCountryPNG, renderWorldPNG } = require('./mapshot'); // v88/v92e: 
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92e';
+const SERVER_VERSION       = '2026-06-02-v92f';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -269,13 +269,23 @@ const NOTABLE_COUNTRY_IDS = new Set([
   '158', // Taiwan
 ]);
 
+// v92f: country IDs flow through the game UNPADDED (76, 36, 32) but a few
+// NOTABLE entries above are zero-padded ('076','036','032'). String(c) never
+// matched those, so Brazil/Australia/Argentina silently failed the filter.
+// Normalize both sides via parseInt before comparing.
+const _NOTABLE_NUM = new Set([...NOTABLE_COUNTRY_IDS].map(s => parseInt(s, 10)));
+function isNotableCountry(id) {
+  const n = typeof id === 'number' ? id : parseInt(id, 10);
+  return Number.isFinite(n) && _NOTABLE_NUM.has(n);
+}
+
 function pushTweetDraft({ type, text, dedupeKey, throttleKey, countries, imageUrl }) {
   const now = Date.now();
   // v84: notable-countries filter — only fire event tweets if at least one
   // involved country is notable. Calls without `countries` (community,
   // daily, status) pass through.
   if (Array.isArray(countries) && countries.length > 0) {
-    const hasNotable = countries.some(c => NOTABLE_COUNTRY_IDS.has(String(c)));
+    const hasNotable = countries.some(c => isNotableCountry(c));
     if (!hasNotable) return null;
   }
   // Dedupe: same event recently? skip.
@@ -1760,8 +1770,12 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
     const totalPixels = attackerIds.reduce(
       (sum, aid) => sum + (entry.attackers.get(aid)?.pixels || 0), 0);
     if (totalPixels < MULTI_ATTACK_MIN_PIXELS) return;
-    entry.lastNotifyAt = now;
     const defenderId = geoToId(defenderGeoIdx);
+    // v92f: only announce a multi-attack if the defender or some attacker is
+    // notable (same gate as conquests — kills tiny-island spam, keeps the relay
+    // budget for events worth seeing).
+    if (!isNotableCountry(defenderId) && !attackerIds.some(a => isNotableCountry(a))) return;
+    entry.lastNotifyAt = now;
     const _sassyMulti = _pickSassy(SASS_MULTI)({
       n:   attackerIds.length,
       d:   _countryName(defenderId),
@@ -2871,6 +2885,15 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
   changed.push(...finisherFill(geo, conquerorId));
   // Skip reporting for self-conquest (country reclaiming its own native land)
   if (String(conquerorId) === String(geoId)) return;
+  // v92f: only REPORT (Discord war event + screenshot + tweet) conquests that
+  // involve a notable country. With the v92a lowered fall threshold, conquests
+  // now fire in continuous waves — reporting them all (a) flooded the bot's
+  // 5-per-batch relay so notable conquests like USA→Denmark got truncated, and
+  // (b) filled the feed with tiny flip-floppy islands (Puerto Rico↔Dominican
+  // Republic) that re-conquer constantly. The conquest itself still happens for
+  // every country (state above is unconditional); only the *announcement* is
+  // gated. ~90% volume cut → notable conquests now reliably get through.
+  if (!isNotableCountry(conquerorId) && !isNotableCountry(geoId)) return;
   const _sassyConq = _geoContextSassy(conquerorId, geoId) || _pickSassy(SASS_CONQUEST)({
     a: _countryName(conquerorId),
     d: _countryName(geoId),
