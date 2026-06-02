@@ -49,3 +49,5 @@ flag_test.html
 
 # ── Runtime data ─────────────────────────────────────────────────
 profiles.json
+shots/
+timelapse/

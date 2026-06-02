@@ -28,11 +28,13 @@ const http      = require('http');
 const WebSocket = require('ws');
 const path      = require('path');
 const fs        = require('fs');
+const os        = require('os');
+const { execFile } = require('child_process');
 const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require('./mapshot'); // v88/v92e/v92m: tweet screenshots + flags
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92m';
+const SERVER_VERSION       = '2026-06-02-v92n';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -566,6 +568,103 @@ function makeWorldShot() {
   }
 }
 
+// ── v92n: World timelapse → daily "state of the world" GIF ──────────
+// Periodically render the full map (1024x512) to /timelapse/ frames, then
+// assemble the trailing window into a 256-colour GIF (2fps) via ffmpeg for the
+// daily Twitter/Discord status post.
+//
+// TEST MODE (TIMELAPSE_TEST=true): 10s frames over a 5min window so the pipeline
+// can be verified quickly. PROD: 30min frames over 24h = 48 frames (24s @ 2fps).
+// Flip TIMELAPSE_TEST to false once verified, then redeploy.
+const TIMELAPSE_TEST  = true;
+const TL_FRAME_MS     = TIMELAPSE_TEST ? 10 * 1000      : 30 * 60 * 1000;      // capture interval
+const TL_WINDOW_MS    = TIMELAPSE_TEST ? 5 * 60 * 1000  : 24 * 60 * 60 * 1000; // GIF spans this much history
+const TL_GIF_FPS      = 2;
+const TL_GIF_COLORS   = 256;
+const TL_OUT_W        = 1024, TL_OUT_H = 512;
+const TL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;        // keep frames 30 days
+const TIMELAPSE_DIR   = path.join(__dirname, 'timelapse');
+try { if (!fs.existsSync(TIMELAPSE_DIR)) fs.mkdirSync(TIMELAPSE_DIR, { recursive: true }); } catch (e) {}
+const _serverStartMs       = Date.now();   // "start from server reset"
+let   _timelapseRoundStart = _serverStartMs; // bump this on a round reset if/when one exists
+
+// Render one full-map frame. Skipped until the geo index is built (map ready) so
+// we never bank empty all-ocean frames right after a restart.
+function captureTimelapseFrame() {
+  try {
+    if (Object.keys(geoPixels).length === 0) return; // map not ready yet
+    const buf = renderWorldPNG({ MAP_W, MAP_H, claimByPixel, landMask, idxToId, geoColorsById, outW: TL_OUT_W });
+    if (!buf) return;
+    // zero-padded epoch-ms filename → lexical sort == chronological
+    const name = 'tl_' + String(Date.now()).padStart(15, '0') + '.png';
+    fs.writeFileSync(path.join(TIMELAPSE_DIR, name), buf);
+    _pruneTimelapseFrames();
+  } catch (e) { console.warn('[Timelapse] frame capture failed:', e.message); }
+}
+function _pruneTimelapseFrames() {
+  try {
+    const cutoff = Date.now() - TL_RETENTION_MS;
+    for (const f of fs.readdirSync(TIMELAPSE_DIR)) {
+      if (!f.startsWith('tl_') || !f.endsWith('.png')) continue;
+      const ts = parseInt(f.slice(3, -4), 10);
+      if (ts && ts < cutoff) { try { fs.unlinkSync(path.join(TIMELAPSE_DIR, f)); } catch (e) {} }
+    }
+  } catch (e) {}
+}
+// Frames within the GIF window: trailing TL_WINDOW_MS, but never older than the
+// current round/server start (so a restart starts a fresh timelapse).
+function _timelapseFramesInWindow() {
+  const since = Math.max(Date.now() - TL_WINDOW_MS, _timelapseRoundStart);
+  const out = [];
+  try {
+    for (const f of fs.readdirSync(TIMELAPSE_DIR)) {
+      if (!f.startsWith('tl_') || !f.endsWith('.png')) continue;
+      const ts = parseInt(f.slice(3, -4), 10);
+      if (ts && ts >= since) out.push({ ts, f });
+    }
+  } catch (e) {}
+  out.sort((a, b) => a.ts - b.ts);
+  return out;
+}
+function _rmrf(d) { try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) {} }
+// Assemble the windowed frames into a 256-colour GIF via ffmpeg (palettegen +
+// paletteuse for clean colour). Returns Promise<string|null> = served URL.
+function assembleTimelapseGif() {
+  return new Promise((resolve) => {
+    const frames = _timelapseFramesInWindow();
+    if (frames.length < 2) { console.warn('[Timelapse] not enough frames to assemble (' + frames.length + ')'); return resolve(null); }
+    let stage;
+    try {
+      stage = fs.mkdtempSync(path.join(os.tmpdir(), 'tlstage-'));
+      frames.forEach((fr, i) => {
+        fs.copyFileSync(path.join(TIMELAPSE_DIR, fr.f), path.join(stage, 'f_' + String(i).padStart(5, '0') + '.png'));
+      });
+    } catch (e) { console.warn('[Timelapse] staging failed:', e.message); return resolve(null); }
+    const input   = path.join(stage, 'f_%05d.png');
+    const pal     = path.join(stage, 'pal.png');
+    const outName = 'timelapse_' + new Date().toISOString().slice(0, 10) + '.gif';
+    const outPath = path.join(TIMELAPSE_DIR, outName);
+    const vf      = 'fps=' + TL_GIF_FPS + ',scale=' + TL_OUT_W + ':' + TL_OUT_H + ':flags=lanczos';
+    // Pass 1 — palette
+    execFile('ffmpeg', ['-y', '-framerate', String(TL_GIF_FPS), '-i', input,
+      '-vf', vf + ',palettegen=max_colors=' + TL_GIF_COLORS, pal], (e1) => {
+      if (e1) { console.warn('[Timelapse] palettegen failed:', e1.message); _rmrf(stage); return resolve(null); }
+      // Pass 2 — apply palette
+      execFile('ffmpeg', ['-y', '-framerate', String(TL_GIF_FPS), '-i', input, '-i', pal,
+        '-lavfi', vf + ' [x]; [x][1:v] paletteuse', outPath], (e2) => {
+        _rmrf(stage);
+        if (e2) { console.warn('[Timelapse] paletteuse failed:', e2.message); return resolve(null); }
+        console.log('[Timelapse] GIF assembled: ' + outName + ' (' + frames.length + ' frames)');
+        resolve('/timelapse/' + outName);
+      });
+    });
+  });
+}
+// Start the capture loop.
+setInterval(captureTimelapseFrame, TL_FRAME_MS);
+console.log('[Timelapse] capture every ' + (TL_FRAME_MS / 1000) + 's, ' +
+  (TL_WINDOW_MS / 60000) + 'min window, mode=' + (TIMELAPSE_TEST ? 'TEST' : 'PROD'));
+
 // ── Tweet template generators ────────────────────────────────────
 
 
@@ -968,26 +1067,31 @@ function scheduleDailySummary() {
   next.setUTCHours(12, 0, 0, 0);
   if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
   const msUntil = next - now;
-  setTimeout(() => {
+  setTimeout(async () => {
     const text = tweetForDailySummary();
     if (text) {
-      const worldShot = makeWorldShot(); // v92e: full-map snapshot for the daily post
+      // v92n: daily "state of the world" GIF (last 24h). Falls back to the static
+      // world PNG if assembly fails (too few frames / ffmpeg missing).
+      let media = null;
+      try { media = await assembleTimelapseGif(); } catch (e) { media = null; }
+      if (!media) media = makeWorldShot();
       pushTweetDraft({
         type:       'daily_summary',
         text,
         dedupeKey: 'daily_summary:' + now.toUTCString().slice(0, 16),
-        imageUrl:  worldShot || undefined,
+        imageUrl:  media || undefined,
       });
       // Also fire a Discord world_status_report-style event so the bot posts
-      // the daily snapshot in #war-room with the image attached.
+      // the daily snapshot in #war-room with the image/GIF attached.
       emitBotEvent({
         type:       'world_status_report',
         tier:       1,
         timestamp:  Date.now(),
         sassyText:  '🌍 Daily world snapshot — ' + text,
-        imageUrl:   worldShot || undefined,
+        imageUrl:   media || undefined,
       });
-      console.log('[Tweets] Daily summary queued at', new Date().toISOString(), worldShot ? '(with world shot)' : '(no shot)');
+      console.log('[Tweets] Daily summary queued at', new Date().toISOString(),
+        media ? ('(media ' + media + ')') : '(no media)');
     }
     scheduleDailySummary(); // schedule next day
   }, msUntil);
@@ -4069,6 +4173,21 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── v92n: timelapse GIFs (+ frames) ────────────────────────────
+  if (url.pathname.startsWith('/timelapse/') && (url.pathname.endsWith('.gif') || url.pathname.endsWith('.png'))) {
+    const m = url.pathname.match(/^\/timelapse\/([A-Za-z0-9_.\-]+\.(gif|png))$/);
+    if (!m) { res.writeHead(400); res.end('invalid timelapse path'); return; }
+    const f = path.join(TIMELAPSE_DIR, m[1]);
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end('timelapse not found'); return; }
+    res.writeHead(200, {
+      'Content-Type': m[2] === 'gif' ? 'image/gif' : 'image/png',
+      'Cache-Control': 'public, max-age=3600',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
+
   // ── Service worker (cached, compressed) ────────────────────────
   if (url.pathname === '/sw.js') {
     const f = path.join(__dirname, 'sw.js');
@@ -4425,6 +4544,36 @@ const httpServer = http.createServer(async (req, res) => {
       .map(([id, count], i) => ({ rank: i + 1, countryId: id, name: _countryName(id), count }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ conquests: top20, total: conqueredSet.size }));
+    return;
+  }
+
+  // ── v92n: /api/debug/timelapse — capture status + on-demand GIF assembly ──
+  //   /api/debug/timelapse            → status JSON (mode, frame counts, window)
+  //   /api/debug/timelapse?assemble=1 → assemble current window into a GIF now
+  if (url.pathname === '/api/debug/timelapse') {
+    const inWindow = _timelapseFramesInWindow();
+    if (url.searchParams.get('assemble')) {
+      const gifUrl = await assembleTimelapseGif();
+      res.writeHead(gifUrl ? 200 : 500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ assembled: !!gifUrl, url: gifUrl, framesUsed: inWindow.length }, null, 2));
+      return;
+    }
+    let framesOnDisk = 0;
+    try { framesOnDisk = fs.readdirSync(TIMELAPSE_DIR).filter(f => f.startsWith('tl_') && f.endsWith('.png')).length; } catch (e) {}
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      mode: TIMELAPSE_TEST ? 'TEST' : 'PROD',
+      frameIntervalSec: TL_FRAME_MS / 1000,
+      windowMin: TL_WINDOW_MS / 60000,
+      gifFps: TL_GIF_FPS,
+      gifColors: TL_GIF_COLORS,
+      outputSize: TL_OUT_W + 'x' + TL_OUT_H,
+      framesOnDisk,
+      framesInWindow: inWindow.length,
+      windowStart: new Date(Math.max(Date.now() - TL_WINDOW_MS, _timelapseRoundStart)).toISOString(),
+      serverStart: new Date(_serverStartMs).toISOString(),
+      hint: 'GET ?assemble=1 to build a GIF from the current window now',
+    }, null, 2));
     return;
   }
 
