@@ -19,7 +19,7 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-05-30-rally+reskin-v89';
+const BOT_VERSION = '2026-06-02-conquest-screenshots-v92d';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
@@ -31,6 +31,17 @@ const fetch = global.fetch || require('node-fetch');
 const TOKEN          = process.env.DISCORD_BOT_TOKEN;
 const GUILD_ID       = process.env.DISCORD_GUILD_ID;
 const GAME_URL       = process.env.GAME_SERVER_URL || 'http://localhost:3000';
+// v92d: public base URL for assets Discord/Twitter must fetch (conquest
+// screenshots). GAME_URL is internal (localhost) — Discord can't reach it.
+// Defaults to the live site; override with PUBLIC_URL env if the domain changes.
+const PUBLIC_URL     = (process.env.PUBLIC_URL || 'https://pixelannex.com').replace(/\/+$/, '');
+// Turn a possibly-relative imageUrl ('/shots/x.png') into an absolute,
+// Discord-fetchable URL. Pass through anything already absolute.
+function _absUrl(u) {
+  if (!u) return null;
+  if (/^https?:\/\//i.test(u)) return u;
+  return PUBLIC_URL + (u[0] === '/' ? u : '/' + u);
+}
 const BOT_SECRET     = process.env.BOT_API_SECRET || '';
 
 if (!TOKEN || !GUILD_ID) {
@@ -967,15 +978,21 @@ async function postWarEvent(guild, event) {
   }
   // Tier 1: silent — no mentions parsed
 
+  // v92d: attach the conquest/multi-attack screenshot if the event carries one.
+  // imageUrl arrives relative ('/shots/x.png'); _absUrl makes it Discord-fetchable.
+  const _embed = {
+    color,
+    title,
+    description: content,
+    timestamp: new Date(event.timestamp).toISOString(),
+    // v39a: footer removed from war channel — channel topic carries the links
+  };
+  const _img = _absUrl(event.imageUrl);
+  if (_img) _embed.image = { url: _img };
+
   await _warChannel.send({
     content: mentionPrefix || undefined,
-    embeds: [{
-      color,
-      title,
-      description: content,
-      timestamp: new Date(event.timestamp).toISOString(),
-      // v39a: footer removed from war channel — channel topic carries the links
-    }],
+    embeds: [_embed],
     allowedMentions,
   });
 }
