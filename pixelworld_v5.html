@@ -53,6 +53,13 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .leg-pct{margin-left:auto;color:#22c55e;font-size:10px;font-weight:600;padding-left:4px;}
 .leg-cnt{color:#475569;font-size:10px;}
 .leg-dot{width:8px;height:8px;border-radius:1px;flex-shrink:0}
+/* v92b: rank badge + size marker in territory panel */
+.leg-rank{flex-shrink:0;width:16px;text-align:center;font-size:9px;color:#64748b;font-weight:600;}
+.leg-size{flex-shrink:0;font-size:8px;font-weight:700;padding:0 3px;border-radius:3px;letter-spacing:.02em;}
+.leg-size-S{background:#1e293b;color:#94a3b8;}
+.leg-size-M{background:#1e3a2b;color:#6ee7b7;}
+.leg-size-L{background:#3a2e1e;color:#fbbf24;}
+.leg-size-XL{background:#3a1e2e;color:#f9a8d4;}
 #zoom-hud{bottom:12px;right:12px;display:flex;flex-direction:column;gap:4px;padding:6px}
 .z-btn{width:27px;height:27px;border-radius:5px;background:#162035;border:1px solid rgba(255,255,255,.08);color:#64748b;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;line-height:1;font-family:inherit;}
 .z-btn:hover{background:#1e2e4a;color:#e2e8f0}
@@ -3283,7 +3290,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-31-v92';
+const CODE_VERSION = '2026-05-31-v92b';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5057,11 +5064,33 @@ function showBonusPop(n, prefix, opts){
 
 // ── Legend ────────────────────────────────────────────────────────
 let legTimer=null;
+// v92b: size class from a country's total land pixels. Tiers chosen to spread
+// the ~190 playable countries sensibly (Vatican→XS-ish small, Russia→XL).
+//   S  ≤ 1,500 px   M ≤ 8,000   L ≤ 30,000   XL > 30,000
+function _countrySizeClass(geoIdxOrId){
+  // accept either a featList index or a numeric/string country id
+  let total = 0;
+  const asIdx = +geoIdxOrId;
+  if (Number.isInteger(asIdx) && geoTotal[asIdx] != null) total = geoTotal[asIdx];
+  if (!total) return '';
+  if (total <= 1500)  return 'S';
+  if (total <= 8000)  return 'M';
+  if (total <= 30000) return 'L';
+  return 'XL';
+}
+// v92b: rank-position badge — medals for top 3, # for the rest.
+function _rankBadge(pos){
+  if (pos === 1) return '🥇';
+  if (pos === 2) return '🥈';
+  if (pos === 3) return '🥉';
+  return '#' + pos;
+}
+
 function scheduleLegend(){
   clearTimeout(legTimer);legTimer=setTimeout(()=>{
     const el=$("leg-items");el.innerHTML="";
     const base = totalLandPx || 1;
-    Object.entries(claimerCount).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,20).forEach(([idx,cnt])=>{
+    Object.entries(claimerCount).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,20).forEach(([idx,cnt],_rankPos)=>{
       const f=featList[+idx];if(!f)return;
       const pct=(cnt/base*100).toFixed(2);
       // Blend country colour against land base (#535353) at alpha=215
@@ -5070,9 +5099,14 @@ function scheduleLegend(){
       row.dataset.countryId = f.id;
       row.onclick=()=>jumpToCountry(+idx);
       row.title='Click to jump to ' + f.name;
+      // v92b: rank-position badge (🥇🥈🥉 / #4…)
+      const _lr=document.createElement('span'); _lr.className='leg-rank'; _lr.textContent=_rankBadge(_rankPos+1); row.appendChild(_lr);
       const _lf=createFlagEl(f.id,1); if(_lf)row.appendChild(_lf);
       const _ld=document.createElement('div'); _ld.className='leg-dot'; _ld.style.cssText='background:'+f.color+';box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4)'; row.appendChild(_ld);
       const _ls=document.createElement('span'); _ls.style.color='#e2e8f0'; _ls.textContent=f.name; row.appendChild(_ls);
+      // v92b: S/M/L/XL size marker after the name
+      const _sz=_countrySizeClass(+idx);
+      if(_sz){ const _lsz=document.createElement('span'); _lsz.className='leg-size leg-size-'+_sz; _lsz.textContent=_sz; _lsz.title=_sz+' country'; row.appendChild(_lsz); }
       const _lp=document.createElement('span'); _lp.className='leg-pct'; _lp.textContent=pct+'%'; row.appendChild(_lp);
       const _lc=document.createElement('span'); _lc.className='leg-cnt'; _lc.textContent='('+cnt.toLocaleString()+')'; row.appendChild(_lc);
       // Alliance indicator
@@ -5959,6 +5993,7 @@ async function fetchWorldStats() {
     ]);
     players        = (ws && typeof ws.totalPlayers   === 'number') ? ws.totalPlayers   : 0;
     totalCountries = (ws && typeof ws.totalCountries === 'number') ? ws.totalCountries : 0;
+    if (totalCountries > 0) _totalCountriesCache = totalCountries; // v92b: for instant remaining calc
     if (ws && typeof ws.conqueredCount === 'number') {
       conquered = ws.conqueredCount;
       if (totalCountries > 0) remaining = Math.max(0, totalCountries - ws.conqueredCount);
@@ -5995,6 +6030,27 @@ async function fetchWorldStats() {
   if (b3) b3.textContent = alliancesStr;
   if (b4) b4.textContent = remainingStr;
 }
+// v92b: instant local refresh of the Conquered counter from conqueredSet.
+// The 15s server poll (fetchWorldStats) is authoritative but laggy; conquest/
+// reversal WS events call this so the status + territory panels update promptly.
+// Counts DISTINCT conquered geos (conqueredSet keys are "geoId:attackerId").
+function refreshConqueredCountLocal(){
+  if (typeof conqueredSet === 'undefined') return;
+  const distinct = new Set();
+  for (const key of conqueredSet) distinct.add(String(key).split(':')[0]);
+  const str = distinct.size.toLocaleString();
+  const b2 = document.getElementById('ws-conquered');
+  const t2 = document.getElementById('tut-stat-conquered');
+  if (b2) b2.textContent = str;
+  if (t2) t2.textContent = str;
+  // Keep "countries remain" consistent if we know the total
+  const b4 = document.getElementById('ws-remaining');
+  if (b4 && typeof _totalCountriesCache === 'number' && _totalCountriesCache > 0) {
+    b4.textContent = Math.max(0, _totalCountriesCache - distinct.size).toLocaleString();
+  }
+}
+let _totalCountriesCache = 0; // cached from fetchWorldStats for the remaining calc
+
 // Legacy alias for any leftover callers in tutorial code
 const fetchTutWorldStats = fetchWorldStats;
 // Refresh world state every 15s
@@ -7868,6 +7924,7 @@ if (msg.state?.conquered) {
       // Flood-fill the conquered country in the conqueror's colour
       finisherFill(targetFi, fi);
       scheduleLegend();
+      refreshConqueredCountLocal(); // v92b: instant Conquered-count update
       break;
     }
 
@@ -7877,6 +7934,7 @@ if (msg.state?.conquered) {
       const targetFi = idToFeatIdx.get(String(geoCountryId));
       if (targetFi !== undefined) eraseFlag(targetFi);
       scheduleLegend();
+      refreshConqueredCountLocal(); // v92b: instant Conquered-count update
       break;
     }
 

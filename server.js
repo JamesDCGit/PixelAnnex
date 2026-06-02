@@ -32,7 +32,7 @@ const { renderCountryPNG } = require('./mapshot'); // v88: tweet screenshots
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-31-v92';
+const SERVER_VERSION       = '2026-05-31-v92b';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2952,9 +2952,13 @@ function applyPixels(pixels, countryId) {
       // geoClaimCnt[native] counts PAINTED pixels — a fresh country owns its
       // whole territory via prepopulate while its painted-count is ~0. That
       // made every barely-touched country "fall" to a one-pixel bot at world
-      // start, cascading mass conquests + a 100× delta flood. Now we require
-      // genuine occupation: foreign sum ≥ 90% of total AND ≥2 distinct foreign
-      // holders. At world start foreign≈0, so this can't false-fire.
+      // start, cascading mass conquests + a 100× delta flood. So we require
+      // genuine occupation: foreign sum ≥ threshold AND ≥2 distinct holders.
+      // v92a: foreign-sum requirement lowered 0.90 → 0.70 to give multi-
+      // attacker carve-ups a real chance to topple a country no single
+      // attacker can reach the conquest threshold on. The largest foreign
+      // holder (topId) is designated the conqueror — per requirement.
+      // At world start foreign≈0 so this still can't false-fire.
       const claims = geoClaimCnt[geo] || {};
       const nativeOwned = claims[_geoId] || 0;
       if (nativeOwned / total <= FALLEN_NATIVE_FRAC) {
@@ -2966,7 +2970,7 @@ function applyPixels(pixels, countryId) {
           foreignHolders++;
           if (cnt > topCnt) { topCnt = cnt; topId = cId; }
         }
-        if (topId && foreignHolders >= 2 && foreignSum / total >= 0.90) {
+        if (topId && foreignHolders >= 2 && foreignSum / total >= 0.70) {
           _conquerGeo(geo, topId, conquests, changed);
         }
       }
