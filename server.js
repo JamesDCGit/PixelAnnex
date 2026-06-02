@@ -34,7 +34,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-03-v92q';
+const SERVER_VERSION       = '2026-06-03-v92r';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -810,12 +810,73 @@ const SASS_ACTIVE_COUNTRIES = [
   v => `🌍 Activity report: ${v.lines}. ${GAME_URL} #PixelAnnex`,
 ];
 
-// NEWS variants — {country} {headline}
-const SASS_NEWS = [
-  v => `📰 Real-world update on ${v.country}: "${v.headline}". How will this play out in PixelAnnex? ` + _suffix(),
-  v => `🌍 ${v.country} in the headlines: "${v.headline}". Watching how it shapes the game. ` + _suffix(),
-  v => `📰 ${v.country}: "${v.headline}". Real-world stakes, pixel-world consequences. ` + _suffix(),
-];
+// v92r: news is a SIGNAL ONLY. We never quote the raw headline (it carries
+// casualties, specific demands, names, etc.). Instead the scraper tells us which
+// game countries are in the news + the general vibe (theme), and we emit a light,
+// non-specific teaser. Disaster keeps a respectful, solidarity tone (no challenge).
+// Keyword buckets — first match wins, checked in this priority order.
+const NEWS_THEME_KEYWORDS = {
+  conflict:  ['war','warn','invad','attack','strike','missile','troop','military','clash','offensive','shell','airstrike','ceasefire','fighting','combat','drone','nuclear','army','soldier','militant','rebel','tension','border','conflict','threat','armed','frontline','siege'],
+  disaster:  ['earthquake','quake','flood','storm','hurricane','wildfire','drought','disaster','cyclone','eruption','volcano','landslide','famine','typhoon','tsunami','mudslide'],
+  sport:     ['world cup','olympic','tournament','championship','qualifier',' match','final','medal','fifa','grand prix'],
+  politics:  ['election','vote','president','prime minister','parliament','poll','government','referendum','protest','coalition','campaign','minister','impeach'],
+  diplomacy: ['talks','summit','meeting','deal','agreement','sanction','diplomat','negotiat','treaty','accord','ties','relations','peace','alliance','envoy'],
+  economy:   ['econom','trade','tariff','inflation','currency','market','oil','gas','export','import','debt','gdp','recession','stocks','prices','energy'],
+};
+function _classifyNewsTheme(title) {
+  const lc = ' ' + String(title).toLowerCase() + ' ';
+  for (const theme of ['conflict', 'disaster', 'sport', 'politics', 'diplomacy', 'economy']) {
+    for (const k of NEWS_THEME_KEYWORDS[theme]) if (lc.includes(k)) return theme;
+  }
+  return 'general';
+}
+// Template pools per theme. {a}=primary country, {b}=second (two-country variants).
+const NEWS_TEMPLATES = {
+  conflict: {
+    two: [
+      v => `${v.a} and ${v.b} are dominating the world's headlines today. Think you could settle it faster in pixels? ` + _suffix(),
+      v => `Tensions between ${v.a} and ${v.b} are back in the news. On the map, you decide who blinks first. ` + _suffix(),
+      v => `${v.a} vs ${v.b} is making headlines again — fancy redrawing that border in pixels? ` + _suffix(),
+    ],
+    one: [
+      v => `${v.a} is making waves in the world news today. Can you do better on the map? ` + _suffix(),
+      v => `${v.a} is in the headlines for all the tense reasons. Show us how it's done in pixels. ` + _suffix(),
+    ],
+  },
+  diplomacy: {
+    two: [
+      v => `${v.a} and ${v.b} are talking it out in the news. On the map, talk is cheap — claim the ground. ` + _suffix(),
+      v => `${v.a} and ${v.b} are at the table today. Settle it in pixels instead? ` + _suffix(),
+    ],
+    one: [ v => `${v.a} is working the diplomatic headlines. Pixels move faster than treaties — prove it. ` + _suffix() ],
+  },
+  economy: {
+    two: [ v => `${v.a} and ${v.b} are shaking up the economic headlines. Turn that energy into pixels. ` + _suffix() ],
+    one: [ v => `${v.a} is moving markets in the news today. Convert the momentum into territory. ` + _suffix() ],
+  },
+  politics: {
+    two: [ v => `${v.a} and ${v.b} are all over the political headlines. Cast your vote in pixels. ` + _suffix() ],
+    one: [ v => `${v.a} is in the political spotlight today. The only poll that matters here is painted in pixels. ` + _suffix() ],
+  },
+  disaster: { // respectful — solidarity, never a challenge
+    two: [ v => `${v.a} and ${v.b} are in the world's thoughts today. Fly their colours on the map. ` + _suffix() ],
+    one: [
+      v => `${v.a} is in the world's thoughts today. Fly their colours on the map. ` + _suffix(),
+      v => `Spare a thought for ${v.a} in the news today — represent them in pixels. ` + _suffix(),
+    ],
+  },
+  sport: {
+    two: [ v => `${v.a} vs ${v.b} is lighting up the sports headlines — bring that rivalry to the pixels! ` + _suffix() ],
+    one: [ v => `${v.a} is making sporting headlines today. Take the win in pixels too. ` + _suffix() ],
+  },
+  general: {
+    two: [ v => `${v.a} and ${v.b} are both in the headlines today. Will that show up in the pixels? ` + _suffix() ],
+    one: [
+      v => `${v.a} is in the headlines today. Will that reflect in the pixels? ` + _suffix(),
+      v => `${v.a} is making news today — time to make some pixels. ` + _suffix(),
+    ],
+  },
+};
 
 // ── Geopolitical context table ────────────────────────────────────────────────
 // Key: 'attackerISOnum:defenderISOnum'  (ISO 3166-1 numeric, as strings)
@@ -1059,9 +1120,11 @@ function tweetForAdmiralPromotion(username, countryId) {
   });
 }
 
-// v37: news + community templates
-function tweetForNews(countryName, headline) {
-  return _pickSassy(SASS_NEWS)({ country: countryName, headline });
+// v37/v92r: news templates — theme + 1-2 country names, no raw headline.
+function tweetForNews(theme, aName, bName) {
+  const pool = NEWS_TEMPLATES[theme] || NEWS_TEMPLATES.general;
+  const variant = (bName && pool.two && pool.two.length) ? pool.two : pool.one;
+  return _pickSassy(variant)({ a: aName, b: bName || '' });
 }
 function tweetForCommunity() {
   return _pickSassy(SASS_COMMUNITY)();
@@ -1433,27 +1496,41 @@ async function _scrapeNewsAndQueue() {
     const items = _parseRSSItems(xml);
     console.log('[News] Parsed', items.length, 'items');
 
-    // Score items: prefer those mentioning a game country
+    // v92r: for each headline, find the game countries it mentions (greedy
+    // longest-alias, word-boundary matched so "us" doesn't fire on "business"
+    // and "korea" doesn't steal "north korea") + classify the theme. We emit a
+    // templated teaser keyed on countries+theme — never the raw headline text.
+    const _escapeRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const aliasesSorted = [..._newsCountryAliases]
+      .sort((a, b) => b[0].length - a[0].length)
+      .map(([alias, id]) => [new RegExp('\\b' + _escapeRe(alias) + '\\b', 'i'), id]);
     const matched = [];
+    const seenSig = new Set();
     for (const it of items) {
-      const lc = it.title.toLowerCase();
-      for (const [alias, countryId] of _newsCountryAliases) {
-        if (lc.includes(alias)) {
-          // Take canonical name from countryNames for display
-          const displayName = countryNames[countryId] || alias.replace(/\b\w/g, c => c.toUpperCase());
-          matched.push({ headline: it.title, countryId, countryName: displayName });
-          break;
-        }
+      const ids = [];
+      for (const [re, countryId] of aliasesSorted) {
+        if (ids.includes(countryId)) continue;
+        if (re.test(it.title)) { ids.push(countryId); if (ids.length >= 2) break; }
       }
+      if (!ids.length) continue;
+      const theme = _classifyNewsTheme(it.title);
+      // Dedupe on countries+theme (NOT the headline) so near-duplicate stories
+      // about the same pairing don't double-post.
+      const sig = ids.slice().sort().join('-') + ':' + theme;
+      if (seenSig.has(sig)) continue;
+      seenSig.add(sig);
+      const aName = countryNames[ids[0]] || ('Country ' + ids[0]);
+      const bName = ids[1] ? (countryNames[ids[1]] || ('Country ' + ids[1])) : null;
+      matched.push({ ids, theme, aName, bName });
       if (matched.length >= NEWS_MAX_DRAFTS) break;
     }
     console.log('[News] Matched', matched.length, 'country-relevant headlines');
     for (const m of matched) {
       pushTweetDraft({
         type:      'news',
-        text:      tweetForNews(m.countryName, m.headline),
-        dedupeKey: 'news:' + m.headline.slice(0, 60),
-        countries: [m.countryId], // v84: only news about notable countries
+        text:      tweetForNews(m.theme, m.aName, m.bName),
+        dedupeKey: 'news:' + m.ids.slice().sort().join('-') + ':' + m.theme,
+        countries: m.ids, // v84: notable gate — at least one must be notable
       });
     }
   } catch (e) {
