@@ -34,7 +34,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-03-v92t';
+const SERVER_VERSION       = '2026-06-03-v92u';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2601,9 +2601,16 @@ const ALLIANCE_RECOMPUTE_MS = 30000;
 
 // Active alliances: alliance_key (sorted country IDs joined by '-') → { countries:[], members:[discordIds] }
 const alliances = new Map();
+// v92u (Phase 1A): nascent clusters — real coalitions forming but not yet at
+// ALLIANCE_MIN_MEMBERS. key → { countries:[], memberCount }. Drives the Discord
+// #alliance-radar progress cards via 'alliance_progress' events.
+const NASCENT_MIN_MEMBERS = 2;
+const nascentAlliances = new Map();
 
 function recomputeAlliances() {
-  if (profiles.size < ALLIANCE_MIN_MEMBERS) return;
+  // v92u: was `< ALLIANCE_MIN_MEMBERS` — lowered so nascent clusters are tracked
+  // (radar progress) well before the 10-member lock-in. Union-find is cheap.
+  if (profiles.size < NASCENT_MIN_MEMBERS) return;
 
   // Build: country_id → Set<discordId> who have this country in any of their slots
   const countryMembership = new Map();
@@ -2691,6 +2698,36 @@ function recomputeAlliances() {
 
   alliances.clear();
   for (const [key, alliance] of newAlliances) alliances.set(key, alliance);
+
+  // v92u (Phase 1A): nascent clusters (2..MIN-1 members, >=2 countries). Emit
+  // 'alliance_progress' on new/changed, and a {gone:true} when a cluster leaves
+  // the nascent band (promoted to a full alliance, or fell apart) so the radar
+  // card is removed. recompute runs every 30s, so this is naturally throttled.
+  const newNascent = new Map();
+  for (const cluster of Object.values(clusters)) {
+    const mc = cluster.members.size;
+    if (cluster.countries.size < 2) continue;
+    if (mc < NASCENT_MIN_MEMBERS || mc >= ALLIANCE_MIN_MEMBERS) continue;
+    const key = [...cluster.countries].sort((a, b) => +a - +b).join('-');
+    newNascent.set(key, { countries: [...cluster.countries].sort((a, b) => +a - +b), memberCount: mc });
+  }
+  for (const [key, n] of newNascent) {
+    const prev = nascentAlliances.get(key);
+    if (!prev || prev.memberCount !== n.memberCount) {
+      emitBotEvent({
+        type:        'alliance_progress',
+        key,
+        countries:   n.countries,
+        memberCount: n.memberCount,
+        needed:      ALLIANCE_MIN_MEMBERS - n.memberCount,
+      });
+    }
+  }
+  for (const key of nascentAlliances.keys()) {
+    if (!newNascent.has(key)) emitBotEvent({ type: 'alliance_progress', key, gone: true });
+  }
+  nascentAlliances.clear();
+  for (const [k, v] of newNascent) nascentAlliances.set(k, v);
 }
 
 setInterval(recomputeAlliances, ALLIANCE_RECOMPUTE_MS);

@@ -19,12 +19,12 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-06-02-conquest-screenshots-v92d';
+const BOT_VERSION = '2026-06-03-alliance-radar-v92u';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
 
-const { Client, GatewayIntentBits, Events, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Events, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
 const fetch = global.fetch || require('node-fetch');
 
 // ── Config ────────────────────────────────────────────────────────
@@ -303,6 +303,11 @@ client.once(Events.ClientReady, async c => {
 
 // ── Slash command handler ─────────────────────────────────────────
 client.on(Events.InteractionCreate, async interaction => {
+  // v92u (Phase 1): #alliance-radar Join/Leave buttons.
+  if (interaction.isButton()) {
+    if ((interaction.customId || '').startsWith('ally:')) return handleAllianceButton(interaction);
+    return;
+  }
   if (!interaction.isChatInputCommand()) {
     if (interaction.isAutocomplete()) return handleAutocomplete(interaction);
     return;
@@ -352,7 +357,9 @@ client.on(Events.InteractionCreate, async interaction => {
           { name: '🤝 Strategic Coalition',  value: b ? COUNTRY_BY_ID[b] : '—',   inline: true },
           { name: '💰 Mercenary Pact',       value: c ? COUNTRY_BY_ID[c] : '—',   inline: true },
         )
-        .setFooter({ text: 'Alliances lock in once 10+ players share a coalition' });
+        .setFooter({ text: (!b && !c)
+          ? 'Optional: add a 🤝 Strategic Coalition / 💰 Mercenary Pact to join allied pixel bonuses — /country set'
+          : 'Alliances lock in once 10+ players share a coalition. Watch #alliance-radar.' });
 
       await interaction.reply({ embeds: [embed], ephemeral: true });
       return;
@@ -694,6 +701,124 @@ async function announceAlliance(guild, type, key, countryIds, extra) {
   }
 }
 
+// ── v92u (Phase 1): #alliance-radar — nascent-coalition progress cards ──
+// One message per nascent cluster, edited in place. Driven by the server's
+// 'alliance_progress' events. Carries Join/Leave buttons.
+const ALLIANCE_RADAR_CHANNEL = process.env.ALLIANCE_RADAR_CHANNEL || 'alliance-radar';
+let _radarChannel = null;
+const _radarMessages = new Map(); // alliance key → Discord message id
+let _radarWarned = false;
+
+function _getRadarChannel(guild) {
+  if (_radarChannel && guild.channels.cache.has(_radarChannel.id)) return _radarChannel;
+  _radarChannel = guild.channels.cache.find(c => c.name === ALLIANCE_RADAR_CHANNEL && c.isTextBased()) || null;
+  if (!_radarChannel && !_radarWarned) {
+    console.log(`[Radar] Channel #${ALLIANCE_RADAR_CHANNEL} not found — create it (read-only) to enable the alliance radar.`);
+    _radarWarned = true;
+  }
+  return _radarChannel;
+}
+
+async function handleAllianceProgress(event) {
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (!guild) return;
+  const channel = _getRadarChannel(guild);
+  if (!channel) return;
+  const key = event.key;
+
+  // Cluster left the nascent band (promoted to a full alliance, or fell apart).
+  if (event.gone) {
+    const mid = _radarMessages.get(key);
+    if (mid) {
+      try { const m = await channel.messages.fetch(mid); await m.delete(); } catch (e) {}
+      _radarMessages.delete(key);
+    }
+    return;
+  }
+
+  const names = (event.countries || []).map(id => COUNTRY_BY_ID[id] || ('Country ' + id));
+  const mc = event.memberCount || 0;
+  const need = event.needed || 0;
+  const total = mc + need; // = ALLIANCE_MIN_MEMBERS
+  const bar = '▓'.repeat(Math.max(0, mc)) + '░'.repeat(Math.max(0, need));
+  const embed = new EmbedBuilder()
+    .setColor(0xf59e0b)
+    .setTitle('⚔️ ' + names.join(' + ') + ' — Coalition forming')
+    .setDescription(`${bar}\n**${mc}/${total}** — need **${need}** more to lock in allied pixel bonuses.`)
+    .setFooter({ text: 'Click Join to align your coalition slots with this bloc.' });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('ally:join:' + key).setLabel('Join Coalition').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('ally:leave:' + key).setLabel('Leave').setStyle(ButtonStyle.Secondary),
+  );
+
+  const mid = _radarMessages.get(key);
+  try {
+    if (mid) {
+      const m = await channel.messages.fetch(mid);
+      await m.edit({ embeds: [embed], components: [row] });
+    } else {
+      const m = await channel.send({ embeds: [embed], components: [row] });
+      _radarMessages.set(key, m.id);
+    }
+  } catch (e) {
+    // Cached message gone — recreate.
+    try { const m = await channel.send({ embeds: [embed], components: [row] }); _radarMessages.set(key, m.id); }
+    catch (e2) { console.error('[Radar] post failed:', e2.message); }
+  }
+}
+
+// Join/Leave a coalition from a radar button. Only touches the user's coalition
+// slots (countryB / countryC) — never their Homeland (countryMain).
+async function handleAllianceButton(interaction) {
+  const [, action, key] = (interaction.customId || '').split(':');
+  const countries = (key || '').split('-').filter(Boolean);
+  if (!action || !countries.length) {
+    try { await interaction.reply({ content: 'Invalid coalition button.', flags: 64 }); } catch (e) {}
+    return;
+  }
+  const names = countries.map(id => COUNTRY_BY_ID[id] || ('Country ' + id));
+  const userId = interaction.user.id;
+  try {
+    const profile = (await getProfile(userId)) || {};
+    let b = profile.countryB || null;
+    let c = profile.countryC || null;
+    const main = profile.countryMain || null;
+
+    if (action === 'join') {
+      const have = new Set([main, b, c].filter(Boolean));
+      if (countries.some(x => have.has(x))) {
+        await interaction.reply({ content: `You're already aligned with the **${names.join(' + ')}** coalition.`, flags: 64 });
+        return;
+      }
+      const freeSlots = [];
+      if (!b) freeSlots.push('b');
+      if (!c) freeSlots.push('c');
+      if (!freeSlots.length) {
+        await interaction.reply({ content: `Your coalition slots (🤝 Strategic Coalition + 💰 Mercenary Pact) are both full. Use \`/country set\` to free one, then rejoin.`, flags: 64 });
+        return;
+      }
+      let ci = 0;
+      for (const slot of freeSlots) { if (ci >= countries.length) break; if (slot === 'b') b = countries[ci++]; else c = countries[ci++]; }
+      // Send ONLY B/C (+ username) — never countryMain (server would String(null) it).
+      await setProfile({ discordId: userId, username: interaction.user.username, countryB: b, countryC: c });
+      await interaction.reply({ content: `✅ Joined the **${names.join(' + ')}** coalition! Your pixels count toward its bonuses once it reaches 10 members. (Radar updates within ~30s.)`, flags: 64 });
+    } else if (action === 'leave') {
+      let changed = false;
+      if (b && countries.includes(b)) { b = null; changed = true; }
+      if (c && countries.includes(c)) { c = null; changed = true; }
+      if (!changed) {
+        await interaction.reply({ content: `You're not in the **${names.join(' + ')}** coalition via your coalition slots. (Your Homeland is never auto-changed.)`, flags: 64 });
+        return;
+      }
+      await setProfile({ discordId: userId, username: interaction.user.username, countryB: b, countryC: c });
+      await interaction.reply({ content: `👋 Left the **${names.join(' + ')}** coalition. (Radar updates within ~30s.)`, flags: 64 });
+    }
+  } catch (e) {
+    console.error('[Alliance] button error:', e.message);
+    try { await interaction.reply({ content: '❌ Something went wrong — try again in a moment.', flags: 64 }); } catch (e2) {}
+  }
+}
+
 // ── SSE event listener ───────────────────────────────────────────
 let _sseRetryDelay = 1000;
 async function connectEventStream() {
@@ -1011,11 +1136,16 @@ function handleGameEvent(event) {
       }
       break;
 
+    case 'alliance_progress':   // v92u (Phase 1): nascent-coalition radar card
+      handleAllianceProgress(event);
+      break;
+
     case 'alliance_formed':
       if (!guild) return;
       console.log(`[Bot] Alliance formed: ${event.key}`);
       createOrUpdateAllianceRole(guild, event.key, event.countries, event.members);
       announceAlliance(guild, 'formed', event.key, event.countries, { memberCount: event.members.length });
+      handleAllianceProgress({ key: event.key, gone: true }); // remove the radar card on promotion
       break;
 
     case 'alliance_changed':

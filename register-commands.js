@@ -33,17 +33,17 @@ const commands = [
       .setDescription('Set your main country and 2 optional allegiances')
       .addStringOption(o => o
         .setName('main')
-        .setDescription('Your main country (where you paint pixels from)')
+        .setDescription('🎖️ Your Homeland — the nation you fight for')
         .setRequired(true)
         .setAutocomplete(true))
       .addStringOption(o => o
         .setName('allegiance_b')
-        .setDescription('First allegiance (forms alliances when shared)')
+        .setDescription('🤝 Optional: Strategic Coalition — allied pixels count together')
         .setRequired(false)
         .setAutocomplete(true))
       .addStringOption(o => o
         .setName('allegiance_c')
-        .setDescription('Second allegiance')
+        .setDescription('💰 Optional: Mercenary Pact — fluid tactical ally')
         .setRequired(false)
         .setAutocomplete(true)))
     .addSubcommand(sub => sub
