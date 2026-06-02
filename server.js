@@ -32,7 +32,7 @@ const { renderCountryPNG, renderWorldPNG } = require('./mapshot'); // v88/v92e: 
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92k';
+const SERVER_VERSION       = '2026-06-02-v92l';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -402,12 +402,84 @@ function _shotBbox(geoNum) {
   return bbox;
 }
 
+// v92l: flag-centered framing for screenshots. The percentile bbox (_shotBbox)
+// still trusted axis extremes and could leave small countries (Montenegro) zoomed
+// out when strays exceeded the 2% trim. This instead replicates the client's
+// placeFlag density algorithm server-side:
+//   1. BFS the country's land pixels into connected components; take the LARGEST
+//      (the main landmass) — stray cross-map artifact pixels are tiny separate
+//      components and are discarded entirely, not merely trimmed.
+//   2. Bucket that component into a 32x32 density grid; the densest cell's mean
+//      position is the "flag spot" — exactly where the in-game flag sits.
+//   3. Return a square bbox CENTERED on the flag spot, sized to still contain the
+//      whole main landmass. renderCountryPNG pads + squares it from there.
+// Cached per country (territory shape is static).
+const _shotFrameCache = {};
+function _shotFrame(geoNum) {
+  if (_shotFrameCache[geoNum]) return _shotFrameCache[geoNum];
+  const pixels = geoPixels[geoNum];
+  if (!pixels || pixels.length === 0) return null;
+  const isMember = (n) => geoAtPixel[n] === geoNum && landMask[n];
+  // 1. Largest connected component via iterative BFS/DFS.
+  const visited = new Set();
+  const stack = [];
+  let best = null;
+  for (let k = 0; k < pixels.length; k++) {
+    const start = pixels[k];
+    if (visited.has(start)) continue;
+    const comp = [];
+    stack.length = 0; stack.push(start); visited.add(start);
+    while (stack.length) {
+      const idx = stack.pop();
+      comp.push(idx);
+      const x = idx % MAP_W, y = (idx / MAP_W) | 0;
+      if (x > 0         && !visited.has(idx - 1)     && isMember(idx - 1))     { visited.add(idx - 1);     stack.push(idx - 1); }
+      if (x < MAP_W - 1 && !visited.has(idx + 1)     && isMember(idx + 1))     { visited.add(idx + 1);     stack.push(idx + 1); }
+      if (y > 0         && !visited.has(idx - MAP_W) && isMember(idx - MAP_W)) { visited.add(idx - MAP_W); stack.push(idx - MAP_W); }
+      if (y < MAP_H - 1 && !visited.has(idx + MAP_W) && isMember(idx + MAP_W)) { visited.add(idx + MAP_W); stack.push(idx + MAP_W); }
+    }
+    if (!best || comp.length > best.length) best = comp;
+    if (best.length >= pixels.length * 0.8) break; // dominant landmass found
+  }
+  const comp = best;
+  // Component bbox (outlier-free, since strays are in other components).
+  let minX = MAP_W, minY = MAP_H, maxX = 0, maxY = 0;
+  for (const idx of comp) {
+    const x = idx % MAP_W, y = (idx / MAP_W) | 0;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  // 2. Density grid → flag spot (densest 32x32 cell mean).
+  const GRID_W = 32, GRID_H = 32;
+  const cellW = MAP_W / GRID_W, cellH = MAP_H / GRID_H;
+  const cnt = new Int32Array(GRID_W * GRID_H);
+  const sumX = new Float64Array(GRID_W * GRID_H);
+  const sumY = new Float64Array(GRID_W * GRID_H);
+  for (const idx of comp) {
+    const x = idx % MAP_W, y = (idx / MAP_W) | 0;
+    const gx = Math.min(GRID_W - 1, (x / cellW) | 0);
+    const gy = Math.min(GRID_H - 1, (y / cellH) | 0);
+    const ci = gy * GRID_W + gx;
+    cnt[ci]++; sumX[ci] += x; sumY[ci] += y;
+  }
+  let bc = -1, bn = 0;
+  for (let i = 0; i < cnt.length; i++) if (cnt[i] > bn) { bn = cnt[i]; bc = i; }
+  let cx, cy;
+  if (bc >= 0) { cx = Math.round(sumX[bc] / bn); cy = Math.round(sumY[bc] / bn); }
+  else { cx = Math.round((minX + maxX) / 2); cy = Math.round((minY + maxY) / 2); }
+  // 3. Square bbox centered on the flag spot, big enough to contain the landmass.
+  const half = Math.max(cx - minX, maxX - cx, cy - minY, maxY - cy);
+  const frame = { minX: cx - half, maxX: cx + half, minY: cy - half, maxY: cy + half };
+  _shotFrameCache[geoNum] = frame;
+  return frame;
+}
+
 function makeCountryShot(countryId) {
   try {
     const geoNum = parseInt(countryId, 10);
-    // v92g: use the outlier-trimmed bbox so tiny countries (Montenegro) zoom in
-    // properly instead of being framed by stray cross-map artifact pixels.
-    const bbox = _shotBbox(geoNum) || geoBbox[geoNum];
+    // v92l: flag-centered frame first (largest landmass, density-centered, strays
+    // discarded). Falls back to the percentile bbox, then the raw geo bbox.
+    const bbox = _shotFrame(geoNum) || _shotBbox(geoNum) || geoBbox[geoNum];
     if (!bbox) return null;
     const buf = renderCountryPNG({
       MAP_W, MAP_H, geoAtPixel, claimByPixel, landMask, idxToId, geoColorsById, bbox,
@@ -4436,6 +4508,19 @@ const httpServer = http.createServer(async (req, res) => {
             wouldNotify: qualifying >= MULTI_ATTACK_THRESHOLD && windowPixels >= eff,
           },
           attackers: tracked,
+        };
+      })(),
+      // v92l: screenshot framing diagnostic — flag-centered frame vs raw bbox.
+      screenshotFrame: (() => {
+        const frame = _shotFrame(geo);
+        const raw = geoBbox[geo];
+        if (!frame) return null;
+        return {
+          flagCenter: { x: Math.round((frame.minX + frame.maxX) / 2), y: Math.round((frame.minY + frame.maxY) / 2) },
+          frameBbox: frame,
+          frameSpanPx: (frame.maxX - frame.minX),
+          rawBbox: raw || null,
+          rawSpanPx: raw ? Math.max(raw.maxX - raw.minX, raw.maxY - raw.minY) : null,
         };
       })(),
       holders,
