@@ -34,7 +34,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92o';
+const SERVER_VERSION       = '2026-06-02-v92p';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -66,6 +66,13 @@ const FALLEN_NATIVE_FRAC = 0.05;
 const MAX_STROKE_PX      = 500;
 const BROADCAST_MS       = 1000;  // v77: 1Hz delta broadcast (was 20Hz/50ms).
                                     // Client visually staggers paints over ~900ms
+// v92p: per-region viewport delta filter. Zoomed-in clients report their visible
+// rect; the server then sends them only the deltas inside it (+ a one-shot region
+// snapshot on viewport change to correct stale off-screen state). Clients viewing
+// most of the map ("full") still get the shared broadcast. Kill-switch + a max-area
+// guard (above which a client is treated as full — filtering/snapshot stop paying off).
+const VIEWPORT_FILTER_ENABLED  = true;
+const VIEWPORT_MAX_FILTER_AREA = 600000; // ~28% of the 2048x1024 map
                                     // so users see smooth ambient activity at
                                     // 1/20th the bandwidth. Player's own paints
                                     // remain instant client-side (claimPixel).
@@ -3031,24 +3038,85 @@ function encodeDelta(pixels) {
   return buf;
 }
 
+// v92p: region snapshot — current ownership of a rect, sent to a client that just
+// panned/zoomed into a (possibly stale) area while under viewport filtering.
+// Layout: [uint8 tag=2][minX,minY,maxX,maxY u16le][ x,y,ownerId u16le ]* (owned only).
+// The client reconciles: set these owners, clear any pixel it still shows as
+// foreign that isn't in this list.
+function encodeRegionSnapshot(minX, minY, maxX, maxY) {
+  const owned = [];
+  for (let y = minY; y <= maxY; y++) {
+    const base = y * MAP_W;
+    for (let x = minX; x <= maxX; x++) {
+      const idx = claimByPixel[base + x];
+      if (idx >= 0) {
+        const id = idxToId[idx];
+        if (id !== undefined) {
+          const n = typeof id === 'number' ? id : parseInt(id, 10);
+          if (Number.isFinite(n) && n >= 0 && n < DELTA_CLEAR_OWNER) owned.push(x, y, n);
+        }
+      }
+    }
+  }
+  const buf = Buffer.allocUnsafe(9 + (owned.length / 3) * 6);
+  buf.writeUInt8(2, 0);
+  buf.writeUInt16LE(minX, 1); buf.writeUInt16LE(minY, 3);
+  buf.writeUInt16LE(maxX, 5); buf.writeUInt16LE(maxY, 7);
+  let off = 9;
+  for (let i = 0; i < owned.length; i += 3) {
+    buf.writeUInt16LE(owned[i], off);     off += 2;
+    buf.writeUInt16LE(owned[i + 1], off); off += 2;
+    buf.writeUInt16LE(owned[i + 2], off); off += 2;
+  }
+  return buf;
+}
+function sendRegionSnapshot(p, minX, minY, maxX, maxY) {
+  if (!p || !p.ws || p.ws.readyState !== WebSocket.OPEN) return;
+  try { p.ws.send(encodeRegionSnapshot(minX, minY, maxX, maxY)); } catch (e) {}
+}
+
 let _deltaStatLast = 0, _deltaStatBytes = 0, _deltaStatPx = 0, _deltaStatCount = 0;
 function flushDelta() {
   deltaTimer = null;
-  if (!pendingDelta.length) return;
-  const pxCount = pendingDelta.length;
+  const pending = pendingDelta;
+  if (!pending.length) return;
+  pendingDelta = [];
+  const pxCount = pending.length;
   // v92: binary delta. Buffer.send sets the WS frame opcode to binary; the
   // client branches on ArrayBuffer vs string to route here vs the JSON path.
-  const buf = encodeDelta(pendingDelta);
-  pendingDelta = [];
-  broadcast(buf);
+  const fullBuf = encodeDelta(pending);
+
+  // v92p: per-client viewport filtering. "Full" clients (or all clients when the
+  // filter is disabled) get the shared buffer; windowed clients get only the
+  // deltas inside their rect (skip the send entirely if nothing changed in view).
+  let nFull = 0, nWindowed = 0;
+  if (!VIEWPORT_FILTER_ENABLED) {
+    broadcast(fullBuf);
+  } else {
+    for (const [, p] of players) {
+      if (p.isBot || !p.ws || p.ws.readyState !== WebSocket.OPEN) continue;
+      const vp = p.viewport;
+      if (!vp) { p.ws.send(fullBuf); nFull++; continue; }
+      nWindowed++;
+      let sub = null;
+      for (let i = 0; i < pending.length; i++) {
+        const px = pending[i];
+        if (px.x >= vp.minX && px.x <= vp.maxX && px.y >= vp.minY && px.y <= vp.maxY) {
+          (sub || (sub = [])).push(px);
+        }
+      }
+      if (sub) p.ws.send(encodeDelta(sub));
+    }
+  }
   // v78-debug: summary every 10s to confirm deltas are flowing
-  _deltaStatBytes += buf.length;
+  _deltaStatBytes += fullBuf.length;
   _deltaStatPx    += pxCount;
   _deltaStatCount += 1;
   const now = Date.now();
   if (now - _deltaStatLast > 10000) {
     if (_deltaStatLast > 0) {
-      console.log('[Delta] ' + _deltaStatCount + ' broadcasts in 10s, ' + _deltaStatPx + ' pixels, ' + (_deltaStatBytes/1024).toFixed(1) + ' KB (binary)');
+      console.log('[Delta] ' + _deltaStatCount + ' broadcasts in 10s, ' + _deltaStatPx + ' pixels, ' +
+        (_deltaStatBytes/1024).toFixed(1) + ' KB full-equiv; clients full=' + nFull + ' windowed=' + nWindowed);
     }
     _deltaStatLast = now;
     _deltaStatBytes = 0; _deltaStatPx = 0; _deltaStatCount = 0;
@@ -5081,7 +5149,7 @@ wss.on('connection', (ws, req) => {
   const ip  = getClientIP(req);
   console.log(`[+] Player ${pid} connected from ${ip}`);
 
-  const player = { ws, countryId: null, countryIdx: -1, lastSeen: Date.now(), isBot: false };
+  const player = { ws, countryId: null, countryIdx: -1, lastSeen: Date.now(), isBot: false, viewport: null };
   players.set(pid, player);
 
   const keepalive = setInterval(() => {
@@ -5101,6 +5169,24 @@ wss.on('connection', (ws, req) => {
       case 'ping':
         ws.send(JSON.stringify({ type: 'pong' }));
         break;
+
+      // v92p: client reports its visible map rect (with overscan). null/full =
+      // wants the whole broadcast. On a windowed update we send a one-shot region
+      // snapshot so any stale off-screen state now in view is corrected.
+      case 'viewport': {
+        if (!VIEWPORT_FILTER_ENABLED) break;
+        if (msg.full) { player.viewport = null; break; }
+        let minX = msg.minX | 0, minY = msg.minY | 0, maxX = msg.maxX | 0, maxY = msg.maxY | 0;
+        minX = Math.max(0, Math.min(MAP_W - 1, minX));
+        maxX = Math.max(0, Math.min(MAP_W - 1, maxX));
+        minY = Math.max(0, Math.min(MAP_H - 1, minY));
+        maxY = Math.max(0, Math.min(MAP_H - 1, maxY));
+        if (maxX < minX || maxY < minY) break;
+        if ((maxX - minX + 1) * (maxY - minY + 1) >= VIEWPORT_MAX_FILTER_AREA) { player.viewport = null; break; }
+        player.viewport = { minX, minY, maxX, maxY };
+        sendRegionSnapshot(player, minX, minY, maxX, maxY);
+        break;
+      }
 
       case 'join': {
         if (!msg.countryId) return;

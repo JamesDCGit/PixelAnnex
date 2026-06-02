@@ -3290,7 +3290,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-02-v92o';
+const CODE_VERSION = '2026-06-02-v92p';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5141,6 +5141,8 @@ function applyT(){
   // v33: update DOM flag positions + opacity each pan/zoom
   _updateAllFlagPositions();
   _updateFlagOpacity();
+  // v92p: tell the server our new viewport (debounced) so it can filter deltas.
+  if (typeof scheduleViewportUpdate === 'function') scheduleViewportUpdate();
 }
 // Free panning — clamp is now a no-op so users can move the map anywhere they like.
 // Previous behaviour pinned the map within the viewport bounds; removing this lets
@@ -7417,6 +7419,7 @@ function mpConnect() {
     // Clear volatile state so stale data doesn't linger after reconnect
     _joinSent = false;
     _localPlayerId = null;
+    _lastVpSent = ''; // v92p: re-send viewport after reconnect
     for (const k in _activeMonsters) delete _activeMonsters[k];
     craters.length = 0;
     // v90a: _ownStrokeQueue removed (own-stroke layer retired)
@@ -7433,6 +7436,11 @@ function mpConnect() {
     // delta handler directly. Everything else (welcome, conquest, players,
     // monsters, etc.) is still JSON text.
     if (e.data instanceof ArrayBuffer) {
+      // v92p: tag 2 = region snapshot (reconcile a rect after a viewport change);
+      // tag 1 = delta. Peek the first byte to route.
+      const _dv = new DataView(e.data);
+      const _tag = _dv.byteLength ? _dv.getUint8(0) : 0;
+      if (_tag === 2) { applyRegionSnapshot(e.data); return; }
       const decoded = decodeBinaryDelta(e.data);
       if (decoded) mpHandleMessage(decoded);
       return;
@@ -7464,6 +7472,78 @@ function decodeBinaryDelta(ab) {
     pixels[i] = { x, y, owner: (o === _DELTA_CLEAR_OWNER) ? null : o };
   }
   return { type: 'delta', pixels };
+}
+
+// v92p: apply a region snapshot (binary tag=2). The server sends the current
+// owners of all actively-claimed pixels in a rect; we reconcile by synthesizing a
+// delta — set those owners, and clear any pixel we still show as foreign-claimed
+// that the server no longer owns — then route it through the normal delta path so
+// all bookkeeping/painting stays identical to a live delta.
+// Layout: [u8 tag=2][minX,minY,maxX,maxY u16le][ x,y,ownerId u16le ]*
+function applyRegionSnapshot(ab) {
+  const dv = new DataView(ab);
+  if (dv.byteLength < 9 || dv.getUint8(0) !== 2) return;
+  const minX = dv.getUint16(1, true), minY = dv.getUint16(3, true),
+        maxX = dv.getUint16(5, true), maxY = dv.getUint16(7, true);
+  const n = ((dv.byteLength - 9) / 6) | 0;
+  const ownedSet = new Set();
+  const synth = [];
+  let off = 9;
+  for (let k = 0; k < n; k++) {
+    const x = dv.getUint16(off, true); off += 2;
+    const y = dv.getUint16(off, true); off += 2;
+    const o = dv.getUint16(off, true); off += 2;
+    ownedSet.add(y * MAP_W + x);
+    synth.push({ x, y, owner: o });
+  }
+  // Clear pixels we currently render as foreign-claimed that the server doesn't
+  // own anymore (claimByPixel !== native geo means actively claimed by someone).
+  for (let y = minY; y <= maxY; y++) {
+    const baseRow = y * MAP_W;
+    for (let x = minX; x <= maxX; x++) {
+      const i = baseRow + x;
+      if (ownedSet.has(i)) continue;
+      const cur = claimByPixel[i];
+      if (cur >= 0 && cur !== featByPixel[i]) synth.push({ x, y, owner: null });
+    }
+  }
+  if (synth.length) mpHandleMessage({ type: 'delta', pixels: synth });
+}
+
+// v92p: report our visible map rect (with 25% overscan) so the server can filter
+// deltas to what we can see. If we're viewing most of the map, ask for the full
+// stream instead. Debounced — fired after pan/zoom settles.
+let _vpSendTimer = null, _lastVpSent = '';
+function _computeViewportRect() {
+  if (!scale || scale <= 0) return null;
+  const cw = vp.clientWidth, ch = vp.clientHeight;
+  let minX = Math.floor((0 - ox) / scale);
+  let maxX = Math.ceil((cw - ox) / scale);
+  let minY = Math.floor((0 - oy) / scale);
+  let maxY = Math.ceil((ch - oy) / scale);
+  const mx = Math.max(8, Math.round((maxX - minX) * 0.25));
+  const my = Math.max(8, Math.round((maxY - minY) * 0.25));
+  minX -= mx; maxX += mx; minY -= my; maxY += my;
+  minX = Math.max(0, minX); minY = Math.max(0, minY);
+  maxX = Math.min(MAP_W - 1, maxX); maxY = Math.min(MAP_H - 1, maxY);
+  return { minX, minY, maxX, maxY };
+}
+function _sendViewport() {
+  if (!wsReady || !_localPlayerId) return;
+  const r = _computeViewportRect();
+  if (!r) return;
+  const area = (r.maxX - r.minX + 1) * (r.maxY - r.minY + 1);
+  const payload = (area >= MAP_W * MAP_H * 0.80)
+    ? { type: 'viewport', full: true }
+    : { type: 'viewport', minX: r.minX, minY: r.minY, maxX: r.maxX, maxY: r.maxY };
+  const sig = JSON.stringify(payload);
+  if (sig === _lastVpSent) return; // unchanged — skip
+  _lastVpSent = sig;
+  try { ws.send(sig); } catch (e) {}
+}
+function scheduleViewportUpdate() {
+  if (_vpSendTimer) clearTimeout(_vpSendTimer);
+  _vpSendTimer = setTimeout(_sendViewport, 300);
 }
 
 let _joinSent = false;
@@ -7703,6 +7783,9 @@ function mpHandleMessage(msg) {
         if (msg.nukeZones.length) startNukeZoneTicker();
       }
       console.log('[MP] Welcome, player', _localPlayerId, '· server', window.SERVER_VERSION, '· client', CODE_VERSION);
+      // v92p: now that we have a player id, report our current viewport so the
+      // server can start filtering deltas to what we see.
+      _lastVpSent = ''; scheduleViewportUpdate();
       if (msg.serverVersion && msg.serverVersion !== CODE_VERSION) {
         console.warn('[MP] Version mismatch — client', CODE_VERSION, 'vs server', msg.serverVersion);
         // v75 fix: only auto-reload ONCE per tab. Previously this caused an
