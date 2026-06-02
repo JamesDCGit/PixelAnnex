@@ -32,7 +32,7 @@ const { renderCountryPNG, renderWorldPNG } = require('./mapshot'); // v88/v92e: 
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92j';
+const SERVER_VERSION       = '2026-06-02-v92k';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1759,8 +1759,20 @@ function checkSiegeState(geoIdx) {
 // sustained assault, not a flyby. Cuts notification noise dramatically.
 const MULTI_ATTACK_THRESHOLD    = 5;
 const MULTI_ATTACK_WINDOW_MS    = 5 * 60 * 1000; // was 60s
-const MULTI_ATTACK_MIN_PIXELS   = 200;            // new — total px painted by all attackers in window
+const MULTI_ATTACK_MIN_PIXELS   = 200;            // absolute floor — total px painted by all attackers in window
 const MULTI_ATTACK_COOLDOWN_MS  = 5 * 60 * 1000;
+// v92k (#5): size-relative pixel floor. 200px is a huge deal for a micro-state but
+// trivial for Russia (91k px). The effective floor scales with the defender's land
+// area: floor = clamp(land * FRAC, MIN_PIXELS, MAX_PIXELS). So a multi-attack means
+// the same proportional pressure regardless of country size. Resulting floors:
+//   micro/median (<2.5k land) → 200 (absolute floor dominates)
+//   Brazil (22k)  → ~1.8k   |  USA/China/Canada/Russia → 2500 (ceiling)
+// FRAC/MAX are the dials — raise to make big-country attacks even harder to flag.
+const MULTI_ATTACK_MIN_FRAC     = 0.08;           // 8% of defender land...
+const MULTI_ATTACK_MAX_PIXELS   = 2500;           // ...but never demand more than this
+// v92k (#6): minimum pixels a single country must paint to COUNT as an attacker.
+// Stops "4 one-pixel flybys + 1 real attacker" from tripping the 5-country headcount.
+const MULTI_ATTACK_MIN_PIXELS_PER_ATTACKER = 25;
 // defenderGeoIdx → { attackers: Map(attackerId → { lastTs, pixels }), lastNotifyAt }
 const _multiAttackTracker = new Map();
 
@@ -1790,13 +1802,23 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
     info.lastTs = now;
     info.pixels++;
   }
-  // Eligibility: enough attackers AND enough pixels
-  if (entry.attackers.size >= MULTI_ATTACK_THRESHOLD &&
-      now - entry.lastNotifyAt > MULTI_ATTACK_COOLDOWN_MS) {
-    const attackerIds = [...entry.attackers.keys()];
-    const totalPixels = attackerIds.reduce(
-      (sum, aid) => sum + (entry.attackers.get(aid)?.pixels || 0), 0);
-    if (totalPixels < MULTI_ATTACK_MIN_PIXELS) return;
+  // Eligibility (v92k): enough QUALIFYING attackers AND enough total pixels (size-scaled).
+  if (now - entry.lastNotifyAt > MULTI_ATTACK_COOLDOWN_MS) {
+    // #6: only attackers who each cleared the per-attacker floor count toward the
+    // 5-country headcount; flybys still add to totalPixels but not to the count.
+    let totalPixels = 0;
+    const attackerIds = [];
+    for (const [aid, info] of entry.attackers) {
+      totalPixels += info.pixels;
+      if (info.pixels >= MULTI_ATTACK_MIN_PIXELS_PER_ATTACKER) attackerIds.push(aid);
+    }
+    if (attackerIds.length < MULTI_ATTACK_THRESHOLD) return;
+    // #5: total-pixel floor scales with the defender's land area.
+    const defenderLand = geoTotal[defenderGeoIdx] || 0;
+    const effectiveFloor = Math.min(
+      MULTI_ATTACK_MAX_PIXELS,
+      Math.max(MULTI_ATTACK_MIN_PIXELS, Math.round(defenderLand * MULTI_ATTACK_MIN_FRAC)));
+    if (totalPixels < effectiveFloor) return;
     const defenderId = geoToId(defenderGeoIdx);
     // v92f: only announce a multi-attack if the defender or some attacker is
     // notable (same gate as conquests — kills tiny-island spam, keeps the relay
@@ -4381,6 +4403,41 @@ const httpServer = http.createServer(async (req, res) => {
         foreignHolders,
         wouldTrigger: total ? (nativeCnt / total <= FALLEN_NATIVE_FRAC && foreignHolders >= 2 && foreignSum / total >= 0.70) : false,
       },
+      // v92k: live multi-attack tracker state for this defender (rolling window).
+      multiAttack: (() => {
+        const eff = Math.min(MULTI_ATTACK_MAX_PIXELS,
+          Math.max(MULTI_ATTACK_MIN_PIXELS, Math.round(total * MULTI_ATTACK_MIN_FRAC)));
+        const e = _multiAttackTracker.get(geo);
+        const nowMs = Date.now();
+        let windowPixels = 0;
+        const tracked = [];
+        if (e) {
+          for (const [aid, info] of e.attackers) {
+            if (nowMs - info.lastTs > MULTI_ATTACK_WINDOW_MS) continue;
+            windowPixels += info.pixels;
+            tracked.push({ id: aid, name: _countryName(aid), pixels: info.pixels,
+              qualifies: info.pixels >= MULTI_ATTACK_MIN_PIXELS_PER_ATTACKER });
+          }
+          tracked.sort((a, b) => b.pixels - a.pixels);
+        }
+        const qualifying = tracked.filter(t => t.qualifies).length;
+        return {
+          requirements: {
+            minQualifyingAttackers: MULTI_ATTACK_THRESHOLD,
+            minPixelsPerAttacker: MULTI_ATTACK_MIN_PIXELS_PER_ATTACKER,
+            effectivePixelFloor: eff,
+            windowMs: MULTI_ATTACK_WINDOW_MS,
+            cooldownMs: MULTI_ATTACK_COOLDOWN_MS,
+          },
+          current: {
+            qualifyingAttackers: qualifying,
+            windowPixels,
+            cooldownRemainingMs: e ? Math.max(0, MULTI_ATTACK_COOLDOWN_MS - (nowMs - e.lastNotifyAt)) : 0,
+            wouldNotify: qualifying >= MULTI_ATTACK_THRESHOLD && windowPixels >= eff,
+          },
+          attackers: tracked,
+        };
+      })(),
       holders,
     }, null, 2));
     return;
