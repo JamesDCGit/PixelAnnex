@@ -34,7 +34,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-03-v92r';
+const SERVER_VERSION       = '2026-06-03-v92s';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3152,6 +3152,24 @@ function sendRegionSnapshot(p, minX, minY, maxX, maxY) {
   try { p.ws.send(encodeRegionSnapshot(minX, minY, maxX, maxY)); } catch (e) {}
 }
 
+// v92s: binary initial-snapshot runs. Replaces the big JSON `state.runs` array in
+// the welcome message (~3x smaller, no JSON.parse of a huge array on connect).
+// Layout: [u8 tag=3][u32 count][ s u32le, l u32le, o u16le ]*  (o 0xFFFF = skip).
+function encodeSnapshotRuns(runs) {
+  const buf = Buffer.allocUnsafe(5 + runs.length * 10);
+  buf.writeUInt8(3, 0);
+  buf.writeUInt32LE(runs.length, 1);
+  let off = 5;
+  for (let i = 0; i < runs.length; i++) {
+    const r = runs[i];
+    buf.writeUInt32LE(r.s >>> 0, off); off += 4;
+    buf.writeUInt32LE(r.l >>> 0, off); off += 4;
+    const n = typeof r.o === 'number' ? r.o : parseInt(r.o, 10);
+    buf.writeUInt16LE((Number.isFinite(n) && n >= 0 && n < 0xFFFF) ? n : 0xFFFF, off); off += 2;
+  }
+  return buf;
+}
+
 let _deltaStatLast = 0, _deltaStatBytes = 0, _deltaStatPx = 0, _deltaStatCount = 0;
 function flushDelta() {
   deltaTimer = null;
@@ -5337,15 +5355,20 @@ wss.on('connection', (ws, req) => {
         }
         checkMapReady();
 
+        // v92s: split the snapshot — welcome JSON carries the small metadata
+        // (conquered set + player list); the heavy claimed-pixel runs go in a
+        // separate compact binary frame (tag=3) sent right after.
+        const _snap = buildSnapshot();
         ws.send(JSON.stringify({
           type: 'welcome',
           playerId: pid,
           botIds: [...bots.keys()],
-          state: buildSnapshot(),
+          state: { conquered: _snap.conquered, players: _snap.players },
           david: buildDavidSnapshot(),
           serverVersion: SERVER_VERSION,
           nukeZones: (_pruneServerNukeZones(), _nukeZones.slice()),
         }));
+        try { ws.send(encodeSnapshotRuns(_snap.runs)); } catch (e) {}
         // v61: if a world conquest is active, immediately replay it for this client
         // so refreshers and late-joiners see the conquest screen rather than the map
         if (_worldConquestActive && _worldConquestPayload) {

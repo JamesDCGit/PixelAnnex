@@ -3290,7 +3290,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-03-v92r';
+const CODE_VERSION = '2026-06-03-v92s';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7441,6 +7441,7 @@ function mpConnect() {
       const _dv = new DataView(e.data);
       const _tag = _dv.byteLength ? _dv.getUint8(0) : 0;
       if (_tag === 2) { applyRegionSnapshot(e.data); return; }
+      if (_tag === 3) { applySnapshotRuns(e.data); return; } // v92s: initial snapshot
       const decoded = decodeBinaryDelta(e.data);
       if (decoded) mpHandleMessage(decoded);
       return;
@@ -7508,6 +7509,72 @@ function applyRegionSnapshot(ab) {
     }
   }
   if (synth.length) mpHandleMessage({ type: 'delta', pixels: synth });
+}
+
+// v92s: apply the initial snapshot runs (binary tag=3). Resets claim bookkeeping,
+// paints every actively-claimed run at full alpha, then replays conquests (chunked
+// over RAF) using the conquered list stashed by the welcome handler. This is the
+// old welcome runs+conquered logic, moved to the binary path.
+// Layout: [u8 tag=3][u32 count][ s u32le, l u32le, o u16le ]*
+let _pendingConquered = [];
+function applySnapshotRuns(ab) {
+  const dv = new DataView(ab);
+  if (dv.byteLength < 5 || dv.getUint8(0) !== 3) return;
+  const count = dv.getUint32(1, true);
+  // Reset claimerCount + per-geo claim map (native baseline 0), rebuilt from runs.
+  claimerCount = {};
+  for (const geoFi of Object.keys(geoTotal)) geoClaimCnt[geoFi] = { [geoFi]: 0 };
+  let off = 5;
+  for (let k = 0; k < count && off + 10 <= dv.byteLength; k++) {
+    const s = dv.getUint32(off, true); off += 4;
+    const l = dv.getUint32(off, true); off += 4;
+    const o = dv.getUint16(off, true); off += 2;
+    const fi = (o === 0xFFFF) ? undefined : idToFeatIdx.get(String(o));
+    if (fi === undefined) continue;
+    claimerCount[fi] = (claimerCount[fi] || 0) + l;
+    const [r, g, b] = hexRgb(featList[fi].color);
+    let pos = s;
+    const end = s + l;
+    while (pos < end && pos < MAP_PX) {
+      const x = pos % MAP_W, y = (pos / MAP_W) | 0;
+      const rowRem = Math.min(MAP_W - x, end - pos);
+      const slice = new Uint8ClampedArray(rowRem * 4);
+      for (let kk = 0; kk < rowRem; kk++) {
+        const p = kk * 4;
+        slice[p] = r; slice[p + 1] = g; slice[p + 2] = b; slice[p + 3] = 215;
+        const i = pos + kk;
+        claimByPixel[i] = fi;
+        const geo = featByPixel[i];
+        if (geo >= 0) { if (!geoClaimCnt[geo]) geoClaimCnt[geo] = {}; geoClaimCnt[geo][fi] = (geoClaimCnt[geo][fi] || 0) + 1; }
+      }
+      claimCtx.putImageData(new ImageData(slice, rowRem, 1), x, y);
+      pos += rowRem;
+    }
+  }
+  // Replay conquests AFTER runs so finisherFill/placeFlag see final ownership.
+  if (_pendingConquered && _pendingConquered.length) {
+    for (const key of _pendingConquered) conqueredSet.add(key);
+    const replayQueue = [];
+    for (const key of conqueredSet) {
+      const parts = String(key).split(':');
+      if (parts.length !== 2 || parts[0] === parts[1]) continue;
+      const geoFi = idToFeatIdx.get(parts[0]);
+      const claimerFi = idToFeatIdx.get(parts[1]);
+      if (geoFi !== undefined && claimerFi !== undefined) replayQueue.push([geoFi, claimerFi]);
+    }
+    let qi = 0;
+    const replayStep = () => {
+      for (let n = 0; n < 3 && qi < replayQueue.length; n++, qi++) {
+        const [geoFi, claimerFi] = replayQueue[qi];
+        finisherFill(geoFi, claimerFi);
+        if (typeof placeFlag === 'function') placeFlag(geoFi, claimerFi);
+      }
+      if (qi < replayQueue.length) requestAnimationFrame(replayStep);
+      else { markOutlineDirty(); scheduleLegend(); }
+    };
+    requestAnimationFrame(replayStep);
+  }
+  scheduleLegend();
 }
 
 // v92p: report our visible map rect (with 25% overscan) so the server can filter
@@ -7805,86 +7872,12 @@ function mpHandleMessage(msg) {
         // Versions match — clear any stale reload-attempt marker
         try { sessionStorage.removeItem('pa_version_reload'); } catch(e){}
       }
-      // Apply server state — overlay server's actively-painted pixels.
-      // Pixels in state.runs were painted by a player or bot; paint them at full alpha.
-      // Pixels NOT in runs keep their faint prepopulate fill.
-      if (msg.state?.runs) {
-        // Apply server state — overlay each actively-painted pixel at full alpha.
-        // We paint individually rather than via getImageData bbox to avoid any
-        // partial-rect overwrite bugs. With ~500k typical run pixels, this is ~150ms
-        // which is fine for a once-per-session welcome.
-        // Reset claimerCount AND per-geo claim map before welcome — both rebuilt from runs
-        claimerCount = {};
-        // Reset per-geo claim counts but preserve geoTotal (intrinsic country size).
-        // For each country, geoClaimCnt[geoFi][geoFi] = geoTotal[geoFi] is the
-        // baseline (native ownership before any conquering).
-        for (const geoFi of Object.keys(geoTotal)) {
-          geoClaimCnt[geoFi] = { [geoFi]: 0 };
-        }
-        for (const { s, l, o } of msg.state.runs) {
-          // v75: O(1) lookup
-          const fi = idToFeatIdx.get(typeof o === 'string' ? o : String(o));
-          if (fi === undefined) continue;
-          // Update claimerCount in bulk for this run
-          claimerCount[fi] = (claimerCount[fi] || 0) + l;
-          // Per-pixel walk to update per-geo counts (each pixel's geo may differ)
-          for (let i = s; i < s + l && i < MAP_PX; i++) {
-            const g = featByPixel[i];
-            if (g >= 0) {
-              if (!geoClaimCnt[g]) geoClaimCnt[g] = {};
-              geoClaimCnt[g][fi] = (geoClaimCnt[g][fi] || 0) + 1;
-            }
-          }
-          const [r,g,b] = hexRgb(featList[fi].color);
-          // Walk the run, split at row boundaries (createImageData is row-aligned)
-          let pos = s;
-          while (pos < s + l) {
-            const x = pos % MAP_W;
-            const y = (pos / MAP_W) | 0;
-            const rowRemainder = Math.min(MAP_W - x, (s + l) - pos);
-            const slice = new Uint8ClampedArray(rowRemainder * 4);
-            for (let k = 0; k < rowRemainder; k++) {
-              const p = k * 4;
-              slice[p]=r; slice[p+1]=g; slice[p+2]=b; slice[p+3]=215;
-              claimByPixel[pos + k] = fi;
-            }
-            const rowImg = new ImageData(slice, rowRemainder, 1);
-            claimCtx.putImageData(rowImg, x, y);
-            pos += rowRemainder;
-          }
-        }
-      }
-if (msg.state?.conquered) {
-        for (const key of msg.state.conquered) conqueredSet.add(key);
-        // v74: chunk the replay — one conquest per RAF (was: all in one
-        // synchronous setTimeout, which froze the browser for seconds when
-        // 50+ countries had been conquered before page load).
-        const replayQueue = [];
-        for (const key of conqueredSet) {
-          const parts = String(key).split(':');
-          if (parts.length !== 2) continue;
-          if (parts[0] === parts[1]) continue; // skip self-conquests
-          const geoFi    = idToFeatIdx.get(parts[0]);
-          const claimerFi= idToFeatIdx.get(parts[1]);
-          if (geoFi !== undefined && claimerFi !== undefined) replayQueue.push([geoFi, claimerFi]);
-        }
-        let qi = 0;
-        const replayStep = () => {
-          // Process up to 3 conquests per frame — keeps frame budget under ~30ms
-          for (let n = 0; n < 3 && qi < replayQueue.length; n++, qi++) {
-            const [geoFi, claimerFi] = replayQueue[qi];
-            finisherFill(geoFi, claimerFi);
-            if (typeof placeFlag === 'function') placeFlag(geoFi, claimerFi);
-          }
-          if (qi < replayQueue.length) {
-            requestAnimationFrame(replayStep);
-          } else {
-            markOutlineDirty();
-            scheduleLegend();
-          }
-        };
-        requestAnimationFrame(replayStep);
-      }
+      // v92s: the heavy claimed-pixel runs now arrive as a separate binary
+      // snapshot frame (tag=3) right after this welcome, instead of inline JSON.
+      // Stash the conquered list; applySnapshotRuns() resets counts, applies the
+      // runs, THEN replays conquests (correct order: flag placement needs the
+      // runs applied first).
+      _pendingConquered = (msg.state && msg.state.conquered) ? msg.state.conquered : [];
       scheduleLegend();
       break;
     }
