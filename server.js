@@ -32,7 +32,7 @@ const { renderCountryPNG, renderWorldPNG } = require('./mapshot'); // v88/v92e: 
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92g';
+const SERVER_VERSION       = '2026-06-02-v92h';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3009,21 +3009,33 @@ function applyPixels(pixels, countryId) {
   for (const geo of affected) {
     const total = geoTotal[geo] || 0;
     if (!total) continue;
-    // v64: use combined alliance pixel count so allied countries share conquest credit
-    const owned = getAllyOwnedCount(geo, countryId);
-    const key   = geo + ':' + countryId;
-    // Skip self-conquest — a country can't conquer itself
-    if (countryId === geoToId(geo)) continue;
+    const _geoId = geoToId(geo);
     // Conquest immunity — don't allow flips within IMMUNITY_MS of last conquest
-    const immuneUntil = _conquestImmunity.get(geoToId(geo));
+    const immuneUntil = _conquestImmunity.get(_geoId);
     if (immuneUntil && Date.now() < immuneUntil) {
       continue; // territory is still settling after a recent flip
     }
-    const _geoId = geoToId(geo);
-    // Normal path: a single attacker (+allies) reaches the size-scaled threshold.
-    if (!conqueredSet.has(key) && owned / total >= conquestThreshold(total)) {
-      _conquerGeo(geo, countryId, conquests, changed);
-    } else if (!conqueredSet.has(key) && !permanentlyConquered.has(_geoId)) {
+    // v92h FIX: evaluate conquest for the STRONGEST FOREIGN CLAIMANT of this
+    // geo, not just the country that happened to paint. Previously conquest was
+    // only checked for `countryId` (the painter), so if an attacker pushed a
+    // country past the threshold and then went quiet (bucket spent / surrender /
+    // moved on), nobody ever re-triggered the check — the only paints left were
+    // the native bot reclaiming, which hit the self-conquest skip. Result:
+    // countries sat permanently un-conquered at e.g. 81% (the Kosovo/Serbia
+    // bug). Now any paint in the geo re-checks the dominant occupier.
+    let champId = null, champOwned = 0;
+    const _claims = geoClaimCnt[geo] || {};
+    for (const cId in _claims) {
+      if (cId === _geoId) continue;                 // skip native — can't self-conquer
+      const o = getAllyOwnedCount(geo, cId);        // combined alliance credit
+      if (o > champOwned) { champOwned = o; champId = cId; }
+    }
+    const key = champId != null ? (geo + ':' + champId) : null;
+    // Normal path: the strongest foreign claimant (+allies) reaches the
+    // size-scaled threshold.
+    if (champId != null && !conqueredSet.has(key) && champOwned / total >= conquestThreshold(total)) {
+      _conquerGeo(geo, champId, conquests, changed);
+    } else if (!permanentlyConquered.has(_geoId)) {
       // v91a: fallen-by-plurality — a country CARVED UP by 2+ attackers where
       // no single one hit conquestThreshold(). Declare the largest foreign
       // holder the conqueror.
