@@ -34,7 +34,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92n';
+const SERVER_VERSION       = '2026-06-02-v92o';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -576,7 +576,7 @@ function makeWorldShot() {
 // TEST MODE (TIMELAPSE_TEST=true): 10s frames over a 5min window so the pipeline
 // can be verified quickly. PROD: 30min frames over 24h = 48 frames (24s @ 2fps).
 // Flip TIMELAPSE_TEST to false once verified, then redeploy.
-const TIMELAPSE_TEST  = true;
+const TIMELAPSE_TEST  = false;
 const TL_FRAME_MS     = TIMELAPSE_TEST ? 10 * 1000      : 30 * 60 * 1000;      // capture interval
 const TL_WINDOW_MS    = TIMELAPSE_TEST ? 5 * 60 * 1000  : 24 * 60 * 60 * 1000; // GIF spans this much history
 const TL_GIF_FPS      = 2;
