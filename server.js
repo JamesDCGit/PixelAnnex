@@ -32,7 +32,7 @@ const { renderCountryPNG, renderWorldPNG } = require('./mapshot'); // v88/v92e: 
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92h';
+const SERVER_VERSION       = '2026-06-02-v92i';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -4279,6 +4279,83 @@ const httpServer = http.createServer(async (req, res) => {
       .map(([id, count], i) => ({ rank: i + 1, countryId: id, name: _countryName(id), count }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ conquests: top20, total: conqueredSet.size }));
+    return;
+  }
+
+  // ── v92i: /api/debug/country — per-country occupation breakdown ──
+  // Answers "why hasn't X fallen?". Public read-only (no secrets exposed).
+  //   /api/debug/country?id=383      (numeric country ID)
+  //   /api/debug/country?name=kosovo (case-insensitive substring)
+  if (url.pathname === '/api/debug/country') {
+    let geo = null;
+    const idParam = url.searchParams.get('id');
+    const nameParam = (url.searchParams.get('name') || '').toLowerCase().trim();
+    if (idParam) {
+      geo = parseInt(idParam, 10);
+    } else if (nameParam) {
+      for (const [cid, nm] of Object.entries(countryNames)) {
+        if (String(nm).toLowerCase().includes(nameParam)) { geo = parseInt(cid, 10); break; }
+      }
+    }
+    if (geo == null || Number.isNaN(geo)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'pass ?id=<numeric> or ?name=<substring>' }));
+      return;
+    }
+    const geoIdStr = String(geo);
+    const total = geoTotal[geo] || 0;
+    const claims = geoClaimCnt[geo] || {};
+    // Build per-holder breakdown (raw painted counts + alliance-combined)
+    const holders = [];
+    let nativeCnt = 0, champId = null, champOwned = 0;
+    for (const cId in claims) {
+      const raw = claims[cId] || 0;
+      if (raw <= 0) continue;
+      const isNative = (cId === geoIdStr);
+      if (isNative) nativeCnt = raw;
+      const allyOwned = getAllyOwnedCount(geo, cId);
+      holders.push({
+        id: cId, name: _countryName(cId), native: isNative,
+        pixels: raw, pct: total ? +(raw / total * 100).toFixed(1) : 0,
+        allyCombined: allyOwned, allyPct: total ? +(allyOwned / total * 100).toFixed(1) : 0,
+        notable: isNotableCountry(cId),
+      });
+      if (!isNative && allyOwned > champOwned) { champOwned = allyOwned; champId = cId; }
+    }
+    holders.sort((a, b) => b.pixels - a.pixels);
+    const foreignSum = holders.filter(h => !h.native).reduce((s, h) => s + h.pixels, 0);
+    const foreignHolders = holders.filter(h => !h.native && h.pixels > 0).length;
+    const cThresh = conquestThreshold(total);
+    const immuneUntil = _conquestImmunity.get(geoIdStr) || 0;
+    const isConquered = [...conqueredSet].some(k => String(k).split(':')[0] === geoIdStr);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      geoId: geo,
+      name: _countryName(geoIdStr),
+      totalPixels: total,
+      sizeClass: total <= 1500 ? 'S' : total <= 8000 ? 'M' : total <= 30000 ? 'L' : 'XL',
+      conquered: isConquered,
+      permanentlyConquered: permanentlyConquered.has(geoIdStr),
+      immuneForMs: Math.max(0, immuneUntil - Date.now()),
+      thresholds: {
+        conquestPct: +(cThresh * 100).toFixed(1),
+        reversalPct: +(reversalThreshold(total) * 100).toFixed(1),
+        fallenNativeMaxPct: FALLEN_NATIVE_FRAC * 100,
+        fallenForeignMinPct: 70,
+      },
+      champion: champId ? {
+        id: champId, name: _countryName(champId),
+        allyCombined: champOwned, allyPct: total ? +(champOwned / total * 100).toFixed(1) : 0,
+        wouldConquer: total ? (champOwned / total >= cThresh) : false,
+      } : null,
+      fallenByPlurality: {
+        nativePct: total ? +(nativeCnt / total * 100).toFixed(1) : 0,
+        foreignSumPct: total ? +(foreignSum / total * 100).toFixed(1) : 0,
+        foreignHolders,
+        wouldTrigger: total ? (nativeCnt / total <= FALLEN_NATIVE_FRAC && foreignHolders >= 2 && foreignSum / total >= 0.70) : false,
+      },
+      holders,
+    }, null, 2));
     return;
   }
 
