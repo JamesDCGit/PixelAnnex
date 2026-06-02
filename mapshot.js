@@ -41,15 +41,17 @@ function renderCountryPNG(opts) {
   if (!bbox) return null;
 
   const OUT = 256;
-  // Crop window: frame the country with 50% padding, clamped so tiny countries
-  // aren't a single pixel and continents aren't the whole world. Square,
-  // centered on the bbox centre.
-  const bw = bbox.maxX - bbox.minX + 1;
-  const bh = bbox.maxY - bbox.minY + 1;
+  // v92e: tighter zoom — frame the country to its extents plus a fixed PAD px
+  // of breathing room on every side (was a loose 1.5x multiplier that zoomed
+  // out too far). The crop is squared (max of width/height) so the output
+  // stays 1:1 and the country isn't distorted, then centered on the bbox.
+  const PAD = 50;
+  const bw = (bbox.maxX - bbox.minX + 1) + PAD * 2;
+  const bh = (bbox.maxY - bbox.minY + 1) + PAD * 2;
   const ccx = (bbox.minX + bbox.maxX) / 2;
   const ccy = (bbox.minY + bbox.maxY) / 2;
-  let crop = Math.max(bw, bh) * 1.5;
-  crop = Math.max(140, Math.min(760, crop));
+  let crop = Math.max(bw, bh);
+  crop = Math.max(60, Math.min(MAP_H, crop)); // floor keeps micro-countries visible; ceil = full map height
   crop = Math.round(crop);
   let x0 = Math.round(ccx - crop / 2);
   let y0 = Math.round(ccy - crop / 2);
@@ -99,4 +101,54 @@ function renderCountryPNG(opts) {
   return canvas.toBuffer('image/png');
 }
 
-module.exports = { renderCountryPNG };
+// v92e: full-world snapshot for the daily summary post. Renders the entire
+// map (the full 2:1 MAP_W×MAP_H) downsampled to OUT_W×OUT_H, coloured the same
+// way as renderCountryPNG (owner colour / land grey / ocean blue).
+// opts: { MAP_W, MAP_H, claimByPixel, landMask, idxToId, geoColorsById, outW? }
+function renderWorldPNG(opts) {
+  const C = _loadCanvas();
+  if (!C) return null;
+  const { MAP_W, MAP_H, claimByPixel, landMask, idxToId, geoColorsById } = opts;
+  const OUT_W = opts.outW || 512;
+  const OUT_H = Math.round(OUT_W * (MAP_H / MAP_W)); // preserve 2:1 aspect
+
+  const canvas = C.createCanvas(OUT_W, OUT_H);
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(OUT_W, OUT_H);
+  const d = img.data;
+
+  const OCEAN = [10, 37, 64];
+  const LAND  = [75, 75, 75];
+  const colorCache = {};
+  function ownerColor(cid) {
+    let c = colorCache[cid];
+    if (c) return c;
+    c = hexToRgb(geoColorsById[cid]);
+    colorCache[cid] = c;
+    return c;
+  }
+
+  for (let oy = 0; oy < OUT_H; oy++) {
+    const sy = Math.min(MAP_H - 1, Math.floor((oy / OUT_H) * MAP_H));
+    for (let ox = 0; ox < OUT_W; ox++) {
+      const sx = Math.min(MAP_W - 1, Math.floor((ox / OUT_W) * MAP_W));
+      const p = (oy * OUT_W + ox) * 4;
+      const si = sy * MAP_W + sx;
+      let r, g, b;
+      const owner = claimByPixel[si];
+      if (owner >= 0) {
+        const rgb = ownerColor(idxToId[owner]);
+        r = rgb[0]; g = rgb[1]; b = rgb[2];
+      } else if (landMask[si]) {
+        r = LAND[0]; g = LAND[1]; b = LAND[2];
+      } else {
+        r = OCEAN[0]; g = OCEAN[1]; b = OCEAN[2];
+      }
+      d[p] = r; d[p + 1] = g; d[p + 2] = b; d[p + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas.toBuffer('image/png');
+}
+
+module.exports = { renderCountryPNG, renderWorldPNG };

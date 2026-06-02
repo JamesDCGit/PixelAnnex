@@ -28,11 +28,11 @@ const http      = require('http');
 const WebSocket = require('ws');
 const path      = require('path');
 const fs        = require('fs');
-const { renderCountryPNG } = require('./mapshot'); // v88: tweet screenshots
+const { renderCountryPNG, renderWorldPNG } = require('./mapshot'); // v88/v92e: tweet screenshots
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-05-31-v92c';
+const SERVER_VERSION       = '2026-06-02-v92e';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -382,6 +382,25 @@ function makeCountryShot(countryId) {
     return '/shots/' + name;
   } catch (e) {
     console.warn('[Mapshot] render failed for', countryId, e.message);
+    return null;
+  }
+}
+
+// v92e: full-world snapshot for the daily summary post. Saved to a STABLE
+// filename so it isn't pruned by the 60-shot rotation (it overwrites daily).
+function makeWorldShot() {
+  try {
+    const buf = renderWorldPNG({
+      MAP_W, MAP_H, claimByPixel, landMask, idxToId, geoColorsById, outW: 512,
+    });
+    if (!buf) return null;
+    // Date-stamped name → fresh URL each day so Discord/CDN don't serve stale.
+    const name = 'world_' + new Date().toISOString().slice(0, 10) + '.png';
+    fs.writeFileSync(path.join(SHOTS_DIR, name), buf);
+    _pruneShots();
+    return '/shots/' + name;
+  } catch (e) {
+    console.warn('[Mapshot] world render failed:', e.message);
     return null;
   }
 }
@@ -791,12 +810,23 @@ function scheduleDailySummary() {
   setTimeout(() => {
     const text = tweetForDailySummary();
     if (text) {
+      const worldShot = makeWorldShot(); // v92e: full-map snapshot for the daily post
       pushTweetDraft({
         type:       'daily_summary',
         text,
         dedupeKey: 'daily_summary:' + now.toUTCString().slice(0, 16),
+        imageUrl:  worldShot || undefined,
       });
-      console.log('[Tweets] Daily summary queued at', new Date().toISOString());
+      // Also fire a Discord world_status_report-style event so the bot posts
+      // the daily snapshot in #war-room with the image attached.
+      emitBotEvent({
+        type:       'world_status_report',
+        tier:       1,
+        timestamp:  Date.now(),
+        sassyText:  '🌍 Daily world snapshot — ' + text,
+        imageUrl:   worldShot || undefined,
+      });
+      console.log('[Tweets] Daily summary queued at', new Date().toISOString(), worldShot ? '(with world shot)' : '(no shot)');
     }
     scheduleDailySummary(); // schedule next day
   }, msUntil);
