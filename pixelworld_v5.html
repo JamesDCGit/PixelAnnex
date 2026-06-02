@@ -3290,7 +3290,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-05-31-v92b';
+const CODE_VERSION = '2026-05-31-v92c';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -11453,8 +11453,17 @@ function _showCountryRepickModal(data) {
       updateBucketHUD();
       showBonusPop(data.mercenaryBonus || 20, '🪖 Mercenary ', { encirclement: true });
     }
+    // v92c (bug #40, Option A): fully re-bind the player's identity to the new
+    // country so NO stale association with the fallen one lingers. The old code
+    // only set the text label, leaving the toolbar FLAG showing the dead
+    // country. Update label + flag + swatch + outline, matching selectCountry().
     const csel = document.getElementById('csel-label');
     if (csel) csel.textContent = f.name;
+    const cflag = document.getElementById('csel-flag');
+    if (cflag) cflag.innerHTML = flagAny(f.id, 2);
+    const sw = document.getElementById('swatch');
+    if (sw) sw.style.background = f.color;
+    if (typeof markOutlineDirty === 'function') markOutlineDirty();
     overlay.remove();
     if (typeof ws !== 'undefined' && ws && ws.readyState === 1) {
       try { ws.send(JSON.stringify({ type: 'set-country', countryId: f.id })); } catch (e) {}
