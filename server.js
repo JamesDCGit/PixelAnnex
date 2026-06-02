@@ -378,9 +378,10 @@ function _pruneShots() {
     }
   } catch (e) {}
 }
-// v92m: ISO numeric -> alpha-2 (ported from client ISO_NUM_TO_A2) so the server
-// can resolve a country's flag file (public/flags/{a2}.png) for screenshots.
-const ISO_NUM_TO_A2 = {
+// v92m: FULL ISO numeric -> alpha-2 (lowercase, padded keys) for flag-file lookup
+// (public/flags/{a2}.png). Distinct from the partial uppercase ISO_NUM_TO_A2 above,
+// which exists for regional-indicator emoji on a handful of major countries.
+const FLAG_NUM_TO_A2 = {
   '004':'af','008':'al','010':'aq','012':'dz','016':'as','020':'ad','024':'ao','028':'ag',
   '031':'az','032':'ar','036':'au','040':'at','044':'bs','048':'bh','050':'bd','051':'am',
   '052':'bb','056':'be','060':'bm','064':'bt','068':'bo','070':'ba','072':'bw','074':'bv',
@@ -416,7 +417,7 @@ const ISO_NUM_TO_A2 = {
 };
 function _isoNumericToA2(numId) {
   if (numId == null) return null;
-  return ISO_NUM_TO_A2[String(numId).padStart(3, '0')] || null;
+  return FLAG_NUM_TO_A2[String(numId).padStart(3, '0')] || null;
 }
 // Preload flag images once at startup so makeCountryShot can draw them synchronously.
 preloadFlags(path.join(__dirname, 'public', 'flags')).catch(e =>
