@@ -32,7 +32,7 @@ const { renderCountryPNG, renderWorldPNG } = require('./mapshot'); // v88/v92e: 
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92i';
+const SERVER_VERSION       = '2026-06-02-v92j';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -4287,19 +4287,46 @@ const httpServer = http.createServer(async (req, res) => {
   //   /api/debug/country?id=383      (numeric country ID)
   //   /api/debug/country?name=kosovo (case-insensitive substring)
   if (url.pathname === '/api/debug/country') {
+    // v92j: ?list=1 dumps every geo that has pixels (id, name, total) so you can
+    // discover valid IDs/names without guessing.
+    if (url.searchParams.get('list')) {
+      const list = Object.keys(geoTotal)
+        .map(g => ({ id: +g, name: _countryName(g), totalPixels: geoTotal[g] || 0 }))
+        .filter(c => c.totalPixels > 0)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ count: list.length, countries: list }, null, 2));
+      return;
+    }
     let geo = null;
     const idParam = url.searchParams.get('id');
     const nameParam = (url.searchParams.get('name') || '').toLowerCase().trim();
     if (idParam) {
       geo = parseInt(idParam, 10);
     } else if (nameParam) {
-      for (const [cid, nm] of Object.entries(countryNames)) {
-        if (String(nm).toLowerCase().includes(nameParam)) { geo = parseInt(cid, 10); break; }
+      // v92j: search ALL geos that have pixels (countryNames may lack an entry),
+      // collect every substring match so we can disambiguate / report candidates.
+      const matches = [];
+      for (const g of Object.keys(geoTotal)) {
+        if (!(geoTotal[g] > 0)) continue;
+        const nm = _countryName(g);
+        if (nm.toLowerCase().includes(nameParam)) matches.push({ id: +g, name: nm });
       }
+      if (matches.length === 1) {
+        geo = matches[0].id;
+      } else if (matches.length > 1) {
+        res.writeHead(300, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'ambiguous name — multiple matches', matches }, null, 2));
+        return;
+      }
+      // matches.length === 0 → fall through to the not-found handler below
     }
     if (geo == null || Number.isNaN(geo)) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'pass ?id=<numeric> or ?name=<substring>' }));
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        error: nameParam ? ('no country with pixels matches "' + nameParam + '"') : 'pass ?id=<numeric>, ?name=<substring>, or ?list=1',
+        hint: 'GET /api/debug/country?list=1 to see all valid countries',
+      }, null, 2));
       return;
     }
     const geoIdStr = String(geo);
