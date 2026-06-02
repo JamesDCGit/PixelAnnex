@@ -2902,6 +2902,11 @@ function getACtx(){
   if(_actx.state === 'suspended') _actx.resume();
   return (typeof _sfxOn==='undefined'||_sfxOn) ? _actx : null;
 }
+// v92t: null-safe audio-context time. getACtx() returns null before the first
+// user gesture (autoplay policy) or when SFX is muted; reading .currentTime on
+// null threw "Cannot read properties of null". Stings pass this into playNoise(),
+// which already no-ops on a null ctx, so 0 is a harmless placeholder.
+function _actxTime(){ const a = getACtx(); return a ? a.currentTime : 0; }
 function getMusicCtx(){
   // Returns audio context for music — always, regardless of SFX mute
   if(!_actx){ try{ _actx = new AudioCtx(); }catch(e){ return null; } }
@@ -3067,7 +3072,7 @@ function _stingSouthAsian(){
 function _stingLatin(){
   [0,180,285,580].forEach((ms,i)=>setTimeout(()=>{
     [261,329,392].forEach(f=>playTone(f,'triangle',i===3?0.42:0.12,0.22,(i===3?0.42:0.12)*0.65));
-    playNoise(0.07,0.2,getACtx().currentTime+0.01);
+    playNoise(0.07,0.2,_actxTime()+0.01);
   },ms));
 }
 function _stingMiddleEast(){
@@ -3075,7 +3080,7 @@ function _stingMiddleEast(){
 }
 function _stingAfrican(){
   [0,130,250,350,500].forEach((ms,i)=>setTimeout(()=>{
-    playNoise(0.09,0.18+i*0.02,getACtx().currentTime+0.01);
+    playNoise(0.09,0.18+i*0.02,_actxTime()+0.01);
     if(i%2===0) playTone(180+i*45,'triangle',0.14,0.16,0.09);
   },ms));
 }
@@ -3090,25 +3095,25 @@ function _stingGeneric(){
 
 // ── 20 unique major country stings ───────────────────────────────
 const COUNTRY_STINGS={
-  '840':()=>{ _seqT([[392,'square',0.15,0.3,0],[523,'square',0.15,0.3,165],[659,'square',0.15,0.3,330],[784,'square',0.65,0.38,500]]); setTimeout(()=>playNoise(0.06,0.12,getACtx().currentTime+0.01),0); },
+  '840':()=>{ _seqT([[392,'square',0.15,0.3,0],[523,'square',0.15,0.3,165],[659,'square',0.15,0.3,330],[784,'square',0.65,0.38,500]]); setTimeout(()=>playNoise(0.06,0.12,_actxTime()+0.01),0); },
   '826':()=>{ _seqT([[392,'square',0.18,0.28,0],[392,'square',0.18,0.28,185],[440,'square',0.18,0.28,370],[392,'square',0.18,0.28,555],[349,'square',0.18,0.28,740],[392,'square',0.6,0.32,925]]); },
   '643':()=>{ [196,233,294].forEach(f=>playTone(f,'sawtooth',0.35,0.3,0.22)); setTimeout(()=>[164,196,247].forEach(f=>playTone(f,'sawtooth',0.35,0.28,0.22)),120); setTimeout(()=>[146,174,220].forEach(f=>playTone(f,'sawtooth',0.65,0.25,0.42)),260); },
   '276':()=>{ _seqT([[261,'square',0.22,0.28,0],[349,'square',0.22,0.28,235],[440,'square',0.22,0.28,470],[523,'square',0.22,0.28,705],[440,'square',0.16,0.24,940],[523,'square',0.5,0.32,1120]]); },
   '250':()=>{ _seqT([[392,'sine',0.16,0.24,0],[392,'sine',0.16,0.24,175],[392,'sine',0.16,0.24,350],[311,'sine',0.32,0.26,525],[466,'sine',0.16,0.24,870],[466,'sine',0.16,0.24,1040],[466,'sine',0.16,0.24,1210],[392,'sine',0.5,0.3,1385]]); },
-  '156':()=>{ playNoise(0.06,0.25,getACtx().currentTime+0.04); _seqT([[392,'sine',0.14,0.22,60],[440,'sine',0.14,0.22,205],[494,'sine',0.14,0.22,345],[587,'sine',0.14,0.22,480],[659,'sine',0.45,0.28,615]]); },
+  '156':()=>{ playNoise(0.06,0.25,_actxTime()+0.04); _seqT([[392,'sine',0.14,0.22,60],[440,'sine',0.14,0.22,205],[494,'sine',0.14,0.22,345],[587,'sine',0.14,0.22,480],[659,'sine',0.45,0.28,615]]); },
   '392':()=>{ playTone(1760,'sine',0.5,0.08,0.35); _seqT([[440,'sine',0.38,0.18,20],[494,'sine',0.28,0.16,420],[415,'sine',0.28,0.16,720],[440,'sine',0.22,0.18,1000],[370,'sine',0.55,0.22,1260]]); },
   '356':()=>{ playTone(110,'sawtooth',0.9,0.08,0.7); _seqT([[293,'sawtooth',0.1,0.2,30],[329,'sawtooth',0.08,0.18,140],[370,'sawtooth',0.08,0.18,235],[311,'sawtooth',0.08,0.18,325],[349,'sawtooth',0.08,0.18,410],[440,'sawtooth',0.38,0.24,500]]); },
-  '76':()=>{ [0,180,285,580].forEach((ms,i)=>setTimeout(()=>{ [261,329,392].forEach(f=>playTone(f,'triangle',i===3?0.42:0.12,0.22,(i===3?0.42:0.12)*0.65)); playNoise(0.07,0.2,getACtx().currentTime+0.01); },ms)); },
+  '76':()=>{ [0,180,285,580].forEach((ms,i)=>setTimeout(()=>{ [261,329,392].forEach(f=>playTone(f,'triangle',i===3?0.42:0.12,0.22,(i===3?0.42:0.12)*0.65)); playNoise(0.07,0.2,_actxTime()+0.01); },ms)); },
   '36':()=>{ _seqT([[392,'square',0.18,0.26,0],[440,'square',0.18,0.26,185],[494,'square',0.18,0.26,370],[587,'square',0.18,0.26,555],[659,'square',0.55,0.3,740]]); },
   '124':()=>{ playTone(523,'sine',0.4,0.2,0.28); playTone(784,'sine',0.4,0.2,0.28); setTimeout(()=>{ playTone(659,'sine',0.55,0.22,0.38); playTone(988,'sine',0.55,0.22,0.38); },380); },
-  '410':()=>{ playNoise(0.08,0.28,getACtx().currentTime+0.04); playTone(80,'sine',0.15,0.35,0.1); _seqT([[440,'sine',0.14,0.2,60],[494,'sine',0.14,0.2,205],[554,'sine',0.14,0.2,345],[659,'sine',0.42,0.26,480]]); },
+  '410':()=>{ playNoise(0.08,0.28,_actxTime()+0.04); playTone(80,'sine',0.15,0.35,0.1); _seqT([[440,'sine',0.14,0.2,60],[494,'sine',0.14,0.2,205],[554,'sine',0.14,0.2,345],[659,'sine',0.42,0.26,480]]); },
   '380':()=>{ _seqT([[523,'sine',0.22,0.24,0],[587,'sine',0.16,0.2,235],[659,'sine',0.16,0.2,410],[587,'sine',0.16,0.2,580],[523,'sine',0.16,0.2,750],[494,'sine',0.52,0.28,920]]); },
   '724':()=>{ _seqT([[330,'sawtooth',0.14,0.24,0],[349,'sawtooth',0.12,0.22,150],[392,'sawtooth',0.12,0.22,275],[440,'sawtooth',0.12,0.22,395],[415,'sawtooth',0.12,0.22,515],[330,'sawtooth',0.45,0.28,635]]); },
   '484':()=>{ _seqT([[523,'sawtooth',0.15,0.26,0],[659,'sawtooth',0.15,0.26,160],[784,'sawtooth',0.15,0.26,320],[659,'sawtooth',0.12,0.22,480],[784,'sawtooth',0.12,0.22,610],[1047,'sawtooth',0.5,0.3,740]]); },
   '682':()=>{ _seqT([[440,'sine',0.14,0.2,0],[415,'sine',0.12,0.18,155],[349,'sine',0.12,0.18,280],[311,'sine',0.12,0.18,400],[330,'sine',0.12,0.18,520],[293,'sine',0.45,0.25,640]]); },
-  '710':()=>{ playNoise(0.07,0.2,getACtx().currentTime+0.03); _seqT([[261,'triangle',0.18,0.22,60],[329,'triangle',0.18,0.22,245],[392,'triangle',0.18,0.22,430],[523,'triangle',0.18,0.22,615],[659,'triangle',0.45,0.28,800]]); },
+  '710':()=>{ playNoise(0.07,0.2,_actxTime()+0.03); _seqT([[261,'triangle',0.18,0.22,60],[329,'triangle',0.18,0.22,245],[392,'triangle',0.18,0.22,430],[523,'triangle',0.18,0.22,615],[659,'triangle',0.45,0.28,800]]); },
   '32':()=>{ _seqT([[233,'sawtooth',0.22,0.26,0],[277,'sawtooth',0.16,0.22,235],[233,'sawtooth',0.16,0.22,410],[196,'sawtooth',0.16,0.22,580],[220,'sawtooth',0.16,0.22,750],[233,'sawtooth',0.52,0.3,920]]); },
-  '566':()=>{ [0,110,220,310,430,550].forEach((ms,i)=>setTimeout(()=>{ playNoise(0.08,0.15+i%2*0.05,getACtx().currentTime+0.01); if(i%3===0) playTone(200+i*30,'triangle',0.12,0.18,0.07); },ms)); },
+  '566':()=>{ [0,110,220,310,430,550].forEach((ms,i)=>setTimeout(()=>{ playNoise(0.08,0.15+i%2*0.05,_actxTime()+0.01); if(i%3===0) playTone(200+i*30,'triangle',0.12,0.18,0.07); },ms)); },
   '792':()=>{ _seqT([[293,'sine',0.14,0.2,0],[329,'sine',0.12,0.18,150],[370,'sine',0.12,0.18,275],[415,'sine',0.12,0.18,400],[370,'sine',0.12,0.18,525],[440,'sine',0.42,0.26,650]]); },
 };
 
@@ -3290,7 +3295,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-03-v92s';
+const CODE_VERSION = '2026-06-03-v92t';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
