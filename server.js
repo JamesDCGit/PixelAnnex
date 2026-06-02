@@ -28,11 +28,11 @@ const http      = require('http');
 const WebSocket = require('ws');
 const path      = require('path');
 const fs        = require('fs');
-const { renderCountryPNG, renderWorldPNG } = require('./mapshot'); // v88/v92e: tweet screenshots
+const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require('./mapshot'); // v88/v92e/v92m: tweet screenshots + flags
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92l';
+const SERVER_VERSION       = '2026-06-02-v92m';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -378,6 +378,50 @@ function _pruneShots() {
     }
   } catch (e) {}
 }
+// v92m: ISO numeric -> alpha-2 (ported from client ISO_NUM_TO_A2) so the server
+// can resolve a country's flag file (public/flags/{a2}.png) for screenshots.
+const ISO_NUM_TO_A2 = {
+  '004':'af','008':'al','010':'aq','012':'dz','016':'as','020':'ad','024':'ao','028':'ag',
+  '031':'az','032':'ar','036':'au','040':'at','044':'bs','048':'bh','050':'bd','051':'am',
+  '052':'bb','056':'be','060':'bm','064':'bt','068':'bo','070':'ba','072':'bw','074':'bv',
+  '076':'br','084':'bz','086':'io','090':'sb','092':'vg','096':'bn','100':'bg','104':'mm',
+  '108':'bi','112':'by','116':'kh','120':'cm','124':'ca','132':'cv','136':'ky','140':'cf',
+  '144':'lk','148':'td','152':'cl','156':'cn','158':'tw','162':'cx','166':'cc','170':'co',
+  '174':'km','175':'yt','178':'cg','180':'cd','184':'ck','188':'cr','191':'hr','192':'cu',
+  '196':'cy','203':'cz','204':'bj','208':'dk','212':'dm','214':'do','218':'ec','222':'sv',
+  '226':'gq','231':'et','232':'er','233':'ee','234':'fo','238':'fk','239':'gs','242':'fj',
+  '246':'fi','248':'ax','250':'fr','254':'gf','258':'pf','260':'tf','262':'dj','266':'ga',
+  '268':'ge','270':'gm','275':'ps','276':'de','288':'gh','292':'gi','296':'ki','300':'gr',
+  '304':'gl','308':'gd','312':'gp','316':'gu','320':'gt','324':'gn','328':'gy','332':'ht',
+  '334':'hm','336':'va','340':'hn','344':'hk','348':'hu','352':'is','356':'in','360':'id',
+  '364':'ir','368':'iq','372':'ie','376':'il','380':'it','384':'ci','388':'jm','392':'jp',
+  '398':'kz','400':'jo','404':'ke','408':'kp','410':'kr','414':'kw','417':'kg','418':'la',
+  '422':'lb','426':'ls','428':'lv','430':'lr','434':'ly','438':'li','440':'lt','442':'lu',
+  '446':'mo','450':'mg','454':'mw','458':'my','462':'mv','466':'ml','470':'mt','474':'mq',
+  '478':'mr','480':'mu','484':'mx','492':'mc','496':'mn','498':'md','499':'me','500':'ms',
+  '504':'ma','508':'mz','512':'om','516':'na','520':'nr','524':'np','528':'nl','531':'cw',
+  '533':'aw','534':'sx','535':'bq','540':'nc','548':'vu','554':'nz','558':'ni','562':'ne',
+  '566':'ng','570':'nu','574':'nf','578':'no','580':'mp','581':'um','583':'fm','584':'mh',
+  '585':'pw','586':'pk','591':'pa','598':'pg','600':'py','604':'pe','608':'ph','612':'pn',
+  '616':'pl','620':'pt','624':'gw','626':'tl','630':'pr','634':'qa','638':'re','642':'ro',
+  '643':'ru','646':'rw','652':'bl','654':'sh','659':'kn','660':'ai','662':'lc','663':'mf',
+  '666':'pm','670':'vc','674':'sm','678':'st','682':'sa','686':'sn','688':'rs','690':'sc',
+  '694':'sl','702':'sg','703':'sk','704':'vn','705':'si','706':'so','710':'za','716':'zw',
+  '724':'es','728':'ss','729':'sd','732':'eh','740':'sr','744':'sj','748':'sz','752':'se',
+  '756':'ch','760':'sy','762':'tj','764':'th','768':'tg','772':'tk','776':'to','780':'tt',
+  '784':'ae','788':'tn','792':'tr','795':'tm','796':'tc','798':'tv','800':'ug','804':'ua',
+  '807':'mk','818':'eg','826':'gb','831':'gg','832':'je','833':'im','834':'tz','840':'us',
+  '850':'vi','854':'bf','858':'uy','860':'uz','862':'ve','876':'wf','882':'ws','887':'ye',
+  '894':'zm',
+};
+function _isoNumericToA2(numId) {
+  if (numId == null) return null;
+  return ISO_NUM_TO_A2[String(numId).padStart(3, '0')] || null;
+}
+// Preload flag images once at startup so makeCountryShot can draw them synchronously.
+preloadFlags(path.join(__dirname, 'public', 'flags')).catch(e =>
+  console.warn('[Mapshot] flag preload failed:', e.message));
+
 // v92g: outlier-robust bbox for SCREENSHOTS only. geoBbox is the true min/max
 // over every pixel (needed by detectEncirclement), but map-data artifacts give
 // some countries stray pixels far across the map (the placeFlag code notes e.g.
@@ -469,20 +513,27 @@ function _shotFrame(geoNum) {
   else { cx = Math.round((minX + maxX) / 2); cy = Math.round((minY + maxY) / 2); }
   // 3. Square bbox centered on the flag spot, big enough to contain the landmass.
   const half = Math.max(cx - minX, maxX - cx, cy - minY, maxY - cy);
-  const frame = { minX: cx - half, maxX: cx + half, minY: cy - half, maxY: cy + half };
+  const frame = { minX: cx - half, maxX: cx + half, minY: cy - half, maxY: cy + half, cx, cy };
   _shotFrameCache[geoNum] = frame;
   return frame;
 }
 
-function makeCountryShot(countryId) {
+// v92m: flagCountryId = whose flag to stamp on the shot (the conqueror after a
+// conquest; the defender for a siege). Defaults to the framed country.
+function makeCountryShot(countryId, flagCountryId) {
   try {
     const geoNum = parseInt(countryId, 10);
     // v92l: flag-centered frame first (largest landmass, density-centered, strays
     // discarded). Falls back to the percentile bbox, then the raw geo bbox.
-    const bbox = _shotFrame(geoNum) || _shotBbox(geoNum) || geoBbox[geoNum];
+    const frame = _shotFrame(geoNum);
+    const bbox = frame || _shotBbox(geoNum) || geoBbox[geoNum];
     if (!bbox) return null;
+    // v92m: resolve the flag image + its spot (the frame's density center).
+    let flag = null;
+    const flagImg = getFlagImage(_isoNumericToA2(flagCountryId != null ? flagCountryId : countryId));
+    if (flagImg && frame) flag = { img: flagImg, cx: frame.cx, cy: frame.cy };
     const buf = renderCountryPNG({
-      MAP_W, MAP_H, geoAtPixel, claimByPixel, landMask, idxToId, geoColorsById, bbox,
+      MAP_W, MAP_H, geoAtPixel, claimByPixel, landMask, idxToId, geoColorsById, bbox, flag,
     });
     if (!buf) return null;
     const name = 'shot_' + countryId + '_' + Date.now().toString(36) + '.png';
@@ -1926,7 +1977,7 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
         dedupeKey:   'multi_attack:' + defenderId + ':' + Math.floor(now / 60000),
         throttleKey: 'multi_attack_def:' + defenderId,
         countries:   [defenderId, ...attackerIds], // v84: notable if defender OR any attacker is notable
-        imageUrl:    makeCountryShot(defenderId) || undefined, // v88 screenshot
+        imageUrl:    makeCountryShot(defenderId, defenderId) || undefined, // v88 screenshot, v92m defender flag
       });
     } catch (e) { /* ignore */ }
   }
@@ -3020,7 +3071,7 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
     d: _countryName(geoId),
     held: Array.from(conqueredSet).filter(k => String(k).split(':')[1] === String(conquerorId)).length,
   });
-  const _conqShot = makeCountryShot(geoId); // v88 screenshot
+  const _conqShot = makeCountryShot(geoId, conquerorId); // v88 screenshot, v92m conqueror flag
   emitBotEvent({
     type:        'war_conquest',
     tier:        2,
@@ -4521,6 +4572,8 @@ const httpServer = http.createServer(async (req, res) => {
           frameSpanPx: (frame.maxX - frame.minX),
           rawBbox: raw || null,
           rawSpanPx: raw ? Math.max(raw.maxX - raw.minX, raw.maxY - raw.minY) : null,
+          flagA2: _isoNumericToA2(geo),
+          flagLoaded: !!getFlagImage(_isoNumericToA2(geo)),
         };
       })(),
       holders,

@@ -22,6 +22,35 @@ function _loadCanvas() {
   return _Canvas;
 }
 
+// v92m: flag image cache. Real country flags are 15x10 PNGs in public/flags/.
+// We preload them all once into decoded Image objects so renderCountryPNG can
+// draw the flag synchronously (loadImage is async; pre-warming avoids making the
+// whole screenshot pipeline async). Keyed by ISO alpha-2 (lowercase).
+const _flagCache = new Map();
+let _flagsLoaded = false;
+async function preloadFlags(flagsDir) {
+  const C = _loadCanvas();
+  if (!C || !C.loadImage) { console.warn('[Mapshot] canvas/loadImage unavailable — flags disabled'); return; }
+  let files;
+  try { files = require('fs').readdirSync(flagsDir); }
+  catch (e) { console.warn('[Mapshot] flags dir unreadable:', e.message); return; }
+  let ok = 0;
+  for (const f of files) {
+    const m = /^([a-z]{2})\.png$/.exec(f);
+    if (!m) continue;
+    try {
+      const img = await C.loadImage(require('path').join(flagsDir, f));
+      _flagCache.set(m[1], img);
+      ok++;
+    } catch (e) { /* skip unreadable flag */ }
+  }
+  _flagsLoaded = true;
+  console.log('[Mapshot] preloaded ' + ok + ' flag images');
+}
+function getFlagImage(a2) {
+  return a2 ? _flagCache.get(String(a2).toLowerCase()) : undefined;
+}
+
 function hexToRgb(hex) {
   if (!hex || hex[0] !== '#' || hex.length < 7) return [128, 128, 128];
   return [
@@ -37,7 +66,7 @@ function hexToRgb(hex) {
 function renderCountryPNG(opts) {
   const C = _loadCanvas();
   if (!C) return null;
-  const { MAP_W, MAP_H, claimByPixel, landMask, idxToId, geoColorsById, bbox } = opts;
+  const { MAP_W, MAP_H, claimByPixel, landMask, idxToId, geoColorsById, bbox, flag } = opts;
   if (!bbox) return null;
 
   const OUT = 256;
@@ -98,6 +127,26 @@ function renderCountryPNG(opts) {
     }
   }
   ctx.putImageData(img, 0, 0);
+
+  // v92m: draw the country flag at the flag spot (same density-center the crop is
+  // built around). flag = { img, cx, cy } in map-pixel coords; transform to output
+  // coords with the same crop math used above. Pixel-art flags: no smoothing.
+  if (flag && flag.img) {
+    const fx = (flag.cx - x0) / crop * OUT;
+    const fy = (flag.cy - y0) / crop * OUT;
+    const fw = 34;
+    const ar = (flag.img.height && flag.img.width) ? (flag.img.height / flag.img.width) : (10 / 15);
+    const fh = Math.round(fw * ar);
+    const dx = Math.round(fx - fw / 2), dy = Math.round(fy - fh / 2);
+    ctx.imageSmoothingEnabled = false;
+    // dark plate + thin light edge so the flag reads on any background
+    ctx.fillStyle = 'rgba(0,0,0,0.9)';
+    ctx.fillRect(dx - 2, dy - 2, fw + 4, fh + 4);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(dx - 1, dy - 1, fw + 2, fh + 2);
+    ctx.drawImage(flag.img, dx, dy, fw, fh);
+  }
+
   return canvas.toBuffer('image/png');
 }
 
@@ -151,4 +200,4 @@ function renderWorldPNG(opts) {
   return canvas.toBuffer('image/png');
 }
 
-module.exports = { renderCountryPNG, renderWorldPNG };
+module.exports = { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage };
