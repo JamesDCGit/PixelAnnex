@@ -32,7 +32,7 @@ const { renderCountryPNG, renderWorldPNG } = require('./mapshot'); // v88/v92e: 
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92f';
+const SERVER_VERSION       = '2026-06-02-v92g';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -378,9 +378,36 @@ function _pruneShots() {
     }
   } catch (e) {}
 }
+// v92g: outlier-robust bbox for SCREENSHOTS only. geoBbox is the true min/max
+// over every pixel (needed by detectEncirclement), but map-data artifacts give
+// some countries stray pixels far across the map (the placeFlag code notes e.g.
+// El Salvador's 4 outlier "island" pixels in the Mediterranean). A raw bbox
+// then spans half the world and the screenshot looks fully zoomed out
+// (Montenegro symptom). This computes a percentile-trimmed bbox: drop the
+// outer 2% of pixels on each axis so a handful of strays can't blow it up.
+// Cached per country (territory shape is static).
+const _shotBboxCache = {};
+function _shotBbox(geoNum) {
+  if (_shotBboxCache[geoNum]) return _shotBboxCache[geoNum];
+  const pixels = geoPixels[geoNum];
+  if (!pixels || pixels.length === 0) return null;
+  const n = pixels.length;
+  const xs = new Uint16Array(n), ys = new Uint16Array(n);
+  for (let k = 0; k < n; k++) { const pi = pixels[k]; xs[k] = pi % MAP_W; ys[k] = (pi / MAP_W) | 0; }
+  xs.sort(); ys.sort();
+  // 2nd / 98th percentile on each axis (clamped to valid indices)
+  const lo = Math.floor(n * 0.02), hi = Math.min(n - 1, Math.ceil(n * 0.98));
+  const bbox = { minX: xs[lo], maxX: xs[hi], minY: ys[lo], maxY: ys[hi] };
+  _shotBboxCache[geoNum] = bbox;
+  return bbox;
+}
+
 function makeCountryShot(countryId) {
   try {
-    const bbox = geoBbox[parseInt(countryId, 10)];
+    const geoNum = parseInt(countryId, 10);
+    // v92g: use the outlier-trimmed bbox so tiny countries (Montenegro) zoom in
+    // properly instead of being framed by stray cross-map artifact pixels.
+    const bbox = _shotBbox(geoNum) || geoBbox[geoNum];
     if (!bbox) return null;
     const buf = renderCountryPNG({
       MAP_W, MAP_H, geoAtPixel, claimByPixel, landMask, idxToId, geoColorsById, bbox,
