@@ -34,7 +34,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-02-v92p';
+const SERVER_VERSION       = '2026-06-03-v92q';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3225,6 +3225,8 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
   _conquestImmunity.set(geoId, Date.now() + CONQUEST_IMMUNITY_MS);
   conqueredSet.add(geo + ':' + conquerorId);
   permanentlyConquered.add(geoId); // persists through reversals until world reset
+  siegedSet.delete(geo);           // v92q: clear any active siege — a fallen country
+                                   // is out of the siege system (no stale siege-end later)
   setTimeout(() => _onCountryConquered(geoId), 0);
   conquests.push({ geoIdx: geo, countryId: conquerorId });
   changed.push(...finisherFill(geo, conquerorId));
@@ -3328,6 +3330,16 @@ function applyPixels(pixels, countryId) {
     const total = geoTotal[geo] || 0;
     if (!total) continue;
     const _geoId = geoToId(geo);
+    // v92q: once a country has FALLEN it is permanently out of the war machinery
+    // for the rest of the round — no re-conquest, no reversal/"liberation", and no
+    // siege start/break. This ends the take/retake loop and the nonsensical
+    // "North Korea regained enough ground to break the siege" post (a conquered
+    // country can't break a siege — what really happened was its foreign occupiers
+    // fragmenting so no single one held >50%). Its bot is already stopped and its
+    // players are forced to re-pick, so the territory simply belongs to its
+    // conqueror until world reset. (CONQUEST_IMMUNITY only paused this for 20s,
+    // after which the churn resumed — this makes it final.)
+    if (permanentlyConquered.has(_geoId)) continue;
     // Conquest immunity — don't allow flips within IMMUNITY_MS of last conquest
     const immuneUntil = _conquestImmunity.get(_geoId);
     if (immuneUntil && Date.now() < immuneUntil) {
