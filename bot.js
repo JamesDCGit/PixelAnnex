@@ -19,7 +19,7 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-06-03-alliance-strike-v93a';
+const BOT_VERSION = '2026-06-04-alliance-channels-v93d';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
@@ -704,7 +704,7 @@ function _allianceName(key){
 function _slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,90); }
 
 async function announceAlliance(guild, type, key, countryIds, extra) {
-  const channelName = process.env.ALLIANCE_CHANNEL || 'alliance-updates';
+  const channelName = process.env.ALLIANCE_CHANNEL || 'alliance-update';
   const channel = guild.channels.cache.find(c => c.name === channelName && c.isTextBased());
   if (!channel) {
     console.log(`[Alliance] Channel #${channelName} not found — not announced`);
@@ -758,7 +758,7 @@ async function announceAlliance(guild, type, key, countryIds, extra) {
 // ── v93 (Phase 2): private war-room threads under #war-rooms ──
 // One private thread per alliance, members auto-added/removed, archived (not
 // deleted) on dissolution and unarchived if the bloc re-forms.
-const ALLIANCE_WARROOMS_CHANNEL = process.env.ALLIANCE_WARROOMS_CHANNEL || 'war-rooms';
+const ALLIANCE_WARROOMS_CHANNEL = process.env.ALLIANCE_WARROOMS_CHANNEL || 'war-room';
 let _warRoomsChannel = null, _warRoomsWarned = false;
 const _allianceThreads = new Map(); // alliance key → thread id
 function _getWarRoomsChannel(guild) {
