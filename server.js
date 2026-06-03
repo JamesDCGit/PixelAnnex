@@ -39,7 +39,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-03-v93a';
+const SERVER_VERSION       = '2026-06-03-v93b';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2756,7 +2756,7 @@ function recomputeAlliances() {
     if (cluster.countries.size < 2) continue;
     if (mc < NASCENT_MIN_MEMBERS || mc >= ALLIANCE_MIN_MEMBERS) continue;
     const key = [...cluster.countries].sort((a, b) => +a - +b).join('-');
-    newNascent.set(key, { countries: [...cluster.countries].sort((a, b) => +a - +b), memberCount: mc });
+    newNascent.set(key, { countries: [...cluster.countries].sort((a, b) => +a - +b), memberCount: mc, members: [...cluster.members] });
   }
   for (const [key, n] of newNascent) {
     const prev = nascentAlliances.get(key);
@@ -5239,9 +5239,14 @@ const httpServer = http.createServer(async (req, res) => {
         const discordId = String(data.discordId || '');
         const countryId = String(data.countryId || '');
         if (!discordId || !countryId) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'missing discordId/countryId' })); return; }
-        // Which alliance is this member in?
+        // Which coalition is this member in? Check full alliances first, then
+        // nascent (forming) coalitions — a player can rally any coalition they're
+        // in, not only ones that have locked in at 10 members.
         let allianceKey = null, alliance = null;
         for (const [k, a] of alliances) { if (a.members.includes(discordId)) { allianceKey = k; alliance = a; break; } }
+        if (!alliance) {
+          for (const [k, a] of nascentAlliances) { if ((a.members || []).includes(discordId)) { allianceKey = k; alliance = a; break; } }
+        }
         if (!alliance) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'not in an alliance' })); return; }
         const targetName = _countryName(countryId);
         const caller = (getProfile(discordId)?.username) || 'A commander';
