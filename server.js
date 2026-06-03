@@ -39,7 +39,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-03-v92x';
+const SERVER_VERSION       = '2026-06-03-v92z';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2622,10 +2622,14 @@ function recomputeAlliances() {
   // (radar progress) well before the 10-member lock-in. Union-find is cheap.
   if (profiles.size < NASCENT_MIN_MEMBERS) return;
 
-  // Build: country_id → Set<discordId> who have this country in any of their slots
+  // Build: country_id → Set<discordId> who have this country in a COALITION slot.
+  // v92z: coalition membership uses the B/C slots only. Homeland (countryMain)
+  // still fights + counts for conquest, but does NOT auto-enroll you in an
+  // alliance — so the Leave button can fully remove you, and your nation isn't
+  // dragged into a bloc just because someone else allied with it.
   const countryMembership = new Map();
   for (const [discordId, profile] of profiles) {
-    const countries = [profile.countryMain, profile.countryB, profile.countryC].filter(Boolean);
+    const countries = [profile.countryB, profile.countryC].filter(Boolean);
     for (const c of countries) {
       if (!countryMembership.has(c)) countryMembership.set(c, new Set());
       countryMembership.get(c).add(discordId);
@@ -2640,9 +2644,9 @@ function recomputeAlliances() {
 
   for (const c of countryMembership.keys()) parent[c] = c;
 
-  // For each player, union all their selected countries together
+  // For each player, union their COALITION countries together (B/C only — v92z).
   for (const profile of profiles.values()) {
-    const cs = [profile.countryMain, profile.countryB, profile.countryC].filter(Boolean);
+    const cs = [profile.countryB, profile.countryC].filter(Boolean);
     for (let i = 1; i < cs.length; i++) union(cs[0], cs[i]);
   }
 
