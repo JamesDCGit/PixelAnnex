@@ -1,4 +1,9 @@
-require('dotenv').config();
+// v92v: override:true makes .env authoritative over any pre-set process env.
+// Without it, dotenv leaves existing vars untouched, so PM2's cached/stale env
+// (e.g. a leftover DISCORD_REDIRECT_URI=http://<ip>:3000/...) silently wins over
+// the .env value and breaks Discord OAuth ("invalid redirect URI"). This ends
+// that whole class of PM2-stale-env bug — .env is now the single source of truth.
+require('dotenv').config({ override: true });
 /**
  * PixelAnnex — Multiplayer WebSocket Server
  * ==========================================
@@ -34,7 +39,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-03-v92u';
+const SERVER_VERSION       = '2026-06-03-v92v';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
