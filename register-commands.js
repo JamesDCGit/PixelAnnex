@@ -59,6 +59,17 @@ const commands = [
     .setDescription('Show your PixelAnnex stats — points, rank, conquests')
     .toJSON(),
 
+  // v93 Phase 3A: rally your alliance onto a target country
+  new SlashCommandBuilder()
+    .setName('strike')
+    .setDescription('Rally your alliance to strike a target country')
+    .addStringOption(o => o
+      .setName('country')
+      .setDescription('Target country to strike')
+      .setRequired(true)
+      .setAutocomplete(true))
+    .toJSON(),
+
   new SlashCommandBuilder()
     .setName('leaderboard')
     .setDescription('Show the top 20 PixelAnnex players by points')

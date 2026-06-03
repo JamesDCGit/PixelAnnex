@@ -39,7 +39,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-03-v93';
+const SERVER_VERSION       = '2026-06-03-v93a';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -5225,6 +5225,43 @@ const httpServer = http.createServer(async (req, res) => {
   // ── Bot API: shared-secret authenticated endpoints ──────────────
   const botSecret = req.headers['x-bot-secret'];
   const validBot  = botSecret && botSecret === (process.env.BOT_API_SECRET || '');
+
+  // v93 (Phase 3A): /api/bot/strike — an alliance member calls a strike; broadcast
+  // a rally marker ONLY to that alliance's online members (the first per-recipient
+  // filtered broadcast). Body: { discordId, countryId }.
+  if (url.pathname === '/api/bot/strike' && req.method === 'POST') {
+    if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const discordId = String(data.discordId || '');
+        const countryId = String(data.countryId || '');
+        if (!discordId || !countryId) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'missing discordId/countryId' })); return; }
+        // Which alliance is this member in?
+        let allianceKey = null, alliance = null;
+        for (const [k, a] of alliances) { if (a.members.includes(discordId)) { allianceKey = k; alliance = a; break; } }
+        if (!alliance) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'not in an alliance' })); return; }
+        const targetName = _countryName(countryId);
+        const caller = (getProfile(discordId)?.username) || 'A commander';
+        const memberSet = new Set(alliance.members.map(String));
+        const payload = JSON.stringify({ type: 'strike', countryId, targetName, caller, ttl: 45000 });
+        let recipients = 0;
+        for (const [, p] of players) {
+          if (p.isBot || !p.discordId || !p.ws || p.ws.readyState !== WebSocket.OPEN) continue;
+          if (memberSet.has(String(p.discordId))) { try { p.ws.send(payload); recipients++; } catch (e) {} }
+        }
+        console.log('[Strike] ' + caller + ' -> ' + targetName + ' (alliance ' + allianceKey + ', ' + recipients + ' online)');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, allianceKey, countries: alliance.countries, recipients, targetName, caller }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'bad request' }));
+      }
+    });
+    return;
+  }
 
   // /api/bot/profile — get/update a player's profile by Discord ID
   if (url.pathname === '/api/bot/profile') {

@@ -19,7 +19,7 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-06-03-alliance-phase2-v93';
+const BOT_VERSION = '2026-06-03-alliance-strike-v93a';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
@@ -315,6 +315,7 @@ client.on(Events.InteractionCreate, async interaction => {
   // Dispatch by command name
   if (interaction.commandName === 'me')          return handleMeCommand(interaction);
   if (interaction.commandName === 'leaderboard') return handleLeaderboardCommand(interaction);
+  if (interaction.commandName === 'strike')      return handleStrikeCommand(interaction); // v93 Phase 3A
   if (interaction.commandName !== 'country') return;
 
   const sub = interaction.options.getSubcommand();
@@ -474,9 +475,45 @@ async function handleLeaderboardCommand(interaction) {
   }
 }
 
+// ── v93 (Phase 3A): /strike — rally your alliance onto a target country ──
+async function handleStrikeCommand(interaction) {
+  const country = interaction.options.getString('country');
+  if (!COUNTRY_BY_ID[country]) {
+    await interaction.reply({ content: `❌ Unknown country: ${country}`, flags: 64 });
+    return;
+  }
+  try {
+    const r = await gameFetch('/api/bot/strike', {
+      method: 'POST',
+      body: JSON.stringify({ discordId: interaction.user.id, countryId: country }),
+    });
+    if (!r || !r.ok) {
+      const msg = (r && r.error === 'not in an alliance')
+        ? "You're not in an alliance yet — join a coalition (see #alliance-radar or `/country set`) first."
+        : '❌ Could not call a strike right now.';
+      await interaction.reply({ content: msg, flags: 64 });
+      return;
+    }
+    const targetName = r.targetName || COUNTRY_BY_ID[country] || ('Country ' + country);
+    const deepLink = (process.env.PUBLIC_URL || 'https://pixelannex.com') + '/?goto=' + encodeURIComponent(country);
+    const roleId = _allianceRoleCache[r.allianceKey];
+    const canPing = roleId && interaction.guild && interaction.guild.roles.cache.has(roleId);
+    const prefix = canPing ? `<@&${roleId}> ` : '';
+    // Public message so the whole alliance sees the rally + deep-link.
+    await interaction.reply({
+      content: `${prefix}⚔️ **${r.caller || interaction.user.username}** called a strike on **${targetName}**! Deploy now → ${deepLink}`
+        + (r.recipients ? `\n_(${r.recipients} ally${r.recipients === 1 ? '' : 's'} online — marker live on their map)_` : ''),
+      allowedMentions: canPing ? { roles: [roleId] } : { parse: [] },
+    });
+  } catch (e) {
+    console.error('[Strike] error:', e.message);
+    try { await interaction.reply({ content: '❌ Strike failed — try again in a moment.', flags: 64 }); } catch (e2) {}
+  }
+}
+
 // ── Autocomplete handler — fuzzy search through countries ────────
 async function handleAutocomplete(interaction) {
-  if (interaction.commandName !== 'country') return;
+  if (interaction.commandName !== 'country' && interaction.commandName !== 'strike') return;
   const focused = interaction.options.getFocused().toLowerCase();
   // Build list from COUNTRY_BY_ID (populated from server). De-duplicate so
   // padded/unpadded variants don't both appear.

@@ -3295,7 +3295,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-03-v93';
+const CODE_VERSION = '2026-06-03-v93a';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4937,6 +4937,14 @@ if (typeof renderLandmarks === 'function') {
     tickSiegeFlash();
     drawGrid();  // pre-render grid overlay (only shown at high zoom)
     console.log("PixelAnnex ready!");
+    // v93 (Phase 3A): ?goto=<countryId> deep-link (from /strike) — pan/zoom to it.
+    try {
+      const _goto = new URLSearchParams(location.search).get('goto');
+      if (_goto && typeof idToFeatIdx !== 'undefined') {
+        const _gfi = idToFeatIdx.get(String(parseInt(_goto, 10)));
+        if (_gfi !== undefined) setTimeout(() => { try { jumpToCountry(_gfi); } catch (e) {} }, 900);
+      }
+    } catch (e) {}
   }, 50);
 }
 
@@ -8061,6 +8069,24 @@ function mpHandleMessage(msg) {
         if (fi === currentIdx) showActivityToast(fi, false);
       } else {
         _serverSieged.delete(fi);
+      }
+      break;
+    }
+
+    case 'strike': {
+      // v93 (Phase 3A): an ally called a strike. Server already filtered this to
+      // our alliance, so just surface it: rally card + a pulsing highlight on the
+      // target country for the strike TTL. (Reuses the highlight system.)
+      const fi = idToFeatIdx.get(String(msg.countryId));
+      const tn = msg.targetName || ((fi !== undefined && featList[fi]) ? featList[fi].name : 'a target');
+      actPushCard({
+        variant: 'alert',
+        title: '⚔️ Strike Called',
+        html: '<b>' + (msg.caller || 'Your alliance') + '</b> — rally on <b>' + tn + '</b>! Deploy your pixels.',
+      });
+      if (fi !== undefined && typeof highlightedIdx !== 'undefined') {
+        highlightedIdx = fi;
+        highlightUntil = Date.now() + (msg.ttl || 45000);
       }
       break;
     }
