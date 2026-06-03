@@ -19,7 +19,7 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-06-03-alliance-radar-v92u';
+const BOT_VERSION = '2026-06-03-alliance-radar-v92y';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
@@ -784,9 +784,18 @@ async function handleAllianceButton(interaction) {
     let c = profile.countryC || null;
     const main = profile.countryMain || null;
 
+    const mainInBloc = !!(main && countries.includes(main));
+    const homelandName = main ? (COUNTRY_BY_ID[main] || ('Country ' + main)) : null;
+
     if (action === 'join') {
-      const have = new Set([main, b, c].filter(Boolean));
-      if (countries.some(x => have.has(x))) {
+      // Membership is "any slot is in the bloc". If your HOMELAND is in it you're
+      // already a member through it — and Leave can't remove that (Homeland is
+      // never auto-changed), so call it out explicitly.
+      if (mainInBloc) {
+        await interaction.reply({ content: `You're already in the **${names.join(' + ')}** coalition through your Homeland (**${homelandName}**). To leave, switch your Homeland with \`/country set\`.`, flags: 64 });
+        return;
+      }
+      if ((b && countries.includes(b)) || (c && countries.includes(c))) {
         await interaction.reply({ content: `You're already aligned with the **${names.join(' + ')}** coalition.`, flags: 64 });
         return;
       }
@@ -806,12 +815,21 @@ async function handleAllianceButton(interaction) {
       let changed = false;
       if (b && countries.includes(b)) { b = null; changed = true; }
       if (c && countries.includes(c)) { c = null; changed = true; }
-      if (!changed) {
-        await interaction.reply({ content: `You're not in the **${names.join(' + ')}** coalition via your coalition slots. (Your Homeland is never auto-changed.)`, flags: 64 });
-        return;
+      if (changed) {
+        await setProfile({ discordId: userId, username: interaction.user.username, countryB: b, countryC: c });
       }
-      await setProfile({ discordId: userId, username: interaction.user.username, countryB: b, countryC: c });
-      await interaction.reply({ content: `👋 Left the **${names.join(' + ')}** coalition. (Radar updates within ~30s.)`, flags: 64 });
+      // If their Homeland is in the bloc, clearing coalition slots does NOT fully
+      // remove them — be honest about that instead of claiming they "left".
+      let msg2;
+      if (mainInBloc) {
+        msg2 = (changed ? `👋 Cleared your coalition slots for **${names.join(' + ')}**. ` : '')
+          + `But your Homeland (**${homelandName}**) is part of this bloc, so you're still aligned through it. Switch your Homeland with \`/country set\` to fully leave.`;
+      } else if (changed) {
+        msg2 = `👋 Left the **${names.join(' + ')}** coalition. (Radar updates within ~30s.)`;
+      } else {
+        msg2 = `You're not in the **${names.join(' + ')}** coalition.`;
+      }
+      await interaction.reply({ content: msg2, flags: 64 });
     }
   } catch (e) {
     console.error('[Alliance] button error:', e.message);
