@@ -39,7 +39,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-04-v93g';
+const SERVER_VERSION       = '2026-06-04-v93h';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -67,7 +67,16 @@ function reversalThreshold(total) {
 // this fraction or below — i.e. it's been carved up by 2+ attackers, none of
 // whom individually reached conquestThreshold(). The largest foreign holder
 // is then declared the conqueror.
-const FALLEN_NATIVE_FRAC = 0.05;
+const FALLEN_NATIVE_FRAC = 0.05; // (legacy — retained for the debug endpoint label)
+// v93h: contested-territory conquest. Measuring fall vs TOTAL land made big /
+// multi-attacked countries unconquerable — their large UNPAINTED interior (faint
+// prepopulate, never actively painted) diluted every %. Instead a country falls
+// to its largest foreign holder when the CONTESTED (painted) territory is
+// foreign-dominated and a real chunk of the country is in play, and the leading
+// attacker out-holds the native. Tunables:
+const CONTEST_FLOOR      = 0.40; // >= 40% of the country must be painted (contested)
+const CONTEST_MAJORITY   = 0.70; // foreigners must hold >= 70% of the painted territory
+const CONTEST_TOTAL_FRAC = 0.60; // OR foreigners painted >= 60% of ALL land (decisive coverage)
 const MAX_STROKE_PX      = 500;
 const BROADCAST_MS       = 1000;  // v77: 1Hz delta broadcast (was 20Hz/50ms).
                                     // Client visually staggers paints over ~900ms
@@ -3625,35 +3634,28 @@ function applyPixels(pixels, countryId) {
     if (champId != null && !conqueredSet.has(key) && champOwned / total >= conquestThreshold(total)) {
       _conquerGeo(geo, champId, conquests, changed);
     } else if (!permanentlyConquered.has(_geoId)) {
-      // v91a: fallen-by-plurality — a country CARVED UP by 2+ attackers where
-      // no single one hit conquestThreshold(). Declare the largest foreign
-      // holder the conqueror.
-      //
-      // v91a CRITICAL GUARD: the v91 version checked only native ≤5%, but
-      // geoClaimCnt[native] counts PAINTED pixels — a fresh country owns its
-      // whole territory via prepopulate while its painted-count is ~0. That
-      // made every barely-touched country "fall" to a one-pixel bot at world
-      // start, cascading mass conquests + a 100× delta flood. So we require
-      // genuine occupation: foreign sum ≥ threshold AND ≥2 distinct holders.
-      // v92a: foreign-sum requirement lowered 0.90 → 0.70 to give multi-
-      // attacker carve-ups a real chance to topple a country no single
-      // attacker can reach the conquest threshold on. The largest foreign
-      // holder (topId) is designated the conqueror — per requirement.
-      // At world start foreign≈0 so this still can't false-fire.
+      // v93h: contested-territory fall. The champion path above measures vs TOTAL
+      // land (incl. the dormant unpainted interior), so it rarely fires for big or
+      // carved-up countries. Here we look at the PAINTED (contested) territory:
+      // a country falls to its largest foreign holder when (a) a real chunk of it
+      // is painted (>= CONTEST_FLOOR) and foreigners hold >= CONTEST_MAJORITY of
+      // that painted area, OR (b) foreigners have painted >= CONTEST_TOTAL_FRAC of
+      // ALL land outright — AND in either case the leading attacker out-holds the
+      // native (so a strong defender, by reclaiming pixels, keeps the country).
+      // At world start nothing is painted, so this can't false-fire.
       const claims = geoClaimCnt[geo] || {};
       const nativeOwned = claims[_geoId] || 0;
-      if (nativeOwned / total <= FALLEN_NATIVE_FRAC) {
-        let topId = null, topCnt = 0, foreignSum = 0, foreignHolders = 0;
-        for (const [cId, cnt] of Object.entries(claims)) {
-          if (cId === _geoId) continue;            // skip the native country
-          if (cnt <= 0) continue;
-          foreignSum += cnt;
-          foreignHolders++;
-          if (cnt > topCnt) { topCnt = cnt; topId = cId; }
-        }
-        if (topId && foreignHolders >= 2 && foreignSum / total >= 0.70) {
-          _conquerGeo(geo, topId, conquests, changed);
-        }
+      let topId = null, topCnt = 0, foreignSum = 0;
+      for (const [cId, cnt] of Object.entries(claims)) {
+        if (cId === _geoId || cnt <= 0) continue;  // skip native
+        foreignSum += cnt;
+        if (cnt > topCnt) { topCnt = cnt; topId = cId; }
+      }
+      const painted = foreignSum + nativeOwned;
+      const contestedMajority = painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= CONTEST_MAJORITY;
+      const decisiveCoverage  = (foreignSum / total) >= CONTEST_TOTAL_FRAC;
+      if (topId && topCnt > nativeOwned && (contestedMajority || decisiveCoverage)) {
+        _conquerGeo(geo, topId, conquests, changed);
       }
     }
     for (const [cId, cnt] of Object.entries(geoClaimCnt[geo] || {})) {
@@ -4999,22 +5001,34 @@ const httpServer = http.createServer(async (req, res) => {
       permanentlyConquered: permanentlyConquered.has(geoIdStr),
       immuneForMs: Math.max(0, immuneUntil - Date.now()),
       thresholds: {
-        conquestPct: +(cThresh * 100).toFixed(1),
+        conquestPct: +(cThresh * 100).toFixed(1),         // champion path: ally-combined of TOTAL
         reversalPct: +(reversalThreshold(total) * 100).toFixed(1),
-        fallenNativeMaxPct: FALLEN_NATIVE_FRAC * 100,
-        fallenForeignMinPct: 70,
+        contestFloorPct: CONTEST_FLOOR * 100,              // v93h contested path
+        contestMajorityPct: CONTEST_MAJORITY * 100,
+        decisiveTotalPct: CONTEST_TOTAL_FRAC * 100,
       },
       champion: champId ? {
         id: champId, name: _countryName(champId),
         allyCombined: champOwned, allyPct: total ? +(champOwned / total * 100).toFixed(1) : 0,
         wouldConquer: total ? (champOwned / total >= cThresh) : false,
       } : null,
-      fallenByPlurality: {
-        nativePct: total ? +(nativeCnt / total * 100).toFixed(1) : 0,
-        foreignSumPct: total ? +(foreignSum / total * 100).toFixed(1) : 0,
-        foreignHolders,
-        wouldTrigger: total ? (nativeCnt / total <= FALLEN_NATIVE_FRAC && foreignHolders >= 2 && foreignSum / total >= 0.70) : false,
-      },
+      // v93h: contested-territory fall diagnostics (matches the live logic).
+      contested: (() => {
+        const painted = foreignSum + nativeCnt;
+        const topForeign = holders.find(h => !h.native && h.pixels > 0);
+        const topCnt = topForeign ? topForeign.pixels : 0;
+        const contestedMajority = painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= CONTEST_MAJORITY;
+        const decisiveCoverage  = total ? (foreignSum / total) >= CONTEST_TOTAL_FRAC : false;
+        return {
+          paintedPct:          total ? +(painted / total * 100).toFixed(1) : 0,
+          foreignOfPaintedPct: painted ? +(foreignSum / painted * 100).toFixed(1) : 0,
+          foreignOfTotalPct:   total ? +(foreignSum / total * 100).toFixed(1) : 0,
+          nativePaintedPct:    total ? +(nativeCnt / total * 100).toFixed(1) : 0,
+          foreignHolders,
+          topForeign:          topForeign ? { name: topForeign.name, pct: topForeign.pct } : null,
+          wouldFall:           !!(topForeign && topCnt > nativeCnt && (contestedMajority || decisiveCoverage)),
+        };
+      })(),
       // v92k: live multi-attack tracker state for this defender (rolling window).
       multiAttack: (() => {
         const eff = Math.min(MULTI_ATTACK_MAX_PIXELS,
