@@ -19,7 +19,7 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-06-04-alliance-channels-v93d';
+const BOT_VERSION = '2026-06-04-alliance-channels-v93e';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
@@ -704,7 +704,7 @@ function _allianceName(key){
 function _slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,90); }
 
 async function announceAlliance(guild, type, key, countryIds, extra) {
-  const channelName = process.env.ALLIANCE_CHANNEL || 'alliance-update';
+  const channelName = process.env.ALLIANCE_CHANNEL || 'alliance-updates';
   const channel = guild.channels.cache.find(c => c.name === channelName && c.isTextBased());
   if (!channel) {
     console.log(`[Alliance] Channel #${channelName} not found — not announced`);

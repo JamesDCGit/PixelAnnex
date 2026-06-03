@@ -80,6 +80,22 @@ DISABLE_BOTS="" pm2 restart pixelannex --update-env
 Server logs `[Bot] *** BOTS DISABLED via DISABLE_BOTS env var ***` at
 startup when the switch is on. Always grep for that after a deploy.
 
+### Discord channels (canonical — operator-confirmed 2026-06-04)
+
+The bot reads/writes these by NAME. The defaults in `bot.js` MUST match the real
+channel names exactly, or the bot silently posts nowhere ("channel not found").
+No channel env vars are set in `.env`, so the code defaults below are what's live.
+
+| Channel | Purpose | bot.js env / default |
+|---------|---------|----------------------|
+| `#general` | general chat | — |
+| `#war-room` (singular) | war reporter feed (conquest/siege) **and** alliance war-room private threads | `WAR_CHANNEL` / `'war-room'`; `ALLIANCE_WARROOMS_CHANNEL` / `'war-room'` |
+| `#alliance-updates` (PLURAL) | alliance formation/grow/dissolve announcements | `ALLIANCE_CHANNEL` / `'alliance-updates'` |
+| `#alliance-radar` (singular) | nascent-coalition progress cards + Join/Leave buttons | `ALLIANCE_RADAR_CHANNEL` / `'alliance-radar'` |
+
+Note the (deliberate) inconsistency: `war-room`/`alliance-radar` are singular but
+`alliance-updates` is plural. Don't "normalize" them — match the guild exactly.
+
 ## Architecture (post v77 Path A scaling)
 
 ### Server delta broadcast
