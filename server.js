@@ -39,7 +39,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-03-v92v';
+const SERVER_VERSION       = '2026-06-03-v92w';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2052,6 +2052,10 @@ function checkSiegeState(geoIdx) {
       ratio:       Math.round(ratio * 100),
       timestamp:   Date.now(),
     });
+    // v92w: also tell game CLIENTS so the in-game siege flash + "under attack"
+    // alert are server-authoritative (independent of viewport delta filtering,
+    // which otherwise starves the client's geoClaimCnt/geoLossLog heuristic).
+    broadcast(JSON.stringify({ type: 'siege', countryId: geoToId(geoIdx), attackerId: dominantEnemy, active: true }));
   } else if (ratio < SIEGE_THRESHOLD && wasSieged) {
     siegedSet.delete(geoIdx);
     emitBotEvent({
@@ -2060,6 +2064,7 @@ function checkSiegeState(geoIdx) {
       defenderId:  geoToId(geoIdx),
       timestamp:   Date.now(),
     });
+    broadcast(JSON.stringify({ type: 'siege', countryId: geoToId(geoIdx), active: false }));
   }
 }
 
@@ -3299,6 +3304,7 @@ function buildSnapshot() {
   return {
     runs,
     conquered: [...conqueredSet],
+    sieged: [...siegedSet].map(g => geoToId(g)), // v92w: current sieges for late-joiners
     players: [...players.values()].map(p => ({
       countryId: p.countryId,
       pixels: countryPxCount[p.countryId] || 0,
@@ -3362,8 +3368,13 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
   _conquestImmunity.set(geoId, Date.now() + CONQUEST_IMMUNITY_MS);
   conqueredSet.add(geo + ':' + conquerorId);
   permanentlyConquered.add(geoId); // persists through reversals until world reset
-  siegedSet.delete(geo);           // v92q: clear any active siege — a fallen country
-                                   // is out of the siege system (no stale siege-end later)
+  // v92q/v92w: clear any active siege — a fallen country is out of the siege
+  // system. Tell clients too so the in-game flash stops (checkSiegeState won't
+  // fire siege-end for a now-permanentlyConquered geo).
+  if (siegedSet.has(geo)) {
+    siegedSet.delete(geo);
+    broadcast(JSON.stringify({ type: 'siege', countryId: geoId, active: false }));
+  }
   setTimeout(() => _onCountryConquered(geoId), 0);
   conquests.push({ geoIdx: geo, countryId: conquerorId });
   changed.push(...finisherFill(geo, conquerorId));
@@ -5405,7 +5416,7 @@ wss.on('connection', (ws, req) => {
           type: 'welcome',
           playerId: pid,
           botIds: [...bots.keys()],
-          state: { conquered: _snap.conquered, players: _snap.players },
+          state: { conquered: _snap.conquered, players: _snap.players, sieged: _snap.sieged },
           david: buildDavidSnapshot(),
           serverVersion: SERVER_VERSION,
           nukeZones: (_pruneServerNukeZones(), _nukeZones.slice()),

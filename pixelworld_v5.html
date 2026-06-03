@@ -3295,7 +3295,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-03-v92v';
+const CODE_VERSION = '2026-06-03-v92w';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6576,6 +6576,10 @@ function isUnderSiege(geoIdx){
 let _siegeFrame = 0;
 let _siegePixelCache = {}; // geoIdx → [pixel indices]
 let _siegedSet = new Set(); // currently sieged country indices
+// v92w: server-authoritative siege set (featList indices). Populated by 'siege'
+// messages so the in-game flash works even when viewport delta filtering means
+// the client never sees the attacking pixels (geoClaimCnt/geoLossLog stay empty).
+const _serverSieged = new Set();
 
 function buildSiegeCache(geoIdx){
   // v74: use geoPixelList (per-geo Int32Array built at load) instead of
@@ -6614,15 +6618,18 @@ function tickSiegeFlash(){
   const sieged = _siegeScratch;
   sieged.length = 0;
   for(let gi=0; gi<featList.length; gi++){
-    if(isUnderSiege(gi)) sieged.push(gi);
+    // v92w: flash if the client heuristic says sieged OR the server told us so.
+    if(isUnderSiege(gi) || _serverSieged.has(gi)) sieged.push(gi);
   }
 
-  // Detect newly sieged countries (entered state) → play alert
+  // Detect newly sieged countries (entered state) → play alert.
+  // v92w: scope the siren to YOUR country only — _serverSieged now covers every
+  // besieged country globally, and a siren per global siege would be noise.
   for(let i=0; i<sieged.length; i++){
     const gi = sieged[i];
     if(!_siegedSet.has(gi)){
       _siegedSet.add(gi);
-      sfxUnderAttack();
+      if(gi === currentIdx) sfxUnderAttack();
     }
   }
   // Build current-frame Set for diffing (small N — only sieged countries)
@@ -7425,6 +7432,7 @@ function mpConnect() {
     _joinSent = false;
     _localPlayerId = null;
     _lastVpSent = ''; // v92p: re-send viewport after reconnect
+    _serverSieged.clear(); // v92w: re-seeded from welcome on reconnect
     for (const k in _activeMonsters) delete _activeMonsters[k];
     craters.length = 0;
     // v90a: _ownStrokeQueue removed (own-stroke layer retired)
@@ -7883,6 +7891,15 @@ function mpHandleMessage(msg) {
       // runs, THEN replays conquests (correct order: flag placement needs the
       // runs applied first).
       _pendingConquered = (msg.state && msg.state.conquered) ? msg.state.conquered : [];
+      // v92w: seed server-authoritative siege set so a mid-siege reconnect/late-join
+      // flashes immediately (the 'siege' event only fires on state transitions).
+      _serverSieged.clear();
+      if (msg.state && Array.isArray(msg.state.sieged)) {
+        for (const cid of msg.state.sieged) {
+          const sfi = idToFeatIdx.get(String(cid));
+          if (sfi !== undefined) _serverSieged.add(sfi);
+        }
+      }
       scheduleLegend();
       break;
     }
@@ -8016,6 +8033,23 @@ function mpHandleMessage(msg) {
       if (targetFi !== undefined) eraseFlag(targetFi);
       scheduleLegend();
       refreshConqueredCountLocal(); // v92b: instant Conquered-count update
+      break;
+    }
+
+    case 'siege': {
+      // v92w: server-authoritative siege signal. Drives the in-game red flash +
+      // the "Under Attack" card/sound for your own country, independent of the
+      // viewport delta filter. { countryId, attackerId?, active }
+      const fi = idToFeatIdx.get(String(msg.countryId));
+      if (fi === undefined) break;
+      if (msg.active) {
+        _serverSieged.add(fi);
+        // Alert card only when it's YOUR country (the sound fires from
+        // tickSiegeFlash when a country newly enters the flash set, scoped to you).
+        if (fi === currentIdx) showActivityToast(fi, false);
+      } else {
+        _serverSieged.delete(fi);
+      }
       break;
     }
 
