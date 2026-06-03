@@ -3295,7 +3295,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93h';
+const CODE_VERSION = '2026-06-04-v93i';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10358,15 +10358,28 @@ function getHighlightPerk(){ return HIGHLIGHT_PERKS[getRankIndex()] || null; }
 // regen ticker so the boost applies passively while a highlight is up.
 let _highlightRegenMult = 1.0;
 
+// v93i: rally cooldown. Previously setHighlight() had NO cooldown — spamming the
+// rally button perpetually refreshed the 30s regen multiplier AND re-armed the
+// one-shot initial-pixel bonus (reset _highlightBonusClaimed each call), letting
+// players farm huge bonuses. Now a rally locks out the next one for
+// RALLY_COOLDOWN_MS (highlight lasts 30s → ~50% uptime). Client-side gate; the
+// server's stroke-rate cap remains the hard anti-cheat backstop.
+const RALLY_COOLDOWN_MS = 60000;
+let _rallyCooldownUntil = 0;
+function rallyCooldownLeftMs(){ return Math.max(0, _rallyCooldownUntil - Date.now()); }
+
 function setHighlight(geoIdx){
   // v87: gated to Lieutenant+ (rank index >= 1). Soldiers cannot highlight.
   const ri = getRankIndex();
   const perk = HIGHLIGHT_PERKS[ri];
   if(!perk) return;
+  // v93i: respect the rally cooldown even if setHighlight is reached directly.
+  if (rallyCooldownLeftMs() > 0) return;
+  _rallyCooldownUntil = Date.now() + RALLY_COOLDOWN_MS;
   if(highlightTimer) clearInterval(highlightTimer);
   highlightGeoIdx = geoIdx;
   highlightExpiry = Date.now() + 30000;
-  _highlightBonusClaimed = false; // fresh session, initial bonus available again
+  _highlightBonusClaimed = false; // fresh rally, initial bonus available again
   _highlightRegenMult = perk.regenMult;
   updateHighlightBanner();
   // v87: fire the "needs help on the front lines" notification (in-game toast +
@@ -10533,6 +10546,16 @@ function enterHighlightMode(){
     }
     return;
   }
+  // v93i: rally cooldown gate.
+  const cdLeft = rallyCooldownLeftMs();
+  if (cdLeft > 0) {
+    const btn = document.getElementById('btn-highlight');
+    if (btn) { btn.style.borderColor = '#ef4444'; setTimeout(() => btn.style.borderColor = '', 800); }
+    if (typeof actPushCard === 'function') {
+      actPushCard({ variant: 'alert', title: '⏳ Rally recharging', html: 'You can rally again in <b>' + Math.ceil(cdLeft / 1000) + 's</b>.' });
+    }
+    return;
+  }
   highlightMode = true;
   document.getElementById('btn-highlight').classList.add('active');
   document.getElementById('viewport').style.cursor = 'crosshair';
@@ -10550,14 +10573,22 @@ function _refreshHighlightBtnLockState(){
     btn.title = '🔒 Locked — reach Lieutenant (50 px) to call rallies';
     btn.style.opacity = '0.55';
   } else {
-    const perk = HIGHLIGHT_PERKS[ri];
-    const extra = perk && perk.initialBonus > 0
-      ? ' (' + perk.regenMult + '× regen + ' + perk.initialBonus + 'px first pixel while active)'
-      : ' (rally call only)';
-    btn.title = 'Click, then click a country to rally your forces there' + extra;
-    btn.style.opacity = '';
+    const cd = rallyCooldownLeftMs(); // v93i
+    if (cd > 0) {
+      btn.title = '⏳ Rally recharging — ' + Math.ceil(cd / 1000) + 's';
+      btn.style.opacity = '0.55';
+    } else {
+      const perk = HIGHLIGHT_PERKS[ri];
+      const extra = perk && perk.initialBonus > 0
+        ? ' (' + perk.regenMult + '× regen + ' + perk.initialBonus + 'px first pixel while active)'
+        : ' (rally call only)';
+      btn.title = 'Click, then click a country to rally your forces there' + extra;
+      btn.style.opacity = '';
+    }
   }
 }
+// v93i: refresh the rally button each second so its cooldown countdown updates.
+setInterval(() => { if (typeof _refreshHighlightBtnLockState === 'function') _refreshHighlightBtnLockState(); }, 1000);
 // Call on rank changes (refreshRankUI runs on every paint via awardXP)
 const _origRefreshRankUI = refreshRankUI;
 refreshRankUI = function(){
