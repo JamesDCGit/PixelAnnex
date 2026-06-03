@@ -19,12 +19,12 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-06-03-alliance-bc-only-v92z';
+const BOT_VERSION = '2026-06-03-alliance-phase2-v93';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
 
-const { Client, GatewayIntentBits, Events, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, Events, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, ChannelType } = require('discord.js');
 const fetch = global.fetch || require('node-fetch');
 
 // ── Config ────────────────────────────────────────────────────────
@@ -656,6 +656,16 @@ async function dissolveAllianceRole(guild, key) {
   delete _allianceRoleCache[key];
 }
 
+// v93 (Phase 2): deterministic, stable alliance name from the country-set key.
+const _ALLY_ADJ  = ['Iron','Crimson','Azure','Eternal','Sovereign','Grand','Northern','Free','United','Obsidian','Golden','Silent','Burning','Frozen','Radiant','Imperial','Verdant','Shattered','Boundless','Ironclad'];
+const _ALLY_NOUN = ['Pact','Accord','Bloc','League','Axis','Compact','Concord','Entente','Front','Union','Coalition','Covenant','Order','Alliance'];
+function _hashStr(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619);} return h>>>0; }
+function _allianceName(key){
+  const h=_hashStr(String(key));
+  return 'The ' + _ALLY_ADJ[h % _ALLY_ADJ.length] + ' ' + _ALLY_NOUN[(h>>>8) % _ALLY_NOUN.length];
+}
+function _slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,90); }
+
 async function announceAlliance(guild, type, key, countryIds, extra) {
   const channelName = process.env.ALLIANCE_CHANNEL || 'alliance-updates';
   const channel = guild.channels.cache.find(c => c.name === channelName && c.isTextBased());
@@ -663,42 +673,108 @@ async function announceAlliance(guild, type, key, countryIds, extra) {
     console.log(`[Alliance] Channel #${channelName} not found — not announced`);
     return;
   }
+  extra = extra || {};
   const names = countryIds.map(id => COUNTRY_BY_ID[id] || ('Country ' + id));
-  let description, color;
 
+  // Ping the alliance role only if it STILL EXISTS (alliances flap; cached id can
+  // be stale -> "@unknown-role"). Never ping on 'dissolved'.
+  let roleId = (type !== 'dissolved') ? _allianceRoleCache[key] : null;
+  if (roleId && !guild.roles.cache.has(roleId)) { delete _allianceRoleCache[key]; roleId = null; }
+  const roleMention = roleId ? '<@&' + roleId + '>' : null;
+  const allowedMentions = roleMention ? { roles: [roleId] } : { parse: [] };
+
+  // v93 (Phase 2): "Birth of a Superpower" — rich formation embed (auto name,
+  // member/territory stats, combined-footprint screenshot).
   if (type === 'formed') {
-    description = `🤝 **New alliance formed!**\n${names.join(' + ')}\n${extra.memberCount} members united.`;
-    color = 0x22c55e; // green
-  } else if (type === 'dissolved') {
+    const allyName = extra.name || _allianceName(key);
+    const embed = new EmbedBuilder()
+      .setColor(0xfbbf24)
+      .setTitle('🚨 NEW WORLD ALLIANCE FORMED 🚨')
+      .setDescription(`**${allyName}**\n${names.join('  +  ')}\nhas unified — their pixels now count together for world conquest.`)
+      .addFields(
+        { name: 'Members',            value: String(extra.memberCount || countryIds.length), inline: true },
+        { name: 'Combined territory', value: extra.strength ? extra.strength.toLocaleString() + ' px' : '—', inline: true },
+      );
+    const img = _absUrl(extra.imageUrl);
+    if (img) embed.setImage(img);
+    try { await channel.send({ content: roleMention || undefined, embeds: [embed], allowedMentions }); }
+    catch (e) { console.error('[Alliance] formed announce failed:', e.message); }
+    return;
+  }
+
+  let description, color;
+  if (type === 'dissolved') {
     description = `💔 **Alliance dissolved**\n${names.join(' + ')}\nMember count fell below threshold.`;
-    color = 0xef4444; // red
+    color = 0xef4444;
   } else if (type === 'grew') {
-    description = `🌱 **Alliance growing**\n${names.join(' + ')}\nNow ${extra.memberCount} members strong.`;
-    color = 0x3b82f6; // blue
+    description = `🌱 **${extra.name || _allianceName(key)} is growing**\n${names.join(' + ')}\nNow ${extra.memberCount} members strong.`;
+    color = 0x3b82f6;
   } else return;
 
-  // Ping the alliance role only if it STILL EXISTS in the guild.
-  // Fix (@unknown-role): alliances flap (form/dissolve every 30s recompute),
-  // so the cached role ID can point at a role that dissolveAllianceRole() has
-  // already deleted — Discord then renders the mention as "@unknown-role".
-  // Also never ping on a 'dissolved' announce (the role is being removed).
-  let roleId = (type !== 'dissolved') ? _allianceRoleCache[key] : null;
-  if (roleId && !guild.roles.cache.has(roleId)) {
-    // Stale cache entry — the role no longer exists. Drop the mention.
-    delete _allianceRoleCache[key];
-    roleId = null;
-  }
-  const roleMention = roleId ? '<@&' + roleId + '>' : null;
-
   try {
-    await channel.send({
-      content: roleMention || undefined,
-      embeds: [{ color, description }],
-      allowedMentions: roleMention ? { roles: [roleId] } : { parse: [] },
-    });
+    await channel.send({ content: roleMention || undefined, embeds: [{ color, description }], allowedMentions });
   } catch (e) {
     console.error('[Alliance] Announce failed:', e.message);
   }
+}
+
+// ── v93 (Phase 2): private war-room threads under #war-rooms ──
+// One private thread per alliance, members auto-added/removed, archived (not
+// deleted) on dissolution and unarchived if the bloc re-forms.
+const ALLIANCE_WARROOMS_CHANNEL = process.env.ALLIANCE_WARROOMS_CHANNEL || 'war-rooms';
+let _warRoomsChannel = null, _warRoomsWarned = false;
+const _allianceThreads = new Map(); // alliance key → thread id
+function _getWarRoomsChannel(guild) {
+  if (_warRoomsChannel && guild.channels.cache.has(_warRoomsChannel.id)) return _warRoomsChannel;
+  _warRoomsChannel = guild.channels.cache.find(c => c.name === ALLIANCE_WARROOMS_CHANNEL && c.type === ChannelType.GuildText) || null;
+  if (!_warRoomsChannel && !_warRoomsWarned) {
+    console.log(`[WarRoom] #${ALLIANCE_WARROOMS_CHANNEL} not found — create it to enable private war-room threads.`);
+    _warRoomsWarned = true;
+  }
+  return _warRoomsChannel;
+}
+async function ensureWarRoom(guild, key, name, memberIds) {
+  const ch = _getWarRoomsChannel(guild);
+  if (!ch) return;
+  let thread = null;
+  const existingId = _allianceThreads.get(key);
+  if (existingId) { try { thread = await ch.threads.fetch(existingId); } catch (e) { thread = null; } }
+  if (thread && thread.archived) { try { await thread.setArchived(false); } catch (e) {} }
+  if (!thread) {
+    try {
+      thread = await ch.threads.create({
+        name: _slug(name) || ('alliance-' + key),
+        type: ChannelType.PrivateThread,
+        invitable: false,
+        autoArchiveDuration: 10080, // 7 days
+      });
+      _allianceThreads.set(key, thread.id);
+      await thread.send({ content: `🛡️ **${name}** war room. Coordinate strikes here — members are added/removed automatically as the coalition changes.` });
+    } catch (e) { console.error('[WarRoom] create failed:', e.message); return; }
+  }
+  for (const uid of (memberIds || [])) { try { await thread.members.add(uid); } catch (e) {} }
+}
+async function updateWarRoomMembers(guild, key, added, removed) {
+  const ch = _getWarRoomsChannel(guild);
+  if (!ch) return;
+  const id = _allianceThreads.get(key);
+  if (!id) return;
+  let thread; try { thread = await ch.threads.fetch(id); } catch (e) { return; }
+  if (!thread) return;
+  if (thread.archived) { try { await thread.setArchived(false); } catch (e) {} }
+  for (const uid of (added || []))   { try { await thread.members.add(uid); } catch (e) {} }
+  for (const uid of (removed || [])) { try { await thread.members.remove(uid); } catch (e) {} }
+}
+async function archiveWarRoom(guild, key) {
+  const ch = _getWarRoomsChannel(guild);
+  if (!ch) return;
+  const id = _allianceThreads.get(key);
+  if (!id) return;
+  try {
+    const thread = await ch.threads.fetch(id);
+    if (thread && !thread.archived) await thread.setArchived(true, 'PixelAnnex alliance dissolved');
+  } catch (e) {}
+  // keep the map entry so a re-formed bloc reuses (unarchives) the same thread
 }
 
 // ── v92u (Phase 1): #alliance-radar — nascent-coalition progress cards ──
@@ -1142,13 +1218,19 @@ function handleGameEvent(event) {
       handleAllianceProgress(event);
       break;
 
-    case 'alliance_formed':
+    case 'alliance_formed': {
       if (!guild) return;
       console.log(`[Bot] Alliance formed: ${event.key}`);
+      const _allyName = _allianceName(event.key); // v93: stable name shared by announce + thread
       createOrUpdateAllianceRole(guild, event.key, event.countries, event.members);
-      announceAlliance(guild, 'formed', event.key, event.countries, { memberCount: event.members.length });
+      announceAlliance(guild, 'formed', event.key, event.countries, {
+        memberCount: event.members.length, name: _allyName,
+        strength: event.strength, imageUrl: event.imageUrl,
+      });
       handleAllianceProgress({ key: event.key, gone: true }); // remove the radar card on promotion
+      ensureWarRoom(guild, event.key, _allyName, event.members); // v93 Phase 2: private war room
       break;
+    }
 
     case 'alliance_changed':
       if (!guild) return;
@@ -1158,6 +1240,7 @@ function handleGameEvent(event) {
       if (event.added.length > event.removed.length) {
         announceAlliance(guild, 'grew', event.key, event.countries, { memberCount: event.members.length });
       }
+      updateWarRoomMembers(guild, event.key, event.added, event.removed); // v93: keep thread in sync
       break;
 
     case 'alliance_dissolved':
@@ -1165,6 +1248,7 @@ function handleGameEvent(event) {
       console.log(`[Bot] Alliance dissolved: ${event.key}`);
       dissolveAllianceRole(guild, event.key);
       announceAlliance(guild, 'dissolved', event.key, event.countries);
+      archiveWarRoom(guild, event.key); // v93: archive (not delete) the war room
       break;
 
     case 'rally_call':          // v87: player rally — completes the shipped feature

@@ -39,7 +39,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-03-v92z';
+const SERVER_VERSION       = '2026-06-03-v93';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -557,6 +557,36 @@ function makeCountryShot(countryId, flagCountryId) {
     return '/shots/' + name;
   } catch (e) {
     console.warn('[Mapshot] render failed for', countryId, e.message);
+    return null;
+  }
+}
+
+// v93 (Phase 2): combined-territory shot for a new alliance — frames the union of
+// all member countries' landmasses (no single flag) so the announcement shows the
+// bloc's footprint. Reuses renderCountryPNG, which colours every painted pixel in
+// the crop by its owner.
+function makeAllianceShot(countryIds) {
+  try {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, any = false;
+    for (const cid of countryIds) {
+      const f = _shotFrame(parseInt(cid, 10)) || geoBbox[parseInt(cid, 10)];
+      if (!f) continue;
+      any = true;
+      if (f.minX < minX) minX = f.minX; if (f.maxX > maxX) maxX = f.maxX;
+      if (f.minY < minY) minY = f.minY; if (f.maxY > maxY) maxY = f.maxY;
+    }
+    if (!any) return null;
+    const buf = renderCountryPNG({
+      MAP_W, MAP_H, geoAtPixel, claimByPixel, landMask, idxToId, geoColorsById,
+      bbox: { minX, minY, maxX, maxY },
+    });
+    if (!buf) return null;
+    const name = 'alliance_' + countryIds.slice().sort().join('_').slice(0, 40) + '_' + Date.now().toString(36) + '.png';
+    fs.writeFileSync(path.join(SHOTS_DIR, name), buf);
+    _pruneShots();
+    return '/shots/' + name;
+  } catch (e) {
+    console.warn('[Mapshot] alliance render failed:', e.message);
     return null;
   }
 }
@@ -2680,6 +2710,9 @@ function recomputeAlliances() {
         key,
         countries: alliance.countries,
         members:   alliance.members,
+        // v93: Phase 2 — combined held territory + a multi-country footprint shot
+        strength:  alliance.countries.reduce((s, c) => s + (countryPxCount[c] || 0), 0),
+        imageUrl:  makeAllianceShot(alliance.countries) || undefined,
       });
     } else {
       // Check if member list changed
