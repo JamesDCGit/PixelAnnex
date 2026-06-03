@@ -3295,7 +3295,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-03-v92w';
+const CODE_VERSION = '2026-06-03-v92x';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5095,7 +5095,19 @@ function scheduleLegend(){
   clearTimeout(legTimer);legTimer=setTimeout(()=>{
     const el=$("leg-items");el.innerHTML="";
     const base = totalLandPx || 1;
-    Object.entries(claimerCount).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,20).forEach(([idx,cnt],_rankPos)=>{
+    // v92x: merge featList entries that share a country id (multipolygon split:
+    // mainland + islands) so a country isn't listed twice — own paints (currentIdx)
+    // and incoming deltas (idToFeatIdx) can bucket the same country under different
+    // indices. Aggregate by country id, keeping one representative fi for display.
+    const _terrByCountry=new Map();
+    for(const [fiStr,v] of Object.entries(claimerCount)){
+      if(!(v>0)) continue;
+      const f=featList[+fiStr]; if(!f) continue;
+      const cid=String(f.id);
+      const e=_terrByCountry.get(cid);
+      if(e) e.cnt+=v; else _terrByCountry.set(cid,{cnt:v,fi:+fiStr});
+    }
+    [..._terrByCountry.values()].map(e=>[e.fi,e.cnt]).sort((a,b)=>b[1]-a[1]).slice(0,20).forEach(([idx,cnt],_rankPos)=>{
       const f=featList[+idx];if(!f)return;
       const pct=(cnt/base*100).toFixed(2);
       // Blend country colour against land base (#535353) at alpha=215
@@ -10852,7 +10864,20 @@ vp.addEventListener("mousemove",e=>{
       if(gi>=0){
         const total=geoTotal[gi]||1;
         const gc=geoClaimCnt[gi]||{};
-        const claimers=Object.entries(gc).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]);
+        // v92x: merge featList entries that share a country id. A country can be
+        // split into several featList features (multipolygon: mainland + islands),
+        // and own-paints (currentIdx) vs incoming deltas (idToFeatIdx) can bucket
+        // the same country under different indices — which showed e.g. "Australia"
+        // twice. The SERVER counts by country id (one entry), so collapse to match.
+        const _byCountry=new Map(); // countryId -> { count, fi }
+        for(const [fiStr,n] of Object.entries(gc)){
+          if(!(n>0)) continue;
+          const f=featList[+fiStr]; if(!f) continue;
+          const cid=String(f.id);
+          const e=_byCountry.get(cid);
+          if(e) e.count+=n; else _byCountry.set(cid,{count:n,fi:+fiStr});
+        }
+        const claimers=[..._byCountry.values()].map(e=>[e.fi,e.count]).sort((a,b)=>b[1]-a[1]);
 
         // Conquest status
         const conqueredBy = [...conqueredSet].find(k=>k.startsWith(gi+":"));
