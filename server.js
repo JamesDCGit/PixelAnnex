@@ -39,7 +39,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-03-v93b';
+const SERVER_VERSION       = '2026-06-03-v93c';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2636,7 +2636,11 @@ if (MONSTER_DEBUG) {
 
 // v86: alliances now require 10+ members (was 3). Discourages tiny clique-
 // alliances and means alliances only form when there's real shared interest.
-const ALLIANCE_MIN_MEMBERS = 10;
+// v93c: env-configurable so the formation flow can be staged-tested by lowering
+// it via PM2 (ALLIANCE_MIN_MEMBERS=3 pm2 restart ... --update-env) without a code
+// deploy. Defaults to 10. NOTE: not present in .env, so dotenv override:true
+// leaves a PM2-injected value intact.
+const ALLIANCE_MIN_MEMBERS = parseInt(process.env.ALLIANCE_MIN_MEMBERS, 10) || 10;
 const ALLIANCE_RECOMPUTE_MS = 30000;
 
 // Active alliances: alliance_key (sorted country IDs joined by '-') → { countries:[], members:[discordIds] }
