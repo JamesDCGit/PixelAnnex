@@ -168,13 +168,21 @@ Before editing any function:
 - [x] v86–v86b: monster outlines, right-click OWNER-footprint inspect, About page, alliance/rivalry overhaul
 - [x] v87: progressive Lieutenant+ rally system, bucket max 100, encircle halved, 1px monster shape outline
 - [x] v88: localized tweet tagging (flags + #hashtags) + server-side 256×256 PNG screenshots (pure-JS encoder, NO native dep)
-- [ ] Per-region viewport delta filter — ~90% bandwidth cut for zoomed players
-- [ ] Binary delta protocol (packed Uint16) — 4× smaller, no JSON.parse cost
-- [ ] Server snapshot RLE → binary — faster initial connection
+- [x] v92: binary delta protocol (packed u16) + v92p per-region viewport delta filter + v92s snapshot RLE→binary
 - [x] v89: cleanups — pixel-inspector popup layout fixed (bodyBlock + swatch legend), duplicate escapeHtml removed, English i18n thresholds corrected (60% conquest / 50% fightback / Nuke)
-- [ ] **Alliance overhaul** — design doc written (`docs/alliance-system-design.md`); awaiting operator decisions (threads vs categories, leader definition, vault tuning). Build not started.
+- [x] **Alliance overhaul COMPLETE** (v92u–v93g): 3C reskin, 3D onboarding, Phase 1 radar (Join/Leave), Phase 2 superpower announcement + war-room private threads, 3A `/strike` rally points, 3B vaults + Allied Surge (`/surge`), plus resync-on-connect reliability + channel-name fixes. Coalition membership = B/C slots only; alliance state persisted in `alliance_state.json`.
 - [ ] Translate non-English i18n strings to current thresholds (9 locales still cite 70%/80% conquest, "Bombs"). English fixed in v89.
 - [ ] Remove dead `toggleOwnStroke` / `_ownStrokeVisible` / own-stroke layer (button gone since v82, layer always off)
+
+### Operator backlog (2026-06-04) — after resync-fix + 3B
+- [ ] **Conquer bug (recurring):** countries carved up by MULTIPLE attackers still aren't falling. The fallen-by-plurality path (native ≤5% AND foreign-sum ≥70% AND ≥2 holders) isn't triggering in practice — re-investigate with `/api/debug/country` on a stuck multi-attacked country.
+- [ ] **Fallen-country selection:** grey out + strike-through conquered countries in the in-game country picker (can't be selected; `permanentlyConquered`).
+- [ ] **Slow monster spawns:** UFO/monsters should appear ~once at a random time per 15 min (currently too frequent).
+- [ ] **/worldstate command:** public output in `#general` — total conquests, country in the lead, etc.
+- [ ] **/rally tuning:** players spam `/rally` for huge bonuses — add cooldown/diminishing returns / cap the bonus.
+- [ ] **Country-number bug:** "Country 171" and "Country 65" appearing (unmapped/placeholder geo IDs — find source; 171/065 have no name).
+- [ ] **Pixel inspector:** also show the OWNER (native) country's % of its own land, not just the invaders'.
+- [ ] **Daily status + GIF:** move to `#general`, run every **12 hours** (not 24), with **15-min** frame capture (currently 30-min/24h to #alliance-updates+twitter).
 
 ## Screenshots for tweets (v88)
 
