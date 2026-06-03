@@ -19,7 +19,7 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-06-04-alliance-channels-v93e';
+const BOT_VERSION = '2026-06-04-alliance-resync-v93f';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
@@ -774,13 +774,31 @@ async function ensureWarRoom(guild, key, name, memberIds) {
   const ch = _getWarRoomsChannel(guild);
   if (!ch) return;
   let thread = null;
+  const wantName = _slug(name) || ('alliance-' + key);
   const existingId = _allianceThreads.get(key);
   if (existingId) { try { thread = await ch.threads.fetch(existingId); } catch (e) { thread = null; } }
+  // v93f: if not in our (in-memory) map, look it up by name before creating — the
+  // map is lost on bot restart, so without this a re-formed/reconciled alliance
+  // would spawn a DUPLICATE thread each restart. Check active then archived.
+  if (!thread) {
+    try {
+      const active = await ch.threads.fetchActive();
+      const f = active.threads.find(t => t.name === wantName);
+      if (f) { thread = f; _allianceThreads.set(key, f.id); }
+    } catch (e) {}
+  }
+  if (!thread) {
+    try {
+      const archived = await ch.threads.fetchArchived();
+      const f = archived.threads.find(t => t.name === wantName);
+      if (f) { thread = f; _allianceThreads.set(key, f.id); }
+    } catch (e) {}
+  }
   if (thread && thread.archived) { try { await thread.setArchived(false); } catch (e) {} }
   if (!thread) {
     try {
       thread = await ch.threads.create({
-        name: _slug(name) || ('alliance-' + key),
+        name: wantName,
         type: ChannelType.PrivateThread,
         invitable: false,
         autoArchiveDuration: 10080, // 7 days
@@ -812,6 +830,24 @@ async function archiveWarRoom(guild, key) {
     if (thread && !thread.archived) await thread.setArchived(true, 'PixelAnnex alliance dissolved');
   } catch (e) {}
   // keep the map entry so a re-formed bloc reuses (unarchives) the same thread
+}
+
+// v93f: pull current alliances from the server and ensure each has a role +
+// war-room thread + cached state — WITHOUT announcing (silent reconcile). Run on
+// every SSE (re)connect so formations missed during downtime are recovered.
+async function reconcileAlliances() {
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (!guild) return;
+  let data;
+  try { data = await gameFetch('/api/bot/alliances'); } catch (e) { return; }
+  const list = (data && data.alliances) || [];
+  for (const a of list) {
+    try {
+      createOrUpdateAllianceRole(guild, a.key, a.countries, a.members);
+      await ensureWarRoom(guild, a.key, _allianceName(a.key), a.members);
+    } catch (e) { /* per-alliance failure shouldn't abort the rest */ }
+  }
+  if (list.length) console.log('[Alliance] reconciled ' + list.length + ' alliance(s) on connect');
 }
 
 // ── v92u (Phase 1): #alliance-radar — nascent-coalition progress cards ──
@@ -946,6 +982,13 @@ async function connectEventStream() {
     }
     console.log('[Bot] Event stream connected');
     _sseRetryDelay = 1000;
+    // v93f: reconcile alliances on (re)connect. alliance_formed is a one-shot SSE
+    // event with no buffering, so any formation that happened while the bot was
+    // disconnected (restart, reconnect gap) is otherwise lost — roles/threads
+    // never get created and /strike can't @-ping. Pulling the current alliance
+    // list on connect and ensuring role+thread (silently, no announce) closes
+    // that gap and also rebuilds the in-memory thread/role caches after a restart.
+    reconcileAlliances().catch(() => {});
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
