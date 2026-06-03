@@ -3295,7 +3295,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-03-v93c';
+const CODE_VERSION = '2026-06-04-v93g';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8088,6 +8088,18 @@ function mpHandleMessage(msg) {
         highlightedIdx = fi;
         highlightUntil = Date.now() + (msg.ttl || 45000);
       }
+      break;
+    }
+
+    case 'surge': {
+      // v93g (Phase 3B): Allied Surge active for us. The +50% regen is applied
+      // server-side on the stroke bucket; this is just the player-facing cue.
+      const _mins = Math.round((msg.durationMs || 300000) / 60000);
+      actPushCard({
+        variant: 'win',
+        title: '⚡ Allied Surge!',
+        html: '+50% regen for the next <b>' + _mins + ' min</b> — all hands, deploy now!',
+      });
       break;
     }
 

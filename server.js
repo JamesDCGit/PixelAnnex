@@ -39,7 +39,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-03-v93c';
+const SERVER_VERSION       = '2026-06-04-v93g';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2792,6 +2792,72 @@ function getAllianceForCountry(countryId) {
   return null;
 }
 
+// ── v93g (Phase 3B): Alliance Vaults + Allied Surge ──────────────────────────
+// Vault = persisted per-alliance war-chest that accrues 5% of online allied
+// humans' passive regen. Allied Surge = leader-only, once/24h/alliance, gives
+// online members +50% stroke-bucket refill for 5 min. ALL enforcement is
+// server-side (cooldown via timestamp, leader check, eligibility).
+const ALLIANCE_STATE_FILE = path.join(__dirname, 'alliance_state.json');
+let _allianceVaults    = {}; // key -> accrued px
+let _allianceLastSurge = {}; // key -> last surge start ts
+const _surgeUntil      = new Map(); // pid -> surge-active-until ts (in-memory; surge is short)
+const VAULT_ACCRUAL_MS   = 30000;
+const VAULT_REGEN_FRAC   = 0.05;
+const SURGE_MS           = 5 * 60 * 1000;
+const SURGE_COOLDOWN_MS  = 24 * 60 * 60 * 1000;
+const SURGE_REFILL_MULT  = 1.5;
+const _RANK_INDEX = { Soldier: 0, Lieutenant: 1, Captain: 2, General: 3, Admiral: 4 };
+
+function loadAllianceState() {
+  try {
+    if (fs.existsSync(ALLIANCE_STATE_FILE)) {
+      const d = JSON.parse(fs.readFileSync(ALLIANCE_STATE_FILE, 'utf8'));
+      _allianceVaults    = d.vaults || {};
+      _allianceLastSurge = d.lastSurge || {};
+    }
+  } catch (e) { console.warn('[Alliance] state load failed:', e.message); }
+}
+let _allianceStateDirty = false;
+function _markAllianceStateDirty() { _allianceStateDirty = true; }
+setInterval(() => {
+  if (!_allianceStateDirty) return;
+  _allianceStateDirty = false;
+  try { fs.writeFileSync(ALLIANCE_STATE_FILE, JSON.stringify({ vaults: _allianceVaults, lastSurge: _allianceLastSurge })); }
+  catch (e) { console.warn('[Alliance] state save failed:', e.message); }
+}, 15000);
+loadAllianceState();
+
+// Which alliance does a linked human belong to?
+function getAllianceForDiscord(discordId) {
+  if (!discordId) return null;
+  for (const [key, a] of alliances) if (a.members.includes(discordId)) return { key, ...a };
+  return null;
+}
+// Leader = highest game-rank linked member; ties broken deterministically (lowest discordId).
+function getAllianceLeader(alliance) {
+  let best = null, bestRank = -1;
+  for (const did of alliance.members) {
+    const pr = profiles.get(did);
+    const r = _RANK_INDEX[(pr && pr.rank) || 'Soldier'] || 0;
+    if (r > bestRank || (r === bestRank && (best === null || did < best))) { bestRank = r; best = did; }
+  }
+  return best;
+}
+
+// Vault accrual: every 30s, online allied humans contribute 5% of base passive
+// regen to their alliance's vault. Bots and offline players excluded.
+setInterval(() => {
+  let any = false;
+  for (const [, p] of players) {
+    if (p.isBot || !p.discordId || !p.ws || p.ws.readyState !== WebSocket.OPEN) continue;
+    const al = getAllianceForDiscord(p.discordId);
+    if (!al) continue;
+    _allianceVaults[al.key] = (_allianceVaults[al.key] || 0) + STROKE_REFILL_RATE_PS * VAULT_REGEN_FRAC * (VAULT_ACCRUAL_MS / 1000);
+    any = true;
+  }
+  if (any) _markAllianceStateDirty();
+}, VAULT_ACCRUAL_MS);
+
 // v64: sum pixel count for countryId + all its alliance partners in a given geo.
 // Used so allied countries share conquest credit (any one member painting pushes
 // the combined total towards the threshold).
@@ -3374,7 +3440,11 @@ function _refillStrokeBucket(pid) {
   }
   const elapsedMs = now - b.lastRefillAt;
   if (elapsedMs > 0) {
-    const refill = (elapsedMs / 1000) * STROKE_REFILL_RATE_PS;
+    // v93g: Allied Surge gives +50% refill while active (O(1) lookup; surge map
+    // is tiny and only populated during the 5-min window).
+    const su = _surgeUntil.get(pid);
+    const rate = (su && now < su) ? STROKE_REFILL_RATE_PS * SURGE_REFILL_MULT : STROKE_REFILL_RATE_PS;
+    const refill = (elapsedMs / 1000) * rate;
     b.tokens = Math.min(STROKE_BURST_MAX, b.tokens + refill);
     b.lastRefillAt = now;
   }
@@ -5272,6 +5342,57 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // v93g (Phase 3B): /api/bot/surge — leader triggers Allied Surge. All checks
+  // server-side: must be the alliance leader, once per 24h per alliance.
+  if (url.pathname === '/api/bot/surge' && req.method === 'POST') {
+    if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const discordId = String((JSON.parse(body || '{}')).discordId || '');
+        if (!discordId) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'missing discordId' })); return; }
+        const al = getAllianceForDiscord(discordId);
+        if (!al) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'not in an alliance' })); return; }
+        const leader = getAllianceLeader(al);
+        if (String(leader) !== discordId) {
+          const lp = profiles.get(leader);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: 'not the leader', leaderName: (lp && lp.username) || 'the alliance leader' }));
+          return;
+        }
+        const now = Date.now();
+        const last = _allianceLastSurge[al.key] || 0;
+        if (now - last < SURGE_COOLDOWN_MS) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: 'on cooldown', cooldownRemainingMs: SURGE_COOLDOWN_MS - (now - last) }));
+          return;
+        }
+        // Activate.
+        _allianceLastSurge[al.key] = now; _markAllianceStateDirty();
+        const until = now + SURGE_MS;
+        const memberSet = new Set(al.members.map(String));
+        let recipients = 0;
+        for (const [pid, p] of players) {
+          if (p.isBot || !p.discordId || !p.ws || p.ws.readyState !== WebSocket.OPEN) continue;
+          if (memberSet.has(String(p.discordId))) {
+            _surgeUntil.set(pid, until);
+            recipients++;
+            try { p.ws.send(JSON.stringify({ type: 'surge', until, durationMs: SURGE_MS })); } catch (e) {}
+          }
+        }
+        const caller = (profiles.get(discordId)?.username) || 'The leader';
+        console.log('[Surge] ' + caller + ' triggered for alliance ' + al.key + ' (' + recipients + ' online, +50% 5min)');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, allianceKey: al.key, recipients, durationMs: SURGE_MS, vault: Math.round(_allianceVaults[al.key] || 0), caller }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'bad request' }));
+      }
+    });
+    return;
+  }
+
   // /api/bot/profile — get/update a player's profile by Discord ID
   if (url.pathname === '/api/bot/profile') {
     if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
@@ -5346,7 +5467,8 @@ const httpServer = http.createServer(async (req, res) => {
     if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
     const list = [];
     for (const [key, alliance] of alliances) {
-      list.push({ key, countries: alliance.countries, members: alliance.members });
+      list.push({ key, countries: alliance.countries, members: alliance.members,
+        vault: Math.round(_allianceVaults[key] || 0), leader: getAllianceLeader(alliance) }); // v93g
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ alliances: list }));

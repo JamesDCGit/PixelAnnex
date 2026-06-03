@@ -19,7 +19,7 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-06-04-alliance-resync-v93f';
+const BOT_VERSION = '2026-06-04-alliance-vault-surge-v93g';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
@@ -316,6 +316,7 @@ client.on(Events.InteractionCreate, async interaction => {
   if (interaction.commandName === 'me')          return handleMeCommand(interaction);
   if (interaction.commandName === 'leaderboard') return handleLeaderboardCommand(interaction);
   if (interaction.commandName === 'strike')      return handleStrikeCommand(interaction); // v93 Phase 3A
+  if (interaction.commandName === 'surge')       return handleSurgeCommand(interaction);  // v93g Phase 3B
   if (interaction.commandName !== 'country') return;
 
   const sub = interaction.options.getSubcommand();
@@ -508,6 +509,38 @@ async function handleStrikeCommand(interaction) {
   } catch (e) {
     console.error('[Strike] error:', e.message);
     try { await interaction.reply({ content: '❌ Strike failed — try again in a moment.', flags: 64 }); } catch (e2) {}
+  }
+}
+
+// ── v93g (Phase 3B): /surge — alliance leader triggers Allied Surge ──
+async function handleSurgeCommand(interaction) {
+  try {
+    const r = await gameFetch('/api/bot/surge', { method: 'POST', body: JSON.stringify({ discordId: interaction.user.id }) });
+    if (!r || !r.ok) {
+      let msg;
+      if (r && r.error === 'not in an alliance') msg = "You're not in an alliance yet — join a coalition first.";
+      else if (r && r.error === 'not the leader') msg = `Only your alliance's leader (**${r.leaderName || 'the highest-ranked member'}**) can trigger Allied Surge.`;
+      else if (r && r.error === 'on cooldown') {
+        const h = Math.floor((r.cooldownRemainingMs || 0) / 3600000);
+        const m = Math.round(((r.cooldownRemainingMs || 0) % 3600000) / 60000);
+        msg = `⏳ Allied Surge is on cooldown — **${h}h ${m}m** left.`;
+      } else msg = '❌ Could not trigger Allied Surge.';
+      await interaction.reply({ content: msg, flags: 64 });
+      return;
+    }
+    const roleId = _allianceRoleCache[r.allianceKey];
+    const canPing = roleId && interaction.guild && interaction.guild.roles.cache.has(roleId);
+    const prefix = canPing ? `<@&${roleId}> ` : '';
+    const mins = Math.round((r.durationMs || 300000) / 60000);
+    const vaultStr = (typeof r.vault === 'number') ? r.vault.toLocaleString() : r.vault;
+    await interaction.reply({
+      content: `${prefix}⚡ **${r.caller || interaction.user.username}** triggered **Allied Surge**! +50% regen for ${mins} min — all hands, deploy!`
+        + (r.recipients ? `\n_(${r.recipients} online · vault ${vaultStr} px)_` : ''),
+      allowedMentions: canPing ? { roles: [roleId] } : { parse: [] },
+    });
+  } catch (e) {
+    console.error('[Surge] error:', e.message);
+    try { await interaction.reply({ content: '❌ Surge failed — try again in a moment.', flags: 64 }); } catch (e2) {}
   }
 }
 

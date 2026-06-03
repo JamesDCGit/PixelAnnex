@@ -70,6 +70,12 @@ const commands = [
       .setAutocomplete(true))
     .toJSON(),
 
+  // v93g Phase 3B: alliance leader triggers Allied Surge (+50% regen, 5 min)
+  new SlashCommandBuilder()
+    .setName('surge')
+    .setDescription('Alliance leader: trigger Allied Surge (+50% regen for 5 min, once/day)')
+    .toJSON(),
+
   new SlashCommandBuilder()
     .setName('leaderboard')
     .setDescription('Show the top 20 PixelAnnex players by points')

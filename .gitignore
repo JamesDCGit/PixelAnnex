@@ -49,5 +49,6 @@ flag_test.html
 
 # ── Runtime data ─────────────────────────────────────────────────
 profiles.json
+alliance_state.json
 shots/
 timelapse/
