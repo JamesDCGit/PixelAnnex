@@ -19,7 +19,7 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-06-04-general-worldstate-daily-v93j';
+const BOT_VERSION = '2026-06-05-warroom-major-only-v94a';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
@@ -1282,10 +1282,10 @@ async function postWarEvent(guild, event) {
     }
 
     case 'war_siege_end':
-      title   = '🛡️ Siege Lifted';
-      content = `${_defName} has reclaimed enough territory to break the siege.`;
-      color   = 0x10b981; // green
-      break;
+      // v94a: "major events only" — "Siege Lifted" is minor and can fire often as
+      // a contested country flaps around the threshold. Don't post it to #war-room.
+      // (The in-game siege flash still clears client-side via the 'siege' broadcast.)
+      return;
 
     case 'rally_call': {
       // v87: a Lieutenant+ player called for reinforcements on a country.

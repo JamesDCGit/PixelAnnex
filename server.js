@@ -2150,6 +2150,12 @@ function updateProfileXP(discordId, xpDelta) {
 // Used to push siege_start / siege_end events to the war reporter bot.
 const SIEGE_THRESHOLD = 0.50;
 const siegedSet = new Set(); // geoIdx values currently in siege state
+// v94a: don't re-announce "Under Siege" to Discord for the same geo within this
+// window (a country hovering around 50% would otherwise flap start/end repeatedly).
+// The in-game siege broadcast to clients still fires every time — only the Discord
+// post is throttled.
+const SIEGE_ANNOUNCE_COOLDOWN_MS = 15 * 60 * 1000;
+const _siegeAnnouncedAt = new Map(); // geoIdx → last announce ts
 
 function checkSiegeState(geoIdx) {
   const total = geoTotal[geoIdx] || 0;
@@ -2167,14 +2173,20 @@ function checkSiegeState(geoIdx) {
 
   if (ratio >= SIEGE_THRESHOLD && !wasSieged) {
     siegedSet.add(geoIdx);
-    emitBotEvent({
-      type:        'war_siege_start',
-      tier:        2,
-      attackerId:  dominantEnemy,
-      defenderId:  geoToId(geoIdx),
-      ratio:       Math.round(ratio * 100),
-      timestamp:   Date.now(),
-    });
+    const _nowS = Date.now();
+    // v94a: throttle the Discord announce per geo (anti-flap); always broadcast
+    // to game clients below so the in-game siege flash stays responsive.
+    if (_nowS - (_siegeAnnouncedAt.get(geoIdx) || 0) > SIEGE_ANNOUNCE_COOLDOWN_MS) {
+      _siegeAnnouncedAt.set(geoIdx, _nowS);
+      emitBotEvent({
+        type:        'war_siege_start',
+        tier:        2,
+        attackerId:  dominantEnemy,
+        defenderId:  geoToId(geoIdx),
+        ratio:       Math.round(ratio * 100),
+        timestamp:   Date.now(),
+      });
+    }
     // v92w: also tell game CLIENTS so the in-game siege flash + "under attack"
     // alert are server-authoritative (independent of viewport delta filtering,
     // which otherwise starves the client's geoClaimCnt/geoLossLog heuristic).
@@ -2202,10 +2214,13 @@ function checkSiegeState(geoIdx) {
 // That fired on transient swarms even when they barely painted anything.
 // Now: 5 attackers in 5min + ≥200 pixels painted in window — proves it's a
 // sustained assault, not a flyby. Cuts notification noise dramatically.
-const MULTI_ATTACK_THRESHOLD    = 5;
+// v94a: slowed for "major events only" — multi-attack was still too frequent.
+// Require more attackers (6) and a much longer per-defender cooldown (30 min) so
+// the SAME defender doesn't re-announce every 5 minutes.
+const MULTI_ATTACK_THRESHOLD    = 6;
 const MULTI_ATTACK_WINDOW_MS    = 5 * 60 * 1000; // was 60s
 const MULTI_ATTACK_MIN_PIXELS   = 200;            // absolute floor — total px painted by all attackers in window
-const MULTI_ATTACK_COOLDOWN_MS  = 5 * 60 * 1000;
+const MULTI_ATTACK_COOLDOWN_MS  = 30 * 60 * 1000;
 // v92k (#5): size-relative pixel floor. 200px is a huge deal for a micro-state but
 // trivial for Russia (91k px). The effective floor scales with the defender's land
 // area: floor = clamp(land * FRAC, MIN_PIXELS, MAX_PIXELS). So a multi-attack means
@@ -3805,7 +3820,12 @@ function applyPixels(pixels, countryId) {
       const _eb = empireDefenseBonus(_geoId);
       const contestedMajority = painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb);
       const decisiveCoverage  = (foreignSum / total) >= Math.min(0.98, CONTEST_TOTAL_FRAC + _eb);
-      if (topId && topCnt > nativeOwned && (contestedMajority || decisiveCoverage)) {
+      // v94a: dedup guard — the champion path checks !conqueredSet.has(key) but
+      // the contested path did NOT, so a SURVIVING conquered country (not
+      // permanentlyConquered after empire-continuity v93q) re-fired _conquerGeo —
+      // and its war_conquest Discord event — on every subsequent paint. That's the
+      // "20+ identical Country Conquered posts" spam. Fire once per (geo, holder).
+      if (topId && topCnt > nativeOwned && !conqueredSet.has(geo + ':' + topId) && (contestedMajority || decisiveCoverage)) {
         _conquerGeo(geo, topId, conquests, changed);
       }
     }
