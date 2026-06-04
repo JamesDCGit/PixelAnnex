@@ -5678,6 +5678,10 @@ wss.on('connection', (ws, req) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
+    // v93n: hardening — a throw in any single case used to crash the whole
+    // process (PM2 restart → in-memory map wiped → full game reset). Wrap the
+    // switch so one bad message just logs and drops instead of nuking the world.
+    try {
     switch (msg.type) {
 
       case 'ping':
@@ -5793,9 +5797,13 @@ wss.on('connection', (ws, req) => {
         const hasPixels = geoPixels[geoIdx] && geoPixels[geoIdx].length > 0;
         if (permanentlyConquered.has(cid)) break; // can't select a conquered country
         if (countryNames && countryNames[cid] && hasPixels) {
-          p.countryId = cid;
-          p.countryIdx = getIdx(cid);
-          if (!ownerPixels[p.countryIdx]) ownerPixels[p.countryIdx] = new Set();
+          // v93n: was `p.` — `p` is undefined in this scope (the player var is
+          // `player`). This threw ReferenceError and CRASHED the whole server
+          // every time a player re-picked after their country fell, wiping the
+          // in-memory map (= full game reset). Use `player`.
+          player.countryId = cid;
+          player.countryIdx = getIdx(cid);
+          if (!ownerPixels[player.countryIdx]) ownerPixels[player.countryIdx] = new Set();
           countryPxCount[cid] = countryPxCount[cid] || 0;
           console.log('[v38] Player', pid, 'switched to country', cid);
           broadcastPlayers();
@@ -5992,6 +6000,7 @@ wss.on('connection', (ws, req) => {
         break;
       }
     }
+    } catch (e) { console.error('[WS] handler error for type', (msg && msg.type), '-', (e && e.stack) || e); }
   });
 
   ws.on('close', () => {
