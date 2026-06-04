@@ -76,6 +76,12 @@ const commands = [
     .setDescription('Alliance leader: trigger Allied Surge (+50% regen for 5 min, once/day)')
     .toJSON(),
 
+  // v93j: public world standings in #general
+  new SlashCommandBuilder()
+    .setName('worldstate')
+    .setDescription('Post the current world standings (conquests, leaders) in #general')
+    .toJSON(),
+
   new SlashCommandBuilder()
     .setName('leaderboard')
     .setDescription('Show the top 20 PixelAnnex players by points')

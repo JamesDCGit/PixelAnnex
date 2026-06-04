@@ -3250,7 +3250,11 @@ function topoFeatures(topo){
 
   return topo.objects.countries.geometries.map(g=>({
     id:(()=>{const s=String(g.id??'');const n=parseInt(s,10);return(n>=0&&String(n))?String(n):s;})(),
-    name:(g.properties&&g.properties.name)||"",
+    // v93j: Natural Earth has a few unnamed features (disputed/buffer zones, e.g.
+    // ids 65 & 171). Empty names surfaced as "Country 65"/"Country 171" in the
+    // inspector + Discord. Give them a clean fallback — which also flows to the
+    // server/bot via the join geoNames map (mpSendJoin only sends named features).
+    name:(g.properties&&g.properties.name)||"Disputed Territory",
     geometry:geomToGeoJSON(g)
   }));
 }
@@ -3295,7 +3299,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93i';
+const CODE_VERSION = '2026-06-04-v93j';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10957,23 +10961,33 @@ vp.addEventListener("mousemove",e=>{
           }
         }
 
-        // Coverage bar + claimer breakdown
-        if(claimers.length===0){
-          const unclaimedPct=100;
-          html2+="<span style='color:#475569'>No pixels claimed yet</span>";
+        // v93j: show the OWNER (native) country's hold first, then invaders.
+        // Native effectively controls everything not foreign-painted (its painted
+        // land + unpainted prepopulate) = total - foreignSum.
+        const _nativeId = String(featList[gi].id);
+        let _foreignSum = 0; const _foreign = [];
+        for(const [fi,cnt] of claimers){
+          const f = featList[+fi];
+          if(f && String(f.id) === _nativeId) continue; // native shown as owner below
+          _foreignSum += cnt; _foreign.push([fi,cnt]);
+        }
+        const _nativePct = Math.round(Math.max(0, total - _foreignSum) / total * 100);
+        const _ownerFeat = featList[gi];
+        html2 += flagAny(_ownerFeat.id,1)
+          + "<span style='color:"+_ownerFeat.color+";font-weight:600'>"+_ownerFeat.name+"</span>"
+          + "<span style='color:#64748b'> "+_nativePct+"% (owner)</span><br>";
+        if(_foreign.length===0){
+          html2+="<span style='color:#475569;font-size:10px'>No invaders</span>";
         } else {
-          // Total claimed %
-          const totalClaimed2=claimers.reduce((s,[,n])=>s+n,0);
-          const covPct=Math.round(totalClaimed2/total*100);
-          html2+="<span style='color:#64748b'>Coverage: "+covPct+"%</span><br>";
-          for(const [idx,count] of claimers.slice(0,3)){
+          html2+="<span style='color:#64748b;font-size:10px'>Invaders — "+Math.round(_foreignSum/total*100)+"%:</span><br>";
+          for(const [idx,count] of _foreign.slice(0,3)){
             const pct=Math.round(count/total*100);
             const f=featList[+idx]; if(!f) continue;
             html2+=flagAny(f.id,1)+"<span style='color:"+f.color+"'>"+f.name+"</span>"
               +"<span style='color:#64748b'> "+pct+"%</span><br>";
           }
-          if(claimers.length>3){
-            html2+="<span style='color:#334155'>+"+( claimers.length-3)+" more</span>";
+          if(_foreign.length>3){
+            html2+="<span style='color:#334155'>+"+(_foreign.length-3)+" more</span>";
           }
         }
       } else {
@@ -11626,22 +11640,31 @@ function _showCountryRepickModal(data) {
     if (!list || !featList) return;
     const fl = (filter || '').toLowerCase();
     list.innerHTML = '';
+    // v93j: show conquered countries too, but greyed + struck-through + disabled
+    // (was: hidden) so it's clear WHY they can't be picked.
     const items = featList
       .filter(function(f) {
         // v40: skip culled countries (Antarctica, tiny non-visible islands)
-        // v53: skip currently conquered countries — players can't paint there
         return f && f.name
                && (typeof isPlayableCountry === 'function' ? isPlayableCountry(featList.indexOf(f)) : true)
-               && !_isCountryConqueredClient(f.id)
                && (!fl || f.name.toLowerCase().includes(fl));
       })
       .sort(function(a, b) { return a.name.localeCompare(b.name); });
     for (var i = 0; i < Math.min(items.length, 200); i++) {
       var f = items[i];
+      var fallen = _isCountryConqueredClient(f.id);
       var btn = document.createElement('button');
-      btn.style.cssText = 'background:#162035;border:1px solid #1e293b;color:#cbd5e1;padding:6px 10px;font-size:11px;border-radius:4px;cursor:pointer;text-align:left;font-family:inherit;display:flex;align-items:center;gap:6px;';
-      btn.innerHTML = '<span style="width:10px;height:10px;background:' + (f.color || '#475569') + ';border-radius:2px;display:inline-block;flex-shrink:0;"></span>' + escapeHtml(f.name);
-      (function(ff) { btn.onclick = function() { _pickRepick(ff); }; })(f);
+      btn.style.cssText = 'background:#162035;border:1px solid #1e293b;color:' + (fallen ? '#475569' : '#cbd5e1') +
+        ';padding:6px 10px;font-size:11px;border-radius:4px;cursor:' + (fallen ? 'not-allowed' : 'pointer') +
+        ';text-align:left;font-family:inherit;display:flex;align-items:center;gap:6px;' + (fallen ? 'opacity:0.55;' : '');
+      var nameHtml = fallen ? '<s>' + escapeHtml(f.name) + '</s> <span style="font-size:9px;color:#ef4444">fallen</span>' : escapeHtml(f.name);
+      btn.innerHTML = '<span style="width:10px;height:10px;background:' + (f.color || '#475569') + ';border-radius:2px;display:inline-block;flex-shrink:0;' + (fallen ? 'filter:grayscale(1);' : '') + '"></span>' + nameHtml;
+      if (fallen) {
+        btn.disabled = true;
+        btn.title = 'This country has fallen — pick another';
+      } else {
+        (function(ff) { btn.onclick = function() { _pickRepick(ff); }; })(f);
+      }
       list.appendChild(btn);
     }
   }

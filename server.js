@@ -39,7 +39,7 @@ const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-04-v93i';
+const SERVER_VERSION       = '2026-06-04-v93j';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -628,8 +628,8 @@ function makeWorldShot() {
 // can be verified quickly. PROD: 30min frames over 24h = 48 frames (24s @ 2fps).
 // Flip TIMELAPSE_TEST to false once verified, then redeploy.
 const TIMELAPSE_TEST  = false;
-const TL_FRAME_MS     = TIMELAPSE_TEST ? 10 * 1000      : 30 * 60 * 1000;      // capture interval
-const TL_WINDOW_MS    = TIMELAPSE_TEST ? 5 * 60 * 1000  : 24 * 60 * 60 * 1000; // GIF spans this much history
+const TL_FRAME_MS     = TIMELAPSE_TEST ? 10 * 1000      : 15 * 60 * 1000;      // v93j: 15-min frames
+const TL_WINDOW_MS    = TIMELAPSE_TEST ? 5 * 60 * 1000  : 12 * 60 * 60 * 1000; // v93j: 12h window (~48 frames)
 const TL_GIF_FPS      = 2;
 const TL_GIF_COLORS   = 256;
 const TL_OUT_W        = 1024, TL_OUT_H = 512;
@@ -1175,41 +1175,44 @@ function tweetForCommunity() {
 }
 
 // Daily summary scheduler — fires once per UTC day at 12:00 UTC
+// v93j: now fires every 12h (00:00 + 12:00 UTC) instead of daily, and the Discord
+// post (state-of-the-world GIF) goes to #general via a dedicated 'daily_report'
+// event rather than #war-room.
 function scheduleDailySummary() {
   const now = new Date();
   const next = new Date(now);
-  next.setUTCHours(12, 0, 0, 0);
-  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  // next 00:00 or 12:00 UTC boundary
+  next.setUTCMinutes(0, 0, 0);
+  if (next.getUTCHours() < 12) next.setUTCHours(12);
+  else { next.setUTCHours(0); next.setUTCDate(next.getUTCDate() + 1); }
+  if (next <= now) next.setUTCHours(next.getUTCHours() + 12);
   const msUntil = next - now;
   setTimeout(async () => {
     const text = tweetForDailySummary();
     if (text) {
-      // v92n: daily "state of the world" GIF (last 24h). Falls back to the static
-      // world PNG if assembly fails (too few frames / ffmpeg missing).
+      // State-of-the-world GIF (last 12h). Falls back to the static world PNG.
       let media = null;
       try { media = await assembleTimelapseGif(); } catch (e) { media = null; }
       if (!media) media = makeWorldShot();
       pushTweetDraft({
         type:       'daily_summary',
         text,
-        dedupeKey: 'daily_summary:' + now.toUTCString().slice(0, 16),
+        dedupeKey: 'daily_summary:' + now.toUTCString().slice(0, 13), // per 12h slot
         imageUrl:  media || undefined,
       });
-      // Also fire a Discord world_status_report-style event so the bot posts
-      // the daily snapshot in #war-room with the image/GIF attached.
+      // v93j: dedicated event so the bot posts the snapshot to #general.
       emitBotEvent({
-        type:       'world_status_report',
-        tier:       1,
+        type:       'daily_report',
         timestamp:  Date.now(),
-        sassyText:  '🌍 Daily world snapshot — ' + text,
+        text:       '🌍 State of the world — ' + text,
         imageUrl:   media || undefined,
       });
-      console.log('[Tweets] Daily summary queued at', new Date().toISOString(),
+      console.log('[Tweets] 12h summary queued at', new Date().toISOString(),
         media ? ('(media ' + media + ')') : '(no media)');
     }
-    scheduleDailySummary(); // schedule next day
+    scheduleDailySummary(); // schedule next 12h boundary
   }, msUntil);
-  console.log('[Tweets] Next daily summary at', next.toISOString());
+  console.log('[Tweets] Next world summary at', next.toISOString());
 }
 
 loadTweetQueue();
@@ -2335,15 +2338,17 @@ setInterval(_checkWorldConquest, 30 * 1000);
 // Kraken:   stationary in coastal ocean, 2-frame tentacle animation, 1 min duration.
 // Godzilla: walks on land 80 px over 3 min, 5 px-wide cleared trail, then sinks.
 
-const MONSTER_DEBUG = true; // ← flip false for production
+const MONSTER_DEBUG = false; // v93j: was true (2-min spam). Production cadence.
 
-// Production intervals
+// Production intervals — v93j: widened so the COMBINED spawn rate across all three
+// monster types is ~1 every 15 min (operator request), not the old ~1/5min.
+//   Kraken ~35m + Godzilla ~40m + UFO ~65m  ->  ~1 monster / ~14 min.
 const UFO_PROD_MIN_MS      = 50 * 60 * 1000;
-const UFO_PROD_MAX_MS      = 70 * 60 * 1000;
-const KRAKEN_PROD_MIN_MS   =  5 * 60 * 1000;
-const KRAKEN_PROD_MAX_MS   = 10 * 60 * 1000;
-const GODZILLA_PROD_MIN_MS = 10 * 60 * 1000;
-const GODZILLA_PROD_MAX_MS = 30 * 60 * 1000;
+const UFO_PROD_MAX_MS      = 80 * 60 * 1000;
+const KRAKEN_PROD_MIN_MS   = 25 * 60 * 1000;
+const KRAKEN_PROD_MAX_MS   = 45 * 60 * 1000;
+const GODZILLA_PROD_MIN_MS = 30 * 60 * 1000;
+const GODZILLA_PROD_MAX_MS = 50 * 60 * 1000;
 const DEBUG_RESPAWN_MS     =  2 * 60 * 1000;
 
 function _randInterval(minMs, maxMs) {
@@ -5404,6 +5409,30 @@ const httpServer = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: false, error: 'bad request' }));
       }
     });
+    return;
+  }
+
+  // v93j: /api/bot/worldstate — world standings for the /worldstate command.
+  if (url.pathname === '/api/bot/worldstate') {
+    if (!validBot) { res.writeHead(403); res.end('forbidden'); return; }
+    const byConqueror = {};
+    for (const key of conqueredSet) {
+      const parts = String(key).split(':');
+      if (parts.length !== 2 || parts[0] === parts[1]) continue;
+      byConqueror[parts[1]] = (byConqueror[parts[1]] || 0) + 1;
+    }
+    const topConquerors = Object.entries(byConqueror)
+      .sort((a, b) => b[1] - a[1]).slice(0, 5)
+      .map(([id, n]) => ({ id, name: _countryName(id), conquered: n }));
+    const totalCountries = Object.keys(geoTotal).filter(g => geoTotal[g] > 0).length;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      totalConquered: permanentlyConquered.size,
+      totalCountries,
+      topConquerors,
+      alliances: alliances.size,
+      players: [...players.values()].filter(p => !p.isBot).length,
+    }));
     return;
   }
 

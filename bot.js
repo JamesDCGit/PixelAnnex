@@ -19,7 +19,7 @@
 
 'use strict';
 
-const BOT_VERSION = '2026-06-04-alliance-vault-surge-v93g';
+const BOT_VERSION = '2026-06-04-general-worldstate-daily-v93j';
 console.log('PixelAnnex bot', BOT_VERSION);
 
 require('dotenv').config();
@@ -317,6 +317,7 @@ client.on(Events.InteractionCreate, async interaction => {
   if (interaction.commandName === 'leaderboard') return handleLeaderboardCommand(interaction);
   if (interaction.commandName === 'strike')      return handleStrikeCommand(interaction); // v93 Phase 3A
   if (interaction.commandName === 'surge')       return handleSurgeCommand(interaction);  // v93g Phase 3B
+  if (interaction.commandName === 'worldstate')  return handleWorldstateCommand(interaction); // v93j
   if (interaction.commandName !== 'country') return;
 
   const sub = interaction.options.getSubcommand();
@@ -883,6 +884,57 @@ async function reconcileAlliances() {
   if (list.length) console.log('[Alliance] reconciled ' + list.length + ' alliance(s) on connect');
 }
 
+// ── v93j: #general — daily state-of-the-world GIF + /worldstate ──
+const GENERAL_CHANNEL = process.env.GENERAL_CHANNEL || 'general';
+function _getGeneralChannel(guild) {
+  return guild.channels.cache.find(c => c.name === GENERAL_CHANNEL && c.isTextBased()) || null;
+}
+// Server fires 'daily_report' every 12h with the state-of-the-world GIF.
+async function handleDailyReport(event) {
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (!guild) return;
+  const ch = _getGeneralChannel(guild);
+  if (!ch) { console.log(`[Daily] #${GENERAL_CHANNEL} not found — skipped`); return; }
+  const embed = new EmbedBuilder()
+    .setColor(0x3b82f6)
+    .setTitle('🌍 State of the World')
+    .setDescription(event.text || 'Current world standings.')
+    .setTimestamp(new Date(event.timestamp || Date.now()));
+  const img = _absUrl(event.imageUrl);
+  if (img) embed.setImage(img);
+  try { await ch.send({ embeds: [embed] }); }
+  catch (e) { console.error('[Daily] post failed:', e.message); }
+}
+// /worldstate — public world standings in #general.
+async function handleWorldstateCommand(interaction) {
+  try {
+    const w = await gameFetch('/api/bot/worldstate');
+    const top = (w.topConquerors || []).map((c, i) =>
+      `${['🥇','🥈','🥉'][i] || (i + 1) + '.'} **${c.name}** — ${c.conquered} conquered`).join('\n') || '_No conquests yet_';
+    const embed = new EmbedBuilder()
+      .setColor(0xfbbf24)
+      .setTitle('🌍 World State')
+      .addFields(
+        { name: 'Countries conquered', value: `${w.totalConquered} / ${w.totalCountries}`, inline: true },
+        { name: 'Active alliances',     value: String(w.alliances || 0), inline: true },
+        { name: 'Players online',       value: String(w.players || 0), inline: true },
+        { name: '🏆 Top conquerors',    value: top, inline: false },
+      );
+    const guild = client.guilds.cache.get(GUILD_ID);
+    const gen = guild && _getGeneralChannel(guild);
+    if (gen) {
+      await gen.send({ embeds: [embed] });
+      // ack the command privately so it isn't a dangling "thinking" state
+      await interaction.reply({ content: `Posted the world state in <#${gen.id}>.`, flags: 64 });
+    } else {
+      await interaction.reply({ embeds: [embed] }); // fall back to inline if no #general
+    }
+  } catch (e) {
+    console.error('[Worldstate] error:', e.message);
+    try { await interaction.reply({ content: '❌ Could not fetch world state.', flags: 64 }); } catch (e2) {}
+  }
+}
+
 // ── v92u (Phase 1): #alliance-radar — nascent-coalition progress cards ──
 // One message per nascent cluster, edited in place. Driven by the server's
 // 'alliance_progress' events. Carries Join/Leave buttons.
@@ -1329,6 +1381,10 @@ function handleGameEvent(event) {
 
     case 'alliance_progress':   // v92u (Phase 1): nascent-coalition radar card
       handleAllianceProgress(event);
+      break;
+
+    case 'daily_report':        // v93j: 12h state-of-the-world GIF -> #general
+      handleDailyReport(event);
       break;
 
     case 'alliance_formed': {
