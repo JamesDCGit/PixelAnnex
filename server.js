@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-04-v93t';
+const SERVER_VERSION       = '2026-06-04-v93u';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2527,6 +2527,7 @@ function _clearMonsterArea(cx, cy, radius) {
       // v91: use size-scaled reversal threshold (hysteresis below conquest)
       if (getAllyOwnedCount(geo, ownerId) / total < reversalThreshold(total)) {
         conqueredSet.delete(key);
+        _clearPermanentIfFree(geo); // v93u (Fix B): unlock if no longer held
         broadcast(JSON.stringify({
           type:        'reversal',
           attackerId:  geoToId(geo),
@@ -3090,6 +3091,16 @@ function _pickBotMigrationTarget(fromCountryId) {
   if (!cands.length) return null;
   cands.sort((a, b) => (countryPxCount[a] || 0) - (countryPxCount[b] || 0));
   return cands[0];
+}
+
+// v93u (Fix B): when a geo is no longer conquered by ANYONE, drop its permanent
+// lock so the country can fall again / be re-selected (empire-continuity reclaim).
+// Without this, a conquest that gets reversed leaves the geo permanently locked
+// (e.g. Italy: freed by reversal but stuck at permanentlyConquered forever).
+function _clearPermanentIfFree(geo) {
+  const gid = geoToId(geo);
+  for (const k of conqueredSet) { if (String(k).split(':')[0] === gid) return; } // still held
+  permanentlyConquered.delete(gid);
 }
 
 // v93q (#3): geos a country currently holds as outposts (conquered elsewhere).
@@ -3804,6 +3815,7 @@ function applyPixels(pixels, countryId) {
       // the whole alliance drops below the threshold, not just one member.
       if (cId !== countryId && conqueredSet.has(rk) && getAllyOwnedCount(geo, cId) / total < reversalThreshold(total)) {
         conqueredSet.delete(rk);
+        _clearPermanentIfFree(geo); // v93u (Fix B): unlock if no longer held
         reversals.push({ geoIdx: geo, countryId: cId });
         // Queue a tweet draft for the reversal (liberation)
         try {
@@ -4138,6 +4150,16 @@ function loadBoardSnapshot() {
     for (const k of (data.conquered || [])) conqueredSet.add(k);
     permanentlyConquered.clear();
     for (const k of (data.permanentlyConquered || [])) permanentlyConquered.add(String(k));
+    // v93u (Fix B): drop stale permanent locks — geos flagged permanentlyConquered
+    // but no longer held by anyone (freed by an earlier reversal). Unsticks
+    // ghost-locked countries (e.g. Italy) so they can fall/be selected again.
+    {
+      const _held = new Set();
+      for (const k of conqueredSet) _held.add(String(k).split(':')[0]);
+      let _unstuck = 0;
+      for (const g of [...permanentlyConquered]) { if (!_held.has(String(g))) { permanentlyConquered.delete(g); _unstuck++; } }
+      if (_unstuck) console.log('[Board] cleared', _unstuck, 'stale permanent locks (freed countries)');
+    }
     console.log('[Board] restored', painted, 'painted pixels,', conqueredSet.size, 'conquests (saved',
       data.savedAt ? new Date(data.savedAt).toISOString() : '?', ')');
   } catch (e) {

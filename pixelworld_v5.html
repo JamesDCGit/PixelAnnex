@@ -3300,7 +3300,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93t';
+const CODE_VERSION = '2026-06-04-v93u';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10995,21 +10995,27 @@ vp.addEventListener("mousemove",e=>{
         }
       }
       if(gi>=0){
-        const total=geoTotal[gi]||1;
-        const gc=geoClaimCnt[gi]||{};
-        // v92x: merge featList entries that share a country id. A country can be
-        // split into several featList features (multipolygon: mainland + islands),
-        // and own-paints (currentIdx) vs incoming deltas (idToFeatIdx) can bucket
-        // the same country under different indices — which showed e.g. "Australia"
-        // twice. The SERVER counts by country id (one entry), so collapse to match.
-        const _byCountry=new Map(); // countryId -> { count, fi }
-        for(const [fiStr,n] of Object.entries(gc)){
-          if(!(n>0)) continue;
-          const f=featList[+fiStr]; if(!f) continue;
-          const cid=String(f.id);
-          const e=_byCountry.get(cid);
-          if(e) e.count+=n; else _byCountry.set(cid,{count:n,fi:+fiStr});
+        // v93u (Fix A): aggregate across ALL polygons of this country (mainland +
+        // islands) so the % reflects the whole country and matches the server —
+        // not just the single hovered shape. (Hovering a small island that an
+        // invader dominated made e.g. Italy read 96% when the whole country was
+        // ~17%.) v92x: also collapse claimers that share a country id.
+        let total=0;
+        const _byCountry=new Map(); // claimerCountryId -> { count, fi }
+        for(let _cfi=0;_cfi<featList.length;_cfi++){
+          const _cf=featList[_cfi];
+          if(!_cf || String(_cf.id)!==_gid) continue;   // every polygon of this country
+          total += (geoTotal[_cfi]||0);
+          const gc=geoClaimCnt[_cfi]||{};
+          for(const [fiStr,n] of Object.entries(gc)){
+            if(!(n>0)) continue;
+            const f=featList[+fiStr]; if(!f) continue;
+            const cid=String(f.id);
+            const e=_byCountry.get(cid);
+            if(e) e.count+=n; else _byCountry.set(cid,{count:n,fi:+fiStr});
+          }
         }
+        if(total<1) total=1;
         const claimers=[..._byCountry.values()].map(e=>[e.fi,e.count]).sort((a,b)=>b[1]-a[1]);
 
         // v93j: show the OWNER (native) country's hold first, then invaders.
