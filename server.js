@@ -1786,11 +1786,20 @@ function render(tweets) {
         <span style="margin-left:auto">\${t.status.toUpperCase()}</span>
       </div>
       <div class="text" data-id="\${t.id}">\${escapeHtml(t.text)}</div>
+      \${t.imageUrl ? \`
+      <div class="media">
+        <img src="\${t.imageUrl}" alt="attached media" loading="lazy"
+             onclick="window.open('\${t.imageUrl}','_blank')"
+             style="max-width:260px;max-height:200px;border-radius:6px;border:1px solid #1e293b;display:block;margin:8px 0;cursor:zoom-in" />
+        <a class="btn-dl" href="\${t.imageUrl}" download
+           style="font-size:12px;color:#38bdf8;text-decoration:none">⬇ Download media (attach when posting)</a>
+      </div>\` : ''}
       <div class="actions">
         <span class="count \${t.text.length > 280 ? 'over' : ''}">\${t.text.length}/280</span>
         \${t.status === 'pending' ? \`
           <button class="btn-edit"   data-act="edit">Edit</button>
           <button class="btn-copy"   data-act="copy">Copy</button>
+          \${t.imageUrl ? '<button class="btn-copy" data-act="copy-img">Copy image</button>' : ''}
           <button class="btn-post"   data-act="post-on-x">Post on X</button>
           <button class="btn-post"   data-act="posted">Mark posted</button>
           <button                    data-act="dismiss">Dismiss</button>
@@ -1846,6 +1855,29 @@ document.addEventListener('click', async (e) => {
     await navigator.clipboard.writeText(textEl.textContent);
     btn.textContent = 'Copied!';
     setTimeout(() => btn.textContent = 'Copy', 1500);
+    return;
+  }
+  if (act === 'copy-img') {
+    // PNG screenshots can go straight to the clipboard for paste into the X
+    // composer. GIFs aren't writable to the clipboard in browsers, so fall
+    // back to opening the file (then drag/attach, or use Download).
+    const imgEl = tweetEl.querySelector('.media img');
+    if (!imgEl) return;
+    try {
+      const resp = await fetch(imgEl.src);
+      const blob = await resp.blob();
+      if (blob.type === 'image/png' && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        btn.textContent = 'Copied!';
+      } else {
+        window.open(imgEl.src, '_blank'); // GIF / unsupported: open to save
+        btn.textContent = 'Opened';
+      }
+    } catch (err) {
+      window.open(imgEl.src, '_blank');
+      btn.textContent = 'Opened';
+    }
+    setTimeout(() => btn.textContent = 'Copy image', 1500);
     return;
   }
   if (act === 'post-on-x') {
