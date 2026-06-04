@@ -41,6 +41,12 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
+**Current production triad: `2026-06-04-v94`.** Server-only changes since (v94a
+war-room tuning, v94b nuke/ghost-flag fixes) deliberately did NOT bump the triad
+— a server-only fix keeps all three at the same value so connected clients don't
+reload. Only bump the triad when the CLIENT (`pixelworld_v5.html`) actually
+changes. Comment tags (`// v94b:`) can run ahead of the triad banner; that's fine.
+
 ## Deploy flow
 
 ```pwsh
@@ -55,6 +61,18 @@ git push origin main
 ```
 
 The deploy script SSHes to the droplet, `git pull`s, and `pm2 restart pixelannex --update-env`.
+
+**deploy.ps1 only restarts the SERVER (`pixelannex`), not the bot.** For `bot.js`
+or `register-commands.js` changes, after `git pull` also:
+`pm2 restart pixelannex-bot --update-env` (and `node register-commands.js` for new
+slash commands). For new npm deps, `npm install` on the droplet (deploy.ps1 does
+NOT). Server-only changes that don't touch the client: leave the triad unchanged
+(no client reload), commit just `server.js`, and restart `pixelannex`.
+
+**SSH quoting:** PowerShell→ssh mangles brackets/pipes/quotes. Run remote scripts
+via a base64-encoded here-string piped to `base64 -d | bash` (pattern used
+throughout this project's tooling). Node is not on PATH for non-login shells —
+prefix with `export PATH=/root/.nvm/versions/node/v20.20.2/bin:$PATH`.
 
 ## Production environment
 
@@ -186,6 +204,31 @@ Before editing any function:
 - [x] **Pixel inspector:** v93j — shows owner flag + name + "X% (owner)" then an "Invaders — Y%" list (top 3 + "+N more").
 - [x] **Daily status + GIF:** v93j — fires every 12h (00:00 + 12:00 UTC) to `#general` via a dedicated `daily_report` event; timelapse now 15-min frames over a rolling 12h window.
 
+### Changelog v93k–v94b (this session, condensed — details in sections below)
+- **v93k:** fixed blank in-game country picker (`buildCselOptions` ran before
+  `geoTotal` was populated → empty list); fallen grey-out uses id-based keys.
+- **v93l:** X (Twitter) manual-approve posting (`xposter.js`); corrected
+  `@napi-rs/canvas` `^0.1.65`→`^1.0.0`; tweet dashboard shows media preview.
+- **v93m:** country names rendered as #hashtags in tweets (e.g. `#USA beats up #France`).
+- **v93n:** FIX server crash — `set-country` used undefined `p` (was `player.`),
+  crashing the whole server on every re-pick → in-memory map wiped (the recurring
+  "game reset"); wrapped the WS message switch in try/catch.
+- **v93o:** board persistence (`board_state.json`) — see section.
+- **v93p–v93q:** empire balance (#1 defense, #3 continuity, #4 banked progression).
+- **v93r/s/t:** inspector outpost labels, layout rework, conquered-count line.
+- **v93u:** Fix A (per-country inspector %) + Fix B (clear stale permanent locks).
+- **v93v/w:** stale-owner drift fix — windowed→full-stream switch now reconciles;
+  client re-asserts viewport every 10s (region snapshot) so off-rect areas heal.
+- **v93x:** rebuild `geoClaimCnt` on board restore (the real "Italy won't fall" fix).
+- **v93y:** territory-panel popup→(then v93z highlight), bonus reset/ratchet,
+  `/api/world-state` leaderboard filters unnamed/placeholder countries ("Country 168").
+- **v93z/v94:** re-pick on load if your country fell (now AFTER Welcome Back popup);
+  territory-panel click = map highlight (right-click inspect, shared helper); flag labels.
+- **v94a:** war-room "major events only" (conquest dedup, multi-attack 6/30min,
+  siege announce throttle, drop "Siege Lifted").
+- **v94b:** nuke that wipes a conquered country reverses the conquest; 60s periodic
+  ghost-flag sweep.
+
 ## Screenshots for tweets (v88)
 
 `mapshot.js` renders a 256×256 PNG of a country. Client sends `geoColors`
@@ -237,6 +280,17 @@ tweets, alliances were). v93o snapshots the board to `board_state.json`:
 - **Stored as ID-based RLE runs `[start, len, countryId]`**, NOT raw indices:
   `getIdx()` assigns indices in order-of-first-appearance, so indices are NOT
   stable across runs. Restore remaps IDs → fresh indices via `getIdx()`.
+- **CRITICAL gotcha (v93x):** `geoClaimCnt` (the per-geo per-owner counts the
+  CONQUEST CHECK reads) is NOT in the snapshot and MUST be rebuilt from
+  `claimByPixel` + `geoAtPixel`. `geoAtPixel` only arrives at the first client
+  join, so the rebuild is deferred (`_boardRestoredPendingRebuild` flag →
+  `_rebuildGeoClaimCnt()` in the join handler). Forgetting this made restored
+  boards invisible to fall logic — conquered countries sat un-fallen (the
+  "Italy showed 98% foreign but the check saw 7%, never fell" bug). **Rule:
+  any in-memory structure DERIVED from the board must be rebuilt on restore.**
+- v93u also reconciles `permanentlyConquered` on load: a geo flagged permanent
+  but no longer in `conqueredSet` (freed by a past reversal) is unlocked, so
+  ghost-locked countries become playable/fall-able again.
 - `board_state.json` is gitignored + runtime-written on the droplet (same
   hygiene caveat as the others below).
 - Worst-case loss on a hard crash = one snapshot interval (~30s of paints).
@@ -270,13 +324,59 @@ the client conquest-event handler no longer guesses (it only draws the attack
 arrow). `_countDistinctConquered()` (world-conquest trigger) counts
 `conqueredSet` homelands, so survivors don't break the world-conquest check.
 
-### Backlog — Stage 3 (operator-requested)
-- [ ] **Homeland/Outpost naming:** when a country holds multiple territories,
-  label them "USA Homeland / USA Outpost 1 / Outpost 2" for coordination, and
-  show the name under the flag. Client can derive from `conqueredSet`.
+### Outpost naming + coordination (Stage 3 — DONE v93r/v93s/v94)
+- Outposts are numbered per-holder by **geo-id ascending** (stable + identical
+  on every client): `_outpostInfo(holderId, geoId)` → `{num, total}`,
+  `_holderOfGeo(geoId)`. So "USA 2" means the same place for everyone.
+- Pixel inspector header = current holder + number ("USA 2") for conquered
+  territory, else the native name; body shows "Formerly {native}", "🗡️ Conquered
+  N countries", and "{native} N% (Original)" + invaders.
+- On-map flags (DOM overlay) show a text label underneath = holder + outpost
+  number (v94), in `#flag-overlay` so it shares the flags' zoom/fade.
+- Inspector % AGGREGATES across all polygons of a country (v93u Fix A) — hovering
+  one island of a multi-polygon country no longer misreports the whole country.
+
+### Conquest fall mechanics — the bug-prone core
+Two fall paths in `applyPixels` (server), both must guard against re-firing:
+- **Champion:** strongest foreign holder (+allies) ≥ `effThresh`
+  (= `conquestThreshold(total)` + `empireDefenseBonus`). Guarded by `!conqueredSet.has(key)`.
+- **Contested (v93h):** measured vs PAINTED land (big countries have huge
+  unpainted interiors). Falls to largest foreign holder when painted-majority OR
+  decisive-coverage AND `topCnt > nativeOwned`. **v94a added the missing
+  `!conqueredSet.has(geo+':'+topId)` guard here** — without it, a SURVIVING
+  conquered country (not `permanentlyConquered` after empire-continuity) re-fired
+  the conquest + its Discord event on every paint (the "20+ Country Conquered
+  posts" spam).
+- **Reversal:** holder drops below `reversalThreshold` (= conquest − 0.15) →
+  `conqueredSet.delete` + `_clearPermanentIfFree(geo)` + broadcast `reversal`
+  (clients `eraseFlag`). Fires on paint (applyPixels) AND monster damage.
+- **Nuke reversal (v94b):** the nuke path (`clearPixelsInRadius`) bypassed
+  applyPixels, so a nuked-empty conquered country kept its flag. Now sweeps
+  affected geos (`_reverseConquestsForGeo`) after a nuke. Plus a **60s periodic
+  ghost-flag sweep**: any conquest whose holder holds 0 px is reversed
+  (retroactively clears stuck flags like "Benin on a wiped-out Slovenia").
+
+### Discord war-room event tuning (v94a — "major events only")
+- Conquest: once per fall (the dedup guards above).
+- Multi-attack: `MULTI_ATTACK_THRESHOLD=6`, per-defender `COOLDOWN_MS=30min`.
+- Siege start: per-geo Discord announce cooldown 15min (`_siegeAnnouncedAt`) —
+  anti-flap; the in-game `siege` broadcast to clients still fires every time.
+- `war_siege_end` ("🛡️ Siege Lifted") is NOT posted to #war-room (bot drops it).
+
+### Bonus model (encircle + rally regen)
+- `getMyMultiplier()` = current country's David/Goliath mult × `_encircleMult`;
+  regen = `david × rank × _highlightRegenMult`. David mult auto-updates per
+  country; rank persists (it's the player's).
+- v93y: bonuses **reset on country change** (`_resetBonusesForCountryChange()`
+  on `selectCountry`/re-pick: clears encircle + `clearHighlight`).
+- v93y: encircle bonus **only ratchets UP** — a smaller new encirclement keeps
+  the active higher multiplier and extends the timer (no downgrade).
+
+### Remaining backlog
 - [ ] **(2b) Cascade death:** force re-pick when a country loses its LAST outpost
-  while its homeland is already gone (currently it becomes a landless "rebel"
-  that can keep fighting — acceptable, but not a hard "death").
+  while its homeland is already gone (currently a landless "rebel" that fights on).
+- [ ] Big-ticket queue (not started): **text cleanup/consistency → FTUE → ads**
+  (ads need: network, banner-only placement, consent banner, real domain).
 
 ## Droplet git hygiene
 
