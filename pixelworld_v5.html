@@ -3300,7 +3300,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93u';
+const CODE_VERSION = '2026-06-04-v93w';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7655,7 +7655,7 @@ function _computeViewportRect() {
   maxX = Math.min(MAP_W - 1, maxX); maxY = Math.min(MAP_H - 1, maxY);
   return { minX, minY, maxX, maxY };
 }
-function _sendViewport() {
+function _sendViewport(force) {
   if (!wsReady || !_localPlayerId) return;
   const r = _computeViewportRect();
   if (!r) return;
@@ -7664,7 +7664,7 @@ function _sendViewport() {
     ? { type: 'viewport', full: true }
     : { type: 'viewport', minX: r.minX, minY: r.minY, maxX: r.maxX, maxY: r.maxY };
   const sig = JSON.stringify(payload);
-  if (sig === _lastVpSent) return; // unchanged — skip
+  if (!force && sig === _lastVpSent) return; // unchanged — skip (unless forced)
   _lastVpSent = sig;
   try { ws.send(sig); } catch (e) {}
 }
@@ -7672,6 +7672,11 @@ function scheduleViewportUpdate() {
   if (_vpSendTimer) clearTimeout(_vpSendTimer);
   _vpSendTimer = setTimeout(_sendViewport, 300);
 }
+// v93w: periodically re-assert the viewport (forced) so the server re-sends a
+// region snapshot and resyncs the visible area. Self-heals stale owners that
+// drifted while off-rect (the viewport delta filter only streams in-rect deltas)
+// without requiring the player to pan. ~10s max staleness for a small bandwidth cost.
+setInterval(() => { try { _sendViewport(true); } catch (e) {} }, 10000);
 
 let _joinSent = false;
 function mpSendJoin() {
