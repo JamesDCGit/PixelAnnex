@@ -3300,7 +3300,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93r';
+const CODE_VERSION = '2026-06-04-v93s';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10922,25 +10922,36 @@ vp.addEventListener("mousemove",e=>{
       return;
     }
     if(landMask[i]){
-      const geoName = gi>=0 ? featList[gi].name : "Unclaimed Territory";
-      const geoFlag = gi>=0 ? flagAny(featList[gi].id,2) : '';
-      // v41b: show "Conquered by X" inline on the name when this geo is conquered
-      let _conqLabel = '';
-      if (gi >= 0) {
-        const _conq = [...conqueredSet].find(k => k.startsWith(gi + ':'));
-        if (_conq) {
-          const _conqIdx = +_conq.split(':')[1];
-          const _conqFeat = featList[_conqIdx];
-          if (_conqFeat && _conqIdx !== gi) {
-            _conqLabel = ' <span style="color:#94a3b8;font-weight:400;font-size:11px"> — Conquered by '
-              + '<span style="color:' + _conqFeat.color + ';font-weight:600">' + _conqFeat.name + '</span></span>';
-          }
-        }
+      // ── v93s: native vs current holder for the rearranged inspector layout ──
+      const _nativeFeat = gi>=0 ? featList[gi] : null;
+      const _gid = _nativeFeat ? String(_nativeFeat.id) : null;
+      const _holderId = _gid ? _holderOfGeo(_gid) : null;       // conqueror id, or null
+      let _holderFeat = null, _oi = null;
+      if(_holderId){
+        const _hfi = idToFeatIdx.get(String(_holderId));
+        _holderFeat = (_hfi!==undefined) ? featList[_hfi] : null;
+        _oi = _outpostInfo(_holderId, _gid);
       }
-      $("tip-name").innerHTML = geoFlag + '<span>' + geoName + '</span>' + _conqLabel;
+      // Header (bold): current holder + outpost number when conquered ("USA 2"),
+      // else the native country. Unclaimed land → "Unclaimed Territory".
+      let _headFlag='', _headName='Unclaimed Territory';
+      if(_holderFeat){
+        _headFlag = flagAny(_holderFeat.id,2);
+        _headName = _holderFeat.name + ((_oi && _oi.num) ? (' '+_oi.num) : '');
+      } else if(_nativeFeat){
+        _headFlag = flagAny(_nativeFeat.id,2);
+        _headName = _nativeFeat.name;
+      }
+      $("tip-name").innerHTML = _headFlag + '<span>' + _headName + '</span>';
 
       const sub=$("tip-sub");
       let html2="";
+      // ── Formerly {original} — shown only when the territory is conquered ──
+      if(_holderFeat && _nativeFeat){
+        html2 += "<span style='color:#94a3b8;font-size:10px'>Formerly </span>"
+          + "<span style='color:"+_nativeFeat.color+";font-weight:600'>"+_nativeFeat.name+"</span><br>"
+          + "<span style='color:#334155;font-size:9px'>───────────────</span><br>";
+      }
 
       // ── This specific pixel: who claimed it ──────────────────────────
       if(ci>=0 && featList[ci]){
@@ -10992,21 +11003,6 @@ vp.addEventListener("mousemove",e=>{
         }
         const claimers=[..._byCountry.values()].map(e=>[e.fi,e.count]).sort((a,b)=>b[1]-a[1]);
 
-        // Conquest status — v93r: id-based holder lookup (authoritative) plus the
-        // outpost number for coordination ("🚩 USA outpost · Outpost 2/3"). The old
-        // code matched the featList index against id-based keys, so it often missed.
-        const _gidStr = String(featList[gi].id);
-        const _holderId = _holderOfGeo(_gidStr);
-        if(_holderId){
-          const _hfi = idToFeatIdx.get(String(_holderId));
-          const _hf = (_hfi!==undefined) ? featList[_hfi] : null;
-          if(_hf){
-            const _oi = _outpostInfo(_holderId, _gidStr);
-            const _opTxt = (_oi && _oi.num) ? (" · Outpost "+_oi.num+"/"+_oi.total) : "";
-            html2+=flagAny(_hf.id,2)+"<span style='color:"+_hf.color+";font-weight:600'>🚩 "+_hf.name+" outpost</span><span style='color:#64748b;font-size:10px'>"+_opTxt+"</span><br>";
-          }
-        }
-
         // v93j: show the OWNER (native) country's hold first, then invaders.
         // Native effectively controls everything not foreign-painted (its painted
         // land + unpainted prepopulate) = total - foreignSum.
@@ -11018,16 +11014,10 @@ vp.addEventListener("mousemove",e=>{
           _foreignSum += cnt; _foreign.push([fi,cnt]);
         }
         const _nativePct = Math.round(Math.max(0, total - _foreignSum) / total * 100);
-        const _ownerFeat = featList[gi];
-        // v93r: if this homeland's native holds outposts (and the homeland itself
-        // isn't conquered), flag it as an empire capital for coordination.
-        const _ownEmpire = (!_holderId) ? _outpostInfo(_ownerFeat.id, '__none__') : null;
-        const _empireTxt = (_ownEmpire && _ownEmpire.total)
-          ? " <span style='color:#fbbf24;font-size:10px'>🏰 +"+_ownEmpire.total+" outpost"+(_ownEmpire.total===1?'':'s')+"</span>"
-          : "";
-        html2 += flagAny(_ownerFeat.id,1)
-          + "<span style='color:"+_ownerFeat.color+";font-weight:600'>"+_ownerFeat.name+"</span>"
-          + "<span style='color:#64748b'> "+_nativePct+"% (owner)</span>"+_empireTxt+"<br>";
+        // v93s: original (native) country's hold, labelled "(Original)".
+        html2 += flagAny(_nativeFeat.id,1)
+          + "<span style='color:"+_nativeFeat.color+";font-weight:600'>"+_nativeFeat.name+"</span>"
+          + "<span style='color:#64748b'> "+_nativePct+"% (Original)</span><br>";
         if(_foreign.length===0){
           html2+="<span style='color:#475569;font-size:10px'>No invaders</span>";
         } else {
