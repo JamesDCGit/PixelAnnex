@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-04-v93p';
+const SERVER_VERSION       = '2026-06-04-v93q';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3092,11 +3092,38 @@ function _pickBotMigrationTarget(fromCountryId) {
   return cands[0];
 }
 
-// Called (deferred) when a territory is permanently conquered:
+// v93q (#3): geos a country currently holds as outposts (conquered elsewhere).
+function _countryOutposts(countryId) {
+  const id = String(countryId), out = [];
+  for (const k of conqueredSet) {            // keys: "geo:conqueror"
+    const p = String(k).split(':');
+    if (p[1] === id && p[0] !== id) out.push(p[0]);
+  }
+  return out;
+}
+// The outpost where this country holds the most pixels — its relocation capital.
+function _largestOutpost(countryId) {
+  const id = String(countryId);
+  let best = null, bestCnt = -1;
+  for (const g of _countryOutposts(countryId)) {
+    const cnt = (geoClaimCnt[parseInt(g, 10)] && geoClaimCnt[parseInt(g, 10)][id]) || 0;
+    if (cnt > bestCnt) { bestCnt = cnt; best = g; }
+  }
+  return best;
+}
+
+// Called (deferred) when a territory's homeland is conquered.
+// v93q (#3): if the country still holds outposts it SURVIVES (empire continuity)
+// — keep its foreign pixels + bot in place, no transfer/migration. Only a truly
+// landless country runs the giveaway/migration below.
 //   1. Transfer foreign pixels to alliance partner
 //   2. Migrate the defeated bot (boost ally's bot + update player entry)
-function _onCountryConquered(conqueredGeoId) {
+function _onCountryConquered(conqueredGeoId, survives) {
   conqueredGeoId = String(conqueredGeoId);
+  if (survives) {
+    console.log(`[Conquest] ${conqueredGeoId} homeland fell but empire endures (${_countryOutposts(conqueredGeoId).length} outposts) — relocated, holdings kept`);
+    return;
+  }
   const homeGeoIdx    = parseInt(conqueredGeoId, 10); // numeric ISO stored in geoAtPixel
   const conqueredCidx = getIdx(conqueredGeoId);
 
@@ -3576,7 +3603,12 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
   const geoId = geoToId(geo);
   _conquestImmunity.set(geoId, Date.now() + CONQUEST_IMMUNITY_MS);
   conqueredSet.add(geo + ':' + conquerorId);
-  permanentlyConquered.add(geoId); // persists through reversals until world reset
+  // v93q (#3): empire continuity — if the fallen country still holds outposts it
+  // SURVIVES (relocates) rather than dying. Survivors are NOT permanentlyConquered,
+  // so they can still fight to reclaim their homeland (rare, but allowed).
+  const _isSelf   = String(conquerorId) === String(geoId);
+  const _survives = !_isSelf && _countryOutposts(geoId).length > 0;
+  if (!_survives) permanentlyConquered.add(geoId); // truly dead → locked until world reset
   // v92q/v92w: clear any active siege — a fallen country is out of the siege
   // system. Tell clients too so the in-game flash stops (checkSiegeState won't
   // fire siege-end for a now-permanentlyConquered geo).
@@ -3584,11 +3616,38 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
     siegedSet.delete(geo);
     broadcast(JSON.stringify({ type: 'siege', countryId: geoId, active: false }));
   }
-  setTimeout(() => _onCountryConquered(geoId), 0);
+  setTimeout(() => _onCountryConquered(geoId, _survives), 0);
   conquests.push({ geoIdx: geo, countryId: conquerorId });
   changed.push(...finisherFill(geo, conquerorId));
   // Skip reporting for self-conquest (country reclaiming its own native land)
-  if (String(conquerorId) === String(geoId)) return;
+  if (_isSelf) return;
+
+  // v93q (#3): notify the fallen country's players — relocate (empire endures)
+  // or die (no territory left → re-pick). Sent regardless of notability since
+  // it's gameplay-critical for that player; also banks a countriesLost stat.
+  {
+    const _relocTo = _survives ? _largestOutpost(geoId) : null;
+    for (const [, pp] of players) {
+      if (pp.isBot || !pp.ws || String(pp.countryId) !== String(geoId)) continue;
+      const _prof = pp.discordId ? profiles.get(pp.discordId) : null;
+      if (_prof) _prof.countriesLost = (_prof.countriesLost || 0) + 1;
+      try {
+        if (_survives) {
+          pp.ws.send(JSON.stringify({
+            type: 'capital_relocated', lostCountryId: geoId, attackerId: conquerorId,
+            newCapitalId: _relocTo, newCapitalName: _relocTo ? _countryName(_relocTo) : null,
+            outposts: _countryOutposts(geoId).length,
+          }));
+        } else {
+          pp.ws.send(JSON.stringify({
+            type: 'your_country_lost', lostCountryId: geoId, attackerId: conquerorId,
+            mercenaryBonus: 20,
+            keep: _prof ? { conquests: _prof.conquestsMade || 0, rank: _prof.rank || 'Soldier', points: _prof.points || 0 } : null,
+          }));
+        }
+      } catch (e) {}
+    }
+  }
   // v92f: only REPORT (Discord war event + screenshot + tweet) conquests that
   // involve a notable country. With the v92a lowered fall threshold, conquests
   // now fire in continuous waves — reporting them all (a) flooded the bot's
@@ -3613,19 +3672,6 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
     sassyText:   _sassyConq,
     imageUrl:    _conqShot || undefined,
   });
-  for (const [pid, p] of players) {
-    if (p.isBot || !p.ws) continue;
-    if (String(p.countryId) === String(geoId)) {
-      try {
-        p.ws.send(JSON.stringify({
-          type:           'your_country_lost',
-          lostCountryId:  geoId,
-          attackerId:     conquerorId,
-          mercenaryBonus: 20,
-        }));
-      } catch (e) {}
-    }
-  }
   try {
     pushTweetDraft({
       type:        'conquest',

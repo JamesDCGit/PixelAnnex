@@ -242,6 +242,42 @@ tweets, alliances were). v93o snapshots the board to `board_state.json`:
 - Worst-case loss on a hard crash = one snapshot interval (~30s of paints).
   Graceful restarts (deploy.ps1 / pm2 restart) lose nothing.
 
+## Conquest balance — empire model (v93p–v93q)
+
+Goal: make territorial gains feel durable + defensible, not "one counterattack
+wipes everything." Three levers (the 1+3+4 set):
+
+- **#1 Empire-backed homeland defense (v93p):** each outpost a country holds
+  raises the EFFECTIVE threshold to take its homeland — `empireDefenseBonus()`
+  = `min(0.20, outposts*0.02)`, ceil 0.95. Layered ON TOP of the byte-identical
+  `conquestThreshold()`; mirrored in client for prediction. Applied at both the
+  champion + contested conquest paths on the DEFENDER. Debug endpoint shows
+  `empireOutposts / empireBonusPct / effectiveConquestPct`.
+- **#3 Empire continuity (v93q):** a country whose homeland is conquered does
+  NOT die if it still holds ≥1 outpost — it RELOCATES (server sends
+  `capital_relocated`; players keep playing, empire + bot kept; `_onCountryConquered`
+  skips the giveaway/migration for survivors). Survivors are NOT added to
+  `permanentlyConquered`, so they can fight to reclaim their homeland (rare).
+  Only a country with ZERO territory dies → `your_country_lost` → re-pick.
+  `_countryOutposts()` / `_largestOutpost()` drive survival + relocation target.
+- **#4 Progression banked (v93q):** `your_country_lost` carries `keep:{conquests,
+  rank, points}` (from the persisted Discord profile) and the re-pick modal shows
+  "You keep…" so a true wipe never feels like total loss. (Profile stats already
+  persisted in profiles.json; this just surfaces them.)
+
+Re-pick / relocation is now driven STRICTLY by the server's targeted message —
+the client conquest-event handler no longer guesses (it only draws the attack
+arrow). `_countDistinctConquered()` (world-conquest trigger) counts
+`conqueredSet` homelands, so survivors don't break the world-conquest check.
+
+### Backlog — Stage 3 (operator-requested)
+- [ ] **Homeland/Outpost naming:** when a country holds multiple territories,
+  label them "USA Homeland / USA Outpost 1 / Outpost 2" for coordination, and
+  show the name under the flag. Client can derive from `conqueredSet`.
+- [ ] **(2b) Cascade death:** force re-pick when a country loses its LAST outpost
+  while its homeland is already gone (currently it becomes a landless "rebel"
+  that can keep fighting — acceptable, but not a hard "death").
+
 ## Droplet git hygiene
 
 The droplet working tree accumulates runtime-written files (`tweet_queue.json`,

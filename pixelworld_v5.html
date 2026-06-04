@@ -3300,7 +3300,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93p';
+const CODE_VERSION = '2026-06-04-v93q';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8036,13 +8036,10 @@ function mpHandleMessage(msg) {
       // Attack detection: if WE were conquered, show direction arrow + card + force repick
       if(targetFi === currentIdx && fi !== currentIdx){
         showAttackArrow(fi);
-        actPushCard({
-          variant: 'conquest',
-          title: t('act.your_country_fell_title'),
-          html: t('act.your_country_fell_text', { attacker: featList[fi]?.name || '?' }),
-        });
-        // Force country re-selection — player can no longer paint as this country
-        _showCountryRepickModal({ mercenaryBonus: 20 });
+        // v93q (#3): the attack card + the actual outcome — re-pick (your country
+        // held no territory) or relocation (empire endures) — is now driven by the
+        // server's targeted your_country_lost / capital_relocated message, so the
+        // client never guesses. Just show the directional arrow here.
       }
       // General conquest notification (when others conquer)
       else if(fi !== currentIdx && targetFi !== currentIdx){
@@ -8176,7 +8173,23 @@ function mpHandleMessage(msg) {
       break;
     }
     case 'your_country_lost': {
+      // v93q (#3): your country held no territory anywhere → full re-pick.
+      // msg.keep carries the progression you retain (shown in the modal).
       _showCountryRepickModal(msg);
+      break;
+    }
+    case 'capital_relocated': {
+      // v93q (#3): homeland fell but the empire endures — NO re-pick. You keep
+      // playing as your country, ruling from your largest outpost.
+      var _rcN = msg.outposts || 0;
+      actPushCard({
+        variant: 'win',
+        title: '🏛️ Capital Relocated',
+        html: 'Your homeland fell, but your empire endures! Capital moved to <b>' +
+              escapeHtml(msg.newCapitalName || 'your largest outpost') + '</b> — ' +
+              _rcN + ' territor' + (_rcN === 1 ? 'y' : 'ies') + ' still held. Fight on to reclaim your homeland.',
+      });
+      try { sfxConquestFor(currentIdx); } catch(e) {}
       break;
     }
     case 'monster_spawn': {
@@ -11655,9 +11668,18 @@ function _showCountryRepickModal(data) {
   overlay.id = 'repick-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(7,13,26,0.96);' +
     'color:#e2e8f0;font-family:"Courier New",monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;';
+  // v93q (#4): surface the progression the player KEEPS, so a wipe never feels
+  // like total loss. data.keep = { conquests, rank, points } from the server.
+  var _keep = data && data.keep;
+  var _keepHtml = _keep
+    ? '<div style="font-size:13px;color:#22c55e;margin-bottom:16px;">You keep everything you earned: 🏆 <b>' +
+      (_keep.conquests || 0) + '</b> conquests · 🎖️ <b>' + escapeHtml(String(_keep.rank || 'Soldier')) +
+      '</b> · <b>' + (_keep.points || 0).toLocaleString() + '</b> pts</div>'
+    : '';
   overlay.innerHTML =
     '<div style="font-size:28px;font-weight:700;color:#f87171;margin-bottom:6px;">⚔️ YOUR COUNTRY HAS FALLEN ⚔️</div>' +
     '<div style="font-size:13px;color:#94a3b8;margin-bottom:18px;">Pick a new allegiance to play as. <b style="color:#fbbf24">+20 mercenary bonus</b> on selection.</div>' +
+    _keepHtml +
     '<input type="text" id="repick-search" placeholder="Search countries…" style="background:#0f172a;border:1px solid #1e293b;color:#e2e8f0;padding:8px 12px;border-radius:6px;font-size:13px;width:280px;font-family:inherit;margin-bottom:12px;">' +
     '<div id="repick-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;max-width:720px;max-height:60vh;overflow-y:auto;width:100%;padding:8px;"></div>' +
     '<div style="font-size:10px;color:#475569;margin-top:14px;">Your XP, rank, and stats are preserved.</div>';
