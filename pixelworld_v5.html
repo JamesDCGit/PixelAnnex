@@ -3300,7 +3300,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93y';
+const CODE_VERSION = '2026-06-04-v93z';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5115,57 +5115,6 @@ function _rankBadge(pos){
   return '#' + pos;
 }
 
-// v93y (task 1): territory-panel click → the same breakdown the pixel inspector
-// shows, in a dismissible popup. _buildCountryCard mirrors the hover inspector's
-// COUNTRY section (header + conquered-count + Formerly + Original%/invaders);
-// keep the two in sync. Aggregates across all polygons of a country.
-function _buildCountryCard(gi){
-  if(gi<0 || !featList[gi]) return { name:'Unclaimed', body:"<span style='color:#475569'>No country data</span>" };
-  const nf=featList[gi]; const gid=String(nf.id);
-  const hid=_holderOfGeo(gid);
-  let hf=null, oi=null;
-  if(hid){ const hfi=idToFeatIdx.get(String(hid)); hf=(hfi!==undefined)?featList[hfi]:null; oi=_outpostInfo(hid,gid); }
-  const name=(hf?flagAny(hf.id,2):flagAny(nf.id,2))
-    +'<span>'+(hf?(hf.name+((oi&&oi.num)?(' '+oi.num):'')):nf.name)+'</span>';
-  let body='';
-  const curId=hf?String(hf.id):gid;
-  const ci=_outpostInfo(curId,' '); const curConq=ci?ci.total:0;
-  if(curConq>0) body+="<span style='color:#fbbf24;font-size:10px'>🗡️ Conquered "+curConq+" countr"+(curConq===1?'y':'ies')+"</span><br>";
-  if(hf) body+="<span style='color:#94a3b8;font-size:10px'>Formerly </span><span style='color:"+nf.color+";font-weight:600'>"+nf.name+"</span><br><span style='color:#334155;font-size:9px'>───────────────</span><br>";
-  let total=0; const byC=new Map();
-  for(let cfi=0;cfi<featList.length;cfi++){ const cf=featList[cfi]; if(!cf||String(cf.id)!==gid)continue; total+=(geoTotal[cfi]||0); const gc=geoClaimCnt[cfi]||{}; for(const [fiStr,n] of Object.entries(gc)){ if(!(n>0))continue; const f=featList[+fiStr]; if(!f)continue; const cid=String(f.id); const e=byC.get(cid); if(e)e.count+=n; else byC.set(cid,{count:n,fi:+fiStr}); } }
-  if(total<1)total=1;
-  const claimers=[...byC.values()].map(e=>[e.fi,e.count]).sort((a,b)=>b[1]-a[1]);
-  let fSum=0; const fgn=[];
-  for(const [fi,cnt] of claimers){ const f=featList[+fi]; if(f&&String(f.id)===gid)continue; fSum+=cnt; fgn.push([fi,cnt]); }
-  const natPct=Math.round(Math.max(0,total-fSum)/total*100);
-  body+=flagAny(nf.id,1)+"<span style='color:"+nf.color+";font-weight:600'>"+nf.name+"</span><span style='color:#64748b'> "+natPct+"% (Original)</span><br>";
-  if(fgn.length===0) body+="<span style='color:#475569;font-size:10px'>No invaders</span>";
-  else { body+="<span style='color:#64748b;font-size:10px'>Invaders — "+Math.round(fSum/total*100)+"%:</span><br>"; for(const [idx,count] of fgn.slice(0,5)){ const pct=Math.round(count/total*100); const f=featList[+idx]; if(!f)continue; body+=flagAny(f.id,1)+"<span style='color:"+f.color+"'>"+f.name+"</span><span style='color:#64748b'> "+pct+"%</span><br>"; } if(fgn.length>5) body+="<span style='color:#334155'>+"+(fgn.length-5)+" more</span>"; }
-  return { name, body };
-}
-function _countryInspectOutside(e){ const p=document.getElementById('country-inspect-pop'); if(p && !p.contains(e.target)) closeCountryInspectPopup(); }
-function _countryInspectEsc(e){ if(e.key==='Escape') closeCountryInspectPopup(); }
-function closeCountryInspectPopup(){ const p=document.getElementById('country-inspect-pop'); if(p)p.remove(); document.removeEventListener('mousedown',_countryInspectOutside); document.removeEventListener('keydown',_countryInspectEsc); }
-function showCountryInspectPopup(gi, anchorEl){
-  closeCountryInspectPopup();
-  const card=_buildCountryCard(gi);
-  const pop=document.createElement('div');
-  pop.id='country-inspect-pop';
-  pop.style.cssText='position:fixed;z-index:100000;background:rgba(7,13,26,0.97);border:1px solid #1e293b;border-radius:8px;padding:10px 12px;color:#e2e8f0;font-family:"Courier New",monospace;font-size:11px;max-width:260px;box-shadow:0 8px 30px rgba(0,0,0,0.55);';
-  pop.innerHTML='<div style="font-weight:700;font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:6px">'+card.name+'</div>'+card.body
-    +'<div style="margin-top:8px;border-top:1px solid #1e293b;padding-top:6px"><a href="#" id="cip-jump" style="color:#38bdf8;font-size:11px;text-decoration:none">📍 Jump to map</a></div>';
-  document.body.appendChild(pop);
-  const jb=document.getElementById('cip-jump');
-  if(jb) jb.onclick=function(e){ e.preventDefault(); closeCountryInspectPopup(); if(typeof jumpToCountry==='function') jumpToCountry(gi); };
-  const r=anchorEl.getBoundingClientRect();
-  let left=r.right+8, top=r.top;
-  const pw=pop.offsetWidth, ph=pop.offsetHeight;
-  if(left+pw>window.innerWidth-8) left=Math.max(8, r.left-pw-8);
-  if(top+ph>window.innerHeight-8) top=Math.max(8, window.innerHeight-ph-8);
-  pop.style.left=left+'px'; pop.style.top=top+'px';
-  setTimeout(function(){ document.addEventListener('mousedown',_countryInspectOutside); document.addEventListener('keydown',_countryInspectEsc); },0);
-}
 function scheduleLegend(){
   clearTimeout(legTimer);legTimer=setTimeout(()=>{
     const el=$("leg-items");el.innerHTML="";
@@ -5189,8 +5138,10 @@ function scheduleLegend(){
       // to match exactly how it looks painted on the map canvas
       const row=document.createElement("div");row.className="leg-row";
       row.dataset.countryId = f.id;
-      row.onclick=()=>showCountryInspectPopup(+idx, row); // v93y task 1: inspector popup (has a Jump link)
-      row.title='Click to inspect ' + f.name;
+      // v93z: click highlights this country's painted footprint on the map (same
+      // effect as right-click inspect) — no popup menu.
+      row.onclick=()=>{ inspectCountryHighlight(+idx); if(typeof sfxUIClick==='function') sfxUIClick(); };
+      row.title='Click to highlight ' + f.name + ' on the map';
       // v92b: rank-position badge (🥇🥈🥉 / #4…)
       const _lr=document.createElement('span'); _lr.className='leg-rank'; _lr.textContent=_rankBadge(_rankPos+1); row.appendChild(_lr);
       const _lf=createFlagEl(f.id,1); if(_lf)row.appendChild(_lf);
@@ -7693,6 +7644,19 @@ function applySnapshotRuns(ab) {
     requestAnimationFrame(replayStep);
   }
   scheduleLegend();
+  // v93z: if the player's starting country has ALREADY fallen (e.g. it was
+  // conquered before this refresh), show the re-pick window instead of dropping
+  // them onto a dead country — which also triggered a phantom fight-back banner.
+  try {
+    setTimeout(function(){
+      const _mf = featList[currentIdx];
+      if (_mf && typeof _isCountryConqueredClient === 'function' && _isCountryConqueredClient(_mf.id)
+          && typeof _showCountryRepickModal === 'function'
+          && !document.getElementById('repick-overlay')) {
+        _showCountryRepickModal({ mercenaryBonus: 0, onLoad: true });
+      }
+    }, 400);
+  } catch (e) {}
 }
 
 // v92p: report our visible map rect (with 25% overscan) so the server can filter
@@ -11170,6 +11134,29 @@ let _inspectExpiry = 0;
 let _lastInspectTick = 0;
 const INSPECT_DURATION_MS = 3500;
 
+// v93z: highlight a country's painted footprint (owner + alliance members) on the
+// map — the same effect as right-click inspect. Shared by the contextmenu handler
+// and the territory-panel click. Expands to ALL polygons of each country id so
+// split countries (mainland + islands) are fully covered. Returns summary info.
+function inspectCountryHighlight(ownerFi){
+  if (ownerFi == null || ownerFi < 0) return null;
+  const owner = featList[ownerFi];
+  if (!owner) return null;
+  const ids = new Set([String(owner.id)]);
+  let allyCount = 0;
+  const ally = _allianceByCountry[owner.id];
+  if (ally && Array.isArray(ally.countries)) {
+    for (const cId of ally.countries) { if (String(cId) !== String(owner.id)) { ids.add(String(cId)); allyCount++; } }
+  }
+  const ownerSet = new Set();
+  for (let fi = 0; fi < featList.length; fi++) { const f = featList[fi]; if (f && ids.has(String(f.id))) ownerSet.add(fi); }
+  const painted = [];
+  for (let k = 0; k < MAP_PX; k++) { if (ownerSet.has(claimByPixel[k])) painted.push(k); }
+  _inspectPainted = new Int32Array(painted);
+  _inspectHomeSet = ownerSet;
+  _inspectExpiry  = performance.now() + INSPECT_DURATION_MS;
+  return { name: owner.name, count: painted.length, allyCount };
+}
 vp.addEventListener("contextmenu", e => {
   e.preventDefault();
   const p = screenToMap(e.clientX, e.clientY);
@@ -11192,43 +11179,21 @@ vp.addEventListener("contextmenu", e => {
   const owner = featList[ownerFi];
   if (!owner) return;
 
-  // Build owner-set: the painter + any alliance members
-  const ownerSet = new Set();
-  ownerSet.add(ownerFi);
-  let allyCount = 0;
-  const ally = _allianceByCountry[owner.id];
-  if (ally && Array.isArray(ally.countries)) {
-    for (const cId of ally.countries) {
-      const fi = idToFeatIdx.get(String(cId));
-      if (fi !== undefined && fi !== ownerFi) { ownerSet.add(fi); allyCount++; }
-    }
-  }
-
-  // Scan ONCE: find all painted pixels owned by anyone in ownerSet (full map).
-  // ~2M-pixel scan, takes a few ms on modern CPUs. Cached for the 3.5s window.
-  const painted = [];
-  for (let k = 0; k < MAP_PX; k++) {
-    if (ownerSet.has(claimByPixel[k])) painted.push(k);
-  }
-
-  _inspectPainted = new Int32Array(painted);
-  _inspectHomeSet = ownerSet;
-  _inspectExpiry  = performance.now() + INSPECT_DURATION_MS;
+  // v93z: shared highlight (also used by the territory-panel click).
+  const info = inspectCountryHighlight(ownerFi);
   sfxUIClick();
 
-  if (typeof actPushCard === 'function') {
-    const cnt = painted.length.toLocaleString();
-    // v89: bodyBlock layout + swatch legend so the inspector reads cleanly
-    // instead of squashing into the single-row flex body.
-    const allyLine = allyCount > 0
-      ? '<div>+ <b>' + allyCount + '</b> allied countr' + (allyCount === 1 ? 'y' : 'ies') + '</div>'
+  if (info && typeof actPushCard === 'function') {
+    const cnt = info.count.toLocaleString();
+    const allyLine = info.allyCount > 0
+      ? '<div>+ <b>' + info.allyCount + '</b> allied countr' + (info.allyCount === 1 ? 'y' : 'ies') + '</div>'
       : '';
     actPushCard({
       variant: 'info',
       bodyBlock: true,
       title: '🔍 ' + owner.name,
       html:
-        '<div><b>' + cnt + '</b> pixel' + (painted.length === 1 ? '' : 's') + ' on the map</div>' +
+        '<div><b>' + cnt + '</b> pixel' + (info.count === 1 ? '' : 's') + ' on the map</div>' +
         allyLine +
         '<div class="insp-legend">' +
           '<span class="insp-sw" style="background:#fbbf24;"></span>home territory' +
@@ -11793,9 +11758,15 @@ function _showCountryRepickModal(data) {
       (_keep.conquests || 0) + '</b> conquests · 🎖️ <b>' + escapeHtml(String(_keep.rank || 'Soldier')) +
       '</b> · <b>' + (_keep.points || 0).toLocaleString() + '</b> pts</div>'
     : '';
+  // v93z: bonus text only when there's actually a bonus (e.g. a load-time re-pick
+  // for a country that fell before you joined awards nothing).
+  var _mb = (data && data.mercenaryBonus) || 0;
+  var _subHtml = _mb > 0
+    ? 'Pick a new allegiance to play as. <b style="color:#fbbf24">+' + _mb + ' mercenary bonus</b> on selection.'
+    : 'Your country has already fallen. Pick a new allegiance to play as.';
   overlay.innerHTML =
     '<div style="font-size:28px;font-weight:700;color:#f87171;margin-bottom:6px;">⚔️ YOUR COUNTRY HAS FALLEN ⚔️</div>' +
-    '<div style="font-size:13px;color:#94a3b8;margin-bottom:18px;">Pick a new allegiance to play as. <b style="color:#fbbf24">+20 mercenary bonus</b> on selection.</div>' +
+    '<div style="font-size:13px;color:#94a3b8;margin-bottom:18px;">' + _subHtml + '</div>' +
     _keepHtml +
     '<input type="text" id="repick-search" placeholder="Search countries…" style="background:#0f172a;border:1px solid #1e293b;color:#e2e8f0;padding:8px 12px;border-radius:6px;font-size:13px;width:280px;font-family:inherit;margin-bottom:12px;">' +
     '<div id="repick-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;max-width:720px;max-height:60vh;overflow-y:auto;width:100%;padding:8px;"></div>' +
