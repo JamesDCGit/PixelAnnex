@@ -3320,6 +3320,28 @@ setInterval(() => {
   for (const [k, t] of _conquestImmunity) if (t < now) _conquestImmunity.delete(k);
 }, 60_000);
 
+// v94b: periodic ghost-flag cleanup. A conquest normally reverses when someone
+// PAINTS the geo and re-checks the threshold — but if a geo is wiped to zero held
+// pixels and nobody paints it again (e.g. a nuke clears a whole conquered country),
+// the conqueredSet entry + flag linger. Every 60s, reverse any conquest whose
+// holder (incl. allies) now holds ZERO pixels there. Conservative: only true
+// ghosts, never actively-contested countries.
+setInterval(() => {
+  for (const key of [...conqueredSet]) {
+    const parts = String(key).split(':');
+    if (parts.length !== 2) continue;
+    const geo = parseInt(parts[0], 10), cId = parts[1];
+    if (!Number.isFinite(geo) || cId === geoToId(geo)) continue;
+    if (!(geoTotal[geo] > 0)) continue;
+    if (getAllyOwnedCount(geo, cId) <= 0) {
+      conqueredSet.delete(key);
+      _clearPermanentIfFree(geo);
+      broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: cId, reason: 'empty' }));
+      console.log('[Conquest] ghost flag cleared:', cId, 'held 0 px of', geoToId(geo));
+    }
+  }
+}, 60_000);
+
 
 function isBombOnCooldownServer(key) {
   const last = _lastBombAt.get(key);
