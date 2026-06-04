@@ -3300,7 +3300,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93s';
+const CODE_VERSION = '2026-06-04-v93t';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10946,6 +10946,15 @@ vp.addEventListener("mousemove",e=>{
 
       const sub=$("tip-sub");
       let html2="";
+      // v93t: how many countries the CURRENT holder has conquered (empire size).
+      {
+        const _curId = _holderFeat ? String(_holderFeat.id) : _gid;
+        const _ci = _curId ? _outpostInfo(_curId, ' ') : null;  //   never matches → total only
+        const _curConq = _ci ? _ci.total : 0;
+        if(_curConq > 0){
+          html2 += "<span style='color:#fbbf24;font-size:10px'>🗡️ Conquered "+_curConq+" countr"+(_curConq===1?'y':'ies')+"</span><br>";
+        }
+      }
       // ── Formerly {original} — shown only when the territory is conquered ──
       if(_holderFeat && _nativeFeat){
         html2 += "<span style='color:#94a3b8;font-size:10px'>Formerly </span>"
