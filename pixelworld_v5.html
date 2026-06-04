@@ -3300,7 +3300,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93q';
+const CODE_VERSION = '2026-06-04-v93r';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10992,12 +10992,18 @@ vp.addEventListener("mousemove",e=>{
         }
         const claimers=[..._byCountry.values()].map(e=>[e.fi,e.count]).sort((a,b)=>b[1]-a[1]);
 
-        // Conquest status
-        const conqueredBy = [...conqueredSet].find(k=>k.startsWith(gi+":"));
-        if(conqueredBy){
-          const conquerer=featList[+conqueredBy.split(":")[1]];
-          if(conquerer){
-            html2+=flagAny(conquerer.id,2)+"<span style='color:"+conquerer.color+";font-weight:600'>Conquered by "+conquerer.name+"</span><br>";
+        // Conquest status — v93r: id-based holder lookup (authoritative) plus the
+        // outpost number for coordination ("🚩 USA outpost · Outpost 2/3"). The old
+        // code matched the featList index against id-based keys, so it often missed.
+        const _gidStr = String(featList[gi].id);
+        const _holderId = _holderOfGeo(_gidStr);
+        if(_holderId){
+          const _hfi = idToFeatIdx.get(String(_holderId));
+          const _hf = (_hfi!==undefined) ? featList[_hfi] : null;
+          if(_hf){
+            const _oi = _outpostInfo(_holderId, _gidStr);
+            const _opTxt = (_oi && _oi.num) ? (" · Outpost "+_oi.num+"/"+_oi.total) : "";
+            html2+=flagAny(_hf.id,2)+"<span style='color:"+_hf.color+";font-weight:600'>🚩 "+_hf.name+" outpost</span><span style='color:#64748b;font-size:10px'>"+_opTxt+"</span><br>";
           }
         }
 
@@ -11013,9 +11019,15 @@ vp.addEventListener("mousemove",e=>{
         }
         const _nativePct = Math.round(Math.max(0, total - _foreignSum) / total * 100);
         const _ownerFeat = featList[gi];
+        // v93r: if this homeland's native holds outposts (and the homeland itself
+        // isn't conquered), flag it as an empire capital for coordination.
+        const _ownEmpire = (!_holderId) ? _outpostInfo(_ownerFeat.id, '__none__') : null;
+        const _empireTxt = (_ownEmpire && _ownEmpire.total)
+          ? " <span style='color:#fbbf24;font-size:10px'>🏰 +"+_ownEmpire.total+" outpost"+(_ownEmpire.total===1?'':'s')+"</span>"
+          : "";
         html2 += flagAny(_ownerFeat.id,1)
           + "<span style='color:"+_ownerFeat.color+";font-weight:600'>"+_ownerFeat.name+"</span>"
-          + "<span style='color:#64748b'> "+_nativePct+"% (owner)</span><br>";
+          + "<span style='color:#64748b'> "+_nativePct+"% (owner)</span>"+_empireTxt+"<br>";
         if(_foreign.length===0){
           html2+="<span style='color:#475569;font-size:10px'>No invaders</span>";
         } else {
@@ -11659,6 +11671,32 @@ function _isCountryConqueredClient(countryId) {
     if (String(key).startsWith(prefix)) return true;
   }
   return false;
+}
+
+// v93r (#3 Stage 3): coordination naming. Outposts of a holder are numbered by
+// geo-id ascending — stable and IDENTICAL on every client, so "USA Outpost 2"
+// refers to the same territory for everyone. conqueredSet keys are id-based
+// "geoCountryId:holderId" (server-authoritative). Returns the holder of a geo
+// (or null) and the geo's outpost number among that holder's holdings.
+function _holderOfGeo(geoCountryId) {
+  const gid = String(geoCountryId);
+  for (const k of conqueredSet) {
+    const p = String(k).split(':');
+    if (p[0] === gid && p[1] !== gid) return p[1];
+  }
+  return null;
+}
+function _outpostInfo(holderId, geoCountryId) {
+  const hid = String(holderId);
+  const owned = [];
+  for (const k of conqueredSet) {
+    const p = String(k).split(':');
+    if (p[1] === hid && p[0] !== hid) owned.push(p[0]);
+  }
+  if (!owned.length) return null;
+  owned.sort((a, b) => (+a) - (+b));
+  const idx = owned.indexOf(String(geoCountryId));
+  return { num: idx >= 0 ? idx + 1 : 0, total: owned.length };
 }
 
 let _repickAwarded = false;
