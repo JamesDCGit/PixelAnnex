@@ -3300,7 +3300,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93w';
+const CODE_VERSION = '2026-06-04-v93y';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5115,6 +5115,57 @@ function _rankBadge(pos){
   return '#' + pos;
 }
 
+// v93y (task 1): territory-panel click → the same breakdown the pixel inspector
+// shows, in a dismissible popup. _buildCountryCard mirrors the hover inspector's
+// COUNTRY section (header + conquered-count + Formerly + Original%/invaders);
+// keep the two in sync. Aggregates across all polygons of a country.
+function _buildCountryCard(gi){
+  if(gi<0 || !featList[gi]) return { name:'Unclaimed', body:"<span style='color:#475569'>No country data</span>" };
+  const nf=featList[gi]; const gid=String(nf.id);
+  const hid=_holderOfGeo(gid);
+  let hf=null, oi=null;
+  if(hid){ const hfi=idToFeatIdx.get(String(hid)); hf=(hfi!==undefined)?featList[hfi]:null; oi=_outpostInfo(hid,gid); }
+  const name=(hf?flagAny(hf.id,2):flagAny(nf.id,2))
+    +'<span>'+(hf?(hf.name+((oi&&oi.num)?(' '+oi.num):'')):nf.name)+'</span>';
+  let body='';
+  const curId=hf?String(hf.id):gid;
+  const ci=_outpostInfo(curId,' '); const curConq=ci?ci.total:0;
+  if(curConq>0) body+="<span style='color:#fbbf24;font-size:10px'>🗡️ Conquered "+curConq+" countr"+(curConq===1?'y':'ies')+"</span><br>";
+  if(hf) body+="<span style='color:#94a3b8;font-size:10px'>Formerly </span><span style='color:"+nf.color+";font-weight:600'>"+nf.name+"</span><br><span style='color:#334155;font-size:9px'>───────────────</span><br>";
+  let total=0; const byC=new Map();
+  for(let cfi=0;cfi<featList.length;cfi++){ const cf=featList[cfi]; if(!cf||String(cf.id)!==gid)continue; total+=(geoTotal[cfi]||0); const gc=geoClaimCnt[cfi]||{}; for(const [fiStr,n] of Object.entries(gc)){ if(!(n>0))continue; const f=featList[+fiStr]; if(!f)continue; const cid=String(f.id); const e=byC.get(cid); if(e)e.count+=n; else byC.set(cid,{count:n,fi:+fiStr}); } }
+  if(total<1)total=1;
+  const claimers=[...byC.values()].map(e=>[e.fi,e.count]).sort((a,b)=>b[1]-a[1]);
+  let fSum=0; const fgn=[];
+  for(const [fi,cnt] of claimers){ const f=featList[+fi]; if(f&&String(f.id)===gid)continue; fSum+=cnt; fgn.push([fi,cnt]); }
+  const natPct=Math.round(Math.max(0,total-fSum)/total*100);
+  body+=flagAny(nf.id,1)+"<span style='color:"+nf.color+";font-weight:600'>"+nf.name+"</span><span style='color:#64748b'> "+natPct+"% (Original)</span><br>";
+  if(fgn.length===0) body+="<span style='color:#475569;font-size:10px'>No invaders</span>";
+  else { body+="<span style='color:#64748b;font-size:10px'>Invaders — "+Math.round(fSum/total*100)+"%:</span><br>"; for(const [idx,count] of fgn.slice(0,5)){ const pct=Math.round(count/total*100); const f=featList[+idx]; if(!f)continue; body+=flagAny(f.id,1)+"<span style='color:"+f.color+"'>"+f.name+"</span><span style='color:#64748b'> "+pct+"%</span><br>"; } if(fgn.length>5) body+="<span style='color:#334155'>+"+(fgn.length-5)+" more</span>"; }
+  return { name, body };
+}
+function _countryInspectOutside(e){ const p=document.getElementById('country-inspect-pop'); if(p && !p.contains(e.target)) closeCountryInspectPopup(); }
+function _countryInspectEsc(e){ if(e.key==='Escape') closeCountryInspectPopup(); }
+function closeCountryInspectPopup(){ const p=document.getElementById('country-inspect-pop'); if(p)p.remove(); document.removeEventListener('mousedown',_countryInspectOutside); document.removeEventListener('keydown',_countryInspectEsc); }
+function showCountryInspectPopup(gi, anchorEl){
+  closeCountryInspectPopup();
+  const card=_buildCountryCard(gi);
+  const pop=document.createElement('div');
+  pop.id='country-inspect-pop';
+  pop.style.cssText='position:fixed;z-index:100000;background:rgba(7,13,26,0.97);border:1px solid #1e293b;border-radius:8px;padding:10px 12px;color:#e2e8f0;font-family:"Courier New",monospace;font-size:11px;max-width:260px;box-shadow:0 8px 30px rgba(0,0,0,0.55);';
+  pop.innerHTML='<div style="font-weight:700;font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:6px">'+card.name+'</div>'+card.body
+    +'<div style="margin-top:8px;border-top:1px solid #1e293b;padding-top:6px"><a href="#" id="cip-jump" style="color:#38bdf8;font-size:11px;text-decoration:none">📍 Jump to map</a></div>';
+  document.body.appendChild(pop);
+  const jb=document.getElementById('cip-jump');
+  if(jb) jb.onclick=function(e){ e.preventDefault(); closeCountryInspectPopup(); if(typeof jumpToCountry==='function') jumpToCountry(gi); };
+  const r=anchorEl.getBoundingClientRect();
+  let left=r.right+8, top=r.top;
+  const pw=pop.offsetWidth, ph=pop.offsetHeight;
+  if(left+pw>window.innerWidth-8) left=Math.max(8, r.left-pw-8);
+  if(top+ph>window.innerHeight-8) top=Math.max(8, window.innerHeight-ph-8);
+  pop.style.left=left+'px'; pop.style.top=top+'px';
+  setTimeout(function(){ document.addEventListener('mousedown',_countryInspectOutside); document.addEventListener('keydown',_countryInspectEsc); },0);
+}
 function scheduleLegend(){
   clearTimeout(legTimer);legTimer=setTimeout(()=>{
     const el=$("leg-items");el.innerHTML="";
@@ -5138,8 +5189,8 @@ function scheduleLegend(){
       // to match exactly how it looks painted on the map canvas
       const row=document.createElement("div");row.className="leg-row";
       row.dataset.countryId = f.id;
-      row.onclick=()=>jumpToCountry(+idx);
-      row.title='Click to jump to ' + f.name;
+      row.onclick=()=>showCountryInspectPopup(+idx, row); // v93y task 1: inspector popup (has a Jump link)
+      row.title='Click to inspect ' + f.name;
       // v92b: rank-position badge (🥇🥈🥉 / #4…)
       const _lr=document.createElement('span'); _lr.className='leg-rank'; _lr.textContent=_rankBadge(_rankPos+1); row.appendChild(_lr);
       const _lf=createFlagEl(f.id,1); if(_lf)row.appendChild(_lf);
@@ -5679,9 +5730,16 @@ function showEncircleBurst(mapCX, mapCY, enclosedCount, mult) {
 }
 
 function applyEncirclementBonus(enclosed, mult, durationMs, cx, cy) {
-  _encircleExpiresAt = Date.now() + durationMs;
-  _encircleMult      = mult;
+  // v93y (task 3): bonuses only ratchet UP. A smaller new encirclement must not
+  // downgrade an active higher one — keep the higher multiplier and extend the
+  // timer to the later expiry so the big bonus runs its full course.
+  const _now = Date.now();
+  const _active = _encircleExpiresAt && _now < _encircleExpiresAt;
+  const _effMult = _active ? Math.max(_encircleMult, mult) : mult;
+  _encircleMult      = _effMult;
+  _encircleExpiresAt = Math.max(_active ? _encircleExpiresAt : 0, _now + durationMs);
   _encircleEnclosed  = enclosed;
+  mult = _effMult; // display the effective (kept) multiplier everywhere below
   // Show the brief centred burst over the enclosed region
   if (typeof cx === 'number' && typeof cy === 'number') {
     showEncircleBurst(cx, cy, enclosed, mult);
@@ -10781,11 +10839,22 @@ function filterCselOptions(q){
   renderCselList(q);
 }
 
+// v93y (task 2): bonuses (encirclement + rally regen) are earned ON a country
+// and don't carry to a different one. Reset to that country's defaults on switch.
+function _resetBonusesForCountryChange(){
+  if (typeof clearHighlight === 'function') clearHighlight(); // rally regen + initial-bonus
+  _encircleMult = 1; _encircleExpiresAt = 0; _encircleEnclosed = 0;
+  if (_encircleTickId) { clearInterval(_encircleTickId); _encircleTickId = null; }
+  const _eb = document.getElementById('encircle-banner');
+  if (_eb) _eb.classList.remove('active');
+}
 function selectCountry(idx){
+  const _countryChanged = (idx !== currentIdx);
   currentIdx = idx;
   markOutlineDirty();
   const f = featList[idx];
   if(!f) return;
+  if(_countryChanged) _resetBonusesForCountryChange();
   const sw = document.getElementById('swatch');
   if(sw) sw.style.background = f.color;
   document.getElementById('csel-label').textContent = f.name;
@@ -11775,6 +11844,7 @@ function _showCountryRepickModal(data) {
     const idx = featList.indexOf(f);
     if (idx < 0) return;
     currentIdx = idx;
+    if (typeof _resetBonusesForCountryChange === 'function') _resetBonusesForCountryChange(); // v93y task 2
     try { localStorage.setItem('pa_country_idx', String(idx)); } catch(e) {}
     if (!_repickAwarded && data && data.mercenaryBonus) {
       _repickAwarded = true;

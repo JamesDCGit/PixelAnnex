@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-04-v93w';
+const SERVER_VERSION       = '2026-06-04-v93y';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -5018,12 +5018,19 @@ const httpServer = http.createServer(async (req, res) => {
 
   // ── /api/world-state — public summary for the welcome popup ──
   if (url.pathname === '/api/world-state') {
-    // Top 3 countries by total claimed pixel count
+    // Top 3 countries by total claimed pixel count.
+    // v93y (task 4): only real, named countries on the leaderboard — exclude
+    // unnamed Natural Earth features (no name / "Country NNN" / "Disputed
+    // Territory"), which otherwise surfaced as e.g. "Country 168".
     const topCountries = Object.entries(countryPxCount)
-      .filter(([, cnt]) => cnt > 0)
+      .filter(([id, cnt]) => {
+        if (cnt <= 0) return false;
+        const nm = countryNames[id];
+        return nm && !/^Country \d+$/.test(nm) && nm !== 'Disputed Territory';
+      })
       .sort(([, a], [, b]) => b - a)
       .slice(0, 3)
-      .map(([id, count]) => ({ id, count, name: countryNames[id] || ('Country ' + id) }));
+      .map(([id, count]) => ({ id, count, name: countryNames[id] }));
     // Conquered country count: size of conqueredSet (each entry = "geoId:ownerId")
     // Count distinct geographic countries that are currently conquered.
     const distinctConquered = new Set();
