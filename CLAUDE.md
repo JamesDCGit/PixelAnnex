@@ -17,6 +17,8 @@ process, deployed on a DigitalOcean droplet behind PM2.
 | `server.js` | Node WS server (≈4.5k lines: game logic, broadcasts, bot tick) |
 | `bot.js` | Separate bot process — external SSE-driven bot client |
 | `sw.js` | Service worker — caches static assets, must be cache-busted on deploy |
+| `mapshot.js` | Server-side PNG screenshot renderer (uses `@napi-rs/canvas@1.0.0`) |
+| `xposter.js` | Optional X (Twitter) poster for the tweet dashboard (`twitter-api-v2`) |
 | `countries-10m.json` | TopoJSON world map data (3.6MB) |
 | `deploy.ps1` | Deploy script — pulls + PM2 restart on the droplet |
 
@@ -186,14 +188,39 @@ Before editing any function:
 
 ## Screenshots for tweets (v88)
 
-`mapshot.js` renders a 256×256 PNG of a country with a hand-rolled PNG
-encoder (zlib only). `@napi-rs/canvas` was dropped — its 0.1.80 publish
-declares `os:win32` and breaks `npm install` on the linux droplet, and a
-native dep isn't worth it for a flat image with no text. Client sends
-`geoColors` (id→hex) at join; server caches `geoColorsById`;
-`makeCountryShot()` writes to `/shots/` (pruned to 60), served at
-`/shots/{name}.png`. `makeNotableShot()` only renders when the event will
-actually tweet (notable country). Conquest + multi-attack attach `imageUrl`.
+`mapshot.js` renders a 256×256 PNG of a country. Client sends `geoColors`
+(id→hex) at join; server caches `geoColorsById`; `makeCountryShot()` writes
+to `/shots/` (pruned to 60), served at `/shots/{name}.png`.
+`makeNotableShot()` only renders when the event will actually tweet (notable
+country). Conquest + multi-attack attach `imageUrl`.
+
+**`@napi-rs/canvas` IS used and required** (v92m added real flag rendering via
+`loadImage`). The droplet runs **`@napi-rs/canvas@1.0.0`** (works on linux);
+`package.json` was corrected from the old broken `^0.1.65` to `^1.0.0` in
+v93l. The earlier "dropped, native dep breaks install" note was stale — do
+NOT remove it or the `[Mapshot] preloaded N flag images` path breaks. The 0.x
+line (esp. 0.1.80, `os:win32`) is what broke linux installs; 1.x is fine.
+
+## X (Twitter) posting (v93l) — manual-approve only
+
+`xposter.js` posts tweet drafts to X via `twitter-api-v2` (pure JS, no native
+dep). **The game server never auto-posts** — the operator clicks "🚀 Post to
+X" per draft in the admin dashboard (`/admin/tweets?key=$TWEETS_ADMIN_SECRET`).
+
+- Flow: dashboard `postx` button → `POST /api/tweets/:id/postx` → `postToX()`
+  uploads media (`/shots` or `/timelapse` file) via `client.v1.uploadMedia`,
+  then `client.v2.tweet(text, {media})`; draft marked `posted` + `postedUrl`.
+- Auth: OAuth 1.0a user context. **Operator-supplied `.env` vars** (never
+  commit): `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_SECRET`.
+  The access token MUST be generated with **Read+Write** app permission.
+- `isXEnabled()` (all 4 vars present) gates the button; `/api/tweets` returns
+  `xEnabled` so the dashboard shows/hides it. Missing dep/creds degrade
+  gracefully (button hidden / error surfaced, server never crashes).
+- Media upload needs a tier that includes `media/upload` (Free may not; Basic
+  does). Text-only posting works on Free.
+- **Deploy note:** adding `twitter-api-v2` needs `npm install` on the droplet
+  (deploy.ps1 does NOT run it). `package-lock.json` is NOT git-tracked, so
+  `git pull` won't conflict on it.
 
 ## Droplet git hygiene
 

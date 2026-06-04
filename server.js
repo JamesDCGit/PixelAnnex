@@ -36,6 +36,7 @@ const fs        = require('fs');
 const os        = require('os');
 const { execFile } = require('child_process');
 const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require('./mapshot'); // v88/v92e/v92m: tweet screenshots + flags
+const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitter) poster
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
@@ -1754,6 +1755,7 @@ const TWEET_ADMIN_HTML = `<!DOCTYPE html>
 const KEY = new URLSearchParams(location.search).get('key');
 const headers = { 'Content-Type': 'application/json', 'X-Admin-Key': KEY };
 let activeFilter = 'pending';
+let X_ENABLED = false; // v93l: set from /api/tweets — gates the real "Post to X" button
 
 function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -1769,6 +1771,7 @@ async function load() {
   const url = activeFilter ? '/api/tweets?key=' + KEY + '&status=' + activeFilter : '/api/tweets?key=' + KEY;
   const r = await fetch(url);
   const d = await r.json();
+  X_ENABLED = !!d.xEnabled;
   render(d.tweets || []);
 }
 
@@ -1794,13 +1797,15 @@ function render(tweets) {
         <a class="btn-dl" href="\${t.imageUrl}" download
            style="font-size:12px;color:#38bdf8;text-decoration:none">⬇ Download media (attach when posting)</a>
       </div>\` : ''}
+      \${t.status === 'posted' && t.postedUrl ? \`<div class="posted-link"><a href="\${t.postedUrl}" target="_blank" style="color:#22c55e;font-size:12px;text-decoration:none">✓ View on X ↗</a></div>\` : ''}
       <div class="actions">
         <span class="count \${t.text.length > 280 ? 'over' : ''}">\${t.text.length}/280</span>
         \${t.status === 'pending' ? \`
           <button class="btn-edit"   data-act="edit">Edit</button>
           <button class="btn-copy"   data-act="copy">Copy</button>
           \${t.imageUrl ? '<button class="btn-copy" data-act="copy-img">Copy image</button>' : ''}
-          <button class="btn-post"   data-act="post-on-x">Post on X</button>
+          \${X_ENABLED ? '<button class="btn-post" data-act="postx">🚀 Post to X</button>' : ''}
+          <button class="btn-post"   data-act="post-on-x">Open on X ↗</button>
           <button class="btn-post"   data-act="posted">Mark posted</button>
           <button                    data-act="dismiss">Dismiss</button>
         \` : ''}
@@ -1883,6 +1888,29 @@ document.addEventListener('click', async (e) => {
   if (act === 'post-on-x') {
     const url = 'https://x.com/intent/post?text=' + encodeURIComponent(textEl.textContent);
     window.open(url, '_blank');
+    return;
+  }
+  if (act === 'postx') {
+    // Real post via the X API (uploads media + tweets). Confirm first since
+    // this is irreversible and public.
+    if (!confirm('Post this to X now? This is public and cannot be undone.')) return;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Posting…';
+    try {
+      const resp = await fetch('/api/tweets/' + id + '/postx?key=' + KEY, {
+        method: 'POST', headers,
+        body: JSON.stringify({ text: textEl.textContent }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+      btn.textContent = 'Posted ✓';
+      load();
+    } catch (err) {
+      alert('Post to X failed: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
     return;
   }
   if (act === 'posted') {
@@ -4666,7 +4694,8 @@ const httpServer = http.createServer(async (req, res) => {
       const status = url.searchParams.get('status');
       const filtered = status ? tweetQueue.filter(t => t.status === status) : tweetQueue;
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ tweets: filtered }));
+      // v93l: xEnabled tells the dashboard whether to show the real "Post to X" button.
+      res.end(JSON.stringify({ tweets: filtered, xEnabled: xposter.isXEnabled() }));
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/tweets') {
@@ -4691,6 +4720,46 @@ const httpServer = http.createServer(async (req, res) => {
       });
       return;
     }
+    // v93l: real post to X (manual-approve). Uploads media (if any) then tweets,
+    // marks the draft posted, and records the resulting tweet URL.
+    const postxMatch = url.pathname.match(/^\/api\/tweets\/([a-z0-9]+)\/postx$/);
+    if (req.method === 'POST' && postxMatch) {
+      const id = postxMatch[1];
+      let body = '';
+      req.on('data', c => { body += c.toString(); if (body.length > 8192) req.destroy(); });
+      req.on('end', async () => {
+        const t = tweetQueue.find(x => x.id === id);
+        if (!t) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'not found' }));
+          return;
+        }
+        if (!xposter.isXEnabled()) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'X API not configured on the server' }));
+          return;
+        }
+        try {
+          const data = body ? JSON.parse(body) : {};
+          // Honour any in-dashboard text edit; fall back to the stored draft text.
+          const text = (data.text != null ? String(data.text) : t.text);
+          const result = await xposter.postToX({ text, imageUrl: t.imageUrl });
+          t.status    = 'posted';
+          t.text      = String(text).slice(0, 280);
+          t.postedUrl = result.url || null;
+          t.postedAt  = Date.now();
+          saveTweetQueue();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ tweet: t, result }));
+        } catch (e) {
+          console.error('[Tweets] postx failed:', e && e.message ? e.message : e);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: (e && e.message) ? e.message : String(e) }));
+        }
+      });
+      return;
+    }
+
     const mutateMatch = url.pathname.match(/^\/api\/tweets\/([a-z0-9]+)\/(posted|dismissed|edit)$/);
     if (req.method === 'POST' && mutateMatch) {
       const id = mutateMatch[1], action = mutateMatch[2];
