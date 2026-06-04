@@ -5896,7 +5896,16 @@ wss.on('connection', (ws, req) => {
         minY = Math.max(0, Math.min(MAP_H - 1, minY));
         maxY = Math.max(0, Math.min(MAP_H - 1, maxY));
         if (maxX < minX || maxY < minY) break;
-        if ((maxX - minX + 1) * (maxY - minY + 1) >= VIEWPORT_MAX_FILTER_AREA) { player.viewport = null; break; }
+        if ((maxX - minX + 1) * (maxY - minY + 1) >= VIEWPORT_MAX_FILTER_AREA) {
+          // v93v: rect too big to filter → full stream. CRITICAL: still reconcile
+          // the visible rect first. While previously windowed, off-rect changes
+          // were filtered out, so the client has drifted (e.g. Italy showing a
+          // stale owner). Switching to full stream only fixes FUTURE deltas — the
+          // existing drift is never resynced without this snapshot.
+          player.viewport = null;
+          sendRegionSnapshot(player, minX, minY, maxX, maxY);
+          break;
+        }
         player.viewport = { minX, minY, maxX, maxY };
         sendRegionSnapshot(player, minX, minY, maxX, maxY);
         break;
