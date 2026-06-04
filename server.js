@@ -3286,6 +3286,34 @@ function clearPixelsInRadius(cx, cy, radius) {
   return changed;
 }
 
+// v94b: after a nuke (or any radius clear) wipes a conquered geo's pixels, the
+// conqueror may no longer hold it — reverse the conquest so the flag disappears
+// (the normal paint/bomb path does this via applyPixels; the nuke path didn't).
+function _reverseConquestsForGeo(geo) {
+  const total = geoTotal[geo] || 0;
+  if (!total) return;
+  const gidStr = geoToId(geo);
+  for (const key of [...conqueredSet]) {
+    const parts = String(key).split(':');
+    if (parts[0] !== String(geo) || parts[1] === gidStr) continue;
+    const cId = parts[1];
+    if (getAllyOwnedCount(geo, cId) / total < reversalThreshold(total)) {
+      conqueredSet.delete(key);
+      _clearPermanentIfFree(geo);
+      broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: cId, reason: 'nuke' }));
+      try {
+        pushTweetDraft({
+          type: 'reversal',
+          text: tweetForReversal(gidStr, cId),
+          dedupeKey: 'reversal:' + gidStr + ':' + cId,
+          throttleKey: 'reversal_geo:' + gidStr,
+          countries: [gidStr, cId],
+        });
+      } catch (e) {}
+    }
+  }
+}
+
 // Cleanup stale conquest immunity entries every 60s
 setInterval(() => {
   const now = Date.now();
@@ -6205,6 +6233,13 @@ wss.on('connection', (ws, req) => {
           _nukeZones.push({ cx, cy, radius, expiresAt });
           const changed = clearPixelsInRadius(cx, cy, radius);
           if (changed.length) queueDelta(changed);
+          // v94b: a nuke can wipe a conquered country to zero held pixels — reverse
+          // those conquests (so the flag disappears) and refresh siege state.
+          if (changed.length) {
+            const _affGeos = new Set();
+            for (const c of changed) { const g = geoAtPixel[c.y * MAP_W + c.x]; if (g >= 0) _affGeos.add(g); }
+            for (const g of _affGeos) { _reverseConquestsForGeo(g); checkSiegeState(g); }
+          }
           // Broadcast the zone to all clients so they render the overlay + reject local paint
           broadcast(JSON.stringify({
             type: 'nuke_zone',
