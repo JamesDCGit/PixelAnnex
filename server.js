@@ -1120,8 +1120,10 @@ function _geoContextSassy(attackerId, defenderId) {
 }
 
 function tweetForConquest(attackerId, defenderGeoId) {
-  const a = _countryName(attackerId);
-  const d = _countryName(defenderGeoId);
+  // v93m: country names rendered as national hashtags (e.g. #USA, #France) for
+  // X reach. _natHashtag → short alias (#USA) or stripped name (#SouthAfrica).
+  const a = _natHashtag(attackerId);
+  const d = _natHashtag(defenderGeoId);
   const contextual = _geoContextSassy(attackerId, defenderGeoId);
   if (contextual) return contextual;
   let conquestsHeld = 0;
@@ -1134,16 +1136,16 @@ function tweetForConquest(attackerId, defenderGeoId) {
 
 function tweetForReversal(victimId, oppressorId) {
   return _pickSassy(SASS_REVERSAL)({
-    v: _countryName(victimId),
-    o: _countryName(oppressorId),
+    v: _natHashtag(victimId),   // v93m: hashtags for X reach
+    o: _natHashtag(oppressorId),
   });
 }
 
 function tweetForNuke(attackerId, cx, cy) {
   const i = cy * MAP_W + cx;
   const geoId = (i >= 0 && i < geoAtPixel.length) ? geoAtPixel[i] : -1;
-  const targetName = geoId >= 0 ? _countryName(String(geoId)) : 'open territory';
-  return _pickSassy(SASS_NUKE)({ a: _countryName(attackerId), target: targetName });
+  const targetName = geoId >= 0 ? _natHashtag(String(geoId)) : 'open territory'; // v93m: hashtag
+  return _pickSassy(SASS_NUKE)({ a: _natHashtag(attackerId), target: targetName });
 }
 
 function tweetForDailySummary() {
@@ -1154,14 +1156,14 @@ function tweetForDailySummary() {
   if (!top.length) return null;
   const distinctConquered = new Set();
   for (const key of conqueredSet) distinctConquered.add(String(key).split(':')[0]);
-  const lines = top.map(([id, c], i) => `${i + 1}. ${_countryName(id)} (${c.toLocaleString()} px)`).join(' · ');
+  const lines = top.map(([id, c], i) => `${i + 1}. ${_natHashtag(id)} (${c.toLocaleString()} px)`).join(' · '); // v93m: hashtags
   return _pickSassy(SASS_DAILY)({ lines, conquered: distinctConquered.size });
 }
 
 function tweetForAdmiralPromotion(username, countryId) {
   return _pickSassy(SASS_ADMIRAL)({
     user: username,
-    country: countryId ? _countryName(countryId) : null,
+    country: countryId ? _natHashtag(countryId) : null, // v93m: hashtag
   });
 }
 
@@ -1567,8 +1569,8 @@ async function _scrapeNewsAndQueue() {
       const sig = ids.slice().sort().join('-') + ':' + theme;
       if (seenSig.has(sig)) continue;
       seenSig.add(sig);
-      const aName = countryNames[ids[0]] || ('Country ' + ids[0]);
-      const bName = ids[1] ? (countryNames[ids[1]] || ('Country ' + ids[1])) : null;
+      const aName = _natHashtag(ids[0]); // v93m: national hashtags in news tweets too
+      const bName = ids[1] ? _natHashtag(ids[1]) : null;
       matched.push({ ids, theme, aName, bName });
       if (matched.length >= NEWS_MAX_DRAFTS) break;
     }
@@ -2264,8 +2266,9 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
       sassyText:    _sassyMulti,
     });
     try {
-      const defName = _countryName(defenderId);
-      const attNames = attackerIds.slice(0, 3).map(id => _countryName(id)).join(', ');
+      // v93m: country names as national hashtags inline (defender + attackers).
+      const defName = _natHashtag(defenderId);
+      const attNames = attackerIds.slice(0, 3).map(id => _natHashtag(id)).join(', ');
       const more = attackerIds.length > 3 ? ' +' + (attackerIds.length - 3) + ' more' : '';
       const sassyMulti = _pickSassy(SASS_MULTI)({
         n: attackerIds.length,
@@ -2274,7 +2277,9 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
       });
       pushTweetDraft({
         type:        'multi_attack',
-        text:        (sassyMulti + ' ' + _flagEmoji(defenderId) + _natHashtag(defenderId)).slice(0, 279),
+        // Defender is already a hashtag inline now, so the old trailing
+        // flag+hashtag tag is dropped to avoid duplication.
+        text:        sassyMulti.slice(0, 279),
         dedupeKey:   'multi_attack:' + defenderId + ':' + Math.floor(now / 60000),
         throttleKey: 'multi_attack_def:' + defenderId,
         countries:   [defenderId, ...attackerIds], // v84: notable if defender OR any attacker is notable
