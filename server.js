@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-04-v93k';
+const SERVER_VERSION       = '2026-06-04-v93p';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -78,6 +78,23 @@ const FALLEN_NATIVE_FRAC = 0.05; // (legacy — retained for the debug endpoint 
 const CONTEST_FLOOR      = 0.40; // >= 40% of the country must be painted (contested)
 const CONTEST_MAJORITY   = 0.70; // foreigners must hold >= 70% of the painted territory
 const CONTEST_TOTAL_FRAC = 0.60; // OR foreigners painted >= 60% of ALL land (decisive coverage)
+// ── v93p (#1): empire-backed homeland defense ─────────────────────
+// Each territory a country has conquered ("outpost") raises the bar to take its
+// HOMELAND, so expansion makes you harder to dislodge — gains feel durable while
+// staying defendable. Applied as an EFFECTIVE threshold layered on top of the
+// byte-identical conquestThreshold(); the same function is mirrored in
+// pixelworld_v5.html so client-side conquest prediction stays aligned.
+const EMPIRE_DEF_STEP = 0.02;  // +2% conquest threshold per outpost held
+const EMPIRE_DEF_MAX  = 0.20;  // capped at +20%
+const EMPIRE_DEF_CEIL = 0.95;  // never require more than 95% (always conquerable)
+function empireDefenseBonus(countryId) {
+  let outposts = 0;
+  const id = String(countryId);
+  for (const k of conqueredSet) {           // keys: "geoId:conquerorId"
+    if (String(k).split(':')[1] === id) outposts++;
+  }
+  return Math.min(EMPIRE_DEF_MAX, outposts * EMPIRE_DEF_STEP);
+}
 const MAX_STROKE_PX      = 500;
 const BROADCAST_MS       = 1000;  // v77: 1Hz delta broadcast (was 20Hz/50ms).
                                     // Client visually staggers paints over ~900ms
@@ -3701,9 +3718,12 @@ function applyPixels(pixels, countryId) {
       if (o > champOwned) { champOwned = o; champId = cId; }
     }
     const key = champId != null ? (geo + ':' + champId) : null;
+    // v93p (#1): effective threshold = base size-scaled threshold + the
+    // defender's empire-defense bonus (more outposts → harder homeland).
+    const _effThresh = Math.min(EMPIRE_DEF_CEIL, conquestThreshold(total) + empireDefenseBonus(_geoId));
     // Normal path: the strongest foreign claimant (+allies) reaches the
     // size-scaled threshold.
-    if (champId != null && !conqueredSet.has(key) && champOwned / total >= conquestThreshold(total)) {
+    if (champId != null && !conqueredSet.has(key) && champOwned / total >= _effThresh) {
       _conquerGeo(geo, champId, conquests, changed);
     } else if (!permanentlyConquered.has(_geoId)) {
       // v93h: contested-territory fall. The champion path above measures vs TOTAL
@@ -3724,8 +3744,10 @@ function applyPixels(pixels, countryId) {
         if (cnt > topCnt) { topCnt = cnt; topId = cId; }
       }
       const painted = foreignSum + nativeOwned;
-      const contestedMajority = painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= CONTEST_MAJORITY;
-      const decisiveCoverage  = (foreignSum / total) >= CONTEST_TOTAL_FRAC;
+      // v93p (#1): empire bonus hardens the contested-fall path too.
+      const _eb = empireDefenseBonus(_geoId);
+      const contestedMajority = painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb);
+      const decisiveCoverage  = (foreignSum / total) >= Math.min(0.98, CONTEST_TOTAL_FRAC + _eb);
       if (topId && topCnt > nativeOwned && (contestedMajority || decisiveCoverage)) {
         _conquerGeo(geo, topId, conquests, changed);
       }
@@ -5219,6 +5241,10 @@ const httpServer = http.createServer(async (req, res) => {
         contestFloorPct: CONTEST_FLOOR * 100,              // v93h contested path
         contestMajorityPct: CONTEST_MAJORITY * 100,
         decisiveTotalPct: CONTEST_TOTAL_FRAC * 100,
+        // v93p (#1): empire-backed defense
+        empireOutposts: (() => { let n = 0; for (const k of conqueredSet) if (String(k).split(':')[1] === geoIdStr) n++; return n; })(),
+        empireBonusPct: +(empireDefenseBonus(geoIdStr) * 100).toFixed(1),
+        effectiveConquestPct: +(Math.min(EMPIRE_DEF_CEIL, cThresh + empireDefenseBonus(geoIdStr)) * 100).toFixed(1),
       },
       champion: champId ? {
         id: champId, name: _countryName(champId),

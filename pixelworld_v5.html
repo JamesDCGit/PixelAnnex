@@ -3300,7 +3300,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93k';
+const CODE_VERSION = '2026-06-04-v93p';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4232,7 +4232,10 @@ function checkConquest(geoIdx,claimerIdx){
   // v64: use combined alliance pixel count for conquest threshold
   const owned=_getAllyOwned(geoIdx,claimerIdx);
   const total=geoTotal[geoIdx]||0;
-  if(total===0||owned/total<conquestThreshold(total))return false;
+  // v93p (#1): effective threshold includes the defender's empire-defense bonus.
+  const _defId=featList[geoIdx]&&String(featList[geoIdx].id);
+  const _eff=Math.min(EMPIRE_DEF_CEIL, conquestThreshold(total)+(_defId?empireDefenseBonus(_defId):0));
+  if(total===0||owned/total<_eff)return false;
   conqueredSet.add(key);
   sfxConquestFor(claimerIdx);
   showConquestToast(geoIdx,claimerIdx);
@@ -5218,6 +5221,17 @@ function conquestThreshold(total) {
 // Reversal 15 points below conquest (hysteresis).
 function reversalThreshold(total) {
   return Math.max(0, conquestThreshold(total) - 0.15);
+}
+// v93p (#1): empire-backed homeland defense — mirrors server.js so conquest
+// prediction stays aligned. Each outpost a country holds raises the bar to take
+// its homeland. conqueredSet here carries the server-authoritative id-based keys
+// "geoId:conquerorId" (plus some local index-based prediction entries; counting
+// by id is close enough for a non-authoritative prediction).
+const EMPIRE_DEF_STEP = 0.02, EMPIRE_DEF_MAX = 0.20, EMPIRE_DEF_CEIL = 0.95;
+function empireDefenseBonus(countryId) {
+  let outposts = 0; const id = String(countryId);
+  for (const k of conqueredSet) { if (String(k).split(':')[1] === id) outposts++; }
+  return Math.min(EMPIRE_DEF_MAX, outposts * EMPIRE_DEF_STEP);
 }
 
 // v64: return combined pixel count for claimerIdx + all its alliance partners
