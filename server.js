@@ -4162,9 +4162,36 @@ function loadBoardSnapshot() {
     }
     console.log('[Board] restored', painted, 'painted pixels,', conqueredSet.size, 'conquests (saved',
       data.savedAt ? new Date(data.savedAt).toISOString() : '?', ')');
+    // v93x: claimByPixel is restored but geoClaimCnt (read by the conquest check)
+    // needs the geography map (geoAtPixel), which only arrives at the first client
+    // join. Defer the rebuild until then.
+    if (painted > 0) _boardRestoredPendingRebuild = true;
   } catch (e) {
     console.error('[Board] load failed — starting fresh:', (e && e.message) ? e.message : e);
   }
+}
+
+// v93x: rebuild geoClaimCnt[geoCountryId][ownerCountryId] from the restored
+// claimByPixel + geoAtPixel. Without this, board-persistence restores the visible
+// board but the conquest check (which reads geoClaimCnt) sees stale/empty counts,
+// so restored occupation never triggers a fall (e.g. Italy 98% foreign on the map
+// but the check saw ~7%). Run once after the first join provides geoAtPixel.
+let _boardRestoredPendingRebuild = false;
+function _rebuildGeoClaimCnt() {
+  for (const k of Object.keys(geoClaimCnt)) delete geoClaimCnt[k];
+  let n = 0;
+  for (let i = 0; i < MAP_PX; i++) {
+    const owner = claimByPixel[i];
+    if (owner < 0) continue;
+    const geo = geoAtPixel[i];
+    if (geo < 0) continue;
+    const ownerId = idxToId[owner];
+    if (ownerId === undefined) continue;
+    (geoClaimCnt[geo] ??= {});
+    geoClaimCnt[geo][ownerId] = (geoClaimCnt[geo][ownerId] || 0) + 1;
+    n++;
+  }
+  console.log('[Board] rebuilt geoClaimCnt from restored board:', n, 'claimed pixels across', Object.keys(geoClaimCnt).length, 'geos');
 }
 
 loadBoardSnapshot();
@@ -5957,6 +5984,12 @@ wss.on('connection', (ws, req) => {
             console.log('  geoAtPixel received');
           } else {
             console.log('  geoAtPixel refreshed');
+          }
+          // v93x: geoAtPixel is now available — rebuild geoClaimCnt from the
+          // restored board so the conquest check sees real occupation.
+          if (_boardRestoredPendingRebuild) {
+            _rebuildGeoClaimCnt();
+            _boardRestoredPendingRebuild = false;
           }
         }
         if (msg.landRuns) {
