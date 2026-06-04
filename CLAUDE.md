@@ -174,15 +174,15 @@ Before editing any function:
 - [ ] Translate non-English i18n strings to current thresholds (9 locales still cite 70%/80% conquest, "Bombs"). English fixed in v89.
 - [ ] Remove dead `toggleOwnStroke` / `_ownStrokeVisible` / own-stroke layer (button gone since v82, layer always off)
 
-### Operator backlog (2026-06-04) — after resync-fix + 3B
-- [ ] **Conquer bug (recurring):** countries carved up by MULTIPLE attackers still aren't falling. The fallen-by-plurality path (native ≤5% AND foreign-sum ≥70% AND ≥2 holders) isn't triggering in practice — re-investigate with `/api/debug/country` on a stuck multi-attacked country.
-- [ ] **Fallen-country selection:** grey out + strike-through conquered countries in the in-game country picker (can't be selected; `permanentlyConquered`).
-- [ ] **Slow monster spawns:** UFO/monsters should appear ~once at a random time per 15 min (currently too frequent).
-- [ ] **/worldstate command:** public output in `#general` — total conquests, country in the lead, etc.
-- [ ] **/rally tuning:** players spam `/rally` for huge bonuses — add cooldown/diminishing returns / cap the bonus.
-- [ ] **Country-number bug:** "Country 171" and "Country 65" appearing (unmapped/placeholder geo IDs — find source; 171/065 have no name).
-- [ ] **Pixel inspector:** also show the OWNER (native) country's % of its own land, not just the invaders'.
-- [ ] **Daily status + GIF:** move to `#general`, run every **12 hours** (not 24), with **15-min** frame capture (currently 30-min/24h to #alliance-updates+twitter).
+### Operator backlog (2026-06-04) — after resync-fix + 3B — ALL DONE (v93h–v93j)
+- [x] **Conquer bug (recurring):** v93h replaced the plurality path with a contested-territory majority metric. Root cause: conquest was measured vs TOTAL land, diluted by huge unpainted interiors (China ~91% unpainted). New path: falls to the largest foreign holder when `topCnt > nativeOwned` AND (painted/total ≥ `CONTEST_FLOOR` 0.40 AND foreignSum/painted ≥ `CONTEST_MAJORITY` 0.70) OR (foreignSum/total ≥ `CONTEST_TOTAL_FRAC` 0.60). Debug: `/api/debug/country?...` `contested` block.
+- [x] **Fallen-country selection:** v93j — repick modal shows conquered countries greyed + struck-through + disabled (no longer hidden).
+- [x] **Slow monster spawns:** v93j — `MONSTER_DEBUG=false`; UFO 50-80m / KRAKEN 25-45m / GODZILLA 30-50m (~1/15min combined).
+- [x] **/worldstate command:** v93j — `/worldstate` slash cmd + `/api/bot/worldstate` → embed in `#general` (conquests, alliances, top conquerors).
+- [x] **/rally tuning:** v93i — `RALLY_COOLDOWN_MS=60000` client cooldown gating `enterHighlightMode`+`setHighlight`; button countdown.
+- [x] **Country-number bug:** v93j — ids 65/171 are unnamed Natural Earth features (disputed/buffer zones). featList name now falls back to "Disputed Territory", which flows to server/bot via the join `geoNames` map. (Takes effect once a v93j client connects and re-sends geoNames.)
+- [x] **Pixel inspector:** v93j — shows owner flag + name + "X% (owner)" then an "Invaders — Y%" list (top 3 + "+N more").
+- [x] **Daily status + GIF:** v93j — fires every 12h (00:00 + 12:00 UTC) to `#general` via a dedicated `daily_report` event; timelapse now 15-min frames over a rolling 12h window.
 
 ## Screenshots for tweets (v88)
 
