@@ -222,6 +222,26 @@ X" per draft in the admin dashboard (`/admin/tweets?key=$TWEETS_ADMIN_SECRET`).
   (deploy.ps1 does NOT run it). `package-lock.json` is NOT git-tracked, so
   `git pull` won't conflict on it.
 
+## Board persistence (v93o)
+
+The painted board lives in `claimByPixel` (in-memory). Before v93o, **any
+restart/deploy wiped the world** (state was never persisted — only profiles,
+tweets, alliances were). v93o snapshots the board to `board_state.json`:
+
+- `saveBoardSnapshot()` every `BOARD_SNAPSHOT_MS` (default 30s) + on SIGINT/
+  SIGTERM (sync, so PM2 restarts/deploys save first). Atomic write via `.tmp`
+  + rename. Gated on `mapReady` so it won't clobber the restored file before a
+  client has loaded the geography.
+- `loadBoardSnapshot()` on boot restores `claimByPixel`, `conqueredSet`,
+  `permanentlyConquered`; derives `ownerPixels` + `countryPxCount`.
+- **Stored as ID-based RLE runs `[start, len, countryId]`**, NOT raw indices:
+  `getIdx()` assigns indices in order-of-first-appearance, so indices are NOT
+  stable across runs. Restore remaps IDs → fresh indices via `getIdx()`.
+- `board_state.json` is gitignored + runtime-written on the droplet (same
+  hygiene caveat as the others below).
+- Worst-case loss on a hard crash = one snapshot interval (~30s of paints).
+  Graceful restarts (deploy.ps1 / pm2 restart) lose nothing.
+
 ## Droplet git hygiene
 
 The droplet working tree accumulates runtime-written files (`tweet_queue.json`,

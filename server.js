@@ -1970,8 +1970,10 @@ function saveProfiles() {
   }
 }
 setInterval(saveProfiles, 60 * 1000);
-process.on('SIGTERM', () => { saveProfiles(); });
-process.on('SIGINT',  () => { saveProfiles(); process.exit(0); });
+// v93o: also persist the board on shutdown so deploys/restarts resume the world.
+// saveBoardSnapshot is a hoisted fn defined later; sync=true for a clean exit.
+process.on('SIGTERM', () => { saveProfiles(); saveBoardSnapshot(true); });
+process.on('SIGINT',  () => { saveProfiles(); saveBoardSnapshot(true); process.exit(0); });
 // profile = { discordId, username, avatar, countryMain, countryB, countryC, rank, xp, joinedAt }
 
 function generateToken() {
@@ -3978,6 +3980,106 @@ const bots = new Map(); // countryId → { countryId, bucket, geoIdx, frontierId
 const geoPixels    = {};  // geoIdx → Int32Array (built once)
 const ownerPixels  = {};  // countryIdx → Set<pixelOffset> (maintained live)
 const geoBbox      = {};  // geoIdx → {minX,minY,maxX,maxY} (built once in buildGeoIndex)
+
+// ── v93o: board persistence (pixel map survives restarts/deploys) ──────────
+// The painted board (claimByPixel) + conquests live only in memory; a PM2
+// restart or deploy used to wipe the whole world. We snapshot to disk on a
+// cadence + on graceful shutdown, and restore on boot.
+//
+// IMPORTANT: claimByPixel stores getIdx() indices, which are assigned in order
+// of first appearance and are therefore NOT stable across runs. So the board is
+// persisted as ID-based run-length runs ([start, len, countryId]) and the IDs
+// are remapped to fresh indices via getIdx() on restore. countryPxCount and
+// ownerPixels are derived from the restored board (guaranteed consistent).
+const BOARD_FILE        = path.join(__dirname, 'board_state.json');
+const BOARD_SNAPSHOT_MS = parseInt(process.env.BOARD_SNAPSHOT_MS || '30000', 10);
+
+function _serializeBoard() {
+  const runs = [];
+  let rs = -1, ro = -99;
+  for (let i = 0; i <= MAP_PX; i++) {
+    const o = i < MAP_PX ? claimByPixel[i] : -999;
+    if (o !== ro) {
+      if (ro >= 0 && rs >= 0) runs.push([rs, i - rs, idxToId[ro]]); // [start, len, countryId]
+      rs = i; ro = o;
+    }
+  }
+  return JSON.stringify({
+    v: 1,
+    savedAt: Date.now(),
+    runs,
+    conquered: [...conqueredSet],
+    permanentlyConquered: [...permanentlyConquered],
+  });
+}
+
+function _writeBoard(json, sync) {
+  const tmp = BOARD_FILE + '.tmp';
+  if (sync) {
+    fs.writeFileSync(tmp, json);
+    fs.renameSync(tmp, BOARD_FILE);          // atomic replace
+  } else {
+    fs.writeFile(tmp, json, err => {
+      if (err) { console.error('[Board] write failed:', err.message); return; }
+      fs.rename(tmp, BOARD_FILE, e2 => { if (e2) console.error('[Board] rename failed:', e2.message); });
+    });
+  }
+}
+
+let _boardSaving = false;
+function saveBoardSnapshot(sync) {
+  // Only persist once map geography is loaded — otherwise there is no live
+  // world to save and we'd risk clobbering the file we just restored on boot.
+  if (!mapReady) return;
+  if (_boardSaving && !sync) return; // skip if an async write is still in flight
+  try {
+    _boardSaving = true;
+    _writeBoard(_serializeBoard(), !!sync);
+  } catch (e) {
+    console.error('[Board] snapshot failed:', (e && e.message) ? e.message : e);
+  } finally {
+    _boardSaving = false;
+  }
+}
+
+function loadBoardSnapshot() {
+  try {
+    if (!fs.existsSync(BOARD_FILE)) { console.log('[Board] no snapshot found — starting a fresh world'); return; }
+    const data = JSON.parse(fs.readFileSync(BOARD_FILE, 'utf8'));
+    if (!data || !Array.isArray(data.runs)) { console.warn('[Board] snapshot malformed — ignoring'); return; }
+    claimByPixel.fill(-1);
+    for (const r of data.runs) {
+      const s = r[0] | 0, l = r[1] | 0, id = String(r[2]);
+      const idx = getIdx(id);
+      const end = Math.min(s + l, MAP_PX);
+      for (let i = s; i < end; i++) claimByPixel[i] = idx;
+    }
+    // Derive ownerPixels + countryPxCount from the restored board.
+    for (const k of Object.keys(ownerPixels))   delete ownerPixels[k];
+    for (const k of Object.keys(countryPxCount)) delete countryPxCount[k];
+    let painted = 0;
+    for (let i = 0; i < MAP_PX; i++) {
+      const o = claimByPixel[i];
+      if (o < 0) continue;
+      (ownerPixels[o] || (ownerPixels[o] = new Set())).add(i);
+      const id = idxToId[o];
+      countryPxCount[id] = (countryPxCount[id] || 0) + 1;
+      painted++;
+    }
+    conqueredSet.clear();
+    for (const k of (data.conquered || [])) conqueredSet.add(k);
+    permanentlyConquered.clear();
+    for (const k of (data.permanentlyConquered || [])) permanentlyConquered.add(String(k));
+    console.log('[Board] restored', painted, 'painted pixels,', conqueredSet.size, 'conquests (saved',
+      data.savedAt ? new Date(data.savedAt).toISOString() : '?', ')');
+  } catch (e) {
+    console.error('[Board] load failed — starting fresh:', (e && e.message) ? e.message : e);
+  }
+}
+
+loadBoardSnapshot();
+setInterval(() => saveBoardSnapshot(false), BOARD_SNAPSHOT_MS);
+console.log('[Board] snapshot cadence', (BOARD_SNAPSHOT_MS / 1000) + 's →', BOARD_FILE);
 
 function getGeoForCountry(countryId) {
   return parseInt(countryId, 10);

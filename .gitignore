@@ -50,5 +50,8 @@ flag_test.html
 # ── Runtime data ─────────────────────────────────────────────────
 profiles.json
 alliance_state.json
+board_state.json
+board_state.json.tmp
+tweet_queue.json
 shots/
 timelapse/
