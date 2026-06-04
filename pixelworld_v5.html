@@ -211,6 +211,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .csel-opt:hover{background:#0f172a;}
 .csel-opt.selected{background:#0f172a;color:#e2e8f0;}
 .csel-opt.disabled{opacity:0.3;pointer-events:none;}
+.csel-opt.disabled .csel-opt-name{text-decoration:line-through;} /* v93k: fallen */
 .csel-opt-dot{width:6px;height:6px;border-radius:1px;flex-shrink:0;}
 .csel-opt-name{overflow:hidden;text-overflow:ellipsis;}
 .csel-player-count{margin-left:auto;font-size:9px;color:#475569;white-space:nowrap;padding-left:4px;flex-shrink:0;}
@@ -3299,7 +3300,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93j';
+const CODE_VERSION = '2026-06-04-v93k';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4645,6 +4646,14 @@ async function boot(){
     }
     console.log("Micro-islands removed:",removed,"pixels");
   }
+
+  // v93k: rebuild the in-game country picker now that geoTotal is final.
+  // The earlier buildCselOptions() at boot runs BEFORE rasterization populates
+  // geoTotal, so isPlayableCountry() (which gates on geoTotal[fi]>0 since v40)
+  // returned false for every country and the picker came out empty/blank.
+  // Rebuilding here fixes the blank in-game country menu (e.g. the re-pick /
+  // welcome-back flow). geoTotal is no longer mutated after this point.
+  buildCselOptions();
 
   // ── Draw borders on border canvas ────────────────────────────
   
@@ -10704,7 +10713,11 @@ function renderCselList(filter){
   list.innerHTML = '';
   for(const {idx,f} of _cselOptions){
     if(q && !f.name.toLowerCase().includes(q)) continue;
-    const isConquered = [...conqueredSet].some(k=>{ const [g,c]=k.split(':'); return +g===idx && +c!==idx; });
+    // v93k: the authoritative server 'conquest' path keys conqueredSet by COUNTRY
+    // ID (geoCountryId:countryId), not featList index. The old check compared
+    // country-id keys against the featList index, so fallen countries were never
+    // greyed here. Use the same id-based helper the re-pick modal uses.
+    const isConquered = _isCountryConqueredClient(f.id);
     const div = document.createElement('div');
     div.className = 'csel-opt' + (idx===currentIdx?' selected':'') + (isConquered?' disabled':'');
     div.dataset.idx = idx;
