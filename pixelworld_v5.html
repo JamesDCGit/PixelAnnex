@@ -1161,6 +1161,19 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   will-change: transform;
 }
 #flag-overlay { transition: opacity .2s linear; }
+/* v94: country name/outpost label under each flag — fixed screen size, fades with
+   the flag overlay (same zoom/fade), centred under the flag via translateX(-50%). */
+#flag-overlay .pa-flag-label {
+  position: absolute;
+  top: 0; left: 0;
+  font: 700 9px/1 "Courier New", monospace;
+  color: #fff;
+  text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 1px #000;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity .15s linear;
+  will-change: transform;
+}
 
 
 /* v35: Persistent leaderboard panel — mirrors #legend layout */
@@ -3300,7 +3313,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v93z';
+const CODE_VERSION = '2026-06-04-v94';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4035,7 +4048,11 @@ function _placeFlagDOM(geoIdx, claimerFi, cx, cy) {
       if (fallback && img.src !== fallback) img.src = fallback;
     };
     overlay.appendChild(img);
-    entry = { el: img, cx, cy, isoId: claimerFi.id };
+    // v94: text label under the flag (holder name + outpost number, e.g. "USA 2")
+    const lbl = document.createElement('div');
+    lbl.className = 'pa-flag-label';
+    overlay.appendChild(lbl);
+    entry = { el: img, label: lbl, cx, cy, isoId: claimerFi.id };
     _flagDOMNodes[geoIdx] = entry;
   } else if (entry.isoId !== claimerFi.id) {
     entry.isoId = claimerFi.id;
@@ -4043,6 +4060,19 @@ function _placeFlagDOM(geoIdx, claimerFi, cx, cy) {
   // v41a: prefer real PNG flag; fall back to procedural on missing/404
   const realUrl = getRealFlagURL(claimerFi);
   entry.el.src = realUrl || _renderFlagToDataURL(claimerFi) || '';
+  // v94: label = holder name + outpost number for this geo ("USA 2"); plain name
+  // if it isn't an outpost of the holder.
+  if (entry.label) {
+    let _txt = claimerFi.name || '';
+    try {
+      const _gid = featList[geoIdx] && String(featList[geoIdx].id);
+      if (_gid && typeof _outpostInfo === 'function') {
+        const _oi = _outpostInfo(String(claimerFi.id), _gid);
+        if (_oi && _oi.num) _txt += ' ' + _oi.num;
+      }
+    } catch (e) {}
+    entry.label.textContent = _txt;
+  }
   entry.cx = cx; entry.cy = cy;
   _updateFlagDOMPosition(entry);
 }
@@ -4051,6 +4081,7 @@ function _eraseFlagDOM(geoIdx) {
   const entry = _flagDOMNodes[geoIdx];
   if (!entry) return;
   entry.el.remove();
+  if (entry.label) entry.label.remove(); // v94
   delete _flagDOMNodes[geoIdx];
 }
 
@@ -4058,6 +4089,8 @@ function _updateFlagDOMPosition(entry) {
   const screenX = entry.cx * scale + ox;
   const screenY = entry.cy * scale + oy;
   entry.el.style.transform = 'translate(' + (screenX - 13) + 'px, ' + (screenY - 8.5) + 'px)';
+  // v94: centre the label horizontally under the flag (flag is ~17px tall).
+  if (entry.label) entry.label.style.transform = 'translate(' + screenX + 'px, ' + (screenY + 10) + 'px) translateX(-50%)';
 }
 
 function _updateAllFlagPositions() {
@@ -6199,7 +6232,12 @@ async function checkDailyBonus() {
     return;
   }
   // Don't show twice in the same session
-  if (sessionStorage.getItem('pa_daily_popup_shown')) return;
+  if (sessionStorage.getItem('pa_daily_popup_shown')) {
+    // v94: Welcome Back won't re-show, but the country may still have fallen —
+    // run the re-pick check after the snapshot's conquered set has loaded.
+    setTimeout(_tryShowFallenRepick, 1000);
+    return;
+  }
   try {
     const [bonusRes, worldRes] = await Promise.all([
       fetch('/api/daily-login', { credentials: 'include' }).then(r => r.json()).catch(() => null),
@@ -6333,6 +6371,25 @@ function changeCountryFromDaily() {
 function closeDailyPopup() {
   const overlay = document.getElementById('daily-popup-overlay');
   if (overlay) overlay.classList.remove('open');
+  // v94: show the "your country has fallen" re-pick immediately after the
+  // Welcome Back screen is dismissed (if the starting country already fell).
+  setTimeout(_tryShowFallenRepick, 250);
+}
+
+// v94: if the player's current country has already fallen, show the re-pick
+// window. Guarded so it never overlaps the Welcome Back popup and only fires
+// once. Triggered after Welcome Back closes (or after load when no popup shows).
+let _fallenRepickDone = false;
+function _tryShowFallenRepick() {
+  if (_fallenRepickDone) return;
+  if (document.getElementById('repick-overlay')) return;
+  const dp = document.getElementById('daily-popup-overlay');
+  if (dp && dp.classList.contains('open')) return; // wait for Welcome Back to be dismissed
+  const mf = featList[currentIdx];
+  if (mf && typeof _isCountryConqueredClient === 'function' && _isCountryConqueredClient(mf.id)) {
+    _fallenRepickDone = true;
+    if (typeof _showCountryRepickModal === 'function') _showCountryRepickModal({ mercenaryBonus: 0, onLoad: true });
+  }
 }
 
 function showDailyBonusToast(data) {
@@ -7644,19 +7701,8 @@ function applySnapshotRuns(ab) {
     requestAnimationFrame(replayStep);
   }
   scheduleLegend();
-  // v93z: if the player's starting country has ALREADY fallen (e.g. it was
-  // conquered before this refresh), show the re-pick window instead of dropping
-  // them onto a dead country — which also triggered a phantom fight-back banner.
-  try {
-    setTimeout(function(){
-      const _mf = featList[currentIdx];
-      if (_mf && typeof _isCountryConqueredClient === 'function' && _isCountryConqueredClient(_mf.id)
-          && typeof _showCountryRepickModal === 'function'
-          && !document.getElementById('repick-overlay')) {
-        _showCountryRepickModal({ mercenaryBonus: 0, onLoad: true });
-      }
-    }, 400);
-  } catch (e) {}
+  // v94: fallen-country re-pick is now triggered AFTER the Welcome Back popup is
+  // dismissed (closeDailyPopup → _tryShowFallenRepick), not here on snapshot load.
 }
 
 // v92p: report our visible map rect (with 25% overscan) so the server can filter
