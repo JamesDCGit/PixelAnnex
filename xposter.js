@@ -64,6 +64,34 @@ function _resolveMediaPath(imageUrl) {
   return fs.existsSync(p) ? p : null;
 }
 
+// Turn a twitter-api-v2 ApiResponseError into a readable, actionable message.
+// `step` labels which call failed (media upload vs tweet) so a 403 is no longer
+// ambiguous between "read-only token" and "tier has no media upload".
+function _enrich(e, step) {
+  const parts = [];
+  if (step) parts.push(step);
+  if (e && e.code) parts.push('HTTP ' + e.code);
+  const d = e && e.data;
+  if (d) {
+    if (d.detail) parts.push(d.detail);
+    else if (d.title) parts.push(d.title);
+    if (Array.isArray(d.errors)) {
+      parts.push(d.errors.map(x => x.message || x.detail || JSON.stringify(x)).join('; '));
+    } else if (d.errors) {
+      parts.push(typeof d.errors === 'string' ? d.errors : JSON.stringify(d.errors));
+    }
+  }
+  // Helpful hints for the two most common 403 causes.
+  if (e && e.code === 403) {
+    if (step === 'media upload') parts.push('(media upload likely needs a Basic+ tier)');
+    else parts.push('(check the Access Token has Read+Write — regenerate it AFTER setting app permissions)');
+  }
+  const msg = parts.length ? parts.join(' — ') : (e && e.message ? e.message : String(e));
+  const err = new Error(msg);
+  err.original = e;
+  return err;
+}
+
 // Post a tweet, optionally with one image/GIF. Resolves to { id, url, media }.
 // Throws on auth/API failure (the caller surfaces the message to the dashboard).
 async function postToX({ text, imageUrl }) {
@@ -76,14 +104,23 @@ async function postToX({ text, imageUrl }) {
     if (filePath) {
       // uploadMedia infers MIME from the extension and uses chunked upload +
       // the correct media category (e.g. tweet_gif) for GIFs automatically.
-      const id = await client.v1.uploadMedia(filePath);
-      mediaIds = [id];
+      try {
+        const id = await client.v1.uploadMedia(filePath);
+        mediaIds = [id];
+      } catch (e) {
+        throw _enrich(e, 'media upload');
+      }
     }
     // If the file is gone, fall through and post text-only rather than fail.
   }
 
   const payload = mediaIds ? { media: { media_ids: mediaIds } } : undefined;
-  const resp = await client.v2.tweet(body, payload);
+  let resp;
+  try {
+    resp = await client.v2.tweet(body, payload);
+  } catch (e) {
+    throw _enrich(e, 'tweet');
+  }
   const tweetId = resp && resp.data && resp.data.id;
   return {
     id:    tweetId || null,
