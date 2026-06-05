@@ -3348,7 +3348,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-05-v95h';
+const CODE_VERSION = '2026-06-05-v95i';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4298,6 +4298,18 @@ function finisherFill(geoIdx,claimerIdx){
 function checkConquest(geoIdx,claimerIdx){
   const key=geoIdx+":"+claimerIdx;
   if(conqueredSet.has(key))return false;
+  // v95i: if this geo is already held by ANOTHER country it's a re-conquest /
+  // transfer — the SERVER decides that (contested/threshold rules, empire bonus
+  // dropped). Don't locally predict a 2nd holder; wait for the authoritative
+  // 'conquest'/'reversal' broadcast (which transfers the flag cleanly).
+  {
+    const _gid = featList[geoIdx] && String(featList[geoIdx].id);
+    const _claimerGid = featList[claimerIdx] && String(featList[claimerIdx].id);
+    if (_gid && typeof _holderOfGeo === 'function') {
+      const _h = _holderOfGeo(_gid);
+      if (_h && String(_h) !== String(_claimerGid)) return false;
+    }
+  }
   // v64: use combined alliance pixel count for conquest threshold
   const owned=_getAllyOwned(geoIdx,claimerIdx);
   const total=geoTotal[geoIdx]||0;

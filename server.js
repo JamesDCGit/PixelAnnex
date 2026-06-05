@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-05-v95h';
+const SERVER_VERSION       = '2026-06-05-v95i';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -88,7 +88,7 @@ const FALLEN_NATIVE_FRAC = 0.05; // (legacy — retained for the debug endpoint 
 // foreign-dominated and a real chunk of the country is in play, and the leading
 // attacker out-holds the native. Tunables:
 const CONTEST_FLOOR      = 0.40; // >= 40% of the country must be painted (contested)
-const CONTEST_MAJORITY   = 0.70; // foreigners must hold >= 70% of the painted territory
+const CONTEST_MAJORITY   = 0.85; // v95i: foreigners must hold >= 85% of the painted territory (group-conquest bar)
 const CONTEST_TOTAL_FRAC = 0.60; // OR foreigners painted >= 60% of ALL land (decisive coverage)
 // ── v93p (#1): empire-backed homeland defense ─────────────────────
 // Each territory a country has conquered ("outpost") raises the bar to take its
@@ -3368,41 +3368,28 @@ setInterval(() => {
     const total = geoTotal[geo] || 0;
     if (!(total > 0)) continue;
     const _gid = geoToId(geo);
-    // Largest foreign holder (ally-combined) of this geo right now.
-    const claims = geoClaimCnt[geo] || {};
-    let topId = null, topCnt = 0;
-    for (const cId in claims) {
-      if (cId === _gid) continue;                  // skip native — can't hold itself
-      if (NON_PLAYABLE_IDS.has(String(cId))) continue; // v95g — never transfer to a non-playable country
-      const o = getAllyOwnedCount(geo, cId);
-      if (o > topCnt) { topCnt = o; topId = cId; }
-    }
-    if (topCnt <= 0) {
-      // (1) ghost: nobody holds it → reverse (back to native / playable).
-      conqueredSet.delete(key);
-      _clearPermanentIfFree(geo);
-      broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: curId, reason: 'empty' }));
-      console.log('[Conquest] ghost flag cleared:', curId, 'held 0 px of', _gid);
-      continue;
-    }
-    // (2) transfer: a different foreign holder now decisively leads.
-    if (topId && topId !== curId) {
+    // v95i: BACKSTOP for the live conquest loop, which only re-evaluates a geo
+    // when it's painted. Same threshold rule (_evaluateConqueror) so the periodic
+    // pass and the live pass agree. (1) If a different country now qualifies →
+    // transfer. (2) Else if the holder is wiped to 0 px → ghost-clear the flag.
+    const newOwner = _evaluateConqueror(geo, total, true, curId);
+    if (newOwner && String(newOwner) !== String(curId) && !NON_PLAYABLE_IDS.has(String(newOwner))) {
       if (_transfersThisTick >= MAX_TRANSFERS_PER_TICK) continue;      // smooth client flood load
       const imm = _conquestImmunity.get(_gid);
       if (imm && now < imm) continue;                                 // settling after a recent flip
       if (now - (_lastTransferAt.get(geo) || 0) < TRANSFER_COOLDOWN_MS) continue;
-      const curCnt = getAllyOwnedCount(geo, curId);
-      if (topCnt <= curCnt * TRANSFER_MARGIN) continue;               // not decisively ahead
       _transfersThisTick++;
-      conqueredSet.delete(geo + ':' + curId);
-      conqueredSet.add(geo + ':' + topId);
       _lastTransferAt.set(geo, now);
-      _conquestImmunity.set(_gid, now + CONQUEST_IMMUNITY_MS);
-      finisherFill(geo, topId);  // flood server claimByPixel to the new owner
-      // Clients: drop the old flag, then place the new one + flood locally.
-      broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: curId, reason: 'transfer' }));
-      broadcast(JSON.stringify({ type: 'conquest', geoIdx: geo, countryId: topId }));
-      console.log('[Conquest] owner transfer:', _gid, curId, '->', topId, '(' + curCnt + '->' + topCnt + 'px)');
+      const _conqs = [], _chg = [];
+      _conquerGeo(geo, newOwner, _conqs, _chg);   // drops old holder + floods + broadcasts old-flag reversal
+      _conqs.forEach(c => broadcast(JSON.stringify({ type: 'conquest', geoIdx: c.geoIdx, countryId: c.countryId })));
+      // clients flood locally via the 'conquest' event — no need to ship the flood pixels
+      console.log('[Conquest] periodic transfer:', _gid, curId, '->', newOwner);
+    } else if (getAllyOwnedCount(geo, curId) <= 0) {
+      conqueredSet.delete(key);
+      _clearPermanentIfFree(geo);
+      broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: curId, reason: 'empty' }));
+      console.log('[Conquest] ghost flag cleared:', curId, 'held 0 px of', _gid);
     }
   }
 }, 60_000);
@@ -3736,32 +3723,106 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 // ── Core pixel logic ──────────────────────────────────────────────
+
+// v95i: the foreign country currently holding a conquered geo (or null). One
+// holder per geo; transfers keep it that way.
+function _foreignHolderOf(geo) {
+  const gid = geoToId(geo);
+  for (const k of conqueredSet) {
+    const p = String(k).split(':');
+    if (p[0] === String(geo) && p[1] !== gid) return p[1];
+  }
+  return null;
+}
+
+// v95i: evaluate who (if anyone) should own this geo right now. Used for BOTH a
+// virgin fall and the re-conquest/transfer of an already-conquered country, so a
+// conquered country behaves like a normal one. Two ways to win (operator design):
+//   (a) CHAMPION — a single country (+allies) reaches the size-scaled threshold
+//       (~70-75%; + empire-defense bonus unless dropped for conquered geos).
+//   (b) CONTESTED — foreigners collectively dominate the PAINTED area
+//       (>= CONTEST_MAJORITY, ~85%) → the single LARGEST holder (raw pixels) takes
+//       it, even below the champion bar.
+// `excludeId` (the current holder) is skipped for the champion test so an
+// alliance that already holds the geo doesn't perpetually "win" the evaluation
+// and block a new raw-pixel leader from taking it via the contested path.
+// Returns the winner's country id, or null.
+function _evaluateConqueror(geo, total, dropEmpireBonus, excludeId) {
+  if (!total) return null;
+  const _geoId = geoToId(geo);
+  const claims = geoClaimCnt[geo] || {};
+  const _eb = dropEmpireBonus ? 0 : empireDefenseBonus(_geoId);
+  const effThresh = Math.min(EMPIRE_DEF_CEIL, conquestThreshold(total) + _eb);
+  // (a) champion — strongest single country (ally-combined), not the current holder.
+  let champId = null, champOwned = 0;
+  for (const cId in claims) {
+    if (cId === _geoId) continue;
+    if (excludeId != null && String(cId) === String(excludeId)) continue;
+    const o = getAllyOwnedCount(geo, cId);
+    if (o > champOwned) { champOwned = o; champId = cId; }
+  }
+  if (champId && champOwned / total >= effThresh) return champId;
+  // (b) contested — largest RAW holder when foreigners dominate the painted area.
+  const nativeOwned = claims[_geoId] || 0;
+  let topId = null, topCnt = 0, foreignSum = 0;
+  for (const [cId, cnt] of Object.entries(claims)) {
+    if (cId === _geoId || cnt <= 0) continue;
+    foreignSum += cnt;
+    if (cnt > topCnt) { topCnt = cnt; topId = cId; }
+  }
+  const painted = foreignSum + nativeOwned;
+  const contestedMajority = painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb);
+  const decisiveCoverage  = (foreignSum / total) >= Math.min(0.98, CONTEST_TOTAL_FRAC + _eb);
+  if (topId && topCnt > nativeOwned && (contestedMajority || decisiveCoverage)) return topId;
+  return null;
+}
+
 // ── v91: shared conquest performer (definition was lost in the v91 edit;
 // restored in v91a). Marks the geo conquered by conquerorId, runs finisherFill,
 // fires war event + player notifications + tweet draft. Pushes into the
 // caller's conquests[] and changed[] arrays.
+// v95i: also handles TRANSFERS — if the geo is already held by a different
+// foreign country, it drops that holder, floods to the new one, and skips the
+// native-death + Discord/tweet reporting (the native already fell on the first
+// conquest, and we don't want transfer spam).
 function _conquerGeo(geo, conquerorId, conquests, changed) {
   const geoId = geoToId(geo);
-  _conquestImmunity.set(geoId, Date.now() + CONQUEST_IMMUNITY_MS);
-  conqueredSet.add(geo + ':' + conquerorId);
-  // v93q (#3): empire continuity — if the fallen country still holds outposts it
-  // SURVIVES (relocates) rather than dying. Survivors are NOT permanentlyConquered,
-  // so they can still fight to reclaim their homeland (rare, but allowed).
-  const _isSelf   = String(conquerorId) === String(geoId);
-  const _survives = !_isSelf && _countryOutposts(geoId).length > 0;
-  if (!_survives) permanentlyConquered.add(geoId); // truly dead → locked until world reset
-  // v92q/v92w: clear any active siege — a fallen country is out of the siege
-  // system. Tell clients too so the in-game flash stops (checkSiegeState won't
-  // fire siege-end for a now-permanentlyConquered geo).
-  if (siegedSet.has(geo)) {
-    siegedSet.delete(geo);
-    broadcast(JSON.stringify({ type: 'siege', countryId: geoId, active: false }));
+  // v95i: TRANSFER detection — geo already held by a different foreign country?
+  let _priorHolder = null;
+  for (const k of conqueredSet) {
+    const p = String(k).split(':');
+    if (p[0] === String(geo) && p[1] !== geoId && p[1] !== String(conquerorId)) { _priorHolder = p[1]; break; }
   }
-  setTimeout(() => _onCountryConquered(geoId, _survives), 0);
+  const _isTransfer = _priorHolder !== null;
+  _conquestImmunity.set(geoId, Date.now() + CONQUEST_IMMUNITY_MS);
+  if (_isTransfer) {
+    // Drop the old owner + tell clients to erase its flag; the new owner's
+    // 'conquest' (pushed below) re-flags + floods.
+    conqueredSet.delete(geo + ':' + _priorHolder);
+    broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: _priorHolder, reason: 'transfer' }));
+  }
+  conqueredSet.add(geo + ':' + conquerorId);
+  const _isSelf   = String(conquerorId) === String(geoId);
+  // v93q (#3): empire continuity — if the fallen country still holds outposts it
+  // SURVIVES (relocates) rather than dying. Survivors are NOT permanentlyConquered.
+  // (function-scoped so the relocation-notify block below can read it.)
+  const _survives = !_isSelf && _countryOutposts(geoId).length > 0;
+  // v95i: native-death/relocation + siege-clear only on the FIRST (virgin) fall,
+  // NOT on a transfer between invaders (the native already fell).
+  if (!_isTransfer) {
+    if (!_survives) permanentlyConquered.add(geoId); // truly dead → locked until world reset
+    // v92q/v92w: clear any active siege — a fallen country is out of the siege system.
+    if (siegedSet.has(geo)) {
+      siegedSet.delete(geo);
+      broadcast(JSON.stringify({ type: 'siege', countryId: geoId, active: false }));
+    }
+    setTimeout(() => _onCountryConquered(geoId, _survives), 0);
+  }
   conquests.push({ geoIdx: geo, countryId: conquerorId });
   changed.push(...finisherFill(geo, conquerorId));
-  // Skip reporting for self-conquest (country reclaiming its own native land)
-  if (_isSelf) return;
+  // Skip reporting for self-conquest, and for transfers (anti-spam — only the
+  // first virgin->conquered fall notifies players + Discord + tweets).
+  if (_isSelf || _isTransfer) return;
 
   // v93q (#3): notify the fallen country's players — relocate (empire endures)
   // or die (no territory left → re-pick). Sent regardless of notability since
@@ -3883,20 +3944,28 @@ function applyPixels(pixels, countryId) {
     // players are forced to re-pick, so the territory simply belongs to its
     // conqueror until world reset. (CONQUEST_IMMUNITY only paused this for 20s,
     // after which the churn resumed — this makes it final.)
-    if (permanentlyConquered.has(_geoId)) continue;
-    // Conquest immunity — don't allow flips within IMMUNITY_MS of last conquest
+    // Conquest immunity — don't allow flips within IMMUNITY_MS of last (re)conquest
     const immuneUntil = _conquestImmunity.get(_geoId);
     if (immuneUntil && Date.now() < immuneUntil) {
       continue; // territory is still settling after a recent flip
     }
-    // v92h FIX: evaluate conquest for the STRONGEST FOREIGN CLAIMANT of this
-    // geo, not just the country that happened to paint. Previously conquest was
-    // only checked for `countryId` (the painter), so if an attacker pushed a
-    // country past the threshold and then went quiet (bucket spent / surrender /
-    // moved on), nobody ever re-triggered the check — the only paints left were
-    // the native bot reclaiming, which hit the self-conquest skip. Result:
-    // countries sat permanently un-conquered at e.g. 81% (the Kosovo/Serbia
-    // bug). Now any paint in the geo re-checks the dominant occupier.
+    // v95i: ALREADY-CONQUERED country — treat its TERRITORY like a normal country:
+    // invaders chip away and it TRANSFERS to a new dominant holder (champion >=
+    // threshold OR contested ~85% painted → largest raw holder). The dead native
+    // never reclaims, the empire-defense bonus is dropped (operator decision), and
+    // it skips the virgin paths + native reversal below. Replaces the old v92q
+    // permanent lock (which froze ownership forever).
+    const _curHolder = _foreignHolderOf(geo);
+    if (_curHolder !== null) {
+      const _newOwner = _evaluateConqueror(geo, total, true, _curHolder);
+      if (_newOwner && String(_newOwner) !== String(_curHolder)) {
+        _conquerGeo(geo, _newOwner, conquests, changed); // transfer (drops old holder inside)
+      }
+      continue;
+    }
+    // v92h FIX: evaluate conquest for the STRONGEST FOREIGN CLAIMANT of this geo,
+    // not just the painter (countries used to sit un-conquered at e.g. 81% — the
+    // Kosovo/Serbia bug). The empire-defense bonus applies on a VIRGIN homeland.
     let champId = null, champOwned = 0;
     const _claims = geoClaimCnt[geo] || {};
     for (const cId in _claims) {
@@ -3908,20 +3977,12 @@ function applyPixels(pixels, countryId) {
     // v93p (#1): effective threshold = base size-scaled threshold + the
     // defender's empire-defense bonus (more outposts → harder homeland).
     const _effThresh = Math.min(EMPIRE_DEF_CEIL, conquestThreshold(total) + empireDefenseBonus(_geoId));
-    // Normal path: the strongest foreign claimant (+allies) reaches the
-    // size-scaled threshold.
     if (champId != null && !conqueredSet.has(key) && champOwned / total >= _effThresh) {
       _conquerGeo(geo, champId, conquests, changed);
-    } else if (!permanentlyConquered.has(_geoId)) {
-      // v93h: contested-territory fall. The champion path above measures vs TOTAL
-      // land (incl. the dormant unpainted interior), so it rarely fires for big or
-      // carved-up countries. Here we look at the PAINTED (contested) territory:
-      // a country falls to its largest foreign holder when (a) a real chunk of it
-      // is painted (>= CONTEST_FLOOR) and foreigners hold >= CONTEST_MAJORITY of
-      // that painted area, OR (b) foreigners have painted >= CONTEST_TOTAL_FRAC of
-      // ALL land outright — AND in either case the leading attacker out-holds the
-      // native (so a strong defender, by reclaiming pixels, keeps the country).
-      // At world start nothing is painted, so this can't false-fire.
+    } else {
+      // v93h: contested-territory fall vs PAINTED land (big countries have huge
+      // unpainted interiors) — falls to the largest foreign holder when foreigners
+      // dominate the painted area AND out-hold the native.
       const claims = geoClaimCnt[geo] || {};
       const nativeOwned = claims[_geoId] || 0;
       let topId = null, topCnt = 0, foreignSum = 0;
@@ -3931,15 +3992,9 @@ function applyPixels(pixels, countryId) {
         if (cnt > topCnt) { topCnt = cnt; topId = cId; }
       }
       const painted = foreignSum + nativeOwned;
-      // v93p (#1): empire bonus hardens the contested-fall path too.
       const _eb = empireDefenseBonus(_geoId);
       const contestedMajority = painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb);
       const decisiveCoverage  = (foreignSum / total) >= Math.min(0.98, CONTEST_TOTAL_FRAC + _eb);
-      // v94a: dedup guard — the champion path checks !conqueredSet.has(key) but
-      // the contested path did NOT, so a SURVIVING conquered country (not
-      // permanentlyConquered after empire-continuity v93q) re-fired _conquerGeo —
-      // and its war_conquest Discord event — on every subsequent paint. That's the
-      // "20+ identical Country Conquered posts" spam. Fire once per (geo, holder).
       if (topId && topCnt > nativeOwned && !conqueredSet.has(geo + ':' + topId) && (contestedMajority || decisiveCoverage)) {
         _conquerGeo(geo, topId, conquests, changed);
       }
