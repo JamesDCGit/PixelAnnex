@@ -3348,7 +3348,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-05-v95a';
+const CODE_VERSION = '2026-06-05-v95b';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7942,7 +7942,17 @@ function applySnapshotRuns(ab) {
       pos += rowRem;
     }
   }
-  // Replay conquests AFTER runs so finisherFill/placeFlag see final ownership.
+  // Replay conquests AFTER runs so placeFlag sees final ownership.
+  // v95b: do NOT re-run finisherFill here. The snapshot runs above already paint
+  // the server's TRUE per-pixel ownership (incl. the conqueror's interior + any
+  // invader pixels that have since re-contested a conquered country). Re-running
+  // finisherFill re-floods the whole geo with the conqueror's colour, which (a)
+  // overwrites the true state and diverges from the server, and (b) for a big
+  // contested country (e.g. USA, held by Portugal but painted by 70+ invaders)
+  // dumps tens of thousands of paints into _paintQ — overflowing PAINT_QUEUE_MAX,
+  // whose trim drops the corrective invader paints and leaves a stale diagonal
+  // wedge of the conqueror's colour over pixels owned by others (the reported
+  // "green triangle" draw bug). We only need to place the flags here.
   if (_pendingConquered && _pendingConquered.length) {
     for (const key of _pendingConquered) conqueredSet.add(key);
     const replayQueue = [];
@@ -7957,7 +7967,6 @@ function applySnapshotRuns(ab) {
     const replayStep = () => {
       for (let n = 0; n < 3 && qi < replayQueue.length; n++, qi++) {
         const [geoFi, claimerFi] = replayQueue[qi];
-        finisherFill(geoFi, claimerFi);
         if (typeof placeFlag === 'function') placeFlag(geoFi, claimerFi);
       }
       if (qi < replayQueue.length) requestAnimationFrame(replayStep);
