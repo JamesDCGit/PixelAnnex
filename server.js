@@ -45,6 +45,18 @@ console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
 const MAP_PX             = MAP_W * MAP_H;
+// v95g: countries that must NEVER be playable — no bot, no conquest. Mirrors the
+// client's NON_PLAYABLE_IDS (picker hides them), but the SERVER also needs it:
+// these geos keep a few stray pixels after the client's lat<-60 / artifact cull
+// (e.g. Antarctica's 10-px sliver), so without this the server span a bot for
+// them and they actively painted + conquered. Keep in sync with the client list.
+const NON_PLAYABLE_IDS   = new Set([
+  '10',  // Antarctica (10px sliver survives the lat<-60 cull)
+  '74',  // Bouvet Island
+  '260', // French Southern Territories
+  '334', // Heard Island & McDonald Islands
+  '239', // South Georgia & South Sandwich Is.
+]);
 const CONQUEST_THRESHOLD = 0.60; // legacy base — superseded by conquestThreshold() below (kept for any stray refs)
 // ── v91: progressive, size-scaled conquest threshold ──────────────
 // Small countries need a HIGHER share to conquer (75%) because 70% of a tiny
@@ -3361,6 +3373,7 @@ setInterval(() => {
     let topId = null, topCnt = 0;
     for (const cId in claims) {
       if (cId === _gid) continue;                  // skip native — can't hold itself
+      if (NON_PLAYABLE_IDS.has(String(cId))) continue; // v95g — never transfer to a non-playable country
       const o = getAllyOwnedCount(geo, cId);
       if (o > topCnt) { topCnt = o; topId = cId; }
     }
@@ -4823,10 +4836,12 @@ function checkMapReady() {
   buildGeoIndex();
 
   // Reconcile bots: remove any bot whose country no longer exists in geoPixels
+  // OR is non-playable (v95g — e.g. Antarctica, whose 10-px sliver kept spawning
+  // a bot that painted + conquered).
   const validCountries = new Set(Object.keys(geoPixels).map(String));
   let removed = 0;
   for (const countryId of [...bots.keys()]) {
-    if (!validCountries.has(countryId)) {
+    if (!validCountries.has(countryId) || NON_PLAYABLE_IDS.has(String(countryId))) {
       bots.delete(countryId);
       // Also remove from players map
       for (const [pid, p] of players) {
@@ -4839,14 +4854,30 @@ function checkMapReady() {
     }
   }
 
-  // Spawn bots for any country missing one
+  // Spawn bots for any country missing one (skip non-playable — v95g)
   let added = 0;
   for (const geoIdx of Object.keys(geoPixels)) {
     const countryId = String(geoIdx);
+    if (NON_PLAYABLE_IDS.has(countryId)) continue;
     if (!bots.has(countryId)) {
       botInit(countryId);
       added++;
       if (wasReady) startTickerFor(countryId); // start ticker individually after initial batch
+    }
+  }
+
+  // v95g: reverse any conquest that a non-playable country still holds (or any
+  // conquest OF a non-playable geo) so its flags/conqueredSet entries clear —
+  // covers state left over from before this guard, or persisted in board_state.
+  for (const key of [...conqueredSet]) {
+    const parts = String(key).split(':');
+    if (parts.length !== 2) continue;
+    const geo = parseInt(parts[0], 10), holder = parts[1];
+    if (NON_PLAYABLE_IDS.has(String(geo)) || NON_PLAYABLE_IDS.has(String(holder))) {
+      conqueredSet.delete(key);
+      _clearPermanentIfFree(geo);
+      broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: holder, reason: 'non-playable' }));
+      console.log('[Conquest] cleared non-playable conquest:', key);
     }
   }
 
