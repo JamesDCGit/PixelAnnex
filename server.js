@@ -3339,8 +3339,15 @@ setInterval(() => {
 const _lastTransferAt   = new Map();   // geo → ts of last ownership transfer
 const TRANSFER_COOLDOWN_MS = 120_000;  // min 2 min between transfers of one geo
 const TRANSFER_MARGIN      = 1.25;     // challenger must out-hold owner by 25%+
+// Each transfer flood-fills a whole country and broadcasts a 'conquest' that
+// makes every client finisher-fill that geo. Cap how many fire per sweep so a
+// backlog (e.g. first run after deploy) can't stampede the client paint queue
+// (the same overflow that produced the v95b diagonal artifact). Ghost cleanups
+// are cheap (no flood) and stay uncapped. Backlog drains over subsequent ticks.
+const MAX_TRANSFERS_PER_TICK = 3;
 setInterval(() => {
   const now = Date.now();
+  let _transfersThisTick = 0;
   for (const key of [...conqueredSet]) {
     const parts = String(key).split(':');
     if (parts.length !== 2) continue;
@@ -3367,11 +3374,13 @@ setInterval(() => {
     }
     // (2) transfer: a different foreign holder now decisively leads.
     if (topId && topId !== curId) {
+      if (_transfersThisTick >= MAX_TRANSFERS_PER_TICK) continue;      // smooth client flood load
       const imm = _conquestImmunity.get(_gid);
       if (imm && now < imm) continue;                                 // settling after a recent flip
       if (now - (_lastTransferAt.get(geo) || 0) < TRANSFER_COOLDOWN_MS) continue;
       const curCnt = getAllyOwnedCount(geo, curId);
       if (topCnt <= curCnt * TRANSFER_MARGIN) continue;               // not decisively ahead
+      _transfersThisTick++;
       conqueredSet.delete(geo + ':' + curId);
       conqueredSet.add(geo + ':' + topId);
       _lastTransferAt.set(geo, now);
