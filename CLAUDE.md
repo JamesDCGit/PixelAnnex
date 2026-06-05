@@ -41,7 +41,7 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-05-v95f`.** (v95d was a server-only conquest
+**Current production triad: `2026-06-05-v95i`.** (v95d was a server-only conquest
 owner-transfer change that deliberately did NOT bump the triad — it stayed at
 v95c — so connected clients didn't reload; v95e is the next CLIENT change, hence
 the jump v95c→v95e.) A server-only fix keeps all three at the same value so
@@ -274,6 +274,13 @@ Before editing any function:
   densest-cell which drifted off-centre on wide countries (USA flag sat on the
   west side). Caps: max 3 flags/geo (largest first), extra landmasses must be
   ≥3px (ignore 1-2px specks). USA → continental + Alaska + Hawaii's Big Island.
+- **v95h:** regen no longer STACKS bonuses. `getRegenMult()` takes the LARGEST
+  single active bonus (David world-share, encirclement, rank, rally/highlight),
+  rounds, and caps at **8×** — previously they all multiplied into runaway regen.
+- **v95i:** conquered countries are re-conquerable like normal ones (transfer
+  model). Replaces the v92q permanent lock + v95d plurality sweep. See "Conquest
+  fall mechanics". Also: CONTEST_MAJORITY 0.70→0.85; empire-defense bonus dropped
+  for already-conquered geos.
 
 ## Screenshots for tweets (v88)
 
@@ -385,42 +392,50 @@ arrow). `_countDistinctConquered()` (world-conquest trigger) counts
 - Inspector % AGGREGATES across all polygons of a country (v93u Fix A) — hovering
   one island of a multi-polygon country no longer misreports the whole country.
 
-### Conquest fall mechanics — the bug-prone core
-Two fall paths in `applyPixels` (server), both must guard against re-firing:
-- **Champion:** strongest foreign holder (+allies) ≥ `effThresh`
-  (= `conquestThreshold(total)` + `empireDefenseBonus`). Guarded by `!conqueredSet.has(key)`.
-- **Contested (v93h):** measured vs PAINTED land (big countries have huge
-  unpainted interiors). Falls to largest foreign holder when painted-majority OR
-  decisive-coverage AND `topCnt > nativeOwned`. **v94a added the missing
-  `!conqueredSet.has(geo+':'+topId)` guard here** — without it, a SURVIVING
-  conquered country (not `permanentlyConquered` after empire-continuity) re-fired
-  the conquest + its Discord event on every paint (the "20+ Country Conquered
-  posts" spam).
-- **Reversal:** holder drops below `reversalThreshold` (= conquest − 0.15) →
-  `conqueredSet.delete` + `_clearPermanentIfFree(geo)` + broadcast `reversal`
-  (clients `eraseFlag`). Fires on paint (applyPixels) AND monster damage. NOTE:
-  the hot `applyPixels` loop still `continue`s for `permanentlyConquered` geos
-  (v92q anti-churn) — those never revert to native; their owner only changes via
-  the v95d transfer sweep below.
-- **Nuke reversal (v94b):** the nuke path (`clearPixelsInRadius`) bypassed
-  applyPixels, so a nuked-empty conquered country kept its flag. Now sweeps
-  affected geos (`_reverseConquestsForGeo`) after a nuke.
-- **Owner transfer + ghost cleanup (v95d, was v94b ghost sweep) — 60s periodic
-  reconciliation:** for each conquered geo, compute the largest foreign holder
-  (ally-combined). (a) If NO foreign holds any pixel → reverse (ghost cleanup,
-  clears stuck flags like "Benin on a wiped-out Slovenia"). (b) If a DIFFERENT
-  foreign holder now decisively leads (`topCnt > curCnt * TRANSFER_MARGIN` 1.25,
-  past `TRANSFER_COOLDOWN_MS` 2min + conquest immunity) → **transfer the conquest
-  to them and flood-fill the whole country to the new owner** (server
-  `finisherFill` here; clients flood + reflag via the existing `reversal`+
-  `conquest` broadcasts). Replaces the old "conquered = permanently the original
-  conqueror's, no transfer" model: a country no longer reads "Portugal holds USA"
-  while Portugal owns <10% and 70+ invaders carve it up — ownership consolidates
-  to whoever actually leads. Capped at `MAX_TRANSFERS_PER_TICK` 3 (each transfer
-  floods a country → a client `finisherFill`; an uncapped backlog would stampede
-  `PAINT_QUEUE_MAX`, the v95b overflow). The native country stays
-  `permanentlyConquered` (only the foreign owner changes); transfers do NOT call
-  `_conquerGeo`/`_onCountryConquered` (no native-death re-fire, no Discord spam).
+### Conquest fall mechanics — the bug-prone core (rewritten v95i)
+**Model (v95i): a conquered country behaves like a normal one for TERRITORY
+ownership.** Invaders chip away and it TRANSFERS to a new dominant holder; the
+dead native never reclaims it. This replaced the v92q "permanent lock" (frozen
+forever) + the v95d periodic plurality sweep.
+
+`_evaluateConqueror(geo, total, dropEmpireBonus, excludeId)` is the single shared
+"who should own this now?" function (used for virgin falls AND re-conquest):
+- **(a) Champion:** strongest single country (ally-combined) ≥ `effThresh`
+  (= `conquestThreshold(total)` + empire bonus unless dropped). `excludeId` (the
+  current holder) is skipped so an alliance already holding the geo doesn't
+  perpetually "win" the eval and block a new raw-pixel leader.
+- **(b) Contested:** foreigners hold ≥ `CONTEST_MAJORITY` (**0.85**, v95i) of the
+  PAINTED area (or ≥ `CONTEST_TOTAL_FRAC` of all land) → the single LARGEST RAW
+  holder (`topCnt > nativeOwned`) takes it, even below the champion bar. Measured
+  vs PAINTED land so big countries with unpainted interiors stay conquerable.
+
+`applyPixels` per-geo loop:
+- `_foreignHolderOf(geo)` → if currently conquered: run `_evaluateConqueror(…,
+  dropEmpireBonus=true, curHolder)`; if a *different* country wins → `_conquerGeo`
+  (transfer). Empire bonus DROPPED for conquered geos (operator decision). `continue`
+  (skips the virgin paths + native reversal — conquered geos never revert to native).
+- Virgin geo: champion (with empire bonus) then contested, exactly as before.
+- The old reversal-to-native block still exists but is now effectively dead for
+  conquered geos (they `continue` first) — virgin-just-conquered holders are at
+  ~100% so it no-ops.
+
+`_conquerGeo` (handles BOTH fresh falls and transfers):
+- **Transfer detection:** geo already held by a different foreign country →
+  `_isTransfer`. Drops the old holder + broadcasts its `reversal` (clients erase
+  old flag), floods to the new owner, and **skips** native-death/relocation
+  (`_onCountryConquered`), siege-clear, player notifications, and Discord/tweet
+  reporting (anti-spam — only the first virgin→conquered fall reports).
+- `_survives` is function-scoped (the relocation-notify block reads it).
+
+Periodic 60s sweep (`_lastTransferAt`, `MAX_TRANSFERS_PER_TICK` 3): now a
+BACKSTOP using the same `_evaluateConqueror` (the live loop only re-evals painted
+geos). Transfers via `_conquerGeo`; still ghost-clears a holder wiped to 0 px.
+- **Nuke reversal (v94b):** `_reverseConquestsForGeo` after a nuke (the nuke path
+  bypasses applyPixels).
+- **CAVEAT:** survivor natives can no longer reclaim their own homeland via this
+  path (only foreign↔foreign transfer); they keep their relocated capital/outposts.
+- Debug `/api/debug/country` still SHOWS `empireBonusPct` in `effectiveConquestPct`
+  even for conquered geos (display only — the live eval drops it).
 
 ### Discord war-room event tuning (v94a — "major events only")
 - Conquest: once per fall (the dedup guards above).
@@ -430,9 +445,13 @@ Two fall paths in `applyPixels` (server), both must guard against re-firing:
 - `war_siege_end` ("🛡️ Siege Lifted") is NOT posted to #war-room (bot drops it).
 
 ### Bonus model (encircle + rally regen)
-- `getMyMultiplier()` = current country's David/Goliath mult × `_encircleMult`;
-  regen = `david × rank × _highlightRegenMult`. David mult auto-updates per
-  country; rank persists (it's the player's).
+- **v95h: regen does NOT stack bonuses.** `getRegenMult()` = `min(8, max(David
+  world-share mult, encircle, rank, rally/highlight))` — the LARGEST single active
+  bonus, rounded, capped at 8×. (Previously regen = `david × rank ×
+  _highlightRegenMult` and `getMyMultiplier()` = `david × encircle`, which all
+  multiplied into runaway regen.) `getMyMultiplier()` still multiplies david×enc
+  but is now only vestigial; regen + the david-badge HUD use `getRegenMult()`.
+  David mult auto-updates per country; rank persists (it's the player's).
 - v93y: bonuses **reset on country change** (`_resetBonusesForCountryChange()`
   on `selectCountry`/re-pick: clears encircle + `clearHighlight`).
 - v93y: encircle bonus **only ratchets UP** — a smaller new encirclement keeps
