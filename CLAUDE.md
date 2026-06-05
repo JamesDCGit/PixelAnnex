@@ -41,11 +41,13 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-05-v95c`.** Server-only changes since (v95d
-conquest owner-transfer) deliberately did NOT bump the triad — a server-only fix
-keeps all three at the same value so connected clients don't reload. Only bump the
-triad when the CLIENT (`pixelworld_v5.html`) actually changes. Comment tags
-(`// v95d:`) can run ahead of the triad banner; that's fine.
+**Current production triad: `2026-06-05-v95e`.** (v95d was a server-only conquest
+owner-transfer change that deliberately did NOT bump the triad — it stayed at
+v95c — so connected clients didn't reload; v95e is the next CLIENT change, hence
+the jump v95c→v95e.) A server-only fix keeps all three at the same value so
+connected clients don't reload. Only bump the triad when the CLIENT
+(`pixelworld_v5.html`) actually changes. Comment tags (`// v95e:`) can run ahead
+of the triad banner; that's fine.
 
 ## Deploy flow
 
@@ -229,7 +231,7 @@ Before editing any function:
 - **v94b:** nuke that wipes a conquered country reverses the conquest; 60s periodic
   ghost-flag sweep.
 
-### Changelog v95–v95d (this session — FTUE + conquest-render fixes)
+### Changelog v95–v95e (this session — FTUE + conquest-render fixes)
 - **v95:** FTUE guided first-paint (client) — after the welcome modal closes, a
   brand-new player is dropped into a random FOREIGN country they hold no pixels in
   (camera tweens, glowing target zone + coach banner); 5 paints into it completes
@@ -254,6 +256,13 @@ Before editing any function:
 - **v95d (server-only):** conquered land transfers to its dominant holder — see
   "Conquest fall mechanics" below. Supersedes the old "permanent lock, no transfer"
   model.
+- **v95e:** a conquest flag PER landmass, each at the landmass centre. `placeFlag`
+  BFS-enumerates ALL connected landmasses (no early break), flags the largest +
+  any other >= 10px (cap 4, largest first) → USA gets continental + Alaska +
+  Hawaii. `_densestCenter(compPixels)` (extracted density grid) centres each flag.
+  Flag DOM reworked: `_flagDOMNodes[geoIdx]` is now an ARRAY of {img,label} nodes;
+  `placedFlags` still keeps ONE primary entry/geo so the conquest count stays
+  one-per-country.
 
 ## Screenshots for tweets (v88)
 
@@ -358,7 +367,10 @@ arrow). `_countDistinctConquered()` (world-conquest trigger) counts
   territory, else the native name; body shows "Formerly {native}", "🗡️ Conquered
   N countries", and "{native} N% (Original)" + invaders.
 - On-map flags (DOM overlay) show a text label underneath = holder + outpost
-  number (v94), in `#flag-overlay` so it shares the flags' zoom/fade.
+  number (v94), in `#flag-overlay` so it shares the flags' zoom/fade. v95e: a
+  conquered country gets one flag PER significant landmass (see "FTUE / flag
+  placement" — `placeFlag`/`_densestCenter`); the same holder+number label is
+  repeated on each landmass.
 - Inspector % AGGREGATES across all polygons of a country (v93u Fix A) — hovering
   one island of a multi-polygon country no longer misreports the whole country.
 
