@@ -3348,7 +3348,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-05-v95f';
+const CODE_VERSION = '2026-06-05-v95h';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5519,19 +5519,14 @@ setInterval(()=>{
   if(pixelBucket>=BUCKET_MAX){ $("bucket-timer").textContent="FULL"; return; }
   regenSecsLeft--;
   if(regenSecsLeft<=0){
-    // v38: rank multiplier × David multiplier (rounded so progression is visible)
-    // v87: × highlight temp-regen multiplier while a rally is active.
-    const davidMult = getMyMultiplier();
-    const rankMult  = getRankRegenMult();
-    const mult      = Math.max(1, Math.round(davidMult * rankMult * _highlightRegenMult));
+    // v95h: regen uses the LARGEST active bonus (capped 8x), not the product.
+    const mult = getRegenMult();
     pixelBucket = Math.min(BUCKET_MAX, pixelBucket + mult);
     regenSecsLeft = REGEN_INTERVAL;
     updateBucketHUD();
     sfxBucketRegen();
   }
-  const _davidMult = getMyMultiplier();
-  const _rankMult  = getRankRegenMult();
-  const mult       = Math.max(1, Math.round(_davidMult * _rankMult * _highlightRegenMult));
+  const mult       = getRegenMult();
   const suffix     = mult > 1 ? (' +' + mult) : '+1';
   $("bucket-timer").textContent = suffix+" in "+regenSecsLeft+"s";
 }, 1000);
@@ -5808,6 +5803,21 @@ function getMyMultiplier() {
   return base * enc;
 }
 
+// v95h: regen multiplier = the LARGEST active bonus, NOT the product of them,
+// capped at 8x. The four sources (David/Goliath world-share buff, encirclement,
+// rank, and rally/highlight) used to multiply together — stacking into runaway
+// regen. Now they DON'T stack: whichever single buff is highest applies.
+function getRegenMult() {
+  if (currentIdx < 0) return 1;
+  const f = featList[currentIdx];
+  const davidBase = (f && f.id) ? getCountryMultiplier(f.id) : 1;
+  const enc  = getEncircleMultiplierLocal();
+  const rank = getRankRegenMult();
+  const hl   = _highlightRegenMult || 1;
+  const best = Math.max(davidBase, enc, rank, hl);
+  return Math.min(8, Math.max(1, Math.round(best)));
+}
+
 function getMyWorldShare() {
   if (currentIdx < 0) return 0;
   const f = featList[currentIdx];
@@ -5824,12 +5834,12 @@ function getCountryMultiplier(countryId) {
 function updateDavidHUD() {
   const el = document.getElementById('david-badge');
   if (!el) return;
-  const mult = getMyMultiplier();
+  const mult = getRegenMult(); // v95h: show the actual (largest-bonus, capped) regen
   const share = getMyWorldShare();
   if (mult > 1) {
     el.style.display = 'inline-block';
     el.innerHTML = '🛡️ <b>' + mult + 'x</b> regen';
-    el.title = 'David buff: your country has ' + (share * 100).toFixed(2) + '% world share — you regen ' + mult + '× faster.';
+    el.title = 'Your strongest active buff: ' + mult + '× regen (bonuses no longer stack; capped at 8×). World share ' + (share * 100).toFixed(2) + '%.';
   } else {
     el.style.display = 'none';
   }
