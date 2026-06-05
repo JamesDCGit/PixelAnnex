@@ -3354,7 +3354,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-05-v95l';
+const CODE_VERSION = '2026-06-06-v95m';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3405,6 +3405,10 @@ let bordPixel=null;   // Uint8Array MAP_PX — 1 where a border pixel was drawn
 let totalClaimed=0,totalLandPx=0,showBorders=true,borderDark=true,brushSize=1,currentIdx=0;
 let isPainting=false,isDragging=false,scale=1,ox=0,oy=0,dragBase={x:0,y:0};
 const conqueredSet=new Set();
+// v95m: country IDs whose native homeland is DEAD for the round (server-authoritative,
+// seeded from the welcome snapshot + the `perm` flag on conquest events). A dead
+// native that currently has NO holder = a neutral "Fallen" zone (reconquerable).
+const permanentlyConqueredSet=new Set();
 
 const vp=document.getElementById("viewport");
 // ── v31: Mobile/iOS detection for memory-reduced canvas init ─────
@@ -8331,6 +8335,11 @@ function mpHandleMessage(msg) {
       // runs, THEN replays conquests (correct order: flag placement needs the
       // runs applied first).
       _pendingConquered = (msg.state && msg.state.conquered) ? msg.state.conquered : [];
+      // v95m: seed dead-native set for "Fallen" rendering.
+      permanentlyConqueredSet.clear();
+      if (msg.state && Array.isArray(msg.state.permanentlyConquered)) {
+        for (const g of msg.state.permanentlyConquered) permanentlyConqueredSet.add(String(g));
+      }
       // v92w: seed server-authoritative siege set so a mid-siege reconnect/late-join
       // flashes immediately (the 'siege' event only fires on state transitions).
       _serverSieged.clear();
@@ -8422,6 +8431,7 @@ function mpHandleMessage(msg) {
       // Convert to featList indices for client-side use.
       const { geoIdx: geoCountryId, countryId } = msg;
       conqueredSet.add(geoCountryId + ':' + countryId);
+      if (msg.perm) permanentlyConqueredSet.add(String(geoCountryId)); // v95m: native is dead
       // v75: O(1) lookups via idToFeatIdx
       const fi = idToFeatIdx.get(String(countryId));
       const targetFi = idToFeatIdx.get(String(geoCountryId));
@@ -11344,7 +11354,8 @@ vp.addEventListener("mousemove",e=>{
         _headName = _holderFeat.name + ((_oi && _oi.num) ? (' '+_oi.num) : '');
       } else if(_nativeFeat){
         _headFlag = flagAny(_nativeFeat.id,2);
-        _headName = _nativeFeat.name;
+        // v95m: a dead native with no holder is a neutral "Fallen" zone (up for grabs).
+        _headName = _nativeFeat.name + (_isFallenZoneClient(_nativeFeat.id) ? ' — Fallen' : '');
       }
       $("tip-name").innerHTML = _headFlag + '<span>' + _headName + '</span>';
 
@@ -12096,14 +12107,18 @@ function _isCountryConqueredClient(countryId) {
 // is conquered AND it holds NO outposts. A SURVIVOR (homeland conquered but still
 // holding an outpost — empire continuity, e.g. Cuba relocated to the USA) is alive,
 // not fallen, so it shouldn't be greyed/struck-through/forced to re-pick.
+// v95m: a country is FALLEN (dead native → grey out, not selectable, force re-pick)
+// iff its homeland is permanently conquered. Empire-continuity (survivors) was
+// rolled back, so there's no "homeland conquered but still alive" case anymore.
+// Server-authoritative via permanentlyConqueredSet (welcome + `perm` conquest flag).
 function _isCountryFallenClient(countryId) {
-  if (!_isCountryConqueredClient(countryId)) return false;
-  const cid = String(countryId);
-  for (const key of conqueredSet) {
-    const p = String(key).split(':');
-    if (p[1] === cid && p[0] !== cid) return false; // holds an outpost → survivor (alive)
-  }
-  return true;
+  return permanentlyConqueredSet.has(String(countryId));
+}
+// A neutral "Fallen" zone = dead native that currently has NO holder (its empire
+// was cleared with no heir) — blank land, reconquerable by anyone.
+function _isFallenZoneClient(countryId) {
+  return permanentlyConqueredSet.has(String(countryId)) &&
+         !(typeof _holderOfGeo === 'function' && _holderOfGeo(countryId));
 }
 
 // v93r (#3 Stage 3): coordination naming. Outposts of a holder are numbered by

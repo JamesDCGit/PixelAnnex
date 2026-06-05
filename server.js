@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-05-v95l';
+const SERVER_VERSION       = '2026-06-06-v95m';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3120,15 +3120,12 @@ function _pickBotMigrationTarget(fromCountryId) {
   return cands[0];
 }
 
-// v93u (Fix B): when a geo is no longer conquered by ANYONE, drop its permanent
-// lock so the country can fall again / be re-selected (empire-continuity reclaim).
-// Without this, a conquest that gets reversed leaves the geo permanently locked
-// (e.g. Italy: freed by reversal but stuck at permanentlyConquered forever).
-function _clearPermanentIfFree(geo) {
-  const gid = geoToId(geo);
-  for (const k of conqueredSet) { if (String(k).split(':')[0] === gid) return; } // still held
-  permanentlyConquered.delete(gid);
-}
+// v95m: NO-OP. Under the "homeland fall = death for the round" model, a conquered
+// native NEVER revives — even when its territory is freed/wiped it becomes a neutral
+// "Fallen" zone (dead native, no holder, reconquerable by OTHERS), not a playable
+// native again. (Was v93u Fix B, which dropped the permanent lock when a geo became
+// unheld; that contradicts the new model where fallen zones must stay dead.)
+function _clearPermanentIfFree(geo) { /* intentionally no-op (v95m: dead for the round) */ }
 
 // v93q (#3): geos a country currently holds as outposts (conquered elsewhere).
 function _countryOutposts(countryId) {
@@ -3150,22 +3147,22 @@ function _largestOutpost(countryId) {
   return best;
 }
 
-// Called (deferred) when a territory's homeland is conquered.
-// v93q (#3): if the country still holds outposts it SURVIVES (empire continuity)
-// — keep its foreign pixels + bot in place, no transfer/migration. Only a truly
-// landless country runs the giveaway/migration below.
-//   1. Transfer foreign pixels to alliance partner
-//   2. Migrate the defeated bot (boost ally's bot + update player entry)
-function _onCountryConquered(conqueredGeoId, survives) {
+// Called (deferred) when a country's homeland is conquered. v95m: the country DIES
+// (no more empire-continuity survival). Liquidate everything it held OUTSIDE its
+// now-lost homeland:
+//   • Alliance partner alive  → hand it all to them (foreign pixels + its conquered
+//     outposts, flags and all).
+//   • No alliance partner     → CLEAR those pixels (revert to neutral) and drop its
+//     outpost conquests → those countries become "Fallen" (dead native, no holder,
+//     blank) until someone reconquers them.
+// Then migrate/retire the defeated bot.
+function _onCountryConquered(conqueredGeoId) {
   conqueredGeoId = String(conqueredGeoId);
-  if (survives) {
-    console.log(`[Conquest] ${conqueredGeoId} homeland fell but empire endures (${_countryOutposts(conqueredGeoId).length} outposts) — relocated, holdings kept`);
-    return;
-  }
   const homeGeoIdx    = parseInt(conqueredGeoId, 10); // numeric ISO stored in geoAtPixel
   const conqueredCidx = getIdx(conqueredGeoId);
+  const outposts      = _countryOutposts(conqueredGeoId); // geos this country had conquered
 
-  // ── 1. Alliance pixel transfer ──────────────────────────────────
+  // Pick a living alliance partner to inherit (strongest by pixels), if any.
   const ally = getAllianceForCountry(conqueredGeoId);
   let transferTo = null;
   if (ally) {
@@ -3176,32 +3173,61 @@ function _onCountryConquered(conqueredGeoId, survives) {
         (countryPxCount[c] || 0) > (countryPxCount[best] || 0) ? c : best, partners[0]);
     }
   }
+
+  // This country's pixels OUTSIDE its homeland (the homeland itself went to the
+  // conqueror via finisherFill).
+  const ownedPixels = ownerPixels[conqueredCidx];
+  const foreign = ownedPixels ? [...ownedPixels].filter(i => geoAtPixel[i] !== homeGeoIdx) : [];
+
   if (transferTo) {
-    const newCidx      = getIdx(transferTo);
-    const ownedPixels  = ownerPixels[conqueredCidx];
-    const toTransfer   = ownedPixels
-      ? [...ownedPixels].filter(i => geoAtPixel[i] !== homeGeoIdx)
-      : [];
-    if (toTransfer.length) {
-      const changed = [];
-      for (const i of toTransfer) {
-        const geo = geoAtPixel[i];
-        updateOwnerIndex(i, conqueredCidx, newCidx);
-        claimByPixel[i] = newCidx;
-        countryPxCount[conqueredGeoId] = Math.max(0, (countryPxCount[conqueredGeoId] || 1) - 1);
-        countryPxCount[transferTo]     = (countryPxCount[transferTo] || 0) + 1;
-        if (geo >= 0 && geoClaimCnt[geo]) {
-          geoClaimCnt[geo][conqueredGeoId] = Math.max(0, (geoClaimCnt[geo][conqueredGeoId] || 1) - 1);
-          geoClaimCnt[geo][transferTo]     = (geoClaimCnt[geo][transferTo] || 0) + 1;
-        }
-        changed.push({ x: i % MAP_W, y: (i / MAP_W) | 0, owner: transferTo });
+    // ── Hand the foreign empire to the ally ──
+    const newCidx = getIdx(transferTo);
+    const changed = [];
+    for (const i of foreign) {
+      const geo = geoAtPixel[i];
+      updateOwnerIndex(i, conqueredCidx, newCidx);
+      claimByPixel[i] = newCidx;
+      countryPxCount[conqueredGeoId] = Math.max(0, (countryPxCount[conqueredGeoId] || 1) - 1);
+      countryPxCount[transferTo]     = (countryPxCount[transferTo] || 0) + 1;
+      if (geo >= 0 && geoClaimCnt[geo]) {
+        geoClaimCnt[geo][conqueredGeoId] = Math.max(0, (geoClaimCnt[geo][conqueredGeoId] || 1) - 1);
+        geoClaimCnt[geo][transferTo]     = (geoClaimCnt[geo][transferTo] || 0) + 1;
       }
-      queueDelta(changed);
-      console.log(`[Conquest] ${conqueredGeoId} foreign pixels (${changed.length}) → ally ${transferTo}`);
+      changed.push({ x: i % MAP_W, y: (i / MAP_W) | 0, owner: transferTo });
     }
+    if (changed.length) queueDelta(changed);
+    // Hand over its conquered outposts (flag ownership) to the ally.
+    for (const Y of outposts) {
+      conqueredSet.delete(Y + ':' + conqueredGeoId);
+      conqueredSet.add(Y + ':' + transferTo);
+      broadcast(JSON.stringify({ type: 'reversal', geoIdx: parseInt(Y, 10), countryId: conqueredGeoId, reason: 'inherited' }));
+      broadcast(JSON.stringify({ type: 'conquest', geoIdx: parseInt(Y, 10), countryId: transferTo, perm: true }));
+    }
+    console.log(`[Conquest] ${conqueredGeoId} died — empire (${changed.length}px, ${outposts.length} outposts) → ally ${transferTo}`);
+  } else {
+    // ── No heir: clear the foreign pixels (revert to neutral) ──
+    const changed = [];
+    for (const i of foreign) {
+      const geo = geoAtPixel[i];
+      countryPxCount[conqueredGeoId] = Math.max(0, (countryPxCount[conqueredGeoId] || 1) - 1);
+      if (geo >= 0 && geoClaimCnt[geo]?.[conqueredGeoId]) {
+        geoClaimCnt[geo][conqueredGeoId] = Math.max(0, geoClaimCnt[geo][conqueredGeoId] - 1);
+      }
+      updateOwnerIndex(i, conqueredCidx, -1);
+      claimByPixel[i] = -1;
+      changed.push({ x: i % MAP_W, y: (i / MAP_W) | 0, owner: null });
+    }
+    if (changed.length) queueDelta(changed);
+    // Its conquered outposts become FALLEN (dead native, no holder) — do NOT
+    // clear permanentlyConquered, so they stay dead until someone reconquers.
+    for (const Y of outposts) {
+      conqueredSet.delete(Y + ':' + conqueredGeoId);
+      broadcast(JSON.stringify({ type: 'reversal', geoIdx: parseInt(Y, 10), countryId: conqueredGeoId, reason: 'fallen' }));
+    }
+    console.log(`[Conquest] ${conqueredGeoId} died with no heir — ${changed.length}px cleared, ${outposts.length} outposts now Fallen`);
   }
 
-  // ── 2. Bot migration ────────────────────────────────────────────
+  // ── Bot migration ────────────────────────────────────────────
   const migTarget = transferTo || _pickBotMigrationTarget(conqueredGeoId);
   if (migTarget) {
     if (bots.has(migTarget)) {
@@ -3664,6 +3690,7 @@ function buildSnapshot() {
   return {
     runs,
     conquered: [...conqueredSet],
+    permanentlyConquered: [...permanentlyConquered], // v95m: dead natives → client "Fallen" rendering
     sieged: [...siegedSet].map(g => geoToId(g)), // v92w: current sieges for late-joiners
     players: [...players.values()].map(p => ({
       countryId: p.countryId,
@@ -3803,52 +3830,39 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
   }
   conqueredSet.add(geo + ':' + conquerorId);
   const _isSelf   = String(conquerorId) === String(geoId);
-  // v93q (#3): empire continuity — if the fallen country still holds outposts it
-  // SURVIVES (relocates) rather than dying. Survivors are NOT permanentlyConquered.
-  // (function-scoped so the relocation-notify block below can read it.)
-  const _survives = !_isSelf && _countryOutposts(geoId).length > 0;
-  // v95i: native-death/relocation + siege-clear only on the FIRST (virgin) fall,
-  // NOT on a transfer between invaders (the native already fell).
-  if (!_isTransfer) {
-    if (!_survives) permanentlyConquered.add(geoId); // truly dead → locked until world reset
-    // v92q/v92w: clear any active siege — a fallen country is out of the siege system.
-    if (siegedSet.has(geo)) {
+  // v95m: empire-continuity (survivor/relocation) ROLLED BACK. A homeland fall is
+  // now ALWAYS death — no surviving via outposts. A FRESH KILL = a living country's
+  // homeland falling for the first time (not a transfer between invaders, not a
+  // re-conquest of an already-dead "Fallen" zone, not a self-conquest).
+  const _alreadyDead = permanentlyConquered.has(geoId);
+  const _freshKill = !_isTransfer && !_alreadyDead && !_isSelf;
+  if (_freshKill) {
+    permanentlyConquered.add(geoId); // dead for the round (native never revives)
+    if (siegedSet.has(geo)) {        // a fallen country is out of the siege system
       siegedSet.delete(geo);
       broadcast(JSON.stringify({ type: 'siege', countryId: geoId, active: false }));
     }
-    setTimeout(() => _onCountryConquered(geoId, _survives), 0);
+    setTimeout(() => _onCountryConquered(geoId), 0); // liquidate its empire (ally or clear)
   }
-  conquests.push({ geoIdx: geo, countryId: conquerorId });
+  // perm flag → client marks the geo's native as dead (drives "Fallen" rendering).
+  conquests.push({ geoIdx: geo, countryId: conquerorId, perm: permanentlyConquered.has(geoId) });
   changed.push(...finisherFill(geo, conquerorId));
-  // Skip reporting for self-conquest, and for transfers (anti-spam — only the
-  // first virgin->conquered fall notifies players + Discord + tweets).
-  if (_isSelf || _isTransfer) return;
+  // Only a FRESH kill notifies the (now dead) country's players + Discord. Transfers,
+  // self-conquest, and re-takes of already-fallen zones are silent (anti-spam).
+  if (!_freshKill) return;
 
-  // v93q (#3): notify the fallen country's players — relocate (empire endures)
-  // or die (no territory left → re-pick). Sent regardless of notability since
-  // it's gameplay-critical for that player; also banks a countriesLost stat.
-  {
-    const _relocTo = _survives ? _largestOutpost(geoId) : null;
-    for (const [, pp] of players) {
-      if (pp.isBot || !pp.ws || String(pp.countryId) !== String(geoId)) continue;
-      const _prof = pp.discordId ? profiles.get(pp.discordId) : null;
-      if (_prof) _prof.countriesLost = (_prof.countriesLost || 0) + 1;
-      try {
-        if (_survives) {
-          pp.ws.send(JSON.stringify({
-            type: 'capital_relocated', lostCountryId: geoId, attackerId: conquerorId,
-            newCapitalId: _relocTo, newCapitalName: _relocTo ? _countryName(_relocTo) : null,
-            outposts: _countryOutposts(geoId).length,
-          }));
-        } else {
-          pp.ws.send(JSON.stringify({
-            type: 'your_country_lost', lostCountryId: geoId, attackerId: conquerorId,
-            mercenaryBonus: 20,
-            keep: _prof ? { conquests: _prof.conquestsMade || 0, rank: _prof.rank || 'Soldier', points: _prof.points || 0 } : null,
-          }));
-        }
-      } catch (e) {}
-    }
+  // Notify the fallen country's players → forced re-pick + revenge bonus (v95m: 50px).
+  for (const [, pp] of players) {
+    if (pp.isBot || !pp.ws || String(pp.countryId) !== String(geoId)) continue;
+    const _prof = pp.discordId ? profiles.get(pp.discordId) : null;
+    if (_prof) _prof.countriesLost = (_prof.countriesLost || 0) + 1;
+    try {
+      pp.ws.send(JSON.stringify({
+        type: 'your_country_lost', lostCountryId: geoId, attackerId: conquerorId,
+        mercenaryBonus: 50,
+        keep: _prof ? { conquests: _prof.conquestsMade || 0, rank: _prof.rank || 'Soldier', points: _prof.points || 0 } : null,
+      }));
+    } catch (e) {}
   }
   // v92f: only REPORT (Discord war event + screenshot + tweet) conquests that
   // involve a notable country. With the v92a lowered fall threshold, conquests
@@ -4340,16 +4354,9 @@ function loadBoardSnapshot() {
     for (const k of (data.conquered || [])) conqueredSet.add(k);
     permanentlyConquered.clear();
     for (const k of (data.permanentlyConquered || [])) permanentlyConquered.add(String(k));
-    // v93u (Fix B): drop stale permanent locks — geos flagged permanentlyConquered
-    // but no longer held by anyone (freed by an earlier reversal). Unsticks
-    // ghost-locked countries (e.g. Italy) so they can fall/be selected again.
-    {
-      const _held = new Set();
-      for (const k of conqueredSet) _held.add(String(k).split(':')[0]);
-      let _unstuck = 0;
-      for (const g of [...permanentlyConquered]) { if (!_held.has(String(g))) { permanentlyConquered.delete(g); _unstuck++; } }
-      if (_unstuck) console.log('[Board] cleared', _unstuck, 'stale permanent locks (freed countries)');
-    }
+    // v95m: do NOT un-stick unheld permanent locks anymore. Under the "dead for the
+    // round" model, a permanentlyConquered native that's no longer held is a neutral
+    // "Fallen" zone (reconquerable by OTHERS), and must stay dead — not revive.
     console.log('[Board] restored', painted, 'painted pixels,', conqueredSet.size, 'conquests (saved',
       data.savedAt ? new Date(data.savedAt).toISOString() : '?', ')');
     // v93x: claimByPixel is restored but geoClaimCnt (read by the conquest check)
