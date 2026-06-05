@@ -41,7 +41,7 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-05-v95l`.** (v95d was a server-only conquest
+**Current production triad: `2026-06-06-v95m`.** (v95d was a server-only conquest
 owner-transfer change that deliberately did NOT bump the triad — it stayed at
 v95c — so connected clients didn't reload; v95e is the next CLIENT change, hence
 the jump v95c→v95e.) A server-only fix keeps all three at the same value so
@@ -297,6 +297,18 @@ Before editing any function:
   country id (geoIdx is only one polygon; for a country whose last-registered
   polygon is a tiny/culled island it found no pixels → the "no flag on Australia"
   bug). (3) Right-click inspect pulse decoupled from duration → ~2 pulses/sec.
+- **v95m:** ROLLED BACK the survivor/relocation mechanic (v93q empire continuity).
+  Homeland fall = death always (forced re-pick), cutting slow churn. `_conquerGeo`
+  runs the death sequence only on a FRESH kill (a living country's first homeland
+  fall — not a transfer / self / re-take of a Fallen zone); mercenary/revenge bonus
+  20→50. `_onCountryConquered` LIQUIDATES the dead country's empire OUTSIDE its
+  homeland: hand to a living alliance partner (pixels + outpost flags), else CLEAR
+  the pixels + drop its outpost conquests → those become neutral "Fallen" land
+  (dead native, no holder, reconquerable). `permanentlyConquered` is now "dead for
+  the round": `_clearPermanentIfFree` is a NO-OP and board-restore no longer
+  un-sticks unheld locks. Client: `permanentlyConqueredSet` (welcome state + `perm`
+  flag on conquest); `_isCountryFallenClient` uses it; inspector shows
+  "{native} — Fallen" for an unheld dead native.
 
 ## Screenshots for tweets (v88)
 
@@ -376,13 +388,12 @@ wipes everything." Three levers (the 1+3+4 set):
   `conquestThreshold()`; mirrored in client for prediction. Applied at both the
   champion + contested conquest paths on the DEFENDER. Debug endpoint shows
   `empireOutposts / empireBonusPct / effectiveConquestPct`.
-- **#3 Empire continuity (v93q):** a country whose homeland is conquered does
-  NOT die if it still holds ≥1 outpost — it RELOCATES (server sends
-  `capital_relocated`; players keep playing, empire + bot kept; `_onCountryConquered`
-  skips the giveaway/migration for survivors). Survivors are NOT added to
-  `permanentlyConquered`, so they can fight to reclaim their homeland (rare).
-  Only a country with ZERO territory dies → `your_country_lost` → re-pick.
-  `_countryOutposts()` / `_largestOutpost()` drive survival + relocation target.
+- **#3 Empire continuity (v93q) — ROLLED BACK in v95m.** Survivor/relocation is
+  GONE: a homeland fall now ALWAYS kills the country (`your_country_lost` → re-pick),
+  and its empire outside the homeland is liquidated (alliance heir, else cleared to
+  "Fallen"). See the v95m entry in the changelog + "Conquest fall mechanics". The
+  text below describes the old behaviour and no longer applies. (`capital_relocated`
+  is no longer sent; `_largestOutpost` is now unused.)
 - **#4 Progression banked (v93q):** `your_country_lost` carries `keep:{conquests,
   rank, points}` (from the persisted Discord profile) and the re-pick modal shows
   "You keep…" so a true wipe never feels like total loss. (Profile stats already
@@ -438,13 +449,18 @@ forever) + the v95d periodic plurality sweep.
   conquered geos (they `continue` first) — virgin-just-conquered holders are at
   ~100% so it no-ops.
 
-`_conquerGeo` (handles BOTH fresh falls and transfers):
-- **Transfer detection:** geo already held by a different foreign country →
-  `_isTransfer`. Drops the old holder + broadcasts its `reversal` (clients erase
-  old flag), floods to the new owner, and **skips** native-death/relocation
-  (`_onCountryConquered`), siege-clear, player notifications, and Discord/tweet
-  reporting (anti-spam — only the first virgin→conquered fall reports).
-- `_survives` is function-scoped (the relocation-notify block reads it).
+`_conquerGeo` (handles fresh falls AND transfers):
+- **Fresh kill** (`_freshKill` = not a transfer, not a re-take of an already-dead
+  geo, not self): adds `permanentlyConquered`, clears siege, runs
+  `_onCountryConquered` (liquidates the dead empire), and sends `your_country_lost`
+  (mercenary 50) + Discord report. v95m: there is no "survives" path anymore.
+- **Transfer / re-take of a Fallen zone / self:** drops any prior holder +
+  broadcasts its `reversal`, floods to the new owner, but SKIPS the death sequence
+  + notifications + Discord (anti-spam). The `perm` flag on the broadcast conquest
+  = `permanentlyConquered.has(geo)` so the client tracks dead natives.
+- `_onCountryConquered(geoId)` (v95m, no `survives` arg): hands the dead country's
+  non-homeland pixels + outpost flags to a living alliance partner, else CLEARS
+  them → those outposts become neutral "Fallen" zones.
 
 Periodic 60s sweep (`_lastTransferAt`, `MAX_TRANSFERS_PER_TICK` 3): now a
 BACKSTOP using the same `_evaluateConqueror` (the live loop only re-evals painted
