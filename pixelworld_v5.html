@@ -3354,7 +3354,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-05-v95j';
+const CODE_VERSION = '2026-06-05-v95k';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5227,7 +5227,7 @@ function scheduleLegend(){
       // to match exactly how it looks painted on the map canvas
       const row=document.createElement("div");row.className="leg-row";
       // v95j: grey out fallen (conquered-homeland) countries, like the picker.
-      if(typeof _isCountryConqueredClient==='function' && _isCountryConqueredClient(f.id)) row.classList.add('fallen');
+      if(typeof _isCountryFallenClient==='function' && _isCountryFallenClient(f.id)) row.classList.add('fallen'); // v95k: survivors (holding outposts) aren't fallen
       row.dataset.countryId = f.id;
       // v93z: click highlights this country's painted footprint on the map (same
       // effect as right-click inspect) — no popup menu.
@@ -6678,7 +6678,9 @@ function _tryShowFallenRepick() {
     return;
   }
   const mf = featList[currentIdx];
-  if (mf && typeof _isCountryConqueredClient === 'function' && _isCountryConqueredClient(mf.id)) {
+  // v95k: only force a re-pick if your country is TRULY dead — a survivor (homeland
+  // conquered but still holding an outpost) relocated and keeps playing.
+  if (mf && typeof _isCountryFallenClient === 'function' && _isCountryFallenClient(mf.id)) {
     _fallenRepickDone = true;
     if (typeof _showCountryRepickModal === 'function') _showCountryRepickModal({ mercenaryBonus: 0, onLoad: true });
   }
@@ -11124,7 +11126,7 @@ function renderCselList(filter){
     // ID (geoCountryId:countryId), not featList index. The old check compared
     // country-id keys against the featList index, so fallen countries were never
     // greyed here. Use the same id-based helper the re-pick modal uses.
-    const isConquered = _isCountryConqueredClient(f.id);
+    const isConquered = _isCountryFallenClient(f.id); // v95k: survivors stay selectable
     const div = document.createElement('div');
     div.className = 'csel-opt' + (idx===currentIdx?' selected':'') + (isConquered?' disabled':'');
     div.dataset.idx = idx;
@@ -12078,6 +12080,20 @@ function _isCountryConqueredClient(countryId) {
   return false;
 }
 
+// v95k: a country is FALLEN (truly dead → re-pick / grey out) only if its homeland
+// is conquered AND it holds NO outposts. A SURVIVOR (homeland conquered but still
+// holding an outpost — empire continuity, e.g. Cuba relocated to the USA) is alive,
+// not fallen, so it shouldn't be greyed/struck-through/forced to re-pick.
+function _isCountryFallenClient(countryId) {
+  if (!_isCountryConqueredClient(countryId)) return false;
+  const cid = String(countryId);
+  for (const key of conqueredSet) {
+    const p = String(key).split(':');
+    if (p[1] === cid && p[0] !== cid) return false; // holds an outpost → survivor (alive)
+  }
+  return true;
+}
+
 // v93r (#3 Stage 3): coordination naming. Outposts of a holder are numbered by
 // geo-id ascending — stable and IDENTICAL on every client, so "USA Outpost 2"
 // refers to the same territory for everyone. conqueredSet keys are id-based
@@ -12150,7 +12166,7 @@ function _showCountryRepickModal(data) {
       .sort(function(a, b) { return a.name.localeCompare(b.name); });
     for (var i = 0; i < Math.min(items.length, 200); i++) {
       var f = items[i];
-      var fallen = _isCountryConqueredClient(f.id);
+      var fallen = _isCountryFallenClient(f.id); // v95k: survivors (holding outposts) are pickable
       var btn = document.createElement('button');
       btn.style.cssText = 'background:#162035;border:1px solid #1e293b;color:' + (fallen ? '#475569' : '#cbd5e1') +
         ';padding:6px 10px;font-size:11px;border-radius:4px;cursor:' + (fallen ? 'not-allowed' : 'pointer') +
