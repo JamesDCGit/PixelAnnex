@@ -41,12 +41,12 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-05-v95e`.** (v95d was a server-only conquest
+**Current production triad: `2026-06-05-v95f`.** (v95d was a server-only conquest
 owner-transfer change that deliberately did NOT bump the triad — it stayed at
 v95c — so connected clients didn't reload; v95e is the next CLIENT change, hence
 the jump v95c→v95e.) A server-only fix keeps all three at the same value so
 connected clients don't reload. Only bump the triad when the CLIENT
-(`pixelworld_v5.html`) actually changes. Comment tags (`// v95e:`) can run ahead
+(`pixelworld_v5.html`) actually changes. Comment tags (`// v95f:`) can run ahead
 of the triad banner; that's fine.
 
 ## Deploy flow
@@ -256,13 +256,15 @@ Before editing any function:
 - **v95d (server-only):** conquered land transfers to its dominant holder — see
   "Conquest fall mechanics" below. Supersedes the old "permanent lock, no transfer"
   model.
-- **v95e:** a conquest flag PER landmass, each at the landmass centre. `placeFlag`
-  BFS-enumerates ALL connected landmasses (no early break), flags the largest +
-  any other >= 10px (cap 4, largest first) → USA gets continental + Alaska +
-  Hawaii. `_densestCenter(compPixels)` (extracted density grid) centres each flag.
-  Flag DOM reworked: `_flagDOMNodes[geoIdx]` is now an ARRAY of {img,label} nodes;
-  `placedFlags` still keeps ONE primary entry/geo so the conquest count stays
-  one-per-country.
+- **v95e:** a conquest flag PER landmass. `placeFlag` BFS-enumerates ALL connected
+  landmasses (no early break) and flags the largest + others. Flag DOM reworked:
+  `_flagDOMNodes[geoIdx]` is now an ARRAY of {img,label} nodes; `placedFlags` still
+  keeps ONE primary entry/geo so the conquest count stays one-per-country.
+- **v95f:** flag centring + caps. Position = the landmass pixel CENTROID snapped to
+  the nearest land pixel (`_landmassCenter`), replacing v95e's density-grid
+  densest-cell which drifted off-centre on wide countries (USA flag sat on the
+  west side). Caps: max 3 flags/geo (largest first), extra landmasses must be
+  ≥3px (ignore 1-2px specks). USA → continental + Alaska + Hawaii's Big Island.
 
 ## Screenshots for tweets (v88)
 
