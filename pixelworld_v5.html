@@ -324,6 +324,33 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 
 /* ── Tutorial / Welcome overlay ── */
 
+/* ── v95: FTUE guided first paint (glowing target zone + coach banner) ── */
+#ftue-highlight{
+  position:absolute; pointer-events:none; z-index:8; box-sizing:border-box;
+  border:2px solid #fbbf24; border-radius:5px; display:none;
+  background:rgba(251,191,36,0.10);
+  animation:ftuePulse 1.4s ease-in-out infinite;
+}
+@keyframes ftuePulse{
+  0%,100%{ box-shadow:0 0 12px 3px rgba(251,191,36,0.45), inset 0 0 10px rgba(251,191,36,0.30); }
+  50%{ box-shadow:0 0 26px 8px rgba(251,191,36,0.85), inset 0 0 18px rgba(251,191,36,0.55); }
+}
+#ftue-coach{
+  position:absolute; left:50%; top:16px; transform:translateX(-50%);
+  z-index:9; display:none; max-width:440px; width:calc(100% - 32px);
+  background:rgba(15,23,41,0.96); border:1px solid rgba(251,191,36,0.45);
+  border-radius:10px; padding:13px 18px; box-shadow:0 8px 30px rgba(0,0,0,0.5);
+  text-align:center; backdrop-filter:blur(4px);
+}
+#ftue-coach .ftue-title{ color:#fbbf24; font-size:13px; font-weight:700; letter-spacing:.03em; margin-bottom:5px; }
+#ftue-coach .ftue-body{ color:#cbd5e1; font-size:12px; line-height:1.55; }
+#ftue-coach .ftue-body b{ color:#fff; }
+#ftue-coach .ftue-prog{ margin-top:9px; font-size:11px; color:#94a3b8; letter-spacing:.05em; }
+#ftue-coach .ftue-skip{ display:inline-block; margin-top:8px; font-size:10px; color:#64748b; cursor:pointer; text-decoration:underline; }
+#ftue-coach .ftue-skip:hover{ color:#94a3b8; }
+#ftue-coach.success{ border-color:rgba(74,222,128,0.55); }
+#ftue-coach.success .ftue-title{ color:#4ade80; }
+
 /* ── Daily bonus & world state popup (shown before map loads if tutorial done) ── */
 #daily-popup-overlay{
   display:none; position:fixed; inset:0;
@@ -1372,6 +1399,14 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   <div id="main">
   <div id="viewport">
     <div id="flag-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:7;"></div>
+    <!-- v95: FTUE guided first-paint target zone + coach banner -->
+    <div id="ftue-highlight"></div>
+    <div id="ftue-coach">
+      <div class="ftue-title" id="ftue-coach-title">Begin your conquest</div>
+      <div class="ftue-body" id="ftue-coach-body"></div>
+      <div class="ftue-prog" id="ftue-coach-prog"></div>
+      <span class="ftue-skip" onclick="skipGuidedPaint()">Skip</span>
+    </div>
     <div id="loading">
       <h2>Loading World</h2>
       <p id="load-msg">Starting…</p>
@@ -3313,7 +3348,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-04-v94';
+const CODE_VERSION = '2026-06-05-v95';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5082,6 +5117,8 @@ function paintBrush(px,py){
     if(brushSize>3&&dx*dx+dy*dy>rsq)continue;
     claimPixel(px+dx,py+dy);
   }
+  // v95: FTUE guided first paint — count strokes that land in the target country.
+  if(_ftueActive) _ftueOnPaint(px,py);
   // ── Explosive brush expansion (fight-back mode) ────────────────
   // When painting in your own country and you're heavily lost, brush footprint grows.
   // This is added pixels for FREE (no extra bucket cost) — it's the bonus power-up.
@@ -5219,6 +5256,8 @@ function applyT(){
   _updateFlagOpacity();
   // v92p: tell the server our new viewport (debounced) so it can filter deltas.
   if (typeof scheduleViewportUpdate === 'function') scheduleViewportUpdate();
+  // v95: keep the FTUE guided-paint glow aligned with the map during pan/zoom.
+  if (_ftueActive) _positionFtueHighlight();
 }
 // Free panning — clamp is now a no-op so users can move the map anywhere they like.
 // Previous behaviour pinned the map within the viewport bounds; removing this lets
@@ -5839,6 +5878,7 @@ let _activityTimer = null;
 // ── Debug helpers for Group D testing ─────────────────────────────
 function dbgResetTutorial() {
   localStorage.removeItem('pa_tutorial_seen');
+  localStorage.removeItem('pa_ftue_guided_done'); // v95: also replay guided first-paint
   location.reload();
 }
 function dbgFakeDailyBonus(streak) {
@@ -5952,6 +5992,9 @@ function closeTutorial() {
   if (_tutCountryPicked && typeof selectCountry === 'function' && typeof _tutCountryPicked.idx === 'number') {
     selectCountry(_tutCountryPicked.idx);
   }
+  // v95: kick off the guided first-paint FTUE once the welcome modal closes.
+  // Deferred so selectCountry's join + the modal teardown settle first.
+  setTimeout(() => { try { startGuidedPaint(); } catch (e) { console.warn('[FTUE]', e); } }, 600);
 }
 
 function nextTutStep() {
@@ -6191,6 +6234,215 @@ function bindTutLoadProgress() {
 function escapeHtml(s) {
   if (s == null) return '';
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+// ── v95: FTUE guided first paint ──────────────────────────────────
+// After the welcome modal closes, drop the brand-new player into a random
+// FOREIGN country where they hold NO pixels yet, focus the camera there, and
+// glow a small target zone. Painting a few pixels into that zone completes the
+// guided step ("begin your conquest"). Gated once per browser via localStorage.
+//
+// Design notes:
+//   - The highlight is a DOM div positioned in viewport space and re-projected
+//     on every applyT() (pan/zoom) — same approach as the flag overlay. We do
+//     NOT draw on c-highlight (the siege flash owns + clears that canvas).
+//   - Detection hooks paintBrush(): a paint whose geo === the target geo counts.
+const FTUE_GOAL = 5;            // pixels-into-target to complete the step
+const FTUE_DONE_KEY = 'pa_ftue_guided_done';
+let _ftueActive = false;
+let _ftueTarget = null;         // {geoIdx, name, box:{x,y,w,h}}
+let _ftuePainted = 0;
+
+// Pick a random playable foreign country the player has no pixels in (and that
+// isn't already conquered). Returns the target descriptor or null.
+function _pickGuidedTarget() {
+  if (typeof featList === 'undefined' || !featList || !featList.length) return null;
+  if (typeof geoPixelList === 'undefined' || !geoPixelList) return null;
+  // IDs already conquered → skip so the prompt is a fresh native country.
+  const conqueredIds = new Set();
+  if (typeof conqueredSet !== 'undefined') {
+    for (const k of conqueredSet) conqueredIds.add(String(k).split(':')[0]);
+  }
+  const myId = (featList[currentIdx] && featList[currentIdx].id) ? String(featList[currentIdx].id) : null;
+  const pickFrom = (loFloor, hiCeil) => {
+    const out = [];
+    for (let i = 0; i < featList.length; i++) {
+      if (i === currentIdx) continue;
+      const f = featList[i];
+      if (!f || !f.id) continue;
+      if (myId && String(f.id) === myId) continue;        // skip own country's other polygons
+      if (conqueredIds.has(String(f.id))) continue;
+      if (!isPlayableCountry(i)) continue;
+      const total = geoTotal[i] || 0;
+      if (total < loFloor || total > hiCeil) continue;
+      if (!geoPixelList[i] || !geoPixelList[i].length) continue;
+      // Player must hold zero pixels here.
+      if (geoClaimCnt[i] && geoClaimCnt[i][currentIdx] > 0) continue;
+      out.push(i);
+    }
+    return out;
+  };
+  // Prefer medium countries (visible, room to paint); widen the band if empty.
+  let cands = pickFrom(400, 30000);
+  if (!cands.length) cands = pickFrom(150, 120000);
+  if (!cands.length) return null;
+  const geoIdx = cands[(Math.random() * cands.length) | 0];
+
+  // Land-pixel centroid + bbox for this polygon.
+  const arr = geoPixelList[geoIdx];
+  let sx = 0, sy = 0, n = 0, minx = MAP_W, miny = MAP_H, maxx = 0, maxy = 0;
+  for (let k = 0; k < arr.length; k++) {
+    const i = arr[k];
+    if (!landMask[i]) continue;
+    const x = i % MAP_W, y = (i / MAP_W) | 0;
+    sx += x; sy += y; n++;
+    if (x < minx) minx = x; if (x > maxx) maxx = x;
+    if (y < miny) miny = y; if (y > maxy) maxy = y;
+  }
+  if (!n) return null;
+  let cx = Math.round(sx / n), cy = Math.round(sy / n);
+  // Snap the centroid to the nearest actual land pixel of this geo (handles
+  // crescent / multi-blob shapes where the raw centroid lands off-country).
+  {
+    let best = Infinity, bx = cx, by = cy;
+    for (let k = 0; k < arr.length; k++) {
+      const i = arr[k];
+      if (!landMask[i]) continue;
+      const x = i % MAP_W, y = (i / MAP_W) | 0;
+      const d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+      if (d < best) { best = d; bx = x; by = y; if (d === 0) break; }
+    }
+    cx = bx; cy = by;
+  }
+  const half = Math.max(12, Math.min(50, Math.round(Math.sqrt(n) / 4)));
+  const box = {
+    x: Math.max(minx, cx - half), y: Math.max(miny, cy - half),
+    w: 0, h: 0, cx, cy,
+    bbox: { minx, miny, maxx, maxy },
+  };
+  box.w = Math.min(maxx, cx + half) - box.x;
+  box.h = Math.min(maxy, cy + half) - box.y;
+  return { geoIdx, name: featList[geoIdx].name, box };
+}
+
+function startGuidedPaint() {
+  try { if (localStorage.getItem(FTUE_DONE_KEY)) return; } catch (e) {}
+  if (_ftueActive) return;
+  // Need the geo index + pixel lists built; retry briefly if the map is still mounting.
+  if (typeof geoPixelList === 'undefined' || !geoPixelList || !Object.keys(geoPixelList).length) {
+    if ((startGuidedPaint._tries = (startGuidedPaint._tries || 0) + 1) > 25) return;
+    setTimeout(startGuidedPaint, 400);
+    return;
+  }
+  const target = _pickGuidedTarget();
+  if (!target) return;          // nothing suitable — skip silently
+  _ftueTarget = target;
+  _ftuePainted = 0;
+  _ftueActive = true;
+  _focusGuidedTarget(target.box, () => { _positionFtueHighlight(); });
+
+  const hl = document.getElementById('ftue-highlight');
+  if (hl) hl.style.display = 'block';
+  const coach = document.getElementById('ftue-coach');
+  const body = document.getElementById('ftue-coach-body');
+  if (body) body.innerHTML = 'Your homeland is set. Now expand! Drag inside the glowing zone to paint your first pixels in <b>' + escapeHtml(target.name) + '</b>.';
+  _updateFtueProgress();
+  if (coach) { coach.classList.remove('success'); coach.style.display = 'block'; }
+  _positionFtueHighlight();
+}
+
+// Smoothly tween the camera (ox/oy/scale) to frame the target bbox.
+function _focusGuidedTarget(box, done) {
+  const cw = vp.clientWidth, ch = vp.clientHeight;
+  const bw = Math.max(1, box.bbox.maxx - box.bbox.minx);
+  const bh = Math.max(1, box.bbox.maxy - box.bbox.miny);
+  const target = Math.max(1, Math.min(12, Math.min(cw * 0.55 / bw, ch * 0.55 / bh)));
+  const sx0 = scale, ox0 = ox, oy0 = oy;
+  const sT = target, oxT = cw / 2 - box.cx * sT, oyT = ch / 2 - box.cy * sT;
+  const t0 = performance.now(), dur = 700;
+  const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const step = () => {
+    const p = Math.min(1, (performance.now() - t0) / dur);
+    const e = ease(p);
+    scale = sx0 + (sT - sx0) * e;
+    ox = ox0 + (oxT - ox0) * e;
+    oy = oy0 + (oyT - oy0) * e;
+    applyT();
+    if (p < 1) requestAnimationFrame(step);
+    else if (done) done();
+  };
+  requestAnimationFrame(step);
+}
+
+// Re-project the target box from map coords → viewport pixels. Called on every
+// applyT() while the guided step is active so the glow tracks pan/zoom.
+function _positionFtueHighlight() {
+  if (!_ftueActive || !_ftueTarget) return;
+  const hl = document.getElementById('ftue-highlight');
+  if (!hl) return;
+  const b = _ftueTarget.box;
+  hl.style.left = (ox + b.x * scale) + 'px';
+  hl.style.top = (oy + b.y * scale) + 'px';
+  hl.style.width = Math.max(24, b.w * scale) + 'px';
+  hl.style.height = Math.max(24, b.h * scale) + 'px';
+}
+
+function _updateFtueProgress() {
+  const p = document.getElementById('ftue-coach-prog');
+  if (p) p.textContent = 'Pixels painted: ' + _ftuePainted + ' / ' + FTUE_GOAL;
+}
+
+// Hooked from paintBrush() — counts paints landing in the target geo.
+function _ftueOnPaint(px, py) {
+  if (!_ftueActive || !_ftueTarget) return;
+  if (px < 0 || px >= MAP_W || py < 0 || py >= MAP_H) return;
+  if (featByPixel[py * MAP_W + px] !== _ftueTarget.geoIdx) return;
+  _ftuePainted++;
+  _updateFtueProgress();
+  if (_ftuePainted >= FTUE_GOAL) completeGuidedPaint();
+}
+
+function completeGuidedPaint() {
+  if (!_ftueActive) return;
+  const name = _ftueTarget ? _ftueTarget.name : 'enemy territory';
+  _endGuidedPaint();
+  if (typeof sfxConquest === 'function') { try { sfxConquest(); } catch (e) {} }
+  const coach = document.getElementById('ftue-coach');
+  const title = document.getElementById('ftue-coach-title');
+  const body = document.getElementById('ftue-coach-body');
+  const prog = document.getElementById('ftue-coach-prog');
+  const skip = coach ? coach.querySelector('.ftue-skip') : null;
+  if (title) title.textContent = 'First strike landed!';
+  if (body) body.innerHTML = "You're invading <b>" + escapeHtml(name) + "</b>. Hold enough of a country's pixels to conquer it. The world is yours to take.";
+  if (prog) prog.textContent = '';
+  if (skip) skip.style.display = 'none';
+  if (coach) {
+    coach.classList.add('success');
+    coach.style.display = 'block';
+    setTimeout(() => { if (coach) coach.style.display = 'none'; }, 4200);
+  }
+}
+
+function skipGuidedPaint() {
+  _endGuidedPaint();
+  const coach = document.getElementById('ftue-coach');
+  if (coach) coach.style.display = 'none';
+}
+
+// Tear down the active step + persist completion (covers complete AND skip).
+function _endGuidedPaint() {
+  _ftueActive = false;
+  _ftueTarget = null;
+  const hl = document.getElementById('ftue-highlight');
+  if (hl) hl.style.display = 'none';
+  try { localStorage.setItem(FTUE_DONE_KEY, '1'); } catch (e) {}
+}
+
+// Debug: replay the guided step (use with dbgResetTutorial for a full reset).
+function dbgResetFtue() {
+  try { localStorage.removeItem(FTUE_DONE_KEY); } catch (e) {}
+  _ftueActive = false; _ftueTarget = null;
+  console.log('[FTUE] guided-paint flag cleared — reload or call startGuidedPaint()');
 }
 
 // Show tutorial AFTER the toolbar/HUD has painted, but on top of the map while it loads.
