@@ -3348,7 +3348,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-05-v95e';
+const CODE_VERSION = '2026-06-05-v95f';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4156,34 +4156,25 @@ function _updateFlagOpacity() {
   overlay.style.display = (opacity <= 0.02) ? 'none' : '';
 }
 
-// v39b/c: centre of a single connected landmass via a density grid — bucket the
-// component's pixels into 32×32 map cells (~64×32 px each), take the densest
-// cell's mean. Picks a point well INSIDE the landmass even for concave shapes,
-// and (operating per-component) is immune to far-flung islands skewing a raw
-// centroid. Returns {cx,cy}.
-function _densestCenter(compPixels) {
-  const GRID_W = 32, GRID_H = 32;
-  const cellW = MAP_W / GRID_W, cellH = MAP_H / GRID_H;
-  const cellCount = new Int32Array(GRID_W * GRID_H);
-  const cellSX    = new Float64Array(GRID_W * GRID_H);
-  const cellSY    = new Float64Array(GRID_W * GRID_H);
-  for (const idx of compPixels) {
-    const x = idx % MAP_W, y = (idx / MAP_W) | 0;
-    const gx = Math.min(GRID_W - 1, (x / cellW) | 0);
-    const gy = Math.min(GRID_H - 1, (y / cellH) | 0);
-    const ci = gy * GRID_W + gx;
-    cellCount[ci]++; cellSX[ci] += x; cellSY[ci] += y;
-  }
-  let bestCell = -1, bestN = 0;
-  for (let i = 0; i < cellCount.length; i++) {
-    if (cellCount[i] > bestN) { bestN = cellCount[i]; bestCell = i; }
-  }
-  if (bestCell >= 0 && bestN > 0) {
-    return { cx: Math.round(cellSX[bestCell] / bestN), cy: Math.round(cellSY[bestCell] / bestN) };
-  }
+// v95f: centre of a single connected landmass = its pixel CENTROID, snapped to
+// the nearest pixel actually in the landmass. Because we run this per connected
+// component, the centroid isn't dragged off by other islands (the reason v39c
+// used a density grid). The old density grid centred on the single densest
+// 64×32 cell, which drifted off-centre on wide countries (USA flag sat on the
+// west side) — a true centroid sits in the middle, and the snap keeps it on land
+// for concave shapes. Returns {cx,cy}.
+function _landmassCenter(compPixels) {
+  const n = compPixels.length;
   let sx = 0, sy = 0;
   for (const idx of compPixels) { sx += idx % MAP_W; sy += (idx / MAP_W) | 0; }
-  return { cx: Math.round(sx / compPixels.length), cy: Math.round(sy / compPixels.length) };
+  const cx = sx / n, cy = sy / n;
+  let best = compPixels[0], bestD = Infinity;
+  for (const idx of compPixels) {
+    const x = idx % MAP_W, y = (idx / MAP_W) | 0;
+    const d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+    if (d < bestD) { bestD = d; best = idx; }
+  }
+  return { cx: best % MAP_W, cy: (best / MAP_W) | 0 };
 }
 
 // Place or update the flag(s) for a conquered geo country.
@@ -4227,13 +4218,13 @@ function placeFlag(geoIdx, claimerIdx){
   // they're >= FLAG_MIN_LANDMASS_PX, capped at FLAG_MAX_PER_GEO (largest first),
   // so USA → continental, Alaska, Big Island without spamming flags on every
   // tiny islet of an archipelago.
-  const FLAG_MAX_PER_GEO = 4, FLAG_MIN_LANDMASS_PX = 10;
+  const FLAG_MAX_PER_GEO = 3, FLAG_MIN_LANDMASS_PX = 3;
   const chosen = [];
   for (const comp of components) {
     if (chosen.length >= FLAG_MAX_PER_GEO) break;
     if (chosen.length === 0 || comp.length >= FLAG_MIN_LANDMASS_PX) chosen.push(comp);
   }
-  const centers = chosen.map(_densestCenter);
+  const centers = chosen.map(_landmassCenter);
 
   // placedFlags keeps ONE primary entry per geo (the conquest count in
   // loadLegConquests is one-per-country); the DOM layer handles the extra flags.
