@@ -260,6 +260,15 @@ Before editing any function:
   landmasses (no early break) and flags the largest + others. Flag DOM reworked:
   `_flagDOMNodes[geoIdx]` is now an ARRAY of {img,label} nodes; `placedFlags` still
   keeps ONE primary entry/geo so the conquest count stays one-per-country.
+- **v95g (server-only):** stop non-playable countries from PLAYING on the server.
+  The client picker hid `NON_PLAYABLE_IDS` (Antarctica etc.) but the server had no
+  such guard — a few stray pixels survive the client's lat<-60 / artifact cull
+  (Antarctica keeps a 10px sliver), so the server spawned a bot for it and it
+  painted + conquered (was holding Philippines + Libya). Mirrored
+  `NON_PLAYABLE_IDS` into `server.js`: never spawn / always remove their bots, on
+  map-ready reverse any conquest they hold (or of their geo), and the v95d transfer
+  sweep won't hand ownership to one. Keep the two lists in sync. (Their residual
+  ~10 own-pixels remain but are inert — no bot, can't be selected.)
 - **v95f:** flag centring + caps. Position = the landmass pixel CENTROID snapped to
   the nearest land pixel (`_landmassCenter`), replacing v95e's density-grid
   densest-cell which drifted off-centre on wide countries (USA flag sat on the
