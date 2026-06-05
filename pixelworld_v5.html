@@ -3348,7 +3348,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-05-v95';
+const CODE_VERSION = '2026-06-05-v95a';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6632,11 +6632,20 @@ function closeDailyPopup() {
 // window. Guarded so it never overlaps the Welcome Back popup and only fires
 // once. Triggered after Welcome Back closes (or after load when no popup shows).
 let _fallenRepickDone = false;
+let _fallenRepickTries = 0;
 function _tryShowFallenRepick() {
   if (_fallenRepickDone) return;
   if (document.getElementById('repick-overlay')) return;
   const dp = document.getElementById('daily-popup-overlay');
   if (dp && dp.classList.contains('open')) return; // wait for Welcome Back to be dismissed
+  // v95a: wait for the board snapshot to be applied before reading conqueredSet —
+  // otherwise this one-shot check races the snapshot, sees an empty set, and never
+  // fires again (the "fallen country not prompting a re-pick on refresh" bug).
+  if (!_snapshotApplied && _fallenRepickTries < 60) {
+    _fallenRepickTries++;
+    setTimeout(_tryShowFallenRepick, 500);
+    return;
+  }
   const mf = featList[currentIdx];
   if (mf && typeof _isCountryConqueredClient === 'function' && _isCountryConqueredClient(mf.id)) {
     _fallenRepickDone = true;
@@ -7895,6 +7904,10 @@ function applyRegionSnapshot(ab) {
 // old welcome runs+conquered logic, moved to the binary path.
 // Layout: [u8 tag=3][u32 count][ s u32le, l u32le, o u16le ]*
 let _pendingConquered = [];
+// v95a: set once the initial board snapshot (conquered set included) has been
+// applied. The fallen-country re-pick check waits on this so it doesn't race
+// the snapshot and silently no-op (conqueredSet still empty) before giving up.
+let _snapshotApplied = false;
 function applySnapshotRuns(ab) {
   const dv = new DataView(ab);
   if (dv.byteLength < 5 || dv.getUint8(0) !== 3) return;
@@ -7953,6 +7966,8 @@ function applySnapshotRuns(ab) {
     requestAnimationFrame(replayStep);
   }
   scheduleLegend();
+  // v95a: snapshot (incl. conqueredSet) is now applied — unblock the fallen re-pick.
+  _snapshotApplied = true;
   // v94: fallen-country re-pick is now triggered AFTER the Welcome Back popup is
   // dismissed (closeDailyPopup → _tryShowFallenRepick), not here on snapshot load.
 }
