@@ -41,7 +41,7 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-05-v95k`.** (v95d was a server-only conquest
+**Current production triad: `2026-06-05-v95l`.** (v95d was a server-only conquest
 owner-transfer change that deliberately did NOT bump the triad — it stayed at
 v95c — so connected clients didn't reload; v95e is the next CLIENT change, hence
 the jump v95c→v95e.) A server-only fix keeps all three at the same value so
@@ -289,6 +289,14 @@ Before editing any function:
   strike, and on-load forced re-pick. A relocated survivor (e.g. Cuba conquered
   the USA, lost its island to Chad, lives on as "Cuba 1") is alive + selectable.
   `_isCountryConqueredClient` (any homeland conquest) still drives flag/holder lookups.
+- **v95l:** (1) Fightback is HOMELAND-ONLY — `_fightbackEligible(idx)` gates the
+  banner, `getFightBackBonus`, and `getExplosiveBrushPixels`; once your homeland is
+  conquered it can't reactivate (fixes survivors like Cuba showing "100% lost").
+  (2) Reverted v95e/f per-landmass multi-flag back to ONE flag per country on the
+  largest landmass — and `placeFlag` now aggregates ALL polygons sharing the
+  country id (geoIdx is only one polygon; for a country whose last-registered
+  polygon is a tiny/culled island it found no pixels → the "no flag on Australia"
+  bug). (3) Right-click inspect pulse decoupled from duration → ~2 pulses/sec.
 
 ## Screenshots for tweets (v88)
 
@@ -393,10 +401,13 @@ arrow). `_countDistinctConquered()` (world-conquest trigger) counts
   territory, else the native name; body shows "Formerly {native}", "🗡️ Conquered
   N countries", and "{native} N% (Original)" + invaders.
 - On-map flags (DOM overlay) show a text label underneath = holder + outpost
-  number (v94), in `#flag-overlay` so it shares the flags' zoom/fade. v95e: a
-  conquered country gets one flag PER significant landmass (see "FTUE / flag
-  placement" — `placeFlag`/`_densestCenter`); the same holder+number label is
-  repeated on each landmass.
+  number (v94), in `#flag-overlay` so it shares the flags' zoom/fade. v95l: ONE
+  flag per conquered country, on its LARGEST landmass (`placeFlag` aggregates ALL
+  polygons of the country by id, BFS for the biggest connected landmass, centred
+  via `_landmassCenter` = centroid snapped to nearest land pixel). The v95e/f
+  per-landmass multi-flag was reverted (mis-flagged small disconnected lands; and
+  using a single polygon index missed multi-polygon countries → no flag on
+  Australia). `_flagDOMNodes[geoIdx]` is still an array but holds one node now.
 - Inspector % AGGREGATES across all polygons of a country (v93u Fix A) — hovering
   one island of a multi-polygon country no longer misreports the whole country.
 
