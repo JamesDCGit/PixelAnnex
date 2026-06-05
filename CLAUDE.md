@@ -41,11 +41,11 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-04-v94`.** Server-only changes since (v94a
-war-room tuning, v94b nuke/ghost-flag fixes) deliberately did NOT bump the triad
-— a server-only fix keeps all three at the same value so connected clients don't
-reload. Only bump the triad when the CLIENT (`pixelworld_v5.html`) actually
-changes. Comment tags (`// v94b:`) can run ahead of the triad banner; that's fine.
+**Current production triad: `2026-06-05-v95c`.** Server-only changes since (v95d
+conquest owner-transfer) deliberately did NOT bump the triad — a server-only fix
+keeps all three at the same value so connected clients don't reload. Only bump the
+triad when the CLIENT (`pixelworld_v5.html`) actually changes. Comment tags
+(`// v95d:`) can run ahead of the triad banner; that's fine.
 
 ## Deploy flow
 
@@ -229,6 +229,32 @@ Before editing any function:
 - **v94b:** nuke that wipes a conquered country reverses the conquest; 60s periodic
   ghost-flag sweep.
 
+### Changelog v95–v95d (this session — FTUE + conquest-render fixes)
+- **v95:** FTUE guided first-paint (client) — after the welcome modal closes, a
+  brand-new player is dropped into a random FOREIGN country they hold no pixels in
+  (camera tweens, glowing target zone + coach banner); 5 paints into it completes
+  the step. One-time via `localStorage pa_ftue_guided_done`; `dbgResetFtue()` +
+  `dbgResetTutorial()` replay it. See "FTUE guided first paint" section.
+- **v95a:** fixed fallen-country re-pick never firing on an in-tab refresh —
+  `sessionStorage(pa_daily_popup_shown)` survives reload, so the re-pick ran via
+  the 1s fallback path BEFORE the snapshot populated `conqueredSet`, then never
+  retried. Added `_snapshotApplied` flag; `_tryShowFallenRepick()` now waits for
+  the snapshot (retries to 30s) before reading `conqueredSet`.
+- **v95b:** fixed the "green triangle" draw bug — `applySnapshotRuns()` painted the
+  server's true per-pixel ownership, then re-ran `finisherFill` for every conquest,
+  re-flooding big contested countries (USA) with the conqueror's colour. For 34k-px
+  USA that overflowed `PAINT_QUEUE_MAX`; the trim dropped the corrective invader
+  paints, leaving a stale diagonal wedge (canvas = conqueror, `claimByPixel` =
+  invaders). Fix: on snapshot replay, **only `placeFlag`** — the runs already hold
+  the authoritative state. Live conquests still use the cinematic `finisherFill`.
+- **v95c:** conquest flags now anchor to the GEO's largest landmass (via
+  `geoPixelList`), not the conqueror's held pixels — after v95b the USA flag drifted
+  to Hawaii (the holder's eroded footprint). `placeFlag` is holder-agnostic for
+  position; conqueror still supplies the flag image/label.
+- **v95d (server-only):** conquered land transfers to its dominant holder — see
+  "Conquest fall mechanics" below. Supersedes the old "permanent lock, no transfer"
+  model.
+
 ## Screenshots for tweets (v88)
 
 `mapshot.js` renders a 256×256 PNG of a country. Client sends `geoColors`
@@ -349,12 +375,29 @@ Two fall paths in `applyPixels` (server), both must guard against re-firing:
   posts" spam).
 - **Reversal:** holder drops below `reversalThreshold` (= conquest − 0.15) →
   `conqueredSet.delete` + `_clearPermanentIfFree(geo)` + broadcast `reversal`
-  (clients `eraseFlag`). Fires on paint (applyPixels) AND monster damage.
+  (clients `eraseFlag`). Fires on paint (applyPixels) AND monster damage. NOTE:
+  the hot `applyPixels` loop still `continue`s for `permanentlyConquered` geos
+  (v92q anti-churn) — those never revert to native; their owner only changes via
+  the v95d transfer sweep below.
 - **Nuke reversal (v94b):** the nuke path (`clearPixelsInRadius`) bypassed
   applyPixels, so a nuked-empty conquered country kept its flag. Now sweeps
-  affected geos (`_reverseConquestsForGeo`) after a nuke. Plus a **60s periodic
-  ghost-flag sweep**: any conquest whose holder holds 0 px is reversed
-  (retroactively clears stuck flags like "Benin on a wiped-out Slovenia").
+  affected geos (`_reverseConquestsForGeo`) after a nuke.
+- **Owner transfer + ghost cleanup (v95d, was v94b ghost sweep) — 60s periodic
+  reconciliation:** for each conquered geo, compute the largest foreign holder
+  (ally-combined). (a) If NO foreign holds any pixel → reverse (ghost cleanup,
+  clears stuck flags like "Benin on a wiped-out Slovenia"). (b) If a DIFFERENT
+  foreign holder now decisively leads (`topCnt > curCnt * TRANSFER_MARGIN` 1.25,
+  past `TRANSFER_COOLDOWN_MS` 2min + conquest immunity) → **transfer the conquest
+  to them and flood-fill the whole country to the new owner** (server
+  `finisherFill` here; clients flood + reflag via the existing `reversal`+
+  `conquest` broadcasts). Replaces the old "conquered = permanently the original
+  conqueror's, no transfer" model: a country no longer reads "Portugal holds USA"
+  while Portugal owns <10% and 70+ invaders carve it up — ownership consolidates
+  to whoever actually leads. Capped at `MAX_TRANSFERS_PER_TICK` 3 (each transfer
+  floods a country → a client `finisherFill`; an uncapped backlog would stampede
+  `PAINT_QUEUE_MAX`, the v95b overflow). The native country stays
+  `permanentlyConquered` (only the foreign owner changes); transfers do NOT call
+  `_conquerGeo`/`_onCountryConquered` (no native-death re-fire, no Discord spam).
 
 ### Discord war-room event tuning (v94a — "major events only")
 - Conquest: once per fall (the dedup guards above).
@@ -375,8 +418,37 @@ Two fall paths in `applyPixels` (server), both must guard against re-firing:
 ### Remaining backlog
 - [ ] **(2b) Cascade death:** force re-pick when a country loses its LAST outpost
   while its homeland is already gone (currently a landless "rebel" that fights on).
-- [ ] Big-ticket queue (not started): **text cleanup/consistency → FTUE → ads**
-  (ads need: network, banner-only placement, consent banner, real domain).
+- [x] **FTUE — guided first paint (v95):** done. See section below. Further FTUE
+  ideas not built: HUD coach marks, first-session objectives, contextual nudges.
+- [ ] **Ads (next):** network, banner-only placement, consent banner, real domain.
+- [ ] **Map-data arc spikes (known, low sev):** a few tiny countries (Hong Kong,
+  Brunei, Curaçao, Bahamas, Gibraltar) have bad polygon arcs giving them
+  near-full-map bounding boxes → faint thin diagonal stripes. `isBoundingArc`
+  (only catches near-HORIZONTAL arcs: `ΔLat<0.5 && ΔLon>2`) lets diagonal ones
+  through. Fix would extend the degenerate-arc filter in `drawRing`/`isBoundingArc`.
+- [ ] **Live-conquest queue hardening:** a single live conquest of a huge country
+  still floods 34k paints into `_paintQ` (self-corrects in-viewport). Same root
+  mechanism as the v95b snapshot bug; not yet hardened.
+
+## FTUE — guided first paint (v95)
+
+First-time onboarding has two layers (both client, `pixelworld_v5.html`):
+1. **Welcome modal** (pre-existing): 3 steps — how-to-play tiles → country picker
+   → Discord sign-in. Shown once, gated on `localStorage pa_tutorial_seen`.
+2. **Guided first paint (v95):** kicks off from `closeTutorial()` ~600ms after the
+   welcome modal closes. `startGuidedPaint()` → `_pickGuidedTarget()` picks a random
+   FOREIGN country the player holds NO pixels in (excludes own country id + conquered
+   ids + where `geoClaimCnt[i][currentIdx]>0`; prefers medium-sized for visibility),
+   tweens the camera (`_focusGuidedTarget`), and shows a pulsing target zone
+   (`#ftue-highlight`) + coach banner (`#ftue-coach`). The highlight is a DOM div
+   re-projected in `applyT()` (NOT drawn on `c-highlight` — the siege flash owns +
+   clears that canvas). `paintBrush()` calls `_ftueOnPaint(px,py)`; `FTUE_GOAL` (5)
+   paints into the target geo completes it (`completeGuidedPaint`). One-time via
+   `localStorage pa_ftue_guided_done`. Debug: `dbgResetFtue()` (just the guided step)
+   or `dbgResetTutorial()` (both, + reload).
+
+**Design choice (operator):** the first action teaches EXPANSION/attack into a
+foreign country, not painting your homeland.
 
 ## Droplet git hygiene
 
