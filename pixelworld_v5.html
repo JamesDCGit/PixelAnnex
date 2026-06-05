@@ -3348,7 +3348,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-05-v95b';
+const CODE_VERSION = '2026-06-05-v95c';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4149,12 +4149,18 @@ function _updateFlagOpacity() {
 function placeFlag(geoIdx, claimerIdx){
   // v36: Find centroid of the LARGEST connected component (not the raw average).
   // This puts flags on the biggest landmass for multi-island countries (Indonesia, UK, Japan, etc.)
-  // Use sparse BFS over claimed-pixels-of-this-geo. Limit to a manageable cell count.
+  // v95c: anchor to the GEO's footprint, NOT the conqueror's held pixels. The flag
+  // marks "this country is conquered" — it belongs on the country's largest landmass
+  // (continental USA), not wherever the holder's pixels happen to survive. Before
+  // v95b, finisherFill gave the conqueror every geo pixel so the two coincided; now
+  // that replay no longer re-floods, an eroded holding (e.g. only Hawaii) would drag
+  // the flag off the mainland. Use geoPixelList (prebuilt) to avoid a 2M-px scan.
+  const _src = geoPixelList && geoPixelList[geoIdx];
   const pixels = [];
-  for(let i=0;i<MAP_PX;i++){
-    if(featByPixel[i]===geoIdx && claimByPixel[i]===claimerIdx){
-      pixels.push(i);
-    }
+  if (_src) {
+    for(let pi=0; pi<_src.length; pi++){ const i=_src[pi]; if(landMask[i]) pixels.push(i); }
+  } else {
+    for(let i=0;i<MAP_PX;i++){ if(featByPixel[i]===geoIdx && landMask[i]) pixels.push(i); }
   }
   if (pixels.length === 0) return;
 
@@ -4181,10 +4187,10 @@ function placeFlag(geoIdx, claimerIdx){
         const idx = queue.pop();
         compPixels.push(idx);
         const x = idx % MAP_W, y = (idx / MAP_W) | 0;
-        if (x > 0          && !visited[idx-1]      && featByPixel[idx-1]      === geoIdx && claimByPixel[idx-1]      === claimerIdx) { visited[idx-1]=1;      queue.push(idx-1); }
-        if (x < MAP_W - 1  && !visited[idx+1]      && featByPixel[idx+1]      === geoIdx && claimByPixel[idx+1]      === claimerIdx) { visited[idx+1]=1;      queue.push(idx+1); }
-        if (y > 0          && !visited[idx-MAP_W]  && featByPixel[idx-MAP_W]  === geoIdx && claimByPixel[idx-MAP_W]  === claimerIdx) { visited[idx-MAP_W]=1;  queue.push(idx-MAP_W); }
-        if (y < MAP_H - 1  && !visited[idx+MAP_W]  && featByPixel[idx+MAP_W]  === geoIdx && claimByPixel[idx+MAP_W]  === claimerIdx) { visited[idx+MAP_W]=1;  queue.push(idx+MAP_W); }
+        if (x > 0          && !visited[idx-1]      && featByPixel[idx-1]      === geoIdx && landMask[idx-1])      { visited[idx-1]=1;      queue.push(idx-1); }
+        if (x < MAP_W - 1  && !visited[idx+1]      && featByPixel[idx+1]      === geoIdx && landMask[idx+1])      { visited[idx+1]=1;      queue.push(idx+1); }
+        if (y > 0          && !visited[idx-MAP_W]  && featByPixel[idx-MAP_W]  === geoIdx && landMask[idx-MAP_W])  { visited[idx-MAP_W]=1;  queue.push(idx-MAP_W); }
+        if (y < MAP_H - 1  && !visited[idx+MAP_W]  && featByPixel[idx+MAP_W]  === geoIdx && landMask[idx+MAP_W])  { visited[idx+MAP_W]=1;  queue.push(idx+MAP_W); }
       }
       components.push({ pixelList: compPixels, n: compPixels.length });
       if (compPixels.length >= pixels.length * 0.8) break;
