@@ -3348,7 +3348,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-05-v95c';
+const CODE_VERSION = '2026-06-05-v95e';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4068,55 +4068,65 @@ function _renderFlagToDataURL(claimerFi) {
   return url;
 }
 
-function _placeFlagDOM(geoIdx, claimerFi, cx, cy) {
-  if (!claimerFi) return;
+// v95e: one DOM node factory (img + label) so a geo can have several flags
+// (one per landmass). _flagDOMNodes[geoIdx] is now an ARRAY of these entries.
+function _makeFlagNode(claimerFi, overlay) {
+  const img = document.createElement('img');
+  img.className = 'pa-flag';
+  // v41a: if the real PNG 404s, fall back to procedural data URL
+  img.onerror = function() {
+    markRealFlagMissing(claimerFi);
+    const fallback = _renderFlagToDataURL(claimerFi);
+    if (fallback && img.src !== fallback) img.src = fallback;
+  };
+  overlay.appendChild(img);
+  // v94: text label under the flag (holder name + outpost number, e.g. "USA 2")
+  const lbl = document.createElement('div');
+  lbl.className = 'pa-flag-label';
+  overlay.appendChild(lbl);
+  return { el: img, label: lbl, cx: 0, cy: 0, isoId: claimerFi.id };
+}
+
+// v95e: place/update one flag PER landmass. `centers` = [{cx,cy}, …] (largest first).
+function _placeFlagDOM(geoIdx, claimerFi, centers) {
+  if (!claimerFi || !centers || !centers.length) return;
   const overlay = document.getElementById('flag-overlay');
   if (!overlay) return;
-  let entry = _flagDOMNodes[geoIdx];
-  if (!entry) {
-    const img = document.createElement('img');
-    img.className = 'pa-flag';
-    // v41a: if the real PNG 404s, fall back to procedural data URL
-    img.onerror = function() {
-      markRealFlagMissing(claimerFi);
-      const fallback = _renderFlagToDataURL(claimerFi);
-      if (fallback && img.src !== fallback) img.src = fallback;
-    };
-    overlay.appendChild(img);
-    // v94: text label under the flag (holder name + outpost number, e.g. "USA 2")
-    const lbl = document.createElement('div');
-    lbl.className = 'pa-flag-label';
-    overlay.appendChild(lbl);
-    entry = { el: img, label: lbl, cx, cy, isoId: claimerFi.id };
-    _flagDOMNodes[geoIdx] = entry;
-  } else if (entry.isoId !== claimerFi.id) {
-    entry.isoId = claimerFi.id;
+  let arr = _flagDOMNodes[geoIdx];
+  if (!arr) arr = _flagDOMNodes[geoIdx] = [];
+  // Drop surplus nodes if this geo now has fewer landmasses than before.
+  while (arr.length > centers.length) {
+    const e = arr.pop();
+    e.el.remove();
+    if (e.label) e.label.remove();
   }
-  // v41a: prefer real PNG flag; fall back to procedural on missing/404
-  const realUrl = getRealFlagURL(claimerFi);
-  entry.el.src = realUrl || _renderFlagToDataURL(claimerFi) || '';
+  // v41a: prefer real PNG flag; fall back to procedural on missing/404.
+  const src = getRealFlagURL(claimerFi) || _renderFlagToDataURL(claimerFi) || '';
   // v94: label = holder name + outpost number for this geo ("USA 2"); plain name
-  // if it isn't an outpost of the holder.
-  if (entry.label) {
-    let _txt = claimerFi.name || '';
-    try {
-      const _gid = featList[geoIdx] && String(featList[geoIdx].id);
-      if (_gid && typeof _outpostInfo === 'function') {
-        const _oi = _outpostInfo(String(claimerFi.id), _gid);
-        if (_oi && _oi.num) _txt += ' ' + _oi.num;
-      }
-    } catch (e) {}
-    entry.label.textContent = _txt;
+  // if it isn't an outpost of the holder. Same label on every landmass.
+  let _txt = claimerFi.name || '';
+  try {
+    const _gid = featList[geoIdx] && String(featList[geoIdx].id);
+    if (_gid && typeof _outpostInfo === 'function') {
+      const _oi = _outpostInfo(String(claimerFi.id), _gid);
+      if (_oi && _oi.num) _txt += ' ' + _oi.num;
+    }
+  } catch (e) {}
+  for (let k = 0; k < centers.length; k++) {
+    let entry = arr[k];
+    if (!entry) entry = arr[k] = _makeFlagNode(claimerFi, overlay);
+    entry.isoId = claimerFi.id;
+    entry.el.src = src;
+    if (entry.label) entry.label.textContent = _txt;
+    entry.cx = centers[k].cx; entry.cy = centers[k].cy;
+    _updateFlagDOMPosition(entry);
   }
-  entry.cx = cx; entry.cy = cy;
-  _updateFlagDOMPosition(entry);
 }
 
 function _eraseFlagDOM(geoIdx) {
-  const entry = _flagDOMNodes[geoIdx];
-  if (!entry) return;
-  entry.el.remove();
-  if (entry.label) entry.label.remove(); // v94
+  const arr = _flagDOMNodes[geoIdx];
+  if (!arr) return;
+  for (const e of arr) { e.el.remove(); if (e.label) e.label.remove(); } // v94/v95e
   delete _flagDOMNodes[geoIdx];
 }
 
@@ -4130,7 +4140,8 @@ function _updateFlagDOMPosition(entry) {
 
 function _updateAllFlagPositions() {
   for (const id in _flagDOMNodes) {
-    _updateFlagDOMPosition(_flagDOMNodes[id]);
+    const arr = _flagDOMNodes[id];
+    for (const e of arr) _updateFlagDOMPosition(e); // v95e: array of nodes per geo
   }
 }
 
@@ -4145,16 +4156,42 @@ function _updateFlagOpacity() {
   overlay.style.display = (opacity <= 0.02) ? 'none' : '';
 }
 
-// Place or update the flag for a conquered geo country
+// v39b/c: centre of a single connected landmass via a density grid — bucket the
+// component's pixels into 32×32 map cells (~64×32 px each), take the densest
+// cell's mean. Picks a point well INSIDE the landmass even for concave shapes,
+// and (operating per-component) is immune to far-flung islands skewing a raw
+// centroid. Returns {cx,cy}.
+function _densestCenter(compPixels) {
+  const GRID_W = 32, GRID_H = 32;
+  const cellW = MAP_W / GRID_W, cellH = MAP_H / GRID_H;
+  const cellCount = new Int32Array(GRID_W * GRID_H);
+  const cellSX    = new Float64Array(GRID_W * GRID_H);
+  const cellSY    = new Float64Array(GRID_W * GRID_H);
+  for (const idx of compPixels) {
+    const x = idx % MAP_W, y = (idx / MAP_W) | 0;
+    const gx = Math.min(GRID_W - 1, (x / cellW) | 0);
+    const gy = Math.min(GRID_H - 1, (y / cellH) | 0);
+    const ci = gy * GRID_W + gx;
+    cellCount[ci]++; cellSX[ci] += x; cellSY[ci] += y;
+  }
+  let bestCell = -1, bestN = 0;
+  for (let i = 0; i < cellCount.length; i++) {
+    if (cellCount[i] > bestN) { bestN = cellCount[i]; bestCell = i; }
+  }
+  if (bestCell >= 0 && bestN > 0) {
+    return { cx: Math.round(cellSX[bestCell] / bestN), cy: Math.round(cellSY[bestCell] / bestN) };
+  }
+  let sx = 0, sy = 0;
+  for (const idx of compPixels) { sx += idx % MAP_W; sy += (idx / MAP_W) | 0; }
+  return { cx: Math.round(sx / compPixels.length), cy: Math.round(sy / compPixels.length) };
+}
+
+// Place or update the flag(s) for a conquered geo country.
 function placeFlag(geoIdx, claimerIdx){
-  // v36: Find centroid of the LARGEST connected component (not the raw average).
-  // This puts flags on the biggest landmass for multi-island countries (Indonesia, UK, Japan, etc.)
-  // v95c: anchor to the GEO's footprint, NOT the conqueror's held pixels. The flag
-  // marks "this country is conquered" — it belongs on the country's largest landmass
-  // (continental USA), not wherever the holder's pixels happen to survive. Before
-  // v95b, finisherFill gave the conqueror every geo pixel so the two coincided; now
-  // that replay no longer re-floods, an eroded holding (e.g. only Hawaii) would drag
-  // the flag off the mainland. Use geoPixelList (prebuilt) to avoid a 2M-px scan.
+  // v95e: a flag on EACH significant landmass, at the CENTRE of that landmass
+  // (e.g. USA → continental + Alaska + Hawaii). v95c: anchor to the GEO's
+  // footprint (geoPixelList), NOT the conqueror's held pixels — the flag marks
+  // "this country is conquered" regardless of where the holder's pixels survive.
   const _src = geoPixelList && geoPixelList[geoIdx];
   const pixels = [];
   if (_src) {
@@ -4164,77 +4201,44 @@ function placeFlag(geoIdx, claimerIdx){
   }
   if (pixels.length === 0) return;
 
-  // v39c: density grid is used for ALL sizes. Small countries like El Salvador
-  // have 4 outlier "island" pixels in the Mediterranean (map-data artifact) that
-  // drag a raw centroid into the ocean. The density grid correctly picks the
-  // densest cell (the real landmass) and ignores the outliers.
-  let cx, cy;
-  if (false) {
-    // (formerly the small-country fast path — disabled)
-  } else {
-    // v39b: BFS to find largest connected component; record its pixel list so
-    // we can then density-cluster to find the visually-densest spot.
-    const visited = new Uint8Array(MAP_PX);
-    const components = []; // [{ pixelList: number[], n }]
-    const queue = [];
-    for (const start of pixels) {
-      if (visited[start]) continue;
-      const compPixels = [];
-      queue.length = 0;
-      queue.push(start);
-      visited[start] = 1;
-      while (queue.length > 0) {
-        const idx = queue.pop();
-        compPixels.push(idx);
-        const x = idx % MAP_W, y = (idx / MAP_W) | 0;
-        if (x > 0          && !visited[idx-1]      && featByPixel[idx-1]      === geoIdx && landMask[idx-1])      { visited[idx-1]=1;      queue.push(idx-1); }
-        if (x < MAP_W - 1  && !visited[idx+1]      && featByPixel[idx+1]      === geoIdx && landMask[idx+1])      { visited[idx+1]=1;      queue.push(idx+1); }
-        if (y > 0          && !visited[idx-MAP_W]  && featByPixel[idx-MAP_W]  === geoIdx && landMask[idx-MAP_W])  { visited[idx-MAP_W]=1;  queue.push(idx-MAP_W); }
-        if (y < MAP_H - 1  && !visited[idx+MAP_W]  && featByPixel[idx+MAP_W]  === geoIdx && landMask[idx+MAP_W])  { visited[idx+MAP_W]=1;  queue.push(idx+MAP_W); }
-      }
-      components.push({ pixelList: compPixels, n: compPixels.length });
-      if (compPixels.length >= pixels.length * 0.8) break;
-    }
-    // Pick largest component
-    let largest = components[0];
-    for (const c of components) if (c.n > largest.n) largest = c;
-
-    // v39b: Density grid — bucket the component's pixels into 32×32 cells
-    // (each cell ~ MAP_W/32 × MAP_H/32 ≈ 64×32 map px). Find the densest cell,
-    // then use the mean pixel position within that cell as the flag spot.
-    const GRID_W = 32, GRID_H = 32;
-    const cellW = MAP_W / GRID_W, cellH = MAP_H / GRID_H;
-    const cellCount = new Int32Array(GRID_W * GRID_H);
-    const cellSX    = new Float64Array(GRID_W * GRID_H);
-    const cellSY    = new Float64Array(GRID_W * GRID_H);
-    for (const idx of largest.pixelList) {
+  // BFS EVERY connected landmass of this geo (no early break — we need them all
+  // for per-landmass flags).
+  const visited = new Uint8Array(MAP_PX);
+  const components = []; // array of pixel-index arrays
+  const queue = [];
+  for (const start of pixels) {
+    if (visited[start]) continue;
+    const compPixels = [];
+    queue.length = 0; queue.push(start); visited[start] = 1;
+    while (queue.length > 0) {
+      const idx = queue.pop();
+      compPixels.push(idx);
       const x = idx % MAP_W, y = (idx / MAP_W) | 0;
-      const gx = Math.min(GRID_W - 1, (x / cellW) | 0);
-      const gy = Math.min(GRID_H - 1, (y / cellH) | 0);
-      const ci = gy * GRID_W + gx;
-      cellCount[ci]++;
-      cellSX[ci] += x;
-      cellSY[ci] += y;
+      if (x > 0          && !visited[idx-1]      && featByPixel[idx-1]      === geoIdx && landMask[idx-1])      { visited[idx-1]=1;      queue.push(idx-1); }
+      if (x < MAP_W - 1  && !visited[idx+1]      && featByPixel[idx+1]      === geoIdx && landMask[idx+1])      { visited[idx+1]=1;      queue.push(idx+1); }
+      if (y > 0          && !visited[idx-MAP_W]  && featByPixel[idx-MAP_W]  === geoIdx && landMask[idx-MAP_W])  { visited[idx-MAP_W]=1;  queue.push(idx-MAP_W); }
+      if (y < MAP_H - 1  && !visited[idx+MAP_W]  && featByPixel[idx+MAP_W]  === geoIdx && landMask[idx+MAP_W])  { visited[idx+MAP_W]=1;  queue.push(idx+MAP_W); }
     }
-    let bestCell = -1, bestN = 0;
-    for (let i = 0; i < cellCount.length; i++) {
-      if (cellCount[i] > bestN) { bestN = cellCount[i]; bestCell = i; }
-    }
-    if (bestCell >= 0 && bestN > 0) {
-      cx = Math.round(cellSX[bestCell] / bestN);
-      cy = Math.round(cellSY[bestCell] / bestN);
-    } else {
-      // Fallback to component-wide centroid
-      let sx = 0, sy = 0;
-      for (const idx of largest.pixelList) { sx += idx % MAP_W; sy += (idx / MAP_W) | 0; }
-      cx = Math.round(sx / largest.n);
-      cy = Math.round(sy / largest.n);
-    }
+    components.push(compPixels);
   }
-  placedFlags[geoIdx]={claimerIdx,cx,cy};
-  // v33: skip canvas draw — DOM overlay handles flag display now
-  // drawFlagAt(cx,cy,featList[claimerIdx]);
-  _placeFlagDOM(geoIdx, featList[claimerIdx], cx, cy);
+  components.sort((a, b) => b.length - a.length);
+
+  // The largest landmass always gets a flag; additional landmasses get one if
+  // they're >= FLAG_MIN_LANDMASS_PX, capped at FLAG_MAX_PER_GEO (largest first),
+  // so USA → continental, Alaska, Big Island without spamming flags on every
+  // tiny islet of an archipelago.
+  const FLAG_MAX_PER_GEO = 4, FLAG_MIN_LANDMASS_PX = 10;
+  const chosen = [];
+  for (const comp of components) {
+    if (chosen.length >= FLAG_MAX_PER_GEO) break;
+    if (chosen.length === 0 || comp.length >= FLAG_MIN_LANDMASS_PX) chosen.push(comp);
+  }
+  const centers = chosen.map(_densestCenter);
+
+  // placedFlags keeps ONE primary entry per geo (the conquest count in
+  // loadLegConquests is one-per-country); the DOM layer handles the extra flags.
+  placedFlags[geoIdx] = { claimerIdx, cx: centers[0].cx, cy: centers[0].cy };
+  _placeFlagDOM(geoIdx, featList[claimerIdx], centers);
 }
 
 // Erase a flag for a geo country (when recaptured)
