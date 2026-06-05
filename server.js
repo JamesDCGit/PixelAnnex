@@ -3320,24 +3320,67 @@ setInterval(() => {
   for (const [k, t] of _conquestImmunity) if (t < now) _conquestImmunity.delete(k);
 }, 60_000);
 
-// v94b: periodic ghost-flag cleanup. A conquest normally reverses when someone
-// PAINTS the geo and re-checks the threshold — but if a geo is wiped to zero held
-// pixels and nobody paints it again (e.g. a nuke clears a whole conquered country),
-// the conqueredSet entry + flag linger. Every 60s, reverse any conquest whose
-// holder (incl. allies) now holds ZERO pixels there. Conservative: only true
-// ghosts, never actively-contested countries.
+// v94b / v95d: periodic conquest-ownership reconciliation (every 60s).
+// Two jobs, both for an already-conquered geo (foreign holder, never native):
+//   1. GHOST cleanup (v94b): if NO foreign country holds a single pixel anymore
+//      (e.g. a nuke wiped the whole country), reverse the conquest so the flag
+//      clears — a conquest normally only re-checks on a paint, so a wiped+idle
+//      country would otherwise linger forever.
+//   2. OWNER TRANSFER (v95d): conquered land is permanently foreign, but its
+//      OWNER follows the dominant holder. If another foreign country now
+//      decisively out-holds the recorded owner, transfer the conquest to them
+//      and FLOOD-FILL the whole country to the new owner (server state here;
+//      every client floods locally via the 'conquest' event). This stops the
+//      "Portugal still holds USA at <10% while 70 invaders carve it up" state —
+//      ownership consolidates to whoever actually leads.
+// Hysteresis (TRANSFER_MARGIN) + a per-geo cooldown + conquest immunity keep the
+// colour from flickering: right after a flood the new owner holds ~100%, so no
+// one can out-hold them for a long time.
+const _lastTransferAt   = new Map();   // geo → ts of last ownership transfer
+const TRANSFER_COOLDOWN_MS = 120_000;  // min 2 min between transfers of one geo
+const TRANSFER_MARGIN      = 1.25;     // challenger must out-hold owner by 25%+
 setInterval(() => {
+  const now = Date.now();
   for (const key of [...conqueredSet]) {
     const parts = String(key).split(':');
     if (parts.length !== 2) continue;
-    const geo = parseInt(parts[0], 10), cId = parts[1];
-    if (!Number.isFinite(geo) || cId === geoToId(geo)) continue;
-    if (!(geoTotal[geo] > 0)) continue;
-    if (getAllyOwnedCount(geo, cId) <= 0) {
+    const geo = parseInt(parts[0], 10), curId = parts[1];
+    if (!Number.isFinite(geo) || curId === geoToId(geo)) continue;
+    const total = geoTotal[geo] || 0;
+    if (!(total > 0)) continue;
+    const _gid = geoToId(geo);
+    // Largest foreign holder (ally-combined) of this geo right now.
+    const claims = geoClaimCnt[geo] || {};
+    let topId = null, topCnt = 0;
+    for (const cId in claims) {
+      if (cId === _gid) continue;                  // skip native — can't hold itself
+      const o = getAllyOwnedCount(geo, cId);
+      if (o > topCnt) { topCnt = o; topId = cId; }
+    }
+    if (topCnt <= 0) {
+      // (1) ghost: nobody holds it → reverse (back to native / playable).
       conqueredSet.delete(key);
       _clearPermanentIfFree(geo);
-      broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: cId, reason: 'empty' }));
-      console.log('[Conquest] ghost flag cleared:', cId, 'held 0 px of', geoToId(geo));
+      broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: curId, reason: 'empty' }));
+      console.log('[Conquest] ghost flag cleared:', curId, 'held 0 px of', _gid);
+      continue;
+    }
+    // (2) transfer: a different foreign holder now decisively leads.
+    if (topId && topId !== curId) {
+      const imm = _conquestImmunity.get(_gid);
+      if (imm && now < imm) continue;                                 // settling after a recent flip
+      if (now - (_lastTransferAt.get(geo) || 0) < TRANSFER_COOLDOWN_MS) continue;
+      const curCnt = getAllyOwnedCount(geo, curId);
+      if (topCnt <= curCnt * TRANSFER_MARGIN) continue;               // not decisively ahead
+      conqueredSet.delete(geo + ':' + curId);
+      conqueredSet.add(geo + ':' + topId);
+      _lastTransferAt.set(geo, now);
+      _conquestImmunity.set(_gid, now + CONQUEST_IMMUNITY_MS);
+      finisherFill(geo, topId);  // flood server claimByPixel to the new owner
+      // Clients: drop the old flag, then place the new one + flood locally.
+      broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: curId, reason: 'transfer' }));
+      broadcast(JSON.stringify({ type: 'conquest', geoIdx: geo, countryId: topId }));
+      console.log('[Conquest] owner transfer:', _gid, curId, '->', topId, '(' + curCnt + '->' + topCnt + 'px)');
     }
   }
 }, 60_000);
