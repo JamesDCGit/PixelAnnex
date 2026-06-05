@@ -50,7 +50,13 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .leg-tab.active{color:#93c5fd;border-bottom-color:#3b82f6;}
 .leg-tab:hover:not(.active){color:#94a3b8;}
 .leg-row{display:flex;align-items:center;gap:5px;margin-bottom:3px;font-size:10px;color:#64748b;white-space:nowrap}
+/* v95j: fallen (conquered-homeland) countries greyed + struck-through, like the picker */
+.leg-row.fallen{opacity:0.4;}
+.leg-row.fallen .leg-name{text-decoration:line-through;}
 .leg-pct{margin-left:auto;color:#22c55e;font-size:10px;font-weight:600;padding-left:4px;}
+/* v95j: flashing-red % when a territory's current owner is in the danger zone of losing it */
+@keyframes inspDanger{0%,49%{opacity:1;}50%,100%{opacity:0.15;}}
+.insp-danger{color:#ef4444 !important;font-weight:700;animation:inspDanger 0.7s steps(1,end) infinite;}
 .leg-cnt{color:#475569;font-size:10px;}
 .leg-dot{width:8px;height:8px;border-radius:1px;flex-shrink:0}
 /* v92b: rank badge + size marker in territory panel */
@@ -3348,7 +3354,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-05-v95i';
+const CODE_VERSION = '2026-06-05-v95j';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5220,6 +5226,8 @@ function scheduleLegend(){
       // Blend country colour against land base (#535353) at alpha=215
       // to match exactly how it looks painted on the map canvas
       const row=document.createElement("div");row.className="leg-row";
+      // v95j: grey out fallen (conquered-homeland) countries, like the picker.
+      if(typeof _isCountryConqueredClient==='function' && _isCountryConqueredClient(f.id)) row.classList.add('fallen');
       row.dataset.countryId = f.id;
       // v93z: click highlights this country's painted footprint on the map (same
       // effect as right-click inspect) — no popup menu.
@@ -5229,7 +5237,7 @@ function scheduleLegend(){
       const _lr=document.createElement('span'); _lr.className='leg-rank'; _lr.textContent=_rankBadge(_rankPos+1); row.appendChild(_lr);
       const _lf=createFlagEl(f.id,1); if(_lf)row.appendChild(_lf);
       const _ld=document.createElement('div'); _ld.className='leg-dot'; _ld.style.cssText='background:'+f.color+';box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4)'; row.appendChild(_ld);
-      const _ls=document.createElement('span'); _ls.style.color='#e2e8f0'; _ls.textContent=f.name; row.appendChild(_ls);
+      const _ls=document.createElement('span'); _ls.className='leg-name'; _ls.style.color='#e2e8f0'; _ls.textContent=f.name; row.appendChild(_ls);
       // v92b: S/M/L/XL size marker after the name
       const _sz=_countrySizeClass(+idx);
       if(_sz){ const _lsz=document.createElement('span'); _lsz.className='leg-size leg-size-'+_sz; _lsz.textContent=_sz; _lsz.title=_sz+' country'; row.appendChild(_lsz); }
@@ -11413,9 +11421,14 @@ vp.addEventListener("mousemove",e=>{
         }
         const _nativePct = Math.round(Math.max(0, total - _foreignSum) / total * 100);
         // v93s: original (native) country's hold, labelled "(Original)".
+        // v95j: flash the % red when the territory's CURRENT OWNER is in the danger
+        // zone of being taken over (<= 10%). For an UNCONQUERED country the owner is
+        // the native; for a conquered one it's the holder (flagged in the list below).
+        const _DANGER_PCT = 10;
+        const _natDanger = !_holderFeat && _nativePct <= _DANGER_PCT;
         html2 += flagAny(_nativeFeat.id,1)
           + "<span style='color:"+_nativeFeat.color+";font-weight:600'>"+_nativeFeat.name+"</span>"
-          + "<span style='color:#64748b'> "+_nativePct+"% (Original)</span><br>";
+          + "<span class='"+(_natDanger?'insp-danger':'')+"' style='color:#64748b'> "+_nativePct+"% (Original)</span><br>";
         if(_foreign.length===0){
           html2+="<span style='color:#475569;font-size:10px'>No invaders</span>";
         } else {
@@ -11423,8 +11436,11 @@ vp.addEventListener("mousemove",e=>{
           for(const [idx,count] of _foreign.slice(0,3)){
             const pct=Math.round(count/total*100);
             const f=featList[+idx]; if(!f) continue;
+            // v95j: flash red if THIS invader is the current holder and in the danger zone.
+            const _isHolder = _holderFeat && String(f.id)===String(_holderFeat.id);
+            const _pctCls = (_isHolder && pct <= _DANGER_PCT) ? 'insp-danger' : '';
             html2+=flagAny(f.id,1)+"<span style='color:"+f.color+"'>"+f.name+"</span>"
-              +"<span style='color:#64748b'> "+pct+"%</span><br>";
+              +"<span class='"+_pctCls+"' style='color:#64748b'> "+pct+"%</span><br>";
           }
           if(_foreign.length>3){
             html2+="<span style='color:#334155'>+"+(_foreign.length-3)+" more</span>";
