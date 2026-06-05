@@ -41,7 +41,7 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-05-v95i`.** (v95d was a server-only conquest
+**Current production triad: `2026-06-05-v95k`.** (v95d was a server-only conquest
 owner-transfer change that deliberately did NOT bump the triad — it stayed at
 v95c — so connected clients didn't reload; v95e is the next CLIENT change, hence
 the jump v95c→v95e.) A server-only fix keeps all three at the same value so
@@ -281,6 +281,14 @@ Before editing any function:
   model). Replaces the v92q permanent lock + v95d plurality sweep. See "Conquest
   fall mechanics". Also: CONTEST_MAJORITY 0.70→0.85; empire-defense bonus dropped
   for already-conquered geos.
+- **v95j:** territory panel (#legend) greys + strikes fallen countries (like the
+  picker); inspector flashes the current owner's % red when ≤10% (danger of being
+  taken over) — `.insp-danger` flash class, `_DANGER_PCT`.
+- **v95k:** SURVIVORS aren't "fallen". `_isCountryFallenClient()` = homeland
+  conquered AND holds no outposts (truly dead); used for grey-out, picker/repick
+  strike, and on-load forced re-pick. A relocated survivor (e.g. Cuba conquered
+  the USA, lost its island to Chad, lives on as "Cuba 1") is alive + selectable.
+  `_isCountryConqueredClient` (any homeland conquest) still drives flag/holder lookups.
 
 ## Screenshots for tweets (v88)
 
