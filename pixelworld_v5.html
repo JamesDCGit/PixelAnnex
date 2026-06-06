@@ -3360,7 +3360,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-06-v95p';
+const CODE_VERSION = '2026-06-06-v95q';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -11384,6 +11384,12 @@ vp.addEventListener("mousemove",e=>{
 
       const sub=$("tip-sub");
       let html2="";
+      // v95q: "Formerly {native}" as the SECOND line — directly under the new owner
+      // name in the header — with the country name bold.
+      if(_holderFeat && _nativeFeat){
+        html2 += "<span style='color:#94a3b8;font-size:10px'>Formerly </span>"
+          + "<b style='color:"+_nativeFeat.color+"'>"+_nativeFeat.name+"</b><br>";
+      }
       // v93t: how many countries the CURRENT holder has conquered (empire size).
       {
         const _curId = _holderFeat ? String(_holderFeat.id) : _gid;
@@ -11393,11 +11399,9 @@ vp.addEventListener("mousemove",e=>{
           html2 += "<span style='color:#fbbf24;font-size:10px'>🗡️ Conquered "+_curConq+" countr"+(_curConq===1?'y':'ies')+"</span><br>";
         }
       }
-      // ── Formerly {original} — shown only when the territory is conquered ──
+      // ── divider after the holder intro (Formerly + conquered count), conquered only ──
       if(_holderFeat && _nativeFeat){
-        html2 += "<span style='color:#94a3b8;font-size:10px'>Formerly </span>"
-          + "<span style='color:"+_nativeFeat.color+";font-weight:600'>"+_nativeFeat.name+"</span><br>"
-          + "<span style='color:#334155;font-size:9px'>───────────────</span><br>";
+        html2 += "<span style='color:#334155;font-size:9px'>───────────────</span><br>";
       }
 
       // ── This specific pixel: who claimed it ──────────────────────────
