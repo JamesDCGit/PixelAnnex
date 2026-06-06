@@ -3293,7 +3293,24 @@ function topoFeatures(topo){
       if(lat<minLat)minLat=lat; if(lat>maxLat)maxLat=lat;
       if(lon<minLon)minLon=lon; if(lon>maxLon)maxLon=lon;
     }
-    return (maxLat-minLat)<0.5 && (maxLon-minLon)>2;
+    const dLat=maxLat-minLat, dLon=maxLon-minLon;
+    // (a) original: a near-HORIZONTAL clipping/bounding arc.
+    if(dLat<0.5 && dLon>2) return true;
+    // (b) v95u: a DIAGONAL degenerate arc — a near-collinear sliver spanning a
+    // huge bbox (bad Natural Earth arc → faint map-crossing stripe for e.g. Hong
+    // Kong / Brunei / Curaçao). Shoelace area ≈ 0 relative to a large bbox means
+    // it's a line, not a real landmass. Gated on a large bbox so genuinely big
+    // countries (which have a high fill ratio) are never touched.
+    if(dLat>10 && dLon>10){
+      let area=0;
+      for(let k=0;k<pts.length;k++){
+        const [x1,y1]=pts[k], [x2,y2]=pts[(k+1)%pts.length];
+        area += x1*y2 - x2*y1;
+      }
+      area=Math.abs(area)/2;                       // deg²
+      if(area/(dLat*dLon) < 0.02) return true;     // <2% fill → degenerate sliver
+    }
+    return false;
   }
 
   function arcRing(r){
@@ -3359,7 +3376,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v95t';
+const CODE_VERSION = '2026-06-07-v95u';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8196,8 +8213,26 @@ function enqueuePaints(pixels, getFi, staggerMs) {
 
 // Sweep variant: paints in a deterministic diagonal wipe (x+y order)
 // over the full stagger window. Used for finisherFill conquest animation.
+// v95u: live-conquest queue hardening. A conquest of a HUGE country (e.g. USA
+// ~34k px) would push tens of thousands of triples into _paintQ. Rather than risk
+// overflowing PAINT_QUEUE_MAX (whose trim drops paints → stale wedges, the v95b
+// artifact), paint a large flood INSTANTLY — one batched fillRect pass, stale-
+// guarded — and skip the cinematic sweep. Medium/small conquests still sweep.
+const SWEEP_INSTANT_MIN = 8000; // px — above this, paint at once instead of queuing
 function enqueuePaintsSweep(pixelArr, fi, staggerMs) {
   if (!pixelArr || !pixelArr.length) return;
+  if (pixelArr.length > SWEEP_INSTANT_MIN && claimCtx) {
+    const rgb = colorCache[fi];
+    if (rgb) {
+      claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.843)';
+      for (let k = 0; k < pixelArr.length; k++) {
+        const pi = pixelArr[k];
+        if (claimByPixel[pi] !== fi) continue; // stale guard — only paint still-owned pixels
+        claimCtx.fillRect(pi % MAP_W, (pi / MAP_W) | 0, 1, 1);
+      }
+    }
+    return;
+  }
   // Sort by x+y diagonal so the sweep travels from one corner to the other
   const sorted = pixelArr.slice().sort((a, b) => {
     const ax = a % MAP_W, ay = (a / MAP_W) | 0;
