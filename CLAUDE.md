@@ -41,7 +41,7 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-06-v95m`.** (v95d was a server-only conquest
+**Current production triad: `2026-06-06-v95o`.** (v95d was a server-only conquest
 owner-transfer change that deliberately did NOT bump the triad — it stayed at
 v95c — so connected clients didn't reload; v95e is the next CLIENT change, hence
 the jump v95c→v95e.) A server-only fix keeps all three at the same value so
@@ -317,6 +317,14 @@ Before editing any function:
   (`CONTEST_LARGE_MIN` 8000px). Small/medium → 75% single (champion) or 85% of
   total (group). Applied in `_evaluateConqueror`, the virgin contested path, and the
   debug `wouldFall`. Server-only.
+- **v95o:** fixed conquered countries still being selectable + the FTUE coach
+  obscured. The `welcome` message cherry-picked `{conquered,players,sieged}` and
+  OMITTED `permanentlyConquered` — so the client's `permanentlyConqueredSet` was
+  always empty and NOTHING greyed (any country, incl. conquered USA, was pickable).
+  Welcome now includes it. The welcome/tutorial picker also never checked fallen:
+  `_applyTutFallenRows()` greys+disables them (re-run from the welcome handler for
+  the seed-timing race) and `selectTutCountry` rejects them; in-game csel re-renders
+  on welcome. FTUE coach moved top:16px→64px (was under the top-centre `#login-hud`).
 
 ## Screenshots for tweets (v88)
 
