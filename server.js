@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-07-v95u';
+const SERVER_VERSION       = '2026-06-07-v95v';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2461,6 +2461,69 @@ function _resetWorld() {
 }
 setInterval(_checkWorldConquest, 30 * 1000);
 
+// v95v: admin auth — reuse the tweet-panel secret. key via ?key= or x-admin-key header.
+function _adminOK(url, req) {
+  const expected = process.env.TWEETS_ADMIN_SECRET;
+  if (!expected) return false;
+  const key = url.searchParams.get('key') || req.headers['x-admin-key'] || '';
+  return key === expected;
+}
+
+// v95v: operator dashboard — live KPIs + safe world controls. Served at /admin
+// (gated by TWEETS_ADMIN_SECRET via ?key=). Talks to /api/admin/metrics + /control.
+const ADMIN_DASHBOARD_HTML = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PixelAnnex — Admin</title><style>
+  body{margin:0;background:#0a0e17;color:#cbd5e1;font:13px/1.5 system-ui,sans-serif;padding:16px;max-width:920px;margin:0 auto}
+  h1{font-size:18px;color:#fff;margin:0 0 4px}.sub{color:#64748b;font-size:11px;margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px}
+  .card{background:#111827;border:1px solid #1e293b;border-radius:8px;padding:12px}
+  .card .v{font-size:22px;font-weight:700;color:#fff}.card .l{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+  .sec{background:#111827;border:1px solid #1e293b;border-radius:8px;padding:14px;margin-bottom:14px}
+  .sec h2{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin:0 0 10px}
+  button{background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:6px;cursor:pointer;font-size:12px;margin:0 6px 6px 0}
+  button:hover{background:#334155}button.danger{border-color:#7f1d1d;color:#fca5a5}button.danger:hover{background:#3b1010}
+  input{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:8px;border-radius:6px;font-size:12px;width:300px;max-width:60%}
+  #msg{margin-left:8px;color:#4ade80;font-size:11px}
+  table{width:100%;border-collapse:collapse;font-size:12px}td{padding:3px 6px;border-bottom:1px solid #1e293b}
+  .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px}
+  .on{background:#052e16;color:#4ade80}.off{background:#3b1010;color:#fca5a5}
+</style></head><body>
+<h1>PixelAnnex — Admin</h1><div class="sub" id="ver">loading…</div>
+<div class="grid" id="kpis"></div>
+<div class="sec"><h2>Top conquerors</h2><table id="conq"><tr><td>—</td></tr></table></div>
+<div class="sec"><h2>World controls</h2>
+  <button id="btn-bots">Toggle bots</button>
+  <button onclick="ctl('monster','&type=ufo')">Spawn UFO</button>
+  <button onclick="ctl('monster','&type=kraken')">Spawn Kraken</button>
+  <button onclick="ctl('monster','&type=godzilla')">Spawn Godzilla</button>
+  <button class="danger" onclick="if(confirm('Reset the entire world? This wipes all pixels + conquests.'))ctl('reset','')">Reset world</button>
+  <div style="margin-top:10px"><input id="bc" placeholder="Broadcast message to all players…" maxlength="200">
+  <button onclick="bcast()">Send</button></div>
+  <span id="msg"></span>
+</div>
+<script>
+  var KEY=new URLSearchParams(location.search).get('key')||'';
+  function q(p){return p+(p.indexOf('?')<0?'?':'&')+'key='+encodeURIComponent(KEY)}
+  function note(t){var m=document.getElementById('msg');m.textContent=t;setTimeout(function(){m.textContent=''},3000)}
+  function ctl(action,extra){fetch(q('/api/admin/control?action='+action+(extra||'')),{method:'POST'}).then(r=>r.json()).then(j=>{note(JSON.stringify(j));refresh()}).catch(e=>note('err'))}
+  function bcast(){var t=document.getElementById('bc').value.trim();if(!t)return;fetch(q('/api/admin/control?action=broadcast&text='+encodeURIComponent(t)),{method:'POST'}).then(r=>r.json()).then(j=>{document.getElementById('bc').value='';note('sent')})}
+  document.getElementById('btn-bots').onclick=function(){var off=window._m&&window._m.botsDisabled;ctl('bots','&disabled='+(off?'0':'1'))};
+  function kpi(v,l){return '<div class="card"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'}
+  function refresh(){fetch(q('/api/admin/metrics')).then(r=>r.json()).then(function(m){
+    window._m=m;
+    document.getElementById('ver').textContent='v'+m.serverVersion+' · up '+Math.floor(m.uptimeSec/3600)+'h'+Math.floor(m.uptimeSec%3600/60)+'m · '+m.memRssMB+'MB · bots <span class="pill '+(m.botsDisabled?'off':'on')+'">'+(m.botsDisabled?'OFF':'ON')+'</span>';
+    document.getElementById('kpis').innerHTML=
+      kpi(m.humanPlayers,'Humans online')+kpi(m.signedInPlayers+' ('+m.signInRatePct+'%)','Signed-in online')+
+      kpi(m.activeBots,'Active bots')+kpi(m.conquests+' / '+m.totalCountries,'Conquered')+
+      kpi(m.paintedPixels.toLocaleString(),'Painted px')+kpi(m.profilesTotal,'Registered users');
+    var rows=(m.topConquerors||[]).map(c=>'<tr><td>'+c.country+'</td><td style="text-align:right;color:#fbbf24">'+c.conquests+'</td></tr>').join('')||'<tr><td>none yet</td></tr>';
+    document.getElementById('conq').innerHTML=rows;
+    document.getElementById('btn-bots').textContent=m.botsDisabled?'Enable bots':'Disable bots';
+  }).catch(e=>document.getElementById('ver').textContent='metrics error (check ?key=)')}
+  refresh();setInterval(refresh,5000);
+</script></body></html>`;
+
 
 
 // ── Monster system (v49) ───────────────────────────────────────────
@@ -4846,7 +4909,7 @@ const BOT_SURRENDER_THRESHOLD = 0.50;
 // v75-debug: hard kill-switch for bot activity to isolate stall causes.
 // Set DISABLE_BOTS=1 in env to keep all bots dormant (no painting, no migration,
 // no _tickBotActivity drift). They still exist in players list for UI counts.
-const _BOTS_DISABLED = process.env.DISABLE_BOTS === '1' || process.env.DISABLE_BOTS === 'true';
+let _BOTS_DISABLED = process.env.DISABLE_BOTS === '1' || process.env.DISABLE_BOTS === 'true'; // v95v: `let` so /admin can toggle live
 if (_BOTS_DISABLED) console.log('[Bot] *** BOTS DISABLED via DISABLE_BOTS env var ***');
 
 function botTickSingle(countryId) {
@@ -5121,6 +5184,102 @@ const httpServer = http.createServer(async (req, res) => {
       mapReady,
       uptime:   process.uptime(),
     }));
+    return;
+  }
+
+  // ── /admin — operator dashboard (metrics + controls), gated ──────────
+  if (url.pathname === '/admin') {
+    if (!_adminOK(url, req)) {
+      res.writeHead(process.env.TWEETS_ADMIN_SECRET ? 401 : 503, { 'Content-Type': 'text/html' });
+      res.end(process.env.TWEETS_ADMIN_SECRET ? '<h2>Unauthorized — append ?key=YOUR_SECRET</h2>' : '<h2>Admin disabled — set TWEETS_ADMIN_SECRET in .env</h2>');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(ADMIN_DASHBOARD_HTML);
+    return;
+  }
+
+  // ── /api/admin/metrics — live game KPIs (gated) ──────────────────────
+  if (url.pathname === '/api/admin/metrics') {
+    if (!_adminOK(url, req)) {
+      res.writeHead(process.env.TWEETS_ADMIN_SECRET ? 401 : 503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: process.env.TWEETS_ADMIN_SECRET ? 'unauthorized' : 'admin disabled' }));
+      return;
+    }
+    let humans = 0, signedIn = 0;
+    for (const [, p] of players) { if (p.isBot || !p.ws) continue; humans++; if (p.discordId) signedIn++; }
+    let paintedPx = 0; for (const k in countryPxCount) paintedPx += countryPxCount[k] || 0;
+    const conqByHolder = {};
+    for (const key of conqueredSet) { const h = String(key).split(':')[1]; if (h) conqByHolder[h] = (conqByHolder[h] || 0) + 1; }
+    const topConq = Object.entries(conqByHolder).sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([id, n]) => ({ country: _countryName(id), conquests: n }));
+    const mem = process.memoryUsage();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      serverVersion: SERVER_VERSION,
+      uptimeSec: Math.round(process.uptime()),
+      memRssMB: Math.round(mem.rss / 1048576),
+      mapReady,
+      botsDisabled: _BOTS_DISABLED,
+      worldConquestActive: _worldConquestActive,
+      humanPlayers: humans,
+      signedInPlayers: signedIn,
+      signInRatePct: humans ? Math.round(signedIn / humans * 100) : 0,
+      activeBots: (typeof _activeBotCount === 'function' ? _activeBotCount() : bots.size),
+      botsTotal: bots.size,
+      connections: players.size,
+      profilesTotal: profiles.size,
+      conquests: _countDistinctConquered(),
+      totalCountries: _totalCountries(),
+      paintedPixels: paintedPx,
+      topConquerors: topConq,
+    }));
+    return;
+  }
+
+  // ── /api/admin/control — world actions (gated, POST) ─────────────────
+  if (url.pathname === '/api/admin/control' && req.method === 'POST') {
+    if (!_adminOK(url, req)) {
+      res.writeHead(process.env.TWEETS_ADMIN_SECRET ? 401 : 503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: process.env.TWEETS_ADMIN_SECRET ? 'unauthorized' : 'admin disabled' }));
+      return;
+    }
+    const action = url.searchParams.get('action');
+    if (action === 'bots') {
+      _BOTS_DISABLED = url.searchParams.get('disabled') === '1';
+      console.log('[Admin] bots ' + (_BOTS_DISABLED ? 'DISABLED' : 'ENABLED'));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, botsDisabled: _BOTS_DISABLED }));
+      return;
+    }
+    if (action === 'monster') {
+      const t = (url.searchParams.get('type') || '').toLowerCase();
+      const id = 'admin-' + Date.now();
+      if (t === 'ufo' && typeof _spawnUFO === 'function') _spawnUFO(id);
+      else if (t === 'kraken' && typeof _spawnKraken === 'function') _spawnKraken(id);
+      else if (t === 'godzilla' && typeof _spawnGodzilla === 'function') _spawnGodzilla(id);
+      else { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'bad monster type' })); return; }
+      console.log('[Admin] spawned monster:', t);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, type: t }));
+      return;
+    }
+    if (action === 'broadcast') {
+      const text = (url.searchParams.get('text') || '').slice(0, 200).trim();
+      if (text) { broadcast(JSON.stringify({ type: 'admin_announce', text })); console.log('[Admin] broadcast:', text); }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: !!text }));
+      return;
+    }
+    if (action === 'reset') {
+      console.log('[Admin] manual world reset');
+      _resetWorld();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unknown action' }));
     return;
   }
 

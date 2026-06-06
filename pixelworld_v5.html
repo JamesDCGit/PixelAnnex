@@ -3376,7 +3376,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v95u';
+const CODE_VERSION = '2026-06-07-v95v';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8604,6 +8604,14 @@ function mpHandleMessage(msg) {
     case 'world_reset': {
       console.log('[v38] World reset received, reloading…');
       setTimeout(function(){ location.reload(); }, 1500);
+      break;
+    }
+    case 'admin_announce': {
+      // v95v: operator broadcast from the /admin dashboard.
+      if (msg.text) {
+        actPushCard({ variant: 'info', title: '📢 Announcement', html: escapeHtml(msg.text) });
+        try { sfxUIClick(); } catch(e){}
+      }
       break;
     }
     case 'your_country_lost': {
