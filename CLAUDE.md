@@ -41,7 +41,7 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-06-v95q`.** (v95d was a server-only conquest
+**Current production triad: `2026-06-06-v95r`.** (v95d was a server-only conquest
 owner-transfer change that deliberately did NOT bump the triad — it stayed at
 v95c — so connected clients didn't reload; v95e is the next CLIENT change, hence
 the jump v95c→v95e.) A server-only fix keeps all three at the same value so
@@ -333,6 +333,8 @@ Before editing any function:
   `MULTI_ATTACK_COOLDOWN_MS` 30→60 min (was still firing several/hour).
 - **v95q:** inspector — "Formerly {country}" moved to the 2nd line (directly under
   the new owner name), country name bolded.
+- **v95r:** inspector — "Formerly {country}" now bold at title size (12px); removed
+  the "Conquered N countries" line to streamline the menu.
 
 ## Screenshots for tweets (v88)
 
