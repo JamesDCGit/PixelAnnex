@@ -342,8 +342,10 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   50%{ box-shadow:0 0 26px 8px rgba(251,191,36,0.85), inset 0 0 18px rgba(251,191,36,0.55); }
 }
 #ftue-coach{
-  position:absolute; left:50%; top:16px; transform:translateX(-50%);
-  z-index:9; display:none; max-width:440px; width:calc(100% - 32px);
+  /* v95o: sits below the top-centre #login-hud (top:14px) so the Discord button
+     no longer obscures it. */
+  position:absolute; left:50%; top:64px; transform:translateX(-50%);
+  z-index:51; display:none; max-width:440px; width:calc(100% - 32px);
   background:rgba(15,23,41,0.96); border:1px solid rgba(251,191,36,0.45);
   border-radius:10px; padding:13px 18px; box-shadow:0 8px 30px rgba(0,0,0,0.5);
   text-align:center; backdrop-filter:blur(4px);
@@ -508,6 +510,10 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .tut-country-row:hover{background:rgba(99,102,241,.12);}
 .tut-country-row.selected{background:rgba(99,102,241,.22);border-color:#818cf8;}
 .tut-country-row.loading{color:#64748b;cursor:default;font-style:italic;}
+/* v95o: conquered/Fallen countries can't be picked from the welcome list */
+.tut-country-row.disabled{opacity:0.4;cursor:not-allowed;pointer-events:none;}
+.tut-country-row.disabled .tut-country-name{text-decoration:line-through;}
+.tut-country-row.disabled .tut-country-meta::after{content:' · fallen';color:#ef4444;}
 .tut-country-color{width:14px;height:14px;border-radius:2px;flex-shrink:0;}
 .tut-country-name{flex:1;color:#e2e8f0;font-weight:600;}
 .tut-country-meta{font-size:9px;color:#64748b;}
@@ -3354,7 +3360,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-06-v95m';
+const CODE_VERSION = '2026-06-06-v95o';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6130,9 +6136,23 @@ function tryPopulateTutCountries() {
     frag.appendChild(row);
   }
   list.appendChild(frag);
+  _applyTutFallenRows(); // v95o: grey out conquered countries (welcome may arrive after)
+}
+
+// v95o: grey + disable conquered/"Fallen" countries in the welcome picker. Called
+// after the list builds AND from the welcome handler (permanentlyConqueredSet may
+// be seeded after the list is first rendered).
+function _applyTutFallenRows() {
+  document.querySelectorAll('.tut-country-row').forEach(r => {
+    if (!r.dataset.id) return;
+    const fallen = (typeof _isCountryFallenClient === 'function') && _isCountryFallenClient(r.dataset.id);
+    r.classList.toggle('disabled', !!fallen);
+  });
 }
 
 function selectTutCountry(c, rowEl) {
+  // v95o: can't start as a conquered/dead country.
+  if (typeof _isCountryFallenClient === 'function' && _isCountryFallenClient(c.id)) return;
   _tutCountryPicked = c;
   document.querySelectorAll('.tut-country-row').forEach(r => r.classList.remove('selected'));
   if (rowEl) rowEl.classList.add('selected');
@@ -8340,6 +8360,9 @@ function mpHandleMessage(msg) {
       if (msg.state && Array.isArray(msg.state.permanentlyConquered)) {
         for (const g of msg.state.permanentlyConquered) permanentlyConqueredSet.add(String(g));
       }
+      // v95o: re-grey the welcome + in-game pickers now that we know the dead natives.
+      if (typeof _applyTutFallenRows === 'function') _applyTutFallenRows();
+      if (typeof _cselOptions !== 'undefined' && _cselOptions.length && typeof renderCselList === 'function') renderCselList('');
       // v92w: seed server-authoritative siege set so a mid-siege reconnect/late-join
       // flashes immediately (the 'siege' event only fires on state transitions).
       _serverSieged.clear();

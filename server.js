@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-06-v95m';
+const SERVER_VERSION       = '2026-06-06-v95o';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -6245,7 +6245,7 @@ wss.on('connection', (ws, req) => {
           type: 'welcome',
           playerId: pid,
           botIds: [...bots.keys()],
-          state: { conquered: _snap.conquered, players: _snap.players, sieged: _snap.sieged },
+          state: { conquered: _snap.conquered, players: _snap.players, sieged: _snap.sieged, permanentlyConquered: _snap.permanentlyConquered }, // v95o: include dead natives for client "Fallen"/grey-out
           david: buildDavidSnapshot(),
           serverVersion: SERVER_VERSION,
           nukeZones: (_pruneServerNukeZones(), _nukeZones.slice()),
