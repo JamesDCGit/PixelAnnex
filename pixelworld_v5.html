@@ -1507,7 +1507,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
               <div class="tut-tile">
                 <div class="tut-tile-icon">⚔️</div>
                 <div class="tut-tile-title" data-i18n="tut.tile_conquer_title">Conquer countries</div>
-                <div class="tut-tile-desc" data-i18n="tut.tile_conquer_desc">Hold 60% of a country's pixels to claim it. Larger countries are tougher.</div>
+                <div class="tut-tile-desc" data-i18n="tut.tile_conquer_desc">Hold 70% of a country's pixels to claim it. Larger countries are tougher.</div>
               </div>
               <div class="tut-tile">
                 <div class="tut-tile-icon">💥</div>
@@ -1630,7 +1630,6 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <canvas id="c-siege" style="pointer-events:none;"></canvas>
     <canvas id="c-overlay" style="pointer-events:none;"></canvas>
     <canvas id="c-nuke" style="pointer-events:none;"></canvas>
-    <canvas id="c-ownstroke" style="pointer-events:none;mix-blend-mode:screen;"></canvas>
     <canvas id="c-crater" style="pointer-events:none;"></canvas>
     <canvas id="c-monsters" style="pointer-events:none;"></canvas><!-- v42: moved last so monsters render above all other canvases -->
     <div id="rank-display"></div>
@@ -1744,7 +1743,7 @@ const LANGS = {
     'tut.tile_paint_title':  'Paint pixels',
     'tut.tile_paint_desc':   'Click and drag on the map to paint. Each pixel costs 1 from your bucket.',
     'tut.tile_conquer_title':'Conquer countries',
-    'tut.tile_conquer_desc': "Hold 60% of a country's pixels to claim it. Larger countries are tougher.",
+    'tut.tile_conquer_desc': "Hold 70% of a country's pixels to claim it. Larger countries are tougher.",
     'tut.tile_bombs_title':  'Nukes & ranks',
     'tut.tile_bombs_desc':   'Earn XP per pixel placed. Higher ranks unlock bigger bonuses, rally calls, and the Nuke.',
     'tut.tile_fightback_title':'Fight back',
@@ -1871,7 +1870,7 @@ const LANGS = {
     'stats.total_players': '{n} jogadores no total',
     'stats.lb_load_error': 'Não foi possível carregar o ranking.',
     'tip.1': '💡 Clique e arraste para mover. Role para zoom.',
-    'tip.2': '🎨 Você pode pintar pixels em qualquer país, mas conquistar requer 60% de domínio.',
+    'tip.2': '🎨 Você pode pintar pixels em qualquer país, mas conquistar requer 70% de domínio.',
     'tip.3': '💥 Suba de patente para desbloquear bônus maiores, chamadas de reforço e a Bomba Nuclear (Almirante).',
     'tip.4': '🤝 Defina 3 países preferidos no Discord com /country para formar alianças.',
     'tip.5': '⚔️ Quando seu país perde mais de 50%, o modo contra-ataque dá pixels bônus progressivos (até 6× com 90% perdido).',
@@ -1903,7 +1902,7 @@ const LANGS = {
     'stats.total_players': '{n} jugadores en total',
     'stats.lb_load_error': 'No se pudo cargar la clasificación.',
     'tip.1': '💡 Haz clic y arrastra para mover. Rueda para zoom.',
-    'tip.2': '🎨 Puedes pintar píxeles en cualquier país, pero conquistar requiere 60% de control.',
+    'tip.2': '🎨 Puedes pintar píxeles en cualquier país, pero conquistar requiere 70% de control.',
     'tip.3': '💥 Sube de rango para desbloquear mayores bonus, llamadas de refuerzo y la Bomba Nuclear (Almirante).',
     'tip.4': '🤝 Configura 3 países preferidos en Discord con /country para formar alianzas.',
     'tip.5': '⚔️ Cuando tu país pierde más del 50%, el modo contraataque da píxeles bonus progresivos (hasta 6× con 90% perdido).',
@@ -1935,7 +1934,7 @@ const LANGS = {
     'stats.total_players': '{n} total players',
     'stats.lb_load_error': 'Could not load leaderboard.',
     'tip.1': '💡 Click and drag to pan. Scroll to zoom.',
-    'tip.2': '🎨 You can paint pixels in any country, but conquest requires 60% ownership.',
+    'tip.2': '🎨 You can paint pixels in any country, but conquest requires 70% ownership.',
     'tip.3': '💥 Rank up to unlock bigger bonuses, rally calls, and the Nuke (Admiral).',
     'tip.4': '🤝 Set 3 country preferences in Discord with /country to form alliances.',
     'tip.5': '⚔️ When your country is >50% lost, fight-back mode gives progressive bonus pixels (up to 6× at 90% lost).',
@@ -1954,7 +1953,7 @@ const LANGS = {
   es: {
     'lang.label':'Idioma','tut.title':'PixelAnnex','tut.welcome_sub':'Bienvenido — vamos a configurarte','tut.stat_players':'Jugadores','tut.stat_conquered':'Conquistados','tut.stat_alliances':'Alianzas',
     'tut.tile_paint_title':'Pinta píxeles','tut.tile_paint_desc':'Haz clic y arrastra sobre el mapa para pintar. Cada píxel cuesta 1 de tu cubo.',
-    'tut.tile_conquer_title':'Conquista países','tut.tile_conquer_desc':'Controla el 60% de los píxeles de un país para reclamarlo. Los países grandes son más difíciles.',
+    'tut.tile_conquer_title':'Conquista países','tut.tile_conquer_desc':'Controla el 70% de los píxeles de un país para reclamarlo. Los países grandes son más difíciles.',
     'tut.tile_bombs_title':'Armas nucleares y rangos','tut.tile_bombs_desc':'Gana XP por cada píxel colocado. Los rangos altos desbloquean mayores bonus, llamadas de refuerzo y la Bomba Nuclear.',
     'tut.tile_fightback_title':'Contraataque','tut.tile_fightback_desc':'Cuando tu país pierde más del 50%, pintar en tu propia tierra otorga píxeles bonus progresivos: cuanto más pierdes, mayor es el impulso.',
     'tut.hint_keys':'{drag} para mover · {scroll} para zoom · {click} para pintar','tut.key_drag':'Arrastra','tut.key_scroll':'Rueda','tut.key_click':'Clic',
@@ -2009,7 +2008,7 @@ const LANGS = {
   zh: {
     'lang.label':'语言','tut.title':'PixelAnnex','tut.welcome_sub':'欢迎 — 让我们开始设置','tut.stat_players':'玩家','tut.stat_conquered':'已征服','tut.stat_alliances':'联盟',
     'tut.tile_paint_title':'绘制像素','tut.tile_paint_desc':'点击并拖动地图进行绘制。每个像素消耗1点桶量。',
-    'tut.tile_conquer_title':'征服国家','tut.tile_conquer_desc':'占领国家60%的像素以宣布主权。大国家更难征服。',
+    'tut.tile_conquer_title':'征服国家','tut.tile_conquer_desc':'占领国家70%的像素以宣布主权。大国家更难征服。',
     'tut.tile_bombs_title':'核弹与军衔','tut.tile_bombs_desc':'每放置一个像素获得XP。高军衔解锁更大奖励、增援召集和核弹。',
     'tut.tile_fightback_title':'反击','tut.tile_fightback_desc':'当你的国家损失超过50%时,在自己的领土上绘画可获得递增奖励像素——损失越多,加成越大。',
     'tut.hint_keys':'{drag}平移 · {scroll}缩放 · {click}绘画','tut.key_drag':'拖动','tut.key_scroll':'滚动','tut.key_click':'点击',
@@ -2076,7 +2075,7 @@ const LANGS = {
     'stats.total_players': '合計 {n} プレイヤー',
     'stats.lb_load_error': 'リーダーボードを読込めません。',
     'tip.1': '💡 クリック&ドラッグで移動。スクロールでズーム。',
-    'tip.2': '🎨 どの国でもピクセルを塗れますが、征服には60%の所有が必要です。',
+    'tip.2': '🎨 どの国でもピクセルを塗れますが、征服には70%の所有が必要です。',
     'tip.3': '💥 昇進でより大きなボーナス、増援要請、核兵器(提督)が解放されます。',
     'tip.4': '🤝 Discord で /country を使って3つの国の好みを設定し同盟を組みましょう。',
     'tip.5': '⚔️ 自国の50%以上を失うと、反撃モードで累進ピクセルボーナス(90%喪失で最大6×)。',
@@ -2108,7 +2107,7 @@ const LANGS = {
     'stats.total_players': '共 {n} 名玩家',
     'stats.lb_load_error': '无法加载排行榜。',
     'tip.1': '💡 点击拖动平移。滚动缩放。',
-    'tip.2': '🎨 你可以在任何国家绘制像素,但征服需要 60% 的占有率。',
+    'tip.2': '🎨 你可以在任何国家绘制像素,但征服需要 70% 的占有率。',
     'tip.3': '💥 提升军衔解锁更大奖励、增援召集和核弹(海军上将)。',
     'tip.4': '🤝 在 Discord 中用 /country 设置 3 个首选国家来组建联盟。',
     'tip.5': '⚔️ 当你的国家损失超过 50% 时,反击模式给予递增像素奖励(损失90%时最高 6×)。',
@@ -2127,7 +2126,7 @@ const LANGS = {
   hi: {
     'lang.label':'भाषा','tut.title':'PixelAnnex','tut.welcome_sub':'स्वागत है — आइए शुरू करें','tut.stat_players':'खिलाड़ी','tut.stat_conquered':'जीते गए','tut.stat_alliances':'गठबंधन',
     'tut.tile_paint_title':'पिक्सेल रंगें','tut.tile_paint_desc':'मानचित्र पर क्लिक करके खींचें। हर पिक्सेल आपकी बकेट से 1 लेता है।',
-    'tut.tile_conquer_title':'देश जीतें','tut.tile_conquer_desc':'किसी देश को जीतने के लिए उसके 60% पिक्सेल पर कब्जा करें। बड़े देश अधिक कठिन हैं।',
+    'tut.tile_conquer_title':'देश जीतें','tut.tile_conquer_desc':'किसी देश को जीतने के लिए उसके 70% पिक्सेल पर कब्जा करें। बड़े देश अधिक कठिन हैं।',
     'tut.tile_bombs_title':'परमाणु बम और रैंक','tut.tile_bombs_desc':'हर रखे पिक्सेल पर XP कमाएं। उच्च रैंक बड़े बोनस, कुमुक बुलावे और परमाणु बम खोलते हैं।',
     'tut.tile_fightback_title':'पलटवार','tut.tile_fightback_desc':'जब आपका देश 50% से अधिक खो जाए, अपने क्षेत्र में रंगने से बढ़ते हुए बोनस पिक्सेल मिलते हैं — जितना अधिक खोएंगे, उतना बड़ा लाभ।',
     'tut.hint_keys':'{drag} खींचें · {scroll} ज़ूम · {click} रंगें','tut.key_drag':'खींचें','tut.key_scroll':'स्क्रॉल','tut.key_click':'क्लिक',
@@ -2194,7 +2193,7 @@ const LANGS = {
     'stats.total_players': 'कुल {n} खिलाड़ी',
     'stats.lb_load_error': 'लीडरबोर्ड लोड नहीं हो सका।',
     'tip.1': '💡 पैन के लिए क्लिक और खींचें। ज़ूम के लिए स्क्रॉल।',
-    'tip.2': '🎨 आप किसी भी देश में पिक्सेल रंग सकते हैं, लेकिन विजय के लिए 60% कब्जा चाहिए।',
+    'tip.2': '🎨 आप किसी भी देश में पिक्सेल रंग सकते हैं, लेकिन विजय के लिए 70% कब्जा चाहिए।',
     'tip.3': '💥 रैंक बढ़ाकर बड़े बोनस, कुमुक बुलावे और परमाणु बम (एडमिरल) खोलें।',
     'tip.4': '🤝 गठबंधन के लिए Discord में /country से 3 देश प्राथमिकताएँ सेट करें।',
     'tip.5': '⚔️ जब आपका देश 50% से अधिक खो जाए, पलटवार मोड बढ़ते हुए पिक्सेल बोनस देता है (90% खोने पर 6× तक)।',
@@ -2213,7 +2212,7 @@ const LANGS = {
   ar: {
     'lang.label':'اللغة','tut.title':'PixelAnnex','tut.welcome_sub':'مرحباً — لنبدأ','tut.stat_players':'اللاعبون','tut.stat_conquered':'مفتوحة','tut.stat_alliances':'تحالفات',
     'tut.tile_paint_title':'ارسم البكسلات','tut.tile_paint_desc':'انقر واسحب على الخريطة للرسم. كل بكسل يكلف 1 من سلتك.',
-    'tut.tile_conquer_title':'افتح البلدان','tut.tile_conquer_desc':'تحكم بـ 60% من بكسلات بلد لضمه. البلدان الكبيرة أصعب.',
+    'tut.tile_conquer_title':'افتح البلدان','tut.tile_conquer_desc':'تحكم بـ 70% من بكسلات بلد لضمه. البلدان الكبيرة أصعب.',
     'tut.tile_bombs_title':'الأسلحة النووية والرتب','tut.tile_bombs_desc':'احصل على XP لكل بكسل تضعه. الرتب الأعلى تفتح مكافآت أكبر ونداءات الدعم والقنبلة النووية.',
     'tut.tile_fightback_title':'الرد','tut.tile_fightback_desc':'عندما يفقد بلدك أكثر من 50%، الرسم في أرضك يمنح بكسلات مكافأة متصاعدة — كلما خسرت أكثر زادت المكافأة.',
     'tut.hint_keys':'{drag} للتحريك · {scroll} للتكبير · {click} للرسم','tut.key_drag':'اسحب','tut.key_scroll':'مرر','tut.key_click':'انقر',
@@ -2299,7 +2298,7 @@ const LANGS = {
   pt: {
     'lang.label':'Idioma','tut.title':'PixelAnnex','tut.welcome_sub':'Bem-vindo — vamos configurar você','tut.stat_players':'Jogadores','tut.stat_conquered':'Conquistados','tut.stat_alliances':'Alianças',
     'tut.tile_paint_title':'Pinte pixels','tut.tile_paint_desc':'Clique e arraste no mapa para pintar. Cada pixel custa 1 do seu balde.',
-    'tut.tile_conquer_title':'Conquiste países','tut.tile_conquer_desc':'Tenha 60% dos pixels de um país para reivindicá-lo. Países grandes são mais difíceis.',
+    'tut.tile_conquer_title':'Conquiste países','tut.tile_conquer_desc':'Tenha 70% dos pixels de um país para reivindicá-lo. Países grandes são mais difíceis.',
     'tut.tile_bombs_title':'Armas nucleares e patentes','tut.tile_bombs_desc':'Ganhe XP por pixel colocado. Patentes altas desbloqueiam bônus maiores, chamados de reforço e a Bomba Nuclear.',
     'tut.tile_fightback_title':'Contra-ataque','tut.tile_fightback_desc':'Quando seu país perde mais de 50%, pintar na sua terra dá pixels bônus progressivos: quanto mais você perde, maior o reforço.',
     'tut.hint_keys':'{drag} para mover · {scroll} para zoom · {click} para pintar','tut.key_drag':'Arraste','tut.key_scroll':'Role','tut.key_click':'Clique',
@@ -2353,7 +2352,7 @@ const LANGS = {
   ru: {
     'lang.label':'Язык','tut.title':'PixelAnnex','tut.welcome_sub':'Добро пожаловать — давайте настроим','tut.stat_players':'Игроки','tut.stat_conquered':'Завоёвано','tut.stat_alliances':'Альянсы',
     'tut.tile_paint_title':'Рисуй пиксели','tut.tile_paint_desc':'Кликни и тяни по карте, чтобы рисовать. Каждый пиксель стоит 1 из ведра.',
-    'tut.tile_conquer_title':'Завоёвывай страны','tut.tile_conquer_desc':'Захвати 60% пикселей страны, чтобы её получить. Большие страны сложнее.',
+    'tut.tile_conquer_title':'Завоёвывай страны','tut.tile_conquer_desc':'Захвати 70% пикселей страны, чтобы её получить. Большие страны сложнее.',
     'tut.tile_bombs_title':'Ядерное оружие и звания','tut.tile_bombs_desc':'Получай XP за каждый поставленный пиксель. Высокие звания открывают большие бонусы, призывы подкреплений и Ядерную бомбу.',
     'tut.tile_fightback_title':'Контратака','tut.tile_fightback_desc':'Когда страна потеряна >50%, рисование на своей земле даёт растущие бонусные пиксели — чем больше потеряно, тем сильнее бонус.',
     'tut.hint_keys':'{drag} перемещение · {scroll} зум · {click} рисование','tut.key_drag':'Тяни','tut.key_scroll':'Прокрутка','tut.key_click':'Клик',
@@ -2439,7 +2438,7 @@ const LANGS = {
   ja: {
     'lang.label':'言語','tut.title':'PixelAnnex','tut.welcome_sub':'ようこそ — セットアップしましょう','tut.stat_players':'プレイヤー','tut.stat_conquered':'征服','tut.stat_alliances':'同盟',
     'tut.tile_paint_title':'ピクセルを塗る','tut.tile_paint_desc':'マップをクリック&ドラッグして塗ります。各ピクセルはバケツから1消費。',
-    'tut.tile_conquer_title':'国を征服','tut.tile_conquer_desc':'国の60%のピクセルを保持して占領。大国ほど困難。',
+    'tut.tile_conquer_title':'国を征服','tut.tile_conquer_desc':'国の70%のピクセルを保持して占領。大国ほど困難。',
     'tut.tile_bombs_title':'核兵器と階級','tut.tile_bombs_desc':'設置したピクセル毎にXP獲得。高階級でより大きなボーナス、増援要請、核兵器が解放。',
     'tut.tile_fightback_title':'反撃','tut.tile_fightback_desc':'自国の50%以上を失うと、自領土への塗装で累進ボーナスピクセル獲得——失うほど効果が大きくなる。',
     'tut.hint_keys':'{drag}で移動 · {scroll}でズーム · {click}で塗る','tut.key_drag':'ドラッグ','tut.key_scroll':'スクロール','tut.key_click':'クリック',
@@ -2493,7 +2492,7 @@ const LANGS = {
   fr: {
     'lang.label':'Langue','tut.title':'PixelAnnex','tut.welcome_sub':'Bienvenue — préparons-vous','tut.stat_players':'Joueurs','tut.stat_conquered':'Conquis','tut.stat_alliances':'Alliances',
     'tut.tile_paint_title':'Peindre des pixels','tut.tile_paint_desc':'Cliquez et glissez sur la carte pour peindre. Chaque pixel coûte 1 du seau.',
-    'tut.tile_conquer_title':'Conquérir des pays','tut.tile_conquer_desc':"Tenez 60% des pixels d'un pays pour le revendiquer. Les grands pays sont plus durs.",
+    'tut.tile_conquer_title':'Conquérir des pays','tut.tile_conquer_desc':"Tenez 70% des pixels d'un pays pour le revendiquer. Les grands pays sont plus durs.",
     'tut.tile_bombs_title':'Armes nucléaires et grades','tut.tile_bombs_desc':"Gagnez de l'XP par pixel placé. Les hauts grades débloquent de plus gros bonus, des appels de renfort et la Bombe Nucléaire.",
     'tut.tile_fightback_title':'Riposte','tut.tile_fightback_desc':'Quand votre pays a perdu >50%, peindre sur votre terre offre des pixels bonus progressifs : plus vous perdez, plus le bonus est grand.',
     'tut.hint_keys':'{drag} pour déplacer · {scroll} pour zoomer · {click} pour peindre','tut.key_drag':'Glisser','tut.key_scroll':'Molette','tut.key_click':'Clic',
@@ -2559,7 +2558,7 @@ const LANGS = {
     'stats.total_players': '{n} joueurs au total',
     'stats.lb_load_error': 'Impossible de charger le classement.',
     'tip.1': '💡 Cliquez et glissez pour déplacer. Molette pour zoomer.',
-    'tip.2': '🎨 Vous pouvez peindre des pixels dans n\'importe quel pays, mais la conquête exige 60% de possession.',
+    'tip.2': '🎨 Vous pouvez peindre des pixels dans n\'importe quel pays, mais la conquête exige 70% de possession.',
     'tip.3': '💥 Montez en grade pour débloquer de plus gros bonus, des appels de renfort et la Bombe Nucléaire (Amiral).',
     'tip.4': '🤝 Définissez 3 préférences de pays dans Discord avec /country pour former des alliances.',
     'tip.5': '⚔️ Quand votre pays a perdu >50%, le mode riposte donne des pixels bonus progressifs (jusqu\'à 6× à 90% perdu).',
@@ -2578,7 +2577,7 @@ const LANGS = {
   de: {
     'lang.label':'Sprache','tut.title':'PixelAnnex','tut.welcome_sub':'Willkommen — lass uns dich einrichten','tut.stat_players':'Spieler','tut.stat_conquered':'Erobert','tut.stat_alliances':'Allianzen',
     'tut.tile_paint_title':'Pixel malen','tut.tile_paint_desc':'Klick und zieh über die Karte. Jeder Pixel kostet 1 aus deinem Eimer.',
-    'tut.tile_conquer_title':'Länder erobern','tut.tile_conquer_desc':'Halte 60% der Pixel eines Landes, um es zu erobern. Größere Länder sind schwerer.',
+    'tut.tile_conquer_title':'Länder erobern','tut.tile_conquer_desc':'Halte 70% der Pixel eines Landes, um es zu erobern. Größere Länder sind schwerer.',
     'tut.tile_bombs_title':'Atomwaffen & Ränge','tut.tile_bombs_desc':'Sammle XP pro gesetztem Pixel. Höhere Ränge schalten größere Boni, Verstärkungsrufe und die Atombombe frei.',
     'tut.tile_fightback_title':'Gegenwehr','tut.tile_fightback_desc':'Wenn dein Land zu >50% verloren ist, geben Pixel auf eigenem Boden progressive Bonus-Pixel — je mehr verloren, desto größer der Schub.',
     'tut.hint_keys':'{drag} zum Schwenken · {scroll} zum Zoomen · {click} zum Malen','tut.key_drag':'Ziehen','tut.key_scroll':'Scrollen','tut.key_click':'Klicken',
@@ -2645,7 +2644,7 @@ const LANGS = {
     'stats.total_players': '{n} Spieler insgesamt',
     'stats.lb_load_error': 'Bestenliste konnte nicht geladen werden.',
     'tip.1': '💡 Klick und Ziehen zum Schwenken. Scrollen zum Zoomen.',
-    'tip.2': '🎨 Du kannst Pixel in jedem Land malen, aber Eroberung erfordert 60% Besitz.',
+    'tip.2': '🎨 Du kannst Pixel in jedem Land malen, aber Eroberung erfordert 70% Besitz.',
     'tip.3': '💥 Steig im Rang auf für größere Boni, Verstärkungsrufe und die Atombombe (Admiral).',
     'tip.4': '🤝 Stelle 3 Länder-Präferenzen in Discord mit /country ein für Allianzen.',
     'tip.5': '⚔️ Wenn dein Land >50% verloren ist, gibt der Gegenwehr-Modus progressive Pixel-Boni (bis 6× bei 90% Verlust).',
@@ -3360,7 +3359,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-06-v95r';
+const CODE_VERSION = '2026-06-07-v95t';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3452,8 +3451,6 @@ const lmCtx=cLandmarks.getContext("2d");
 sctx.imageSmoothingEnabled=false;
 const cHighlight=document.getElementById("c-highlight");
 const hlCtx=cHighlight.getContext("2d");
-const cOwnStroke=document.getElementById("c-ownstroke");
-const ownCtx=cOwnStroke.getContext("2d");
 hlCtx.imageSmoothingEnabled=false;
 const cSiege=document.getElementById("c-siege");
 const siegeCtx=cSiege.getContext("2d");
@@ -3633,7 +3630,7 @@ const flashCtx = cFlash ? cFlash.getContext("2d") : null;
 if (flashCtx) flashCtx.imageSmoothingEnabled = false;
 // v31: On mobile/iOS, shrink decorative canvases to 1×1 to free GPU memory.
 //      Essential gameplay canvases stay at full MAP_W × MAP_H.
-[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cMonsters,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{
+[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cMonsters,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege].forEach(c=>{
   if(!c) return;
   if(_isMobileForMemory && _DECORATIVE_CANVAS_IDS.includes(c.id)){
     c.width=1; c.height=1;
@@ -4625,7 +4622,6 @@ async function boot(){
   featByPixel =new Int16Array(MAP_PX).fill(-1);
   claimByPixel=new Int16Array(MAP_PX).fill(-1);
   landMask    =new Uint8Array(MAP_PX);
-  initOwnStroke();
 
   const CHUNK=131072; // smaller chunks → more frequent yields → tutorial stays responsive
   for(let s=0;s<MAP_PX;s+=CHUNK){
@@ -5061,29 +5057,9 @@ if (typeof renderLandmarks === 'function') {
 // ── Claim pixels ──────────────────────────────────────────────────
 
 // ── Own-stroke highlight ──────────────────────────────────────────
-// Track pixels the local player has personally painted (vs country-prepopulate
-// or bot/other-player paints) so we can show them subtly.
-// v90a: layer retired (see block comment above). No-op stubs kept for callers.
-let _ownStrokeVisible = false; // retained: read by updateOwnStrokeVisibility
-setTimeout(() => { const c = document.getElementById('c-ownstroke'); if (c) c.style.display = 'none'; }, 0);
-
-function initOwnStroke() { /* no-op (v90a) */ }
-
-function markOwnPixel(x, y) { /* no-op (v90a) */ }
-
-// Clear the own-stroke mark at a given pixel (used when pixels get wiped — e.g. by nukes).
-function clearOwnPixel(x, y) { /* no-op (v90a) */ }
-
-
-// v90a: flushOwnStroke() + its 100ms setInterval + toggleOwnStroke() removed
-// (own-stroke layer retired; dead since v82). _ownStrokeQueue/ownPixels no
-// longer exist — see the no-op stubs above.
-
-// Hide own-stroke layer when zoomed out (visual noise at far zoom)
-function updateOwnStrokeVisibility() {
-  if (!_ownStrokeVisible) { cOwnStroke.style.display = 'none'; return; }
-  cOwnStroke.style.display = scale >= 4 ? '' : 'none';
-}
+// v95t: the own-stroke overlay layer (canvas + queue + toggle, dead since v82)
+// has been fully removed — markOwnPixel/clearOwnPixel/initOwnStroke/
+// updateOwnStrokeVisibility/_ownStrokeVisible and the #c-ownstroke canvas are gone.
 
 function claimPixel(px,py){
   if(px<0||px>=MAP_W||py<0||py>=MAP_H)return;
@@ -5109,7 +5085,6 @@ function claimPixel(px,py){
   claimByPixel[i]=currentIdx;
   recordPixelLoss(geo, currentIdx); // track all pixel activity
   strokePixelBuffer.push({x:px,y:py});
-  markOwnPixel(px, py);
   mpSendStroke([{x:px,y:py}]);
   // Track which geo countries this stroke touches (for auto-fill)
   if(geo>=0) strokeGeos.add(geo);
@@ -5275,7 +5250,7 @@ function scheduleLegend(){
 // ── View ─────────────────────────────────────────────────────────
 function applyT(){
   const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";
-  [cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cOwnStroke].forEach(c=>{if(c)c.style.transform=t;});
+  [cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege].forEach(c=>{if(c)c.style.transform=t;});
   // translateZ(0.01px) promotes c-monsters to its own GPU compositing layer,
   // guaranteeing it renders above all sibling canvases regardless of z-index quirks.
   if(cMonsters) cMonsters.style.transform=t+' translateZ(0.01px)';
@@ -5641,8 +5616,6 @@ function detonateBomb(mapX, mapY){
       if (isNukeBomb) {
         // NUKE — clear EVERY pixel in the radius, regardless of owner
         // (including the attacker's own pixels). Clean slate.
-        // Also clear the own-stroke overlay so no white residue remains.
-        clearOwnPixel(x, y);
         if (prev < 0) continue; // already unclaimed
         claimerCount[prev]=Math.max(0,(claimerCount[prev]||1)-1);
         const geo=featByPixel[i];
@@ -11905,7 +11878,7 @@ async function proceduralFallback(){
   totalLandPx=Object.values(geoTotal).reduce((a,b)=>a+b,0);
   buildCselOptions();
   selectCountry(0);
-  [cBase,cWaves,cSprites,cLandmarks,cClaim,cMonsters,cFlags,cBorder,cHighlight,cOverlay,cNuke,cOwnStroke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
+  [cBase,cWaves,cSprites,cLandmarks,cClaim,cMonsters,cFlags,cBorder,cHighlight,cOverlay,cNuke].forEach(c=>{c.width=MAP_W;c.height=MAP_H;});
   [bctx,claimCtx,flagCtx,bordCtx,ovCtx,hlCtx].forEach(c=>{c.imageSmoothingEnabled=false;});
   initWaves();buildWaveBase();tickWaves();
   initSprites();requestAnimationFrame(tickSprites);
