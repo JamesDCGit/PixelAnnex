@@ -309,6 +309,14 @@ Before editing any function:
   un-sticks unheld locks. Client: `permanentlyConqueredSet` (welcome state + `perm`
   flag on conquest); `_isCountryFallenClient` uses it; inspector shows
   "{native} — Fallen" for an unheld dead native.
+- **v95n:** stop cheap conquests of sparsely-painted countries. The painted-relative
+  contested path discounted unpainted native land, so a fresh/passive small country
+  fell at ~45% (Denmark 103px, NZ both fell to Belize). Fix: `CONTEST_TOTAL_FRAC`
+  0.60→**0.85** (group needs ≥85% of the WHOLE country), and the painted-relative
+  leniency (`CONTEST_FLOOR`/`CONTEST_MAJORITY`) now applies ONLY to large countries
+  (`CONTEST_LARGE_MIN` 8000px). Small/medium → 75% single (champion) or 85% of
+  total (group). Applied in `_evaluateConqueror`, the virgin contested path, and the
+  debug `wouldFall`. Server-only.
 
 ## Screenshots for tweets (v88)
 
