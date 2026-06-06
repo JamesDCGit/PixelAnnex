@@ -41,7 +41,7 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-06-v95p`.** (v95d was a server-only conquest
+**Current production triad: `2026-06-06-v95q`.** (v95d was a server-only conquest
 owner-transfer change that deliberately did NOT bump the triad — it stayed at
 v95c — so connected clients didn't reload; v95e is the next CLIENT change, hence
 the jump v95c→v95e.) A server-only fix keeps all three at the same value so
@@ -331,6 +331,8 @@ Before editing any function:
   at the threshold; window scales with size + empire bonus. Replaces the fixed ≤10%
   flash. (2) multi-attack notifications: `MULTI_ATTACK_THRESHOLD` 6→10 and
   `MULTI_ATTACK_COOLDOWN_MS` 30→60 min (was still firing several/hour).
+- **v95q:** inspector — "Formerly {country}" moved to the 2nd line (directly under
+  the new owner name), country name bolded.
 
 ## Screenshots for tweets (v88)
 
