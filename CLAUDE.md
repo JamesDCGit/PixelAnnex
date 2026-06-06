@@ -41,7 +41,7 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-06-v95r`.** (v95d was a server-only conquest
+**Current production triad: `2026-06-07-v95u`.** (v95d was a server-only conquest
 owner-transfer change that deliberately did NOT bump the triad — it stayed at
 v95c — so connected clients didn't reload; v95e is the next CLIENT change, hence
 the jump v95c→v95e.) A server-only fix keeps all three at the same value so
@@ -193,8 +193,8 @@ Before editing any function:
 - [x] v92: binary delta protocol (packed u16) + v92p per-region viewport delta filter + v92s snapshot RLE→binary
 - [x] v89: cleanups — pixel-inspector popup layout fixed (bodyBlock + swatch legend), duplicate escapeHtml removed, English i18n thresholds corrected (60% conquest / 50% fightback / Nuke)
 - [x] **Alliance overhaul COMPLETE** (v92u–v93g): 3C reskin, 3D onboarding, Phase 1 radar (Join/Leave), Phase 2 superpower announcement + war-room private threads, 3A `/strike` rally points, 3B vaults + Allied Surge (`/surge`), plus resync-on-connect reliability + channel-name fixes. Coalition membership = B/C slots only; alliance state persisted in `alliance_state.json`.
-- [ ] Translate non-English i18n strings to current thresholds (9 locales still cite 70%/80% conquest, "Bombs"). English fixed in v89.
-- [ ] Remove dead `toggleOwnStroke` / `_ownStrokeVisible` / own-stroke layer (button gone since v82, layer always off)
+- [x] i18n conquest threshold updated 60%→70% across all locales (v95t).
+- [x] Dead own-stroke layer removed (v95t).
 
 ### Operator backlog (2026-06-04) — after resync-fix + 3B — ALL DONE (v93h–v93j)
 - [x] **Conquer bug (recurring):** v93h replaced the plurality path with a contested-territory majority metric. Root cause: conquest was measured vs TOTAL land, diluted by huge unpainted interiors (China ~91% unpainted). New path: falls to the largest foreign holder when `topCnt > nativeOwned` AND (painted/total ≥ `CONTEST_FLOOR` 0.40 AND foreignSum/painted ≥ `CONTEST_MAJORITY` 0.70) OR (foreignSum/total ≥ `CONTEST_TOTAL_FRAC` 0.60). Debug: `/api/debug/country?...` `contested` block.
@@ -341,6 +341,11 @@ Before editing any function:
   now also dedupes against the PERSISTED queue (skip identical PENDING draft by
   dedupeKey or text; dedupeKey stored on the draft), and loadTweetQueue drops
   identical pending drafts on boot.
+- **v95t:** backlog cleanup — i18n conquest threshold 60%→70% (all locales); removed
+  the long-dead own-stroke overlay layer (canvas + stubs + refs).
+- **v95u:** backlog cleanup — isBoundingArc also rejects diagonal degenerate arcs
+  (verified no real country lost); enqueuePaintsSweep paints a >8000px flood
+  instantly instead of staggering it through _paintQ (live-conquest hardening).
 
 ## Screenshots for tweets (v88)
 
@@ -525,19 +530,20 @@ geos). Transfers via `_conquerGeo`; still ghost-clears a holder wiped to 0 px.
   the active higher multiplier and extends the timer (no downgrade).
 
 ### Remaining backlog
-- [ ] **(2b) Cascade death:** force re-pick when a country loses its LAST outpost
-  while its homeland is already gone (currently a landless "rebel" that fights on).
+- [ ] **Ads (NEXT — only open item):** network, banner-only placement, consent
+  banner, real domain.
 - [x] **FTUE — guided first paint (v95):** done. See section below. Further FTUE
   ideas not built: HUD coach marks, first-session objectives, contextual nudges.
-- [ ] **Ads (next):** network, banner-only placement, consent banner, real domain.
-- [ ] **Map-data arc spikes (known, low sev):** a few tiny countries (Hong Kong,
-  Brunei, Curaçao, Bahamas, Gibraltar) have bad polygon arcs giving them
-  near-full-map bounding boxes → faint thin diagonal stripes. `isBoundingArc`
-  (only catches near-HORIZONTAL arcs: `ΔLat<0.5 && ΔLon>2`) lets diagonal ones
-  through. Fix would extend the degenerate-arc filter in `drawRing`/`isBoundingArc`.
-- [ ] **Live-conquest queue hardening:** a single live conquest of a huge country
-  still floods 34k paints into `_paintQ` (self-corrects in-viewport). Same root
-  mechanism as the v95b snapshot bug; not yet hardened.
+- [x] **(2b) Cascade death — OBSOLETE (v95m):** moot now that a homeland fall is
+  always death + empire liquidation (no landless rebel can exist).
+- [x] **Map-data arc spikes — RESOLVED:** the visible stripes were the v95b
+  finisherFill overlay bug (fixed); the mask itself is clean (a degenerate arc
+  fills 0px under evenodd). v95u also hardened `isBoundingArc` to reject diagonal
+  degenerate arcs (verified: no real country loses pixels).
+- [x] **Live-conquest queue hardening (v95u):** `enqueuePaintsSweep` paints a
+  large flood (>8000px) instantly instead of staggering it through `_paintQ`.
+- [x] **i18n conquest threshold (v95t):** all locales updated 60%→70%.
+- [x] **Dead own-stroke layer removed (v95t).**
 
 ## FTUE — guided first paint (v95)
 
