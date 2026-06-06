@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-06-v95o';
+const SERVER_VERSION       = '2026-06-06-v95p';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2236,10 +2236,10 @@ function checkSiegeState(geoIdx) {
 // v94a: slowed for "major events only" — multi-attack was still too frequent.
 // Require more attackers (6) and a much longer per-defender cooldown (30 min) so
 // the SAME defender doesn't re-announce every 5 minutes.
-const MULTI_ATTACK_THRESHOLD    = 6;
+const MULTI_ATTACK_THRESHOLD    = 10;            // v95p: 6→10 distinct attackers (was still firing several/hour)
 const MULTI_ATTACK_WINDOW_MS    = 5 * 60 * 1000; // was 60s
 const MULTI_ATTACK_MIN_PIXELS   = 200;            // absolute floor — total px painted by all attackers in window
-const MULTI_ATTACK_COOLDOWN_MS  = 30 * 60 * 1000;
+const MULTI_ATTACK_COOLDOWN_MS  = 60 * 60 * 1000; // v95p: 30→60 min per defender (≤1/hr each)
 // v92k (#5): size-relative pixel floor. 200px is a huge deal for a micro-state but
 // trivial for Russia (91k px). The effective floor scales with the defender's land
 // area: floor = clamp(land * FRAC, MIN_PIXELS, MAX_PIXELS). So a multi-attack means

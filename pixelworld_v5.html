@@ -3360,7 +3360,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-06-v95o';
+const CODE_VERSION = '2026-06-06-v95p';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -11467,15 +11467,34 @@ vp.addEventListener("mousemove",e=>{
           _foreignSum += cnt; _foreign.push([fi,cnt]);
         }
         const _nativePct = Math.round(Math.max(0, total - _foreignSum) / total * 100);
-        // v93s: original (native) country's hold, labelled "(Original)".
-        // v95j: flash the % red when the territory's CURRENT OWNER is in the danger
-        // zone of being taken over (<= 10%). For an UNCONQUERED country the owner is
-        // the native; for a conquered one it's the holder (flagged in the list below).
-        const _DANGER_PCT = 10;
-        const _natDanger = !_holderFeat && _nativePct <= _DANGER_PCT;
+        // v95p: progressive danger flash on the CURRENT OWNER's % — the country in
+        // danger of being conquered. Driven by the LEADING ATTACKER's share: a slow
+        // red flash once it reaches the bottom of the danger window (~25 pts below
+        // the conquest threshold, e.g. 50% when the bar is 75%), ramping to a fast
+        // flash at the threshold itself. The window scales with the effective
+        // threshold so it adapts to size + empire bonuses.
+        const _effThresh = Math.min(0.95, conquestThreshold(total) + (_holderFeat ? 0 : empireDefenseBonus(_nativeId)));
+        let _threatCnt = 0;
+        for(const [fi,cnt] of _foreign){
+          if(_holderFeat && featList[+fi] && String(featList[+fi].id)===String(_holderFeat.id)) continue; // skip the owner
+          if(cnt > _threatCnt) _threatCnt = cnt;
+        }
+        const _threatPct  = total ? _threatCnt / total : 0;
+        const _dangerLo   = Math.max(0.30, _effThresh - 0.25);
+        const _threatened = _threatPct >= _dangerLo;
+        // Opening <span> for an owner % — flashes (variable speed) when threatened.
+        const _dangerOpen = () => {
+          if(!_threatened) return "<span style='color:#64748b'>";
+          const t = Math.min(1, (_threatPct - _dangerLo) / Math.max(0.01, _effThresh - _dangerLo));
+          const dur = (1.3 - t).toFixed(2); // slow 1.3s (window start) → fast 0.3s (threshold)
+          return "<span class='insp-danger' style='animation-duration:"+dur+"s'>";
+        };
+        // v93s: original (native) country's hold, labelled "(Original)". Owner = native
+        // when unconquered; the holder (flagged in the invader list) when conquered.
+        const _natOpen = (!_holderFeat) ? _dangerOpen() : "<span style='color:#64748b'>";
         html2 += flagAny(_nativeFeat.id,1)
           + "<span style='color:"+_nativeFeat.color+";font-weight:600'>"+_nativeFeat.name+"</span>"
-          + "<span class='"+(_natDanger?'insp-danger':'')+"' style='color:#64748b'> "+_nativePct+"% (Original)</span><br>";
+          + _natOpen + " "+_nativePct+"% (Original)</span><br>";
         if(_foreign.length===0){
           html2+="<span style='color:#475569;font-size:10px'>No invaders</span>";
         } else {
@@ -11483,11 +11502,11 @@ vp.addEventListener("mousemove",e=>{
           for(const [idx,count] of _foreign.slice(0,3)){
             const pct=Math.round(count/total*100);
             const f=featList[+idx]; if(!f) continue;
-            // v95j: flash red if THIS invader is the current holder and in the danger zone.
+            // Flash the holder's % when it (the owner of a conquered geo) is threatened.
             const _isHolder = _holderFeat && String(f.id)===String(_holderFeat.id);
-            const _pctCls = (_isHolder && pct <= _DANGER_PCT) ? 'insp-danger' : '';
+            const _open = _isHolder ? _dangerOpen() : "<span style='color:#64748b'>";
             html2+=flagAny(f.id,1)+"<span style='color:"+f.color+"'>"+f.name+"</span>"
-              +"<span class='"+_pctCls+"' style='color:#64748b'> "+pct+"%</span><br>";
+              +_open+" "+pct+"%</span><br>";
           }
           if(_foreign.length>3){
             html2+="<span style='color:#334155'>+"+(_foreign.length-3)+" more</span>";
