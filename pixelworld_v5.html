@@ -3360,7 +3360,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-06-v95q';
+const CODE_VERSION = '2026-06-06-v95r';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -11387,14 +11387,14 @@ vp.addEventListener("mousemove",e=>{
       // v95q: "Formerly {native}" as the SECOND line — directly under the new owner
       // name in the header — with the country name bold.
       if(_holderFeat && _nativeFeat){
-        html2 += "<span style='color:#94a3b8;font-size:10px'>Formerly </span>"
-          + "<b style='color:"+_nativeFeat.color+"'>"+_nativeFeat.name+"</b><br>";
+        html2 += "<span style='color:#94a3b8;font-size:12px;font-weight:700'>Formerly </span>"
+          + "<span style='color:"+_nativeFeat.color+";font-size:12px;font-weight:700'>"+_nativeFeat.name+"</span><br>";
       }
       // v93t: how many countries the CURRENT holder has conquered (empire size).
       {
         const _curId = _holderFeat ? String(_holderFeat.id) : _gid;
         const _ci = _curId ? _outpostInfo(_curId, ' ') : null;  //   never matches → total only
-        const _curConq = _ci ? _ci.total : 0;
+        const _curConq = 0; // v95r: "Conquered N countries" line removed to streamline the inspector
         if(_curConq > 0){
           html2 += "<span style='color:#fbbf24;font-size:10px'>🗡️ Conquered "+_curConq+" countr"+(_curConq===1?'y':'ies')+"</span><br>";
         }
