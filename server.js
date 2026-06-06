@@ -87,9 +87,16 @@ const FALLEN_NATIVE_FRAC = 0.05; // (legacy — retained for the debug endpoint 
 // to its largest foreign holder when the CONTESTED (painted) territory is
 // foreign-dominated and a real chunk of the country is in play, and the leading
 // attacker out-holds the native. Tunables:
-const CONTEST_FLOOR      = 0.40; // >= 40% of the country must be painted (contested)
-const CONTEST_MAJORITY   = 0.85; // v95i: foreigners must hold >= 85% of the painted territory (group-conquest bar)
-const CONTEST_TOTAL_FRAC = 0.60; // OR foreigners painted >= 60% of ALL land (decisive coverage)
+const CONTEST_FLOOR      = 0.40; // >= 40% of the country must be painted (painted-relative path)
+const CONTEST_MAJORITY   = 0.85; // painted-relative bar: foreigners hold >= 85% of the PAINTED area
+const CONTEST_TOTAL_FRAC = 0.85; // v95n: group/contested bar vs ALL land — foreigners hold >= 85% of the WHOLE country
+// v95n: the lenient painted-relative path (CONTEST_FLOOR/CONTEST_MAJORITY, which
+// discounts unpainted native land) only applies to GENUINELY LARGE countries where
+// reaching 85% of TOTAL is impractical. Small/medium countries (Denmark 103px,
+// New Zealand, …) must hit the real bar — 75% single (champion) or 85% of total
+// (group) — so a passive/fresh country can't be taken at ~45% by dominating the
+// little that's painted.
+const CONTEST_LARGE_MIN  = 8000; // px; painted-relative contested allowed only above this
 // ── v93p (#1): empire-backed homeland defense ─────────────────────
 // Each territory a country has conquered ("outpost") raises the bar to take its
 // HOMELAND, so expansion makes you harder to dislodge — gains feel durable while
@@ -3798,7 +3805,10 @@ function _evaluateConqueror(geo, total, dropEmpireBonus, excludeId) {
     if (cnt > topCnt) { topCnt = cnt; topId = cId; }
   }
   const painted = foreignSum + nativeOwned;
-  const contestedMajority = painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb);
+  // v95n: painted-relative leniency only for genuinely large countries; everyone
+  // else must reach the total-based bar (decisiveCoverage) so a sparsely-painted
+  // small country can't be taken at ~45%.
+  const contestedMajority = total > CONTEST_LARGE_MIN && painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb);
   const decisiveCoverage  = (foreignSum / total) >= Math.min(0.98, CONTEST_TOTAL_FRAC + _eb);
   if (topId && topCnt > nativeOwned && (contestedMajority || decisiveCoverage)) return topId;
   return null;
@@ -4007,7 +4017,8 @@ function applyPixels(pixels, countryId) {
       }
       const painted = foreignSum + nativeOwned;
       const _eb = empireDefenseBonus(_geoId);
-      const contestedMajority = painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb);
+      // v95n: painted-relative leniency only for genuinely large countries.
+      const contestedMajority = total > CONTEST_LARGE_MIN && painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb);
       const decisiveCoverage  = (foreignSum / total) >= Math.min(0.98, CONTEST_TOTAL_FRAC + _eb);
       if (topId && topCnt > nativeOwned && !conqueredSet.has(geo + ':' + topId) && (contestedMajority || decisiveCoverage)) {
         _conquerGeo(geo, topId, conquests, changed);
@@ -5573,7 +5584,7 @@ const httpServer = http.createServer(async (req, res) => {
         const painted = foreignSum + nativeCnt;
         const topForeign = holders.find(h => !h.native && h.pixels > 0);
         const topCnt = topForeign ? topForeign.pixels : 0;
-        const contestedMajority = painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= CONTEST_MAJORITY;
+        const contestedMajority = total > CONTEST_LARGE_MIN && painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= CONTEST_MAJORITY;
         const decisiveCoverage  = total ? (foreignSum / total) >= CONTEST_TOTAL_FRAC : false;
         return {
           paintedPct:          total ? +(painted / total * 100).toFixed(1) : 0,
