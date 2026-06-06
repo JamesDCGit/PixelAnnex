@@ -263,7 +263,17 @@ function loadTweetQueue() {
     if (fs.existsSync(TWEET_QUEUE_FILE)) {
       const raw = JSON.parse(fs.readFileSync(TWEET_QUEUE_FILE, 'utf8'));
       if (Array.isArray(raw)) {
-        for (const t of raw) tweetQueue.push(t);
+        // v95s: drop duplicate PENDING drafts with identical text (e.g. the same
+        // news headline re-queued across restarts before the persisted-queue
+        // dedupe existed). Keep the first occurrence (newest, since newest-first).
+        const _seenText = new Set();
+        for (const t of raw) {
+          if (t && t.status === 'pending') {
+            if (_seenText.has(t.text)) continue; // skip dup
+            _seenText.add(t.text);
+          }
+          tweetQueue.push(t);
+        }
         // v39a: enforce new cap immediately on load — older drafts dropped
         if (tweetQueue.length > TWEETS_MAX_KEEP) {
           const dropped = tweetQueue.length - TWEETS_MAX_KEEP;
@@ -358,11 +368,19 @@ function pushTweetDraft({ type, text, dedupeKey, throttleKey, countries, imageUr
     const last = _tweetLastByKey.get('throttle:' + throttleKey);
     if (last && now - last < TWEETS_RATE_LIMIT) return null;
   }
+  const _text = String(text || '').slice(0, 280);
+  // v95s: persisted-queue dedupe. _tweetLastByKey (above) is in-memory and lost on
+  // restart, so frequent restarts re-ran the 90s news scrape and re-queued the same
+  // headline tweet repeatedly. The queue IS persisted — so skip if an identical
+  // PENDING draft (same dedupeKey, or same text) is already waiting for review.
+  if (tweetQueue.some(d => d.status === 'pending' &&
+        ((dedupeKey && d.dedupeKey === dedupeKey) || d.text === _text))) return null;
   const draft = {
     id:     Math.random().toString(36).slice(2, 10),
     ts:     now,
     type,
-    text:   String(text || '').slice(0, 280),
+    text:   _text,
+    dedupeKey: dedupeKey || null, // v95s: stored so dedupe survives restarts
     imageUrl: imageUrl || null,   // v88: optional screenshot URL for the post
     status: 'pending',  // 'pending' | 'posted' | 'dismissed'
   };
