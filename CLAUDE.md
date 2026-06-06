@@ -335,6 +335,12 @@ Before editing any function:
   the new owner name), country name bolded.
 - **v95r:** inspector — "Formerly {country}" now bold at title size (12px); removed
   the "Conquered N countries" line to streamline the menu.
+- **v95s (server-only):** stop duplicate tweet drafts. `_tweetLastByKey` dedupe is
+  in-memory (5-min window) and wiped on restart, while the news scrape runs 90s
+  after every boot — so many restarts re-queued the same headline. pushTweetDraft
+  now also dedupes against the PERSISTED queue (skip identical PENDING draft by
+  dedupeKey or text; dedupeKey stored on the draft), and loadTweetQueue drops
+  identical pending drafts on boot.
 
 ## Screenshots for tweets (v88)
 
