@@ -1261,7 +1261,10 @@ async function postWarEvent(guild, event) {
 
     case 'war_siege_start':
       title   = '🚨 Country Under Siege';
-      content = event.sassyText || `${_atkName} has ${event.ratio}% of ${_defName}'s territory!`;
+      // v97d: defenderName (e.g. "Brazil (formerly USA)") is set by the server only
+      // when the country has been conquered, so a fallen native is named by its
+      // current holder. Otherwise fall back to the native's mention/name.
+      content = event.sassyText || `${_atkName} has ${event.ratio}% of ${event.defenderName || _defName}'s territory!`;
       color   = 0xf59e0b;
       event._mentionDefenders = true; // v35
       break;

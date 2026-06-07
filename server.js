@@ -438,6 +438,26 @@ function _natHashtag(id) {
   return NAT_HASHTAG[String(parseInt(id, 10))] || _countryTag(id);
 }
 
+// v97d: holder-aware display for war notifications (tweets + Discord). A country
+// whose homeland has been conquered is named by its CURRENT holder, noting the
+// fallen native — e.g. "Brazil (formerly USA)". A still-native country is just its
+// own name. Prevents "USA defending…" posts after USA has already fallen.
+// (_foreignHolderOf is a hoisted fn declaration defined later in the file.)
+function _geoDefenderName(geoId) {
+  const holder = _foreignHolderOf(geoId);
+  if (holder && String(holder) !== String(geoId)) {
+    return `${_countryName(holder)} (formerly ${_countryName(geoId)})`;
+  }
+  return _countryName(geoId);
+}
+function _geoDefenderTag(geoId) {
+  const holder = _foreignHolderOf(geoId);
+  if (holder && String(holder) !== String(geoId)) {
+    return `${_natHashtag(holder)} (formerly ${_natHashtag(geoId)})`;
+  }
+  return _natHashtag(geoId);
+}
+
 // ── v88: tweet screenshots ───────────────────────────────────────
 // Render a 256x256 PNG of a country, save under /shots, return a public
 // URL path (served by the HTTP handler). Returns null if rendering fails
@@ -2212,11 +2232,18 @@ const _siegeAnnouncedAt = new Map(); // geoIdx → last announce ts
 function checkSiegeState(geoIdx) {
   const total = geoTotal[geoIdx] || 0;
   if (!total) return;
+  // v97d: the country being DEFENDED is the current holder if the native has fallen,
+  // else the native. Exclude BOTH the native and that owner from the attacker calc,
+  // so a conquered country's own holder isn't mistaken for the besieger (which gave
+  // bogus "Brazil has 100% of USA" posts). A siege now means a THIRD party is
+  // attacking the current owner.
+  const nativeId = geoToId(geoIdx);
+  const ownerId  = _foreignHolderOf(geoIdx) || nativeId; // holder if conquered, else native
   let dominantEnemy = null;
   let maxEnemy = 0;
   if (geoClaimCnt[geoIdx]) {
     for (const [cId, cnt] of Object.entries(geoClaimCnt[geoIdx])) {
-      if (cId === geoToId(geoIdx)) continue;
+      if (cId === nativeId || cId === String(ownerId)) continue; // skip native + current owner
       if (cnt > maxEnemy) { maxEnemy = cnt; dominantEnemy = cId; }
     }
   }
@@ -2234,7 +2261,10 @@ function checkSiegeState(geoIdx) {
         type:        'war_siege_start',
         tier:        2,
         attackerId:  dominantEnemy,
-        defenderId:  geoToId(geoIdx),
+        defenderId:  nativeId,
+        // v97d: only override the name when conquered (else bot.js keeps the native's
+        // role-mention/ping); "Holder (formerly Native)" when a holder exists.
+        defenderName: (String(ownerId) !== String(nativeId)) ? _geoDefenderName(nativeId) : undefined,
         ratio:       Math.round(ratio * 100),
         timestamp:   Date.now(),
       });
@@ -2339,7 +2369,7 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
     entry.lastNotifyAt = now;
     const _sassyMulti = _pickSassy(SASS_MULTI)({
       n:   attackerIds.length,
-      d:   _countryName(defenderId),
+      d:   _geoDefenderName(defenderId), // v97d: name the current holder if conquered
       atk: attackerIds.slice(0, 3).map(id => _countryName(id)).join(', ') + (attackerIds.length > 3 ? ' +' + (attackerIds.length - 3) + ' more' : ''),
     });
     emitBotEvent({
@@ -2353,7 +2383,8 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
     });
     try {
       // v93m: country names as national hashtags inline (defender + attackers).
-      const defName = _natHashtag(defenderId);
+      // v97d: defender tag names the current holder if the native has fallen.
+      const defName = _geoDefenderTag(defenderId);
       const attNames = attackerIds.slice(0, 3).map(id => _natHashtag(id)).join(', ');
       const more = attackerIds.length > 3 ? ' +' + (attackerIds.length - 3) + ' more' : '';
       const sassyMulti = _pickSassy(SASS_MULTI)({
@@ -2369,7 +2400,7 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
         dedupeKey:   'multi_attack:' + defenderId + ':' + Math.floor(now / 60000),
         throttleKey: 'multi_attack_def:' + defenderId,
         countries:   [defenderId, ...attackerIds], // v84: notable if defender OR any attacker is notable
-        imageUrl:    makeCountryShot(defenderId, defenderId) || undefined, // v88 screenshot, v92m defender flag
+        imageUrl:    makeCountryShot(defenderId, _foreignHolderOf(defenderId) || defenderId) || undefined, // v88/v97d: holder's flag if conquered
       });
     } catch (e) { /* ignore */ }
   }
