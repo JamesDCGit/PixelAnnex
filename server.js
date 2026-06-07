@@ -5691,7 +5691,7 @@ const httpServer = http.createServer(async (req, res) => {
       }));
     } else {
       allRanked = [...profiles.values()]
-        .filter(p => p.username && (p.pixelsPlaced > 0 || p.conquestsMade > 0) && !p.isBot)
+        .filter(p => p.username && !p.isBot && ((p.pixelsPlaced > 0) || (p.conquestsMade > 0) || (p.points > 0)))
         .map(p => ({
           discordId: p.discordId, username: p.username, avatar: p.avatar,
           pixels: p.pixelsPlaced || 0, conquests: p.conquestsMade || 0,
