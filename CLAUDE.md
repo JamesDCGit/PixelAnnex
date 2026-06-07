@@ -41,10 +41,13 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-07-v95u`.** (v95d was a server-only conquest
-owner-transfer change that deliberately did NOT bump the triad — it stayed at
-v95c — so connected clients didn't reload; v95e is the next CLIENT change, hence
-the jump v95c→v95e.) A server-only fix keeps all three at the same value so
+**Current production triad: `2026-06-07-v95w`.** (Last CLIENT change was v95w —
+Umami + admin_announce handler. The later v95x/v95y/v95z work was all SERVER-ONLY,
+so the triad deliberately stayed at v95w; comment tags `// v95z:` run ahead of the
+banner, which is fine.) (v95d was a server-only conquest owner-transfer change that
+deliberately did NOT bump the triad — it stayed at v95c — so connected clients
+didn't reload; v95e is the next CLIENT change, hence the jump v95c→v95e.) A
+server-only fix keeps all three at the same value so
 connected clients don't reload. Only bump the triad when the CLIENT
 (`pixelworld_v5.html`) actually changes. Comment tags (`// v95f:`) can run ahead
 of the triad banner; that's fine.
@@ -346,6 +349,45 @@ Before editing any function:
 - **v95u:** backlog cleanup — isBoundingArc also rejects diagonal degenerate arcs
   (verified no real country lost); enqueuePaintsSweep paints a >8000px flood
   instantly instead of staggering it through _paintQ (live-conquest hardening).
+- **v95v:** operator admin dashboard. Secret-gated `/admin?key=$TWEETS_ADMIN_SECRET`
+  (`_adminOK` reuses the tweet secret): live KPIs (5s poll) via `/api/admin/metrics`
+  + safe world controls via `/api/admin/control` (toggle bots — `_BOTS_DISABLED` now
+  `let`; spawn UFO/Kraken/Godzilla; broadcast `admin_announce`; reset world). Client
+  handles `admin_announce`→activity card (world_reset/monster_spawn already handled).
+- **v95w:** Umami Cloud traffic analytics — cookieless `<script>` in `<head>` (no
+  consent banner). `paTrack()` safe wrapper + funnel events `signed_in`,
+  `country_selected`, `ftue_complete`. Website-id 22da671f-…
+- **v95x (server-only):** twice-daily world summary fixes. (1) dedupeKey was built
+  from SCHEDULE-time sliced to 13 chars ("Sat, 07 Jun 2" = day, mangled year) so the
+  00:00 and 12:00 fires collided and the 2nd was deduped → "no morning post". Now
+  FIRE-time + per-12h slot (`YYYY-MM-DD`+AM/PM). (2) `_timelapseRoundStart` was
+  `_serverStartMs`, so every deploy excluded on-disk frames older than boot → GIF fell
+  back to the static PNG. Now starts at 0 (pure trailing 12h window); only
+  `_resetWorld()` bumps it.
+- **v95y (server-only, mapshot.js):** UTC timestamp burned into each timelapse frame
+  (`renderWorldPNG` optional `label`, bottom-left pill) so the GIF ticks through 12h.
+  Only new frames are stamped; fully stamped after ~12h.
+- **v95z (server-only) — DEAD-COUNTRY EMPIRE LEAK (the "Guinea-Bissau 1 (formerly
+  China)" bug):** a conquered country's outpost stayed alive after the holder itself
+  died. FOUR compounding root causes, all fixed:
+  1. `finisherFill` (the conquest flood) wrote claimByPixel/geoClaimCnt/countryPxCount
+     but NEVER `ownerPixels`. So conquered land was invisible to `_onCountryConquered`
+     (which liquidates by iterating ownerPixels). → finisherFill now calls
+     `updateOwnerIndex`.
+  2. `_evaluateConqueror` + the `applyPixels` virgin champion/contested loops did not
+     exclude DEAD countries, so a dead holder at ~100% kept being re-selected as
+     conqueror → infinite re-conquest. → all FOUR candidate loops now
+     `continue` on `permanentlyConquered.has(cId)`.
+  3. liquidation iterated `ownerPixels[dead]` which can DRIFT from claimByPixel (it
+     once left a dead country "holding" 98% of China). → `_onCountryConquered` now
+     scans `claimByPixel` DIRECTLY (full 2M scan; death is rare) for the dead
+     country's pixels.
+  4. the backstop only re-fired off a conqueredSet entry, missing remnants with NO
+     entry (China showed `conquered:false` but 98% Guinea-Bissau). → the 60s sweep
+     also re-liquidates any `permanentlyConquered` country with `countryPxCount>0`,
+     and `_onCountryConquered` zeroes `countryPxCount[dead]` at the end so the pass
+     terminates. Verified: GB's 50,528px cleared → China/Australia became neutral
+     Fallen land; sweep self-healed other accumulated dead-country remnants.
 
 ## Screenshots for tweets (v88)
 
