@@ -197,6 +197,23 @@ function renderWorldPNG(opts) {
     }
   }
   ctx.putImageData(img, 0, 0);
+
+  // v95y: optional timestamp burned into the frame (bottom-left). Used by the
+  // timelapse so the assembled GIF visibly ticks through its 12h window.
+  if (opts.label) {
+    const fs2 = Math.max(11, Math.round(OUT_W / 52)); // ~20px @ 1024 wide
+    const pad = Math.round(fs2 * 0.55);
+    ctx.font = '600 ' + fs2 + 'px sans-serif';
+    ctx.textBaseline = 'alphabetic';
+    const tw = ctx.measureText(opts.label).width;
+    const bx = pad, by = OUT_H - pad - fs2 - pad;
+    // dark pill backdrop for legibility over any map colour
+    ctx.fillStyle = 'rgba(7,13,26,0.66)';
+    ctx.fillRect(bx, by, tw + pad * 2, fs2 + pad * 2);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillText(opts.label, bx + pad, by + pad + fs2 - Math.round(fs2 * 0.18));
+  }
+
   return canvas.toBuffer('image/png');
 }
 

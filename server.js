@@ -704,7 +704,9 @@ let   _timelapseRoundStart = 0;
 function captureTimelapseFrame() {
   try {
     if (Object.keys(geoPixels).length === 0) return; // map not ready yet
-    const buf = renderWorldPNG({ MAP_W, MAP_H, claimByPixel, landMask, idxToId, geoColorsById, outW: TL_OUT_W });
+    // v95y: burn the capture time into the frame so the GIF ticks through 12h.
+    const _ts = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+    const buf = renderWorldPNG({ MAP_W, MAP_H, claimByPixel, landMask, idxToId, geoColorsById, outW: TL_OUT_W, label: _ts });
     if (!buf) return;
     // zero-padded epoch-ms filename → lexical sort == chronological
     const name = 'tl_' + String(Date.now()).padStart(15, '0') + '.png';
