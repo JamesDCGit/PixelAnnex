@@ -3902,6 +3902,7 @@ function _evaluateConqueror(geo, total, dropEmpireBonus, excludeId) {
   for (const cId in claims) {
     if (cId === _geoId) continue;
     if (excludeId != null && String(cId) === String(excludeId)) continue;
+    if (permanentlyConquered.has(String(cId))) continue; // v95z: dead countries can't conquer
     const o = getAllyOwnedCount(geo, cId);
     if (o > champOwned) { champOwned = o; champId = cId; }
   }
@@ -3911,6 +3912,7 @@ function _evaluateConqueror(geo, total, dropEmpireBonus, excludeId) {
   let topId = null, topCnt = 0, foreignSum = 0;
   for (const [cId, cnt] of Object.entries(claims)) {
     if (cId === _geoId || cnt <= 0) continue;
+    if (permanentlyConquered.has(String(cId))) continue; // v95z: dead countries can't conquer
     foreignSum += cnt;
     if (cnt > topCnt) { topCnt = cnt; topId = cId; }
   }
@@ -4104,6 +4106,7 @@ function applyPixels(pixels, countryId) {
     const _claims = geoClaimCnt[geo] || {};
     for (const cId in _claims) {
       if (cId === _geoId) continue;                 // skip native — can't self-conquer
+      if (permanentlyConquered.has(String(cId))) continue; // v95z: dead countries can't conquer
       const o = getAllyOwnedCount(geo, cId);        // combined alliance credit
       if (o > champOwned) { champOwned = o; champId = cId; }
     }
@@ -4122,6 +4125,7 @@ function applyPixels(pixels, countryId) {
       let topId = null, topCnt = 0, foreignSum = 0;
       for (const [cId, cnt] of Object.entries(claims)) {
         if (cId === _geoId || cnt <= 0) continue;  // skip native
+        if (permanentlyConquered.has(String(cId))) continue; // v95z: dead countries can't conquer
         foreignSum += cnt;
         if (cnt > topCnt) { topCnt = cnt; topId = cId; }
       }
