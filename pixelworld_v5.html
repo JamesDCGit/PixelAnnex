@@ -3378,7 +3378,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v96';
+const CODE_VERSION = '2026-06-07-v96a';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4259,6 +4259,30 @@ function placeFlag(geoIdx, claimerIdx){
   const c = _landmassCenter(largest);
   placedFlags[geoIdx] = { claimerIdx, cx: c.cx, cy: c.cy };
   _placeFlagDOM(geoIdx, featList[claimerIdx], [c]); // single flag (DOM layer takes an array)
+}
+
+// v96a: clear a departed holder's pixels within a geo (all polygons of the geo's
+// country id), updating client state + canvas. Used by the 'reversal' handler so a
+// dead country's conquered land disappears for everyone on the full-broadcast
+// reversal, not just clients that happened to receive the viewport-filtered clears.
+function _clearHolderInGeo(geoCountryId, holderCountryId){
+  const holderFi = idToFeatIdx.get(String(holderCountryId));
+  if (holderFi === undefined) return;
+  const cid = String(geoCountryId);
+  for (let fIdx = 0; fIdx < featList.length; fIdx++){
+    if (!featList[fIdx] || String(featList[fIdx].id) !== cid) continue;
+    const src = geoPixelList && geoPixelList[fIdx];
+    if (!src) continue;
+    for (let k = 0; k < src.length; k++){
+      const i = src[k];
+      if (claimByPixel[i] !== holderFi) continue;
+      claimByPixel[i] = -1;
+      const gfi = featByPixel[i];
+      if (gfi >= 0 && geoClaimCnt[gfi] && geoClaimCnt[gfi][holderFi] > 0) geoClaimCnt[gfi][holderFi]--;
+      if ((claimerCount[holderFi] || 0) > 0) claimerCount[holderFi]--;
+      if (claimCtx) claimCtx.clearRect(i % MAP_W, (i / MAP_W) | 0, 1, 1);
+    }
+  }
 }
 
 // Erase a flag for a geo country (when recaptured)
@@ -8515,6 +8539,17 @@ function mpHandleMessage(msg) {
       conqueredSet.delete(geoCountryId + ':' + countryId);
       const targetFi = idToFeatIdx.get(String(geoCountryId));
       if (targetFi !== undefined) eraseFlag(targetFi);
+      // v96a: when a conquered country DIES ('fallen') or its holder is wiped to 0px
+      // ('empty'), also CLEAR that holder's pixels in this geo locally. The server's
+      // per-pixel clears are viewport-filtered (a client looking elsewhere — or a
+      // freshly-conquering player zoomed in — never receives the off-screen clears),
+      // but this reversal is a FULL broadcast, so the conquered land vanishes for
+      // everyone instantly. Skipped for 'transfer'/'inherited' (the paired 'conquest'
+      // re-floods to the new owner) and for liberation reversals (no reason: the
+      // invader keeps its pixels, only the conquest flag drops).
+      if (msg.reason === 'fallen' || msg.reason === 'empty') {
+        _clearHolderInGeo(geoCountryId, countryId);
+      }
       scheduleLegend();
       refreshConqueredCountLocal(); // v92b: instant Conquered-count update
       break;

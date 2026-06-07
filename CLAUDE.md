@@ -388,6 +388,16 @@ Before editing any function:
      and `_onCountryConquered` zeroes `countryPxCount[dead]` at the end so the pass
      terminates. Verified: GB's 50,528px cleared → China/Australia became neutral
      Fallen land; sweep self-healed other accumulated dead-country remnants.
+- **v96a (client):** dead country's conquered land sometimes stayed PAINTED on a
+  client even though the server cleared it. The server's per-pixel clears go through
+  the viewport-filtered delta path, so a client looking elsewhere (or a freshly-
+  conquering player zoomed in) never received the off-screen clears — only the flag
+  vanished (the `reversal` is a full broadcast; the pixel clears are not). Fix: the
+  client `reversal` handler now also runs `_clearHolderInGeo(geo, holder)` on
+  `reason:'fallen'`/`'empty'` — clears that holder's pixels across all polygons of
+  the geo locally, so conquered land disappears for everyone on the full broadcast.
+  Skipped for `transfer`/`inherited` (paired `conquest` re-floods) + liberation
+  reversals (no reason: invader keeps its pixels).
 
 ## Screenshots for tweets (v88)
 
