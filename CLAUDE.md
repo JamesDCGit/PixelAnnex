@@ -436,6 +436,16 @@ Before editing any function:
   (=originalStanding, matches picker) + "of original" (=originalTotal).
   `refreshConqueredCountLocal` no longer overwrites it with the raw-geo calc.
   Verified live: total 182 = standing 84 + fallen 98.
+- **v97d (server + bot.js):** war notifications named a fallen country by its dead
+  native ("#USA defending…" after USA fell). Now named by the CURRENT holder with
+  the fallen native noted — "Brazil (formerly USA)". `_geoDefenderName` /
+  `_geoDefenderTag` (holder-aware via `_foreignHolderOf`). Multi-attack sassyText +
+  tweet hashtag + screenshot flag use the holder (Discord multi-attack already
+  renders the server sassyText). `checkSiegeState` excludes the current owner from
+  the besieger calc (no more "Brazil has 100% of USA") and sends
+  `defenderName="Holder (formerly Native)"` ONLY when conquered; bot.js uses it
+  (normal sieges keep the native role-mention). NOTE: bot.js change → needs
+  `pm2 restart pixelannex-bot` (done).
 
 ## Screenshots for tweets (v88)
 
