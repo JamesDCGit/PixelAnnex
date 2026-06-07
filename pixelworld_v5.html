@@ -1615,7 +1615,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
       <div class="ws-cell"><span class="ws-val" id="ws-players">—</span><span class="ws-lbl" data-i18n="hud.players">players</span></div>
       <div class="ws-cell"><span class="ws-val" id="ws-conquered">—</span><span class="ws-lbl" data-i18n="hud.conquered">conquered</span></div>
       <div class="ws-cell"><span class="ws-val" id="ws-alliances">—</span><span class="ws-lbl" data-i18n="hud.alliances">alliances</span></div>
-      <div class="ws-cell"><span class="ws-val" id="ws-remaining">—</span><span class="ws-lbl">countries remain</span></div>
+      <div class="ws-cell" title="Real nations not yet conquered (matches the country picker)"><span class="ws-val" id="ws-remaining">—</span><span class="ws-lbl">countries left</span></div>
+      <div class="ws-cell" title="Total real nations at the start of the round"><span class="ws-val" id="ws-original">—</span><span class="ws-lbl">of original</span></div>
     </div>
     <div id="encircle-banner">
       <span class="enc-icon">🎯</span>
@@ -3395,7 +3396,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v97a';
+const CODE_VERSION = '2026-06-07-v97c';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6221,6 +6222,7 @@ async function fetchWorldStats() {
   // v39c: use /api/world-state.totalPlayers (humans + active bots) so the bottom
   // panel reflects the world's total activity, not just Discord-logged-in users.
   let players = 0, alliances = 0, conquered = 0, remaining = null, totalCountries = 0;
+  let originalTotal = null; // v97c: real-nation counts (standing / total)
   try {
     const [ws, al] = await Promise.all([
       fetch('/api/world-state').then(r => r.json()).catch(() => ({})),
@@ -6229,10 +6231,11 @@ async function fetchWorldStats() {
     players        = (ws && typeof ws.totalPlayers   === 'number') ? ws.totalPlayers   : 0;
     totalCountries = (ws && typeof ws.totalCountries === 'number') ? ws.totalCountries : 0;
     if (totalCountries > 0) _totalCountriesCache = totalCountries; // v92b: for instant remaining calc
-    if (ws && typeof ws.conqueredCount === 'number') {
-      conquered = ws.conqueredCount;
-      if (totalCountries > 0) remaining = Math.max(0, totalCountries - ws.conqueredCount);
-    }
+    if (ws && typeof ws.conqueredCount === 'number') conquered = ws.conqueredCount;
+    // v97c: "countries left" = real nations still standing (matches the picker),
+    // NOT raw-geo (total geos - conquests), which counted artifacts + dead natives.
+    if (ws && typeof ws.originalStanding === 'number') remaining = ws.originalStanding;
+    if (ws && typeof ws.originalTotal === 'number') { originalTotal = ws.originalTotal; _originalTotalCache = ws.originalTotal; }
     alliances = (al && al.alliances) ? al.alliances.length : 0;
   } catch (e) { /* silent */ }
   // v83: server is the authoritative source. Only fall back to local
@@ -6246,6 +6249,7 @@ async function fetchWorldStats() {
   const conqueredStr = conquered.toLocaleString();
   const alliancesStr = alliances.toString();
   const remainingStr = remaining !== null ? remaining.toLocaleString() : '—';
+  const originalStr  = originalTotal !== null ? originalTotal.toLocaleString() : '—';
 
   // Update tutorial header stats
   const t1 = document.getElementById('tut-stat-players');
@@ -6260,10 +6264,12 @@ async function fetchWorldStats() {
   const b2 = document.getElementById('ws-conquered');
   const b3 = document.getElementById('ws-alliances');
   const b4 = document.getElementById('ws-remaining');
+  const b5 = document.getElementById('ws-original');
   if (b1) b1.textContent = playersStr;
   if (b2) b2.textContent = conqueredStr;
   if (b3) b3.textContent = alliancesStr;
   if (b4) b4.textContent = remainingStr;
+  if (b5) b5.textContent = originalStr;
 }
 // v92b: instant local refresh of the Conquered counter from conqueredSet.
 // The 15s server poll (fetchWorldStats) is authoritative but laggy; conquest/
@@ -6278,13 +6284,12 @@ function refreshConqueredCountLocal(){
   const t2 = document.getElementById('tut-stat-conquered');
   if (b2) b2.textContent = str;
   if (t2) t2.textContent = str;
-  // Keep "countries remain" consistent if we know the total
-  const b4 = document.getElementById('ws-remaining');
-  if (b4 && typeof _totalCountriesCache === 'number' && _totalCountriesCache > 0) {
-    b4.textContent = Math.max(0, _totalCountriesCache - distinct.size).toLocaleString();
-  }
+  // v97c: "countries left" (ws-remaining) is now real-nation STANDING count, owned
+  // by the 15s server poll (fetchWorldStats) — not the old raw-geo (total-distinct)
+  // calc, which counted artifacts + dead natives. Left untouched here on purpose.
 }
-let _totalCountriesCache = 0; // cached from fetchWorldStats for the remaining calc
+let _totalCountriesCache = 0;  // cached raw-geo total (legacy)
+let _originalTotalCache  = 0;  // v97c: cached real-nation total
 
 // Legacy alias for any leftover callers in tutorial code
 const fetchTutWorldStats = fetchWorldStats;

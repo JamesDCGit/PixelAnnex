@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-07-v97a';
+const SERVER_VERSION       = '2026-06-07-v97c';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2426,6 +2426,21 @@ function _countDistinctConquered() {
 }
 function _totalCountries() {
   return Object.keys(countryNames || {}).length || 240;
+}
+// v97c: counts of REAL playable nations (excludes Natural Earth artifacts: unnamed
+// "Country NNN" / "Disputed Territory" features and landless geos). standing = not
+// yet conquered; fallen = homeland permanentlyConquered. standing+fallen = total.
+function _playableCountryStats() {
+  let total = 0, fallen = 0;
+  for (const id of Object.keys(countryNames || {})) {
+    if (NON_PLAYABLE_IDS.has(String(id))) continue;
+    if (!((geoTotal[id] || 0) > 0)) continue;                 // landless artifact
+    const nm = countryNames[id];
+    if (!nm || /^Country \d+$/.test(nm) || nm === 'Disputed Territory') continue; // unnamed
+    total++;
+    if (permanentlyConquered.has(String(id))) fallen++;
+  }
+  return { total, fallen, standing: Math.max(0, total - fallen) };
 }
 function _isPaintLocked() { return _worldConquestActive; }
 
@@ -5574,10 +5589,19 @@ const httpServer = http.createServer(async (req, res) => {
     // v34: report simulated player count = real humans + active bots
     const realHumans = [...players.values()].filter(p => !p.isBot && p.ws).length;
     const activeBots = _activeBotCount();
+    // v97c: meaningful country counts. The old "totalCountries" counted ALL geos
+    // (238, incl. ~50 unnamed Natural Earth artifacts + landless features), so
+    // "countries remain" was wildly inflated vs the picker. An ORIGINAL country =
+    // a named, land-having, playable nation. It's STANDING until its homeland is
+    // permanentlyConquered (fallen). standing + fallen = originalTotal.
+    const _pc = _playableCountryStats();
     res.end(JSON.stringify({
       topCountries,
       conqueredCount:  distinctConquered.size,
-      totalCountries:  _totalCountries(), // v62: for "X countries remain" stat
+      totalCountries:  _totalCountries(), // v62: legacy raw-geo total (kept for compat)
+      originalTotal:     _pc.total,    // v97c: real playable nations at world start
+      originalStanding:  _pc.standing, // v97c: nations not yet conquered (matches picker)
+      originalConquered: _pc.fallen,   // v97c: nations whose homeland has fallen
       topPlayers,
       totalPlayers:    realHumans + activeBots,
       totalBots:       activeBots,
