@@ -426,6 +426,16 @@ Before editing any function:
   real geo via `_onCountryConquered` (clears pixels → Fallen) just like a dead
   country. Generalises the v95g/v95z machinery. Verified: 167/169/171 liquidated,
   NZ freed (now Congo top holder).
+- **v97c (client + server):** world-state bar "countries remain" was misleading —
+  `totalCountries` (238: ALL geos incl. ~50 unnamed artifacts + landless features)
+  minus only currently-HELD conquests (50), ignoring the ~98 fallen natives, so it
+  read ~179 while the picker showed ~83. `/api/world-state` now also returns
+  `originalTotal`/`originalStanding`/`originalConquered` via `_playableCountryStats()`
+  (named, land-having, playable nations; standing = homeland not
+  permanentlyConquered). The single cell split into "countries left"
+  (=originalStanding, matches picker) + "of original" (=originalTotal).
+  `refreshConqueredCountLocal` no longer overwrites it with the raw-geo calc.
+  Verified live: total 182 = standing 84 + fallen 98.
 
 ## Screenshots for tweets (v88)
 
