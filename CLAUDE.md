@@ -41,10 +41,10 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-07-v95w`.** (Last CLIENT change was v95w —
-Umami + admin_announce handler. The later v95x/v95y/v95z work was all SERVER-ONLY,
-so the triad deliberately stayed at v95w; comment tags `// v95z:` run ahead of the
-banner, which is fine.) (v95d was a server-only conquest owner-transfer change that
+**Current production triad: `2026-06-07-v97`.** (CLIENT changes since v95w: v96
+encircle-additive regen, v96a dead-land clear-on-reversal, v97 leaderboard tabs +
+win contributors + nuke + ranks. Server-only runs v95x/v95y/v95z stayed at v95w.)
+(v95d was a server-only conquest owner-transfer change that
 deliberately did NOT bump the triad — it stayed at v95c — so connected clients
 didn't reload; v95e is the next CLIENT change, hence the jump v95c→v95e.) A
 server-only fix keeps all three at the same value so
@@ -398,6 +398,25 @@ Before editing any function:
   the geo locally, so conquered land disappears for everyone on the full broadcast.
   Skipped for `transfer`/`inherited` (paired `conquest` re-floods) + liberation
   reversals (no reason: invader keeps its pixels).
+- **v97 (client + server):** leaderboard + win-screen + nuke + ranks.
+  - **Leaderboard** (`#leaderboard-panel`) now shows PIXELS + CONQUESTS per player
+    (was points) with **All Time** (persisted profiles) / **Session** (current
+    round) tabs (`switchLbTab`, `_lbScope`). `/api/stats/leaderboard?scope=session|
+    alltime`; rows carry pixels+conquests (+points kept for the Stats modal).
+    All-time sorts by pixels; filter includes pixels|conquests|points>0.
+  - **Session stats** = in-memory `_sessionStats` (discordId → pixels/conquests),
+    `_recordSession()` at the 3 stat-increment sites, reset on boot + `_resetWorld`.
+    `_sessionLeaderboard(n)`.
+  - **Win screen** (`_showWorldConquestOverlay`) adds "🔥 TOP CONTRIBUTORS — THIS
+    SESSION" from `topContributors` (session pixels+conquests) in the world_conquest
+    payload (natural `_checkWorldConquest` + admin force-win).
+  - **Nuke:** radius 15→**30**, lockout 30s(debug)→**2min** (`NUKE_LOCKOUT_MS`).
+    Contained to the SINGLE nation it lands on: `clearPixelsInRadius(cx,cy,r,
+    restrictGeo)` skips pixels whose `geoAtPixel!==restrictGeo`; handler passes the
+    impact nation's geo (stored on the zone for the expiry re-clear). Client mirrors
+    it in `detonateBomb` (`_nukeCenterCid`) + `getBombTypes` radius 30.
+  - **Ranks ×2:** client `RANKS` (pixel-based) 100/300/1000/3000; server
+    `RANK_THRESHOLDS` (XP) 100/300/600/1000.
 
 ## Screenshots for tweets (v88)
 
