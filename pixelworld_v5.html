@@ -1674,8 +1674,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   <h3><span>Leaderboard</span><span class="lb-count" id="lb-count">0 players</span></h3>
   <!-- v97: session / all-time tabs -->
   <div id="lb-tabs">
-    <button class="lb-tab active" data-scope="alltime" onclick="switchLbTab('alltime')">All Time</button>
-    <button class="lb-tab" data-scope="session" onclick="switchLbTab('session')">Session</button>
+    <button class="lb-tab active" data-scope="session" onclick="switchLbTab('session')">Session</button>
+    <button class="lb-tab" data-scope="alltime" onclick="switchLbTab('alltime')">All Time</button>
   </div>
   <div class="lb-head"><span class="lb-pos"></span><span class="lb-name"></span><span class="lb-px" title="Pixels">px</span><span class="lb-conq" title="Conquests">⚔️</span></div>
   <div id="lb-items" class="lb-empty">Loading…</div>
@@ -3395,7 +3395,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v97';
+const CODE_VERSION = '2026-06-07-v97a';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -12103,8 +12103,8 @@ function _resolveViewerDiscordId() {
     }).catch(() => null);
 }
 
-// v97: leaderboard scope — 'alltime' (persisted profiles) or 'session' (this round).
-let _lbScope = 'alltime';
+// v97: leaderboard scope — 'session' (this round, default) or 'alltime' (profiles).
+let _lbScope = 'session';
 function switchLbTab(scope) {
   _lbScope = (scope === 'session') ? 'session' : 'alltime';
   document.querySelectorAll('#lb-tabs .lb-tab').forEach(b => {
