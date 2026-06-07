@@ -559,13 +559,17 @@ geos). Transfers via `_conquerGeo`; still ghost-clears a holder wiped to 0 px.
 - `war_siege_end` ("🛡️ Siege Lifted") is NOT posted to #war-room (bot drops it).
 
 ### Bonus model (encircle + rally regen)
-- **v95h: regen does NOT stack bonuses.** `getRegenMult()` = `min(8, max(David
-  world-share mult, encircle, rank, rally/highlight))` — the LARGEST single active
-  bonus, rounded, capped at 8×. (Previously regen = `david × rank ×
-  _highlightRegenMult` and `getMyMultiplier()` = `david × encircle`, which all
-  multiplied into runaway regen.) `getMyMultiplier()` still multiplies david×enc
-  but is now only vestigial; regen + the david-badge HUD use `getRegenMult()`.
-  David mult auto-updates per country; rank persists (it's the player's).
+- **v96: encircle is ADDITIVE on top; cap 10×.** `getRegenMult()` =
+  `min(10, max(David world-share, rank, rally/highlight, 1) + encircleAdd)` where
+  `encircleAdd` = the encircle multiplier (3–6, see below) when active, else 0. So
+  the largest PASSIVE bonus and the encircle bonus combine: e.g. country bonus 1.5×
+  + 3× encircle = 4.5×. Encircle tiers raised to **3/4/5/6×** (`getEncircleBonus`:
+  50/150/300/500 px). Bot regen mirrors this: `min(10, david + encircleAdd)`.
+- **v95h (still holds for the PASSIVE sources):** David/rank/highlight do NOT stack
+  with each other — the largest single one applies (they used to multiply into
+  runaway regen). v96 only changed how ENCIRCLE combines (max→additive) + the cap
+  (8→10). `getMyMultiplier()` (david×enc) remains vestigial; regen + the david-badge
+  HUD use `getRegenMult()`. David mult auto-updates per country; rank persists.
 - v93y: bonuses **reset on country change** (`_resetBonusesForCountryChange()`
   on `selectCountry`/re-pick: clears encircle + `clearHighlight`).
 - v93y: encircle bonus **only ratchets UP** — a smaller new encirclement keeps

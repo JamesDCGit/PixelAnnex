@@ -3378,7 +3378,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v95w';
+const CODE_VERSION = '2026-06-07-v96';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5822,19 +5822,22 @@ function getMyMultiplier() {
   return base * enc;
 }
 
-// v95h: regen multiplier = the LARGEST active bonus, NOT the product of them,
-// capped at 8x. The four sources (David/Goliath world-share buff, encirclement,
-// rank, and rally/highlight) used to multiply together — stacking into runaway
-// regen. Now they DON'T stack: whichever single buff is highest applies.
+// v96: regen multiplier = the LARGEST passive bonus (David/Goliath world-share,
+// rank, rally/highlight) PLUS the encirclement bonus ADDED on top, capped at 10x.
+// (v95h made the passive sources non-stacking — whichever is highest applies — and
+// that still holds; v96 changes only how ENCIRCLE combines: it's now additive, e.g.
+// country bonus 1.5x + 3x encircle = 4.5x, instead of being folded into the max.)
 function getRegenMult() {
   if (currentIdx < 0) return 1;
   const f = featList[currentIdx];
   const davidBase = (f && f.id) ? getCountryMultiplier(f.id) : 1;
-  const enc  = getEncircleMultiplierLocal();
   const rank = getRankRegenMult();
   const hl   = _highlightRegenMult || 1;
-  const best = Math.max(davidBase, enc, rank, hl);
-  return Math.min(8, Math.max(1, Math.round(best)));
+  const baseBonus = Math.max(davidBase, rank, hl, 1); // largest passive bonus
+  const enc  = getEncircleMultiplierLocal();          // 1 if inactive, else 3-6 (v96)
+  const encAdd = enc > 1 ? enc : 0;                    // encircle adds ON TOP
+  const total = baseBonus + encAdd;
+  return Math.min(10, Math.max(1, Math.round(total * 10) / 10)); // cap 10x, 1-dp
 }
 
 function getMyWorldShare() {

@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-07-v95w';
+const SERVER_VERSION       = '2026-06-07-v96';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -4353,16 +4353,18 @@ function detectEncirclement(strokePixels, countryId) {
 
 // Map enclosed pixel count → regen multiplier and duration
 function getEncircleBonus(count) {
-  // v87: tiers halved (was 2/5/8/10) — encirclement was over-rewarding.
-  //   50–149   → 1.5× for 60s
-  //   150–299  → 2.5× for 60s
-  //   300–499  → 4×   for 60s
-  //   500+     → 5×   for 60s
-  let mult = 1.5;
-  if (count >= 500) mult = 5;
-  else if (count >= 300) mult = 4;
-  else if (count >= 150) mult = 2.5;
-  else                    mult = 1.5;
+  // v96: encircle bonus rescaled to 3x–6x (was 1.5/2.5/4/5). It now ADDS on top of
+  // the country's passive bonus (see getRegenMult / bot regen) rather than folding
+  // into the max, so the floor was raised to make encirclement always meaningful.
+  //   50–149   → 3× for 60s
+  //   150–299  → 4× for 60s
+  //   300–499  → 5× for 60s
+  //   500+     → 6× for 60s
+  let mult = 3;
+  if (count >= 500) mult = 6;
+  else if (count >= 300) mult = 5;
+  else if (count >= 150) mult = 4;
+  else                    mult = 3;
   return { mult, durationMs: 60_000 };
 }
 
@@ -5027,12 +5029,14 @@ function updateOwnerIndex(pixelOffset, oldCidx, newCidx) {
 
 // Regen bot buckets — staggered to avoid GC spikes
 setInterval(() => {
-  // Bot regen = David multiplier × Encircle multiplier (both >= 1)
+  // v96: bot regen = David passive multiplier + Encircle bonus ADDED on top,
+  // capped at 10x (was David × Encircle, which compounded into runaway regen).
+  // Mirrors the client getRegenMult.
   for (const bot of bots.values()) {
     if (bot.bucket >= BOT_BUCKET_MAX) continue;
-    const m1 = getRegenMultiplier(bot.countryId);
-    const m2 = getEncircleMultiplier(bot.countryId);
-    const mult = m1 * m2;
+    const m1 = getRegenMultiplier(bot.countryId);      // david passive (1-5)
+    const m2 = getEncircleMultiplier(bot.countryId);   // 1 if inactive, else 3-6
+    const mult = Math.min(10, m1 + (m2 > 1 ? m2 : 0));
     bot.bucket = Math.min(BOT_BUCKET_MAX, bot.bucket + mult);
   }
 }, BOT_REGEN_MS);
