@@ -692,7 +692,12 @@ const TL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;        // keep frames 30 days
 const TIMELAPSE_DIR   = path.join(__dirname, 'timelapse');
 try { if (!fs.existsSync(TIMELAPSE_DIR)) fs.mkdirSync(TIMELAPSE_DIR, { recursive: true }); } catch (e) {}
 const _serverStartMs       = Date.now();   // "start from server reset"
-let   _timelapseRoundStart = _serverStartMs; // bump this on a round reset if/when one exists
+// v95x: was `_serverStartMs` — but that made EVERY restart/deploy wipe the GIF
+// window (frames on disk older than the boot were excluded), so the 12h summary
+// fell back to the static PNG whenever a deploy happened within 12h. Start at 0
+// so the window is purely trailing-TL_WINDOW_MS; only an actual world reset bumps
+// it (so a reset still starts a fresh timelapse).
+let   _timelapseRoundStart = 0;
 
 // Render one full-map frame. Skipped until the geo index is built (map ready) so
 // we never bank empty all-ocean frames right after a restart.
@@ -1251,10 +1256,17 @@ function scheduleDailySummary() {
       let media = null;
       try { media = await assembleTimelapseGif(); } catch (e) { media = null; }
       if (!media) media = makeWorldShot();
+      // v95x: dedupeKey was built from `now` (the SCHEDULE time, not the fire time)
+      // and sliced to 13 chars — "Sat, 07 Jun 2" — i.e. DAY granularity with a
+      // mangled year, so the 00:00 and 12:00 fires of the same UTC day collided and
+      // the second was deduped away (the "no morning post" bug). Use the FIRE time
+      // and a real per-12h-slot key: YYYY-MM-DD + AM/PM.
+      const fireNow = new Date();
+      const slot = fireNow.toISOString().slice(0, 10) + (fireNow.getUTCHours() < 12 ? 'AM' : 'PM');
       pushTweetDraft({
         type:       'daily_summary',
         text,
-        dedupeKey: 'daily_summary:' + now.toUTCString().slice(0, 13), // per 12h slot
+        dedupeKey: 'daily_summary:' + slot,
         imageUrl:  media || undefined,
       });
       // v93j: dedicated event so the bot posts the snapshot to #general.
@@ -2449,6 +2461,7 @@ function _resetWorld() {
   _worldConquestActive = false;
   _worldResetAt = 0;
   _worldConquestPayload = null; // v61: clear so new sessions don't see stale overlay
+  _timelapseRoundStart = Date.now(); // v95x: fresh timelapse window after a reset
   broadcast(JSON.stringify({ type: 'world_reset' }));
   console.log('[v38] World reset complete — broadcasting fresh state');
   try {
