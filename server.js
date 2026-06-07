@@ -3489,6 +3489,7 @@ const MAX_TRANSFERS_PER_TICK = 3;
 setInterval(() => {
   const now = Date.now();
   let _transfersThisTick = 0;
+  const _deadLiquidatedThisTick = new Set(); // v95z: liquidate each dead holder once
   for (const key of [...conqueredSet]) {
     const parts = String(key).split(':');
     if (parts.length !== 2) continue;
@@ -3497,6 +3498,19 @@ setInterval(() => {
     const total = geoTotal[geo] || 0;
     if (!(total > 0)) continue;
     const _gid = geoToId(geo);
+    // v95z: a DEAD country (homeland permanently conquered) must never hold an
+    // outpost. Backstop for the finisherFill/ownerPixels desync that left China
+    // owned by an already-conquered Guinea-Bissau: liquidate the dead country's
+    // whole empire once (ally heir, else clear to Fallen). After a restart this
+    // works because the board restore rebuilds ownerPixels from claimByPixel.
+    if (String(curId) !== _gid && permanentlyConquered.has(String(curId))) {
+      if (!_deadLiquidatedThisTick.has(String(curId))) {
+        _deadLiquidatedThisTick.add(String(curId));
+        console.log('[Conquest] dead holder', curId, 'still held', _gid, '— liquidating its empire');
+        _onCountryConquered(String(curId));
+      }
+      continue;
+    }
     // v95i: BACKSTOP for the live conquest loop, which only re-evaluates a geo
     // when it's painted. Same threshold rule (_evaluateConqueror) so the periodic
     // pass and the live pass agree. (1) If a different country now qualifies →
@@ -4349,6 +4363,13 @@ function finisherFill(geoIdx, countryId) {
       if (geoClaimCnt[geoIdx]?.[pid]) geoClaimCnt[geoIdx][pid] = Math.max(0, geoClaimCnt[geoIdx][pid] - 1);
     }
     claimByPixel[i] = cidx;
+    // v95z: keep ownerPixels in sync. finisherFill used to write claimByPixel +
+    // geoClaimCnt directly and skip this, so conquered land was MISSING from
+    // ownerPixels[conqueror]. _onCountryConquered liquidates a dead country by
+    // iterating ownerPixels — so it never cleared land taken via finisherFill
+    // (the "dead Guinea-Bissau still holds 100% of China" bug). The normal paint
+    // path already does this via updateOwnerIndex; finisherFill must too.
+    updateOwnerIndex(i, prev, cidx);
     countryPxCount[countryId] = (countryPxCount[countryId] || 0) + 1;
     geoClaimCnt[geoIdx] ??= {};
     geoClaimCnt[geoIdx][countryId] = (geoClaimCnt[geoIdx][countryId] || 0) + 1;
