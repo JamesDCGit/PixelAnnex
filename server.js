@@ -3279,8 +3279,14 @@ function _onCountryConquered(conqueredGeoId) {
 
   // This country's pixels OUTSIDE its homeland (the homeland itself went to the
   // conqueror via finisherFill).
-  const ownedPixels = ownerPixels[conqueredCidx];
-  const foreign = ownedPixels ? [...ownedPixels].filter(i => geoAtPixel[i] !== homeGeoIdx) : [];
+  // v95z: scan claimByPixel DIRECTLY (the source of truth) instead of ownerPixels.
+  // ownerPixels can drift from claimByPixel (a partial liquidation once left a dead
+  // Guinea-Bissau still "holding" 98% of China), and a full scan guarantees every
+  // pixel the board says it owns gets cleared. Death is rare, so the 2M scan is fine.
+  const foreign = [];
+  for (let i = 0; i < MAP_PX; i++) {
+    if (claimByPixel[i] === conqueredCidx && geoAtPixel[i] !== homeGeoIdx) foreign.push(i);
+  }
 
   if (transferTo) {
     // ── Hand the foreign empire to the ally ──
@@ -3329,6 +3335,11 @@ function _onCountryConquered(conqueredGeoId) {
     }
     console.log(`[Conquest] ${conqueredGeoId} died with no heir — ${changed.length}px cleared, ${outposts.length} outposts now Fallen`);
   }
+
+  // v95z: authoritatively reconcile — a dead country owns nothing now. Guarantees
+  // the periodic dead-country cleanup terminates even if countryPxCount had drifted
+  // positive (else it would re-liquidate every tick).
+  countryPxCount[conqueredGeoId] = 0;
 
   // ── Bot migration ────────────────────────────────────────────
   const migTarget = transferTo || _pickBotMigrationTarget(conqueredGeoId);
@@ -3533,6 +3544,18 @@ setInterval(() => {
       _clearPermanentIfFree(geo);
       broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: curId, reason: 'empty' }));
       console.log('[Conquest] ghost flag cleared:', curId, 'held 0 px of', _gid);
+    }
+  }
+  // v95z: a DEAD country must own ZERO pixels (homeland → conqueror, empire → ally
+  // or cleared). Catch remnants the conqueredSet pass misses — e.g. a dead country
+  // still holding land with NO conqueredSet entry (a partial-liquidation leftover,
+  // the "China conquered:false but 98% Guinea-Bissau" state). Re-liquidate once.
+  for (const deadId of permanentlyConquered) {
+    if (_deadLiquidatedThisTick.has(String(deadId))) continue;
+    if ((countryPxCount[deadId] || 0) > 0) {
+      _deadLiquidatedThisTick.add(String(deadId));
+      console.log('[Conquest] dead country', deadId, 'still owns', countryPxCount[deadId], 'px — clearing');
+      _onCountryConquered(String(deadId));
     }
   }
 }, 60_000);
