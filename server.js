@@ -3549,10 +3549,13 @@ setInterval(() => {
     // owned by an already-conquered Guinea-Bissau: liquidate the dead country's
     // whole empire once (ally heir, else clear to Fallen). After a restart this
     // works because the board restore rebuilds ownerPixels from claimByPixel.
-    if (String(curId) !== _gid && permanentlyConquered.has(String(curId))) {
+    // v97b: also liquidate LANDLESS phantom holders (geoTotal 0 — Natural Earth
+    // artifacts like "Country 167" that conquered a real geo and blocked the real
+    // attacker). Treated exactly like a dead holder.
+    if (String(curId) !== _gid && (permanentlyConquered.has(String(curId)) || _isLandlessCountry(curId))) {
       if (!_deadLiquidatedThisTick.has(String(curId))) {
         _deadLiquidatedThisTick.add(String(curId));
-        console.log('[Conquest] dead holder', curId, 'still held', _gid, '— liquidating its empire');
+        console.log('[Conquest] phantom/dead holder', curId, 'still held', _gid, '— liquidating its empire');
         _onCountryConquered(String(curId));
       }
       continue;
@@ -3926,6 +3929,14 @@ setInterval(() => {
 
 // ── Core pixel logic ──────────────────────────────────────────────
 
+// v97b: a country with NO homeland land (geoTotal 0) is a Natural Earth artifact
+// (unnamed disputed/buffer features, e.g. "Country 167"). It must never act as a
+// player: it can't be selected as a conqueror, and any real geo it "holds" gets
+// liquidated like a dead country. Without this, a landless phantom that had
+// conquered New Zealand stayed its majority holder and blocked the real attacker
+// from ever taking it.
+function _isLandlessCountry(id) { return !((geoTotal[String(id)] || 0) > 0); }
+
 // v95i: the foreign country currently holding a conquered geo (or null). One
 // holder per geo; transfers keep it that way.
 function _foreignHolderOf(geo) {
@@ -3961,6 +3972,7 @@ function _evaluateConqueror(geo, total, dropEmpireBonus, excludeId) {
     if (cId === _geoId) continue;
     if (excludeId != null && String(cId) === String(excludeId)) continue;
     if (permanentlyConquered.has(String(cId))) continue; // v95z: dead countries can't conquer
+    if (_isLandlessCountry(cId)) continue; // v97b: landless phantom features can't conquer
     const o = getAllyOwnedCount(geo, cId);
     if (o > champOwned) { champOwned = o; champId = cId; }
   }
@@ -3971,6 +3983,7 @@ function _evaluateConqueror(geo, total, dropEmpireBonus, excludeId) {
   for (const [cId, cnt] of Object.entries(claims)) {
     if (cId === _geoId || cnt <= 0) continue;
     if (permanentlyConquered.has(String(cId))) continue; // v95z: dead countries can't conquer
+    if (_isLandlessCountry(cId)) continue; // v97b: landless phantom features can't conquer
     foreignSum += cnt;
     if (cnt > topCnt) { topCnt = cnt; topId = cId; }
   }
@@ -4165,6 +4178,7 @@ function applyPixels(pixels, countryId) {
     for (const cId in _claims) {
       if (cId === _geoId) continue;                 // skip native — can't self-conquer
       if (permanentlyConquered.has(String(cId))) continue; // v95z: dead countries can't conquer
+      if (_isLandlessCountry(cId)) continue; // v97b: landless phantom features can't conquer
       const o = getAllyOwnedCount(geo, cId);        // combined alliance credit
       if (o > champOwned) { champOwned = o; champId = cId; }
     }
@@ -4184,6 +4198,7 @@ function applyPixels(pixels, countryId) {
       for (const [cId, cnt] of Object.entries(claims)) {
         if (cId === _geoId || cnt <= 0) continue;  // skip native
         if (permanentlyConquered.has(String(cId))) continue; // v95z: dead countries can't conquer
+        if (_isLandlessCountry(cId)) continue; // v97b: landless phantom features can't conquer
         foreignSum += cnt;
         if (cnt > topCnt) { topCnt = cnt; topId = cId; }
       }
