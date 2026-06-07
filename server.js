@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-07-v96a';
+const SERVER_VERSION       = '2026-06-07-v97';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2159,11 +2159,12 @@ function processDailyLogin(discordId) {
 
 // ── Rank system (mirrors client RANKS array) ─────────────────────
 const RANK_THRESHOLDS = [
-  { name: 'Soldier',    min: 0   },
-  { name: 'Lieutenant', min: 50  },
-  { name: 'Captain',    min: 150 },
-  { name: 'General',    min: 300 },
-  { name: 'Admiral',    min: 500 },
+  // v97: thresholds doubled (was 50/150/300/500) so ranks take ~2x longer to earn.
+  { name: 'Soldier',    min: 0    },
+  { name: 'Lieutenant', min: 100  },
+  { name: 'Captain',    min: 300  },
+  { name: 'General',    min: 600  },
+  { name: 'Admiral',    min: 1000 },
 ];
 
 function rankFromXP(xp) {
@@ -2395,6 +2396,29 @@ let _worldResetAt = 0;
 // v61: persist the conquest payload so late-joiners and refreshes get the same screen
 let _worldConquestPayload = null;
 
+// ── v97: per-player SESSION stats (current round) ─────────────────
+// All-time stats live in the persisted profile; these are in-memory and reset on
+// boot + on _resetWorld, powering the leaderboard "This Session" tab and the win
+// screen's "Top Contributors" credit for the round that was just won.
+let _sessionStartMs = Date.now();
+const _sessionStats = new Map(); // discordId → { discordId, username, avatar, country, pixels, conquests }
+function _recordSession(discordId, username, avatar, country, dPixels, dConquests) {
+  if (!discordId) return;
+  let s = _sessionStats.get(discordId);
+  if (!s) { s = { discordId, username, avatar, country, pixels: 0, conquests: 0 }; _sessionStats.set(discordId, s); }
+  if (username) s.username = username;
+  if (avatar)   s.avatar   = avatar;
+  if (country)  s.country  = country;
+  s.pixels    += dPixels    || 0;
+  s.conquests += dConquests || 0;
+}
+function _sessionLeaderboard(limit) {
+  return [..._sessionStats.values()]
+    .filter(s => s.username && (s.pixels > 0 || s.conquests > 0))
+    .sort((a, b) => (b.pixels - a.pixels) || (b.conquests - a.conquests))
+    .slice(0, limit || 20);
+}
+
 function _countDistinctConquered() {
   const set = new Set();
   for (const key of conqueredSet) set.add(String(key).split(':')[0]);
@@ -2429,9 +2453,13 @@ function _checkWorldConquest() {
     .sort((a, b) => (b.points || 0) - (a.points || 0))
     .slice(0, 5)
     .map(p => ({ username: p.username, points: p.points || 0, avatar: p.avatar, country: p.countryMain }));
+  // v97: this round's top contributors (session pixels + conquests).
+  const topContributors = _sessionLeaderboard(5).map(s => ({
+    username: s.username, avatar: s.avatar, pixels: s.pixels, conquests: s.conquests, country: s.country,
+  }));
   console.log('[v38] WORLD CONQUERED! ratio=' + (ratio*100).toFixed(1) + '% top=' + topCountries.map(c => c.name).join(','));
   // v61: store payload so late-joiners and refreshers get the same screen
-  _worldConquestPayload = { type: 'world_conquest', conquered, total, topCountries, topPlayers, resetAt: _worldResetAt };
+  _worldConquestPayload = { type: 'world_conquest', conquered, total, topCountries, topPlayers, topContributors, resetAt: _worldResetAt };
   broadcast(JSON.stringify(_worldConquestPayload));
   emitBotEvent({
     type:        'world_conquest',
@@ -2463,6 +2491,7 @@ function _resetWorld() {
   _worldConquestActive = false;
   _worldResetAt = 0;
   _worldConquestPayload = null; // v61: clear so new sessions don't see stale overlay
+  _sessionStats.clear(); _sessionStartMs = Date.now(); // v97: fresh session leaderboard
   _timelapseRoundStart = Date.now(); // v95x: fresh timelapse window after a reset
   broadcast(JSON.stringify({ type: 'world_reset' }));
   console.log('[v38] World reset complete — broadcasting fresh state');
@@ -3374,7 +3403,7 @@ const _conquestImmunity = new Map(); // geoCountryId → expiresAt
 // ── Nuke lockout zones — server authoritative ─────────────────────
 // On Nuke detonation, server: (1) clears all pixels in radius (sets to unclaimed),
 // (2) creates a 2-minute lockout zone, (3) rejects any paint inside the zone.
-const NUKE_LOCKOUT_MS = 30 * 1000; // ⚠️ DEBUG: 30s for testing (production = 2 * 60 * 1000)
+const NUKE_LOCKOUT_MS = 2 * 60 * 1000; // v97: 2 minute no-paint lockout
 const _nukeZones = []; // { cx, cy, radius, expiresAt }
 
 // Run nuke zone expiry every 1s — guarantees timely cleanup even with no traffic
@@ -3387,7 +3416,7 @@ function _pruneServerNukeZones() {
     const z = _nukeZones[i];
     if (z.expiresAt <= now) {
       // Defensive final clear — guarantees no leftover pixels at expiry
-      const changed = clearPixelsInRadius(z.cx, z.cy, z.radius);
+      const changed = clearPixelsInRadius(z.cx, z.cy, z.radius, z.geo);
       if (changed.length) {
         queueDelta(changed);
         if (typeof flushDelta === 'function') flushDelta(); // force immediate broadcast
@@ -3410,8 +3439,12 @@ function isPixelInNukeZone(px, py) {
 }
 
 // Clear pixels in a radius — set them to unclaimed (-1) and emit clear deltas
-function clearPixelsInRadius(cx, cy, radius) {
+// v97: restrictGeo (optional) = a country id; when set, only pixels inside that
+// nation's territory are cleared, so a nuke is contained to the single nation it
+// lands on and doesn't bleed into neighbours.
+function clearPixelsInRadius(cx, cy, radius, restrictGeo) {
   const r2 = radius * radius;
+  const restrict = (restrictGeo !== undefined && restrictGeo !== null && restrictGeo >= 0);
   const changed = [];
   for (let dy = -radius; dy <= radius; dy++) {
     for (let dx = -radius; dx <= radius; dx++) {
@@ -3419,6 +3452,8 @@ function clearPixelsInRadius(cx, cy, radius) {
       const x = cx + dx, y = cy + dy;
       if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) continue;
       const i = y * MAP_W + x;
+      if (restrict && geoAtPixel[i] !== restrictGeo) continue; // v97: stay within one nation
+
       // Clear regardless of server's landMask state — if a pixel is currently
       // owned, the nuke wipes it. This handles cases where landMask might be
       // incomplete or stale on the server side.
@@ -5565,9 +5600,12 @@ const httpServer = http.createServer(async (req, res) => {
     _worldResetAt = Date.now() + WORLD_RESET_COUNTDOWN_MS;
     const conquered = _countDistinctConquered();
     const total     = _totalCountries();
+    const topContributors = _sessionLeaderboard(5).map(s => ({ // v97
+      username: s.username, avatar: s.avatar, pixels: s.pixels, conquests: s.conquests, country: s.country,
+    }));
     console.log('[Admin] force-win triggered — winner by pixel count:', topCountriesByPx[0]?.name || '?');
     // v61: store payload so late-joiners/refreshers see the same screen
-    _worldConquestPayload = { type: 'world_conquest', conquered, total, topCountries: topCountriesByPx, topPlayers, resetAt: _worldResetAt, forceWin: true };
+    _worldConquestPayload = { type: 'world_conquest', conquered, total, topCountries: topCountriesByPx, topPlayers, topContributors, resetAt: _worldResetAt, forceWin: true };
     broadcast(JSON.stringify(_worldConquestPayload));
     emitBotEvent({
       type:      'world_conquest',
@@ -5638,24 +5676,40 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── /api/stats/leaderboard — top 20 by points (public) ──
+  // ── /api/stats/leaderboard — top 20 by pixels (public) ──
+  // v97: ?scope=session → current-round stats (in-memory); else all-time (profiles).
+  // Each row carries pixels + conquests so the client can show both columns + tabs.
   if (url.pathname === '/api/stats/leaderboard') {
-    // v35: skip bots so leaderboard only shows real players
-    const allRanked = [...profiles.values()]
-      .filter(p => p.username && p.points > 0 && !p.isBot)
-      .sort((a, b) => (b.points || 0) - (a.points || 0));
-    const sorted = allRanked
-      .slice(0, 20)
-      .map((p, i) => ({
-        rank:          i + 1,
-        username:      p.username,
-        avatar:        p.avatar,
-        points:        p.points || 0,
-        gameRank:      p.rank,
-        conquestsMade: p.conquestsMade || 0,
-        countryMain:   p.countryMain,
-        countryMainName: p.countryMain ? (countryNames[p.countryMain] || ('Country ' + p.countryMain)) : null,
+    const scope = url.searchParams.get('scope') === 'session' ? 'session' : 'alltime';
+    // Normalise both sources into { discordId, username, avatar, pixels, conquests, country, gameRank }
+    let allRanked;
+    if (scope === 'session') {
+      allRanked = _sessionLeaderboard(1000).map(s => ({
+        discordId: s.discordId, username: s.username, avatar: s.avatar,
+        pixels: s.pixels || 0, conquests: s.conquests || 0,
+        points: s.pixels || 0, country: s.country, gameRank: null,
       }));
+    } else {
+      allRanked = [...profiles.values()]
+        .filter(p => p.username && (p.pixelsPlaced > 0 || p.conquestsMade > 0) && !p.isBot)
+        .map(p => ({
+          discordId: p.discordId, username: p.username, avatar: p.avatar,
+          pixels: p.pixelsPlaced || 0, conquests: p.conquestsMade || 0,
+          points: p.points || 0, country: p.countryMain, gameRank: p.rank,
+        }))
+        .sort((a, b) => (b.pixels - a.pixels) || (b.conquests - a.conquests));
+    }
+    const sorted = allRanked.slice(0, 20).map((p, i) => ({
+      rank:            i + 1,
+      username:        p.username,
+      avatar:          p.avatar,
+      pixels:          p.pixels,
+      conquests:       p.conquests,
+      points:          p.points,
+      gameRank:        p.gameRank,
+      countryMain:     p.country,
+      countryMainName: p.country ? (countryNames[p.country] || ('Country ' + p.country)) : null,
+    }));
     // v35: if caller supplies discord_id, include their rank position even when below top-20
     const viewerDiscordId = url.searchParams.get('discord_id');
     let viewer = null;
@@ -5664,17 +5718,14 @@ const httpServer = http.createServer(async (req, res) => {
       if (idx >= 0) {
         const p = allRanked[idx];
         viewer = {
-          rank: idx + 1,
-          username: p.username,
-          avatar:   p.avatar,
-          points:   p.points || 0,
-          gameRank: p.rank,
-          inTop20:  idx < 20,
+          rank: idx + 1, username: p.username, avatar: p.avatar,
+          pixels: p.pixels, conquests: p.conquests, gameRank: p.gameRank,
+          inTop20: idx < 20,
         };
       }
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ leaderboard: sorted, totalPlayers: allRanked.length, viewer }));
+    res.end(JSON.stringify({ leaderboard: sorted, totalPlayers: allRanked.length, viewer, scope }));
     return;
   }
 
@@ -6546,6 +6597,7 @@ wss.on('connection', (ws, req) => {
           profile.points       += changed.length;
           profile.pixelsPlaced += changed.length;
           profile.lastSeen     =  Date.now();
+          _recordSession(player.discordId, profile.username, profile.avatar, player.countryId, changed.length, 0); // v97
           // v65: track 24h activity for status reports
           _recordActivity(player.discordId, player.countryId, changed.length);
           // Per-country pixel painting count
@@ -6566,6 +6618,7 @@ wss.on('connection', (ws, req) => {
           const profile = getProfile(player.discordId);
           profile.conquestsMade += conquests.length;
           profile.points        += conquests.length * 50;
+          _recordSession(player.discordId, profile.username, profile.avatar, player.countryId, 0, conquests.length); // v97
           markProfilesDirty();
         }
         break;
@@ -6590,6 +6643,7 @@ wss.on('connection', (ws, req) => {
           const _ep = getProfile(player.discordId);
           _ep.conquestsMade += encConquests.length;
           _ep.points        += encConquests.length * 50;
+          _recordSession(player.discordId, _ep.username, _ep.avatar, player.countryId, 0, encConquests.length); // v97
           markProfilesDirty();
         }
         const bonus = getEncircleBonus(enc.count);
@@ -6652,8 +6706,10 @@ wss.on('connection', (ws, req) => {
         // Nuke special-case: clear pixels + create lockout zone, do NOT paint with attacker's colour
         if (bombKey === 'nuke') {
           const expiresAt = Date.now() + NUKE_LOCKOUT_MS;
-          _nukeZones.push({ cx, cy, radius, expiresAt });
-          const changed = clearPixelsInRadius(cx, cy, radius);
+          // v97: contain the blast to the single nation the nuke lands on.
+          const centerGeo = geoAtPixel[cy * MAP_W + cx];
+          _nukeZones.push({ cx, cy, radius, expiresAt, geo: centerGeo });
+          const changed = clearPixelsInRadius(cx, cy, radius, centerGeo);
           if (changed.length) queueDelta(changed);
           // v94b: a nuke can wipe a conquered country to zero held pixels — reverse
           // those conquests (so the flag disappears) and refresh siege state.

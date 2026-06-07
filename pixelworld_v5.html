@@ -1233,6 +1233,17 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 .lb-row.lb-top3 { background: rgba(217,119,6,0.05); }
 .lb-row .lb-name{color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .lb-row .lb-pts{margin-left:auto;color:#fbbf24;font-size:10px;font-weight:600;font-variant-numeric:tabular-nums}
+/* v97: pixels + conquests columns + session/all-time tabs */
+.lb-row .lb-px{margin-left:auto;color:#fbbf24;font-size:10px;font-weight:600;font-variant-numeric:tabular-nums;min-width:42px;text-align:right}
+.lb-row .lb-conq{color:#fca5a5;font-size:10px;font-weight:600;font-variant-numeric:tabular-nums;min-width:26px;text-align:right}
+.lb-head{display:flex;align-items:center;gap:5px;font-size:8px;color:#475569;letter-spacing:.04em;text-transform:uppercase;margin-bottom:3px;padding-bottom:2px;border-bottom:1px solid rgba(255,255,255,0.05)}
+.lb-head .lb-pos{min-width:18px}
+.lb-head .lb-name{flex:1}
+.lb-head .lb-px{margin-left:auto;min-width:42px;text-align:right}
+.lb-head .lb-conq{min-width:26px;text-align:right}
+#lb-tabs{display:flex;gap:4px;margin-bottom:6px}
+.lb-tab{flex:1;background:#0f1830;border:1px solid rgba(255,255,255,0.07);color:#64748b;font-size:9px;letter-spacing:.04em;text-transform:uppercase;padding:3px 0;border-radius:4px;cursor:pointer;font-family:inherit;transition:background .15s,color .15s}
+.lb-tab.active{background:#1e3a5f;color:#cbd5e1;border-color:rgba(147,197,253,0.3)}
 .lb-row.lb-viewer{background:rgba(59,130,246,0.1);border-left:2px solid #3b82f6;padding-left:4px;margin-left:-6px;border-radius:0 3px 3px 0}
 .lb-row.lb-viewer .lb-name{color:#93c5fd;font-weight:600}
 .lb-divider{margin:4px 0;border-top:1px dashed #1e293b;height:0}
@@ -1660,7 +1671,13 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <div id="conquest-toast"><div class="toast-title">&#9873; Country Conquered</div><div class="toast-body" id="toast-body"></div></div>
     <!-- v35: Persistent leaderboard panel -->
 <div class="hud" id="leaderboard-panel">
-  <h3><span>Discord Leaderboard</span><span class="lb-count" id="lb-count">0 players</span></h3>
+  <h3><span>Leaderboard</span><span class="lb-count" id="lb-count">0 players</span></h3>
+  <!-- v97: session / all-time tabs -->
+  <div id="lb-tabs">
+    <button class="lb-tab active" data-scope="alltime" onclick="switchLbTab('alltime')">All Time</button>
+    <button class="lb-tab" data-scope="session" onclick="switchLbTab('session')">Session</button>
+  </div>
+  <div class="lb-head"><span class="lb-pos"></span><span class="lb-name"></span><span class="lb-px" title="Pixels">px</span><span class="lb-conq" title="Conquests">⚔️</span></div>
   <div id="lb-items" class="lb-empty">Loading…</div>
 </div>
 <div class="hud" id="legend">
@@ -3378,7 +3395,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v96a';
+const CODE_VERSION = '2026-06-07-v97';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5650,6 +5667,10 @@ function detonateBomb(mapX, mapY){
 
   let bx0=MAP_W,by0=MAP_H,bx1=0,by1=0;
   const claimed=[];
+  // v97: a nuke is contained to the single nation it lands on — find that country
+  // id so the clear below skips pixels in any other nation (matches the server).
+  const _nukeCenterFi  = featByPixel[mapY*MAP_W+mapX];
+  const _nukeCenterCid = (isNukeBomb && _nukeCenterFi >= 0 && featList[_nukeCenterFi]) ? String(featList[_nukeCenterFi].id) : null;
   for(let y=y0;y<=y1;y++){
     for(let x=x0;x<=x1;x++){
       if((x-mapX)**2+(y-mapY)**2 > r2) continue;
@@ -5657,9 +5678,13 @@ function detonateBomb(mapX, mapY){
       if(!landMask[i]) continue;
       const prev=claimByPixel[i];
       if (isNukeBomb) {
-        // NUKE — clear EVERY pixel in the radius, regardless of owner
-        // (including the attacker's own pixels). Clean slate.
+        // NUKE — clear pixels in the radius, but only WITHIN the target nation
+        // (v97). Clean slate for that one country, no bleed into neighbours.
         if (prev < 0) continue; // already unclaimed
+        if (_nukeCenterCid !== null) {
+          const _gfi = featByPixel[i];
+          if (_gfi < 0 || !featList[_gfi] || String(featList[_gfi].id) !== _nukeCenterCid) continue;
+        }
         claimerCount[prev]=Math.max(0,(claimerCount[prev]||1)-1);
         const geo=featByPixel[i];
         if(geo>=0&&geoClaimCnt[geo]&&geoClaimCnt[geo][prev]){
@@ -10822,11 +10847,12 @@ document.addEventListener('visibilitychange', () => {
 const RANKS = [
   // v38: Mortar + MOAB removed. Captain/General now provide regen multipliers
   // (see getRankRegenMult), not bombs.
+  // v97: thresholds doubled (was 50/150/500/1500) so ranks take ~2x longer to earn.
   { name:'Soldier',    min:0,    bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.0  },
-  { name:'Lieutenant', min:50,   bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.25 },
-  { name:'Captain',    min:150,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.5  },
-  { name:'General',    min:500,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:2.0  },
-  { name:'Admiral',    min:1500, bombType:'Nuke',bombCost:100,bombRadius:300, regenMult:3.0  },
+  { name:'Lieutenant', min:100,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.25 },
+  { name:'Captain',    min:300,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.5  },
+  { name:'General',    min:1000, bombType:null,  bombCost:0,  bombRadius:0,   regenMult:2.0  },
+  { name:'Admiral',    min:3000, bombType:'Nuke',bombCost:100,bombRadius:300, regenMult:3.0  },
 ];
 
 // Persistent XP counter
@@ -10991,7 +11017,7 @@ function getBombTypes(){
   // v38: Only Nuke remains (Admiral-only). Mortar+MOAB removed; their old
   // ranks now provide regen multipliers via getRankRegenMult() instead.
   const types = [];
-  if(ri >= 4) types.push({ key:'nuke', label:'Nuke', radius:15, cost:100, sound:'nuclear', clears:true, lockoutMs: 2*60*1000 });
+  if(ri >= 4) types.push({ key:'nuke', label:'Nuke', radius:30, cost:100, sound:'nuclear', clears:true, lockoutMs: 2*60*1000 }); // v97: radius 15→30
   return types;
 }
 
@@ -12077,11 +12103,32 @@ function _resolveViewerDiscordId() {
     }).catch(() => null);
 }
 
+// v97: leaderboard scope — 'alltime' (persisted profiles) or 'session' (this round).
+let _lbScope = 'alltime';
+function switchLbTab(scope) {
+  _lbScope = (scope === 'session') ? 'session' : 'alltime';
+  document.querySelectorAll('#lb-tabs .lb-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.scope === _lbScope);
+  });
+  refreshLeaderboardPanel();
+}
+function _lbRow(r, isViewer) {
+  const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
+  const medal = MEDALS[r.rank] || '';
+  const posDisplay = medal ? medal + ' #' + r.rank : '#' + r.rank;
+  return '<div class="lb-row' + (isViewer ? ' lb-viewer' : '') + (r.rank <= 3 ? ' lb-top' + r.rank : '') + '">'
+       + '<span class="lb-pos">' + posDisplay + '</span>'
+       + '<span class="lb-name">' + escapeHtml(r.username) + '</span>'
+       + '<span class="lb-px">' + (r.pixels || 0).toLocaleString() + '</span>'
+       + '<span class="lb-conq">' + (r.conquests || 0) + '</span>'
+       + '</div>';
+}
 function refreshLeaderboardPanel() {
   _resolveViewerDiscordId().then(id => {
-    let url = '/api/stats/leaderboard';
-    if (id) url += '?discord_id=' + encodeURIComponent(id);
+    let url = '/api/stats/leaderboard?scope=' + _lbScope;
+    if (id) url += '&discord_id=' + encodeURIComponent(id);
     fetch(url).then(r => r.json()).then(data => {
+      if (data.scope && data.scope !== _lbScope) return; // stale response after tab switch
       const el = document.getElementById('lb-items');
       const countEl = document.getElementById('lb-count');
       if (!el) return;
@@ -12089,30 +12136,16 @@ function refreshLeaderboardPanel() {
       const rows = (data.leaderboard || []);
       if (!rows.length) {
         el.className = 'lb-empty';
-        el.innerHTML = 'No ranked players yet.';
+        el.innerHTML = (_lbScope === 'session') ? 'No activity yet this round.' : 'No ranked players yet.';
         return;
       }
       el.className = '';
       let h = '';
-      // v39c: medal prefix for top 3 ranks
-      const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
       for (const r of rows) {
-        const isViewer = data.viewer && r.rank === data.viewer.rank;
-        const medal = MEDALS[r.rank] || '';
-        const posDisplay = medal ? medal + ' #' + r.rank : '#' + r.rank;
-        h += '<div class="lb-row' + (isViewer ? ' lb-viewer' : '') + (r.rank <= 3 ? ' lb-top' + r.rank : '') + '">'
-           + '<span class="lb-pos">' + posDisplay + '</span>'
-           + '<span class="lb-name">' + escapeHtml(r.username) + '</span>'
-           + '<span class="lb-pts">' + r.points.toLocaleString() + '</span>'
-           + '</div>';
+        h += _lbRow(r, data.viewer && r.rank === data.viewer.rank);
       }
       if (data.viewer && !data.viewer.inTop20) {
-        h += '<div class="lb-divider"></div>'
-           + '<div class="lb-row lb-viewer">'
-           + '<span class="lb-pos">#' + data.viewer.rank + '</span>'
-           + '<span class="lb-name">' + escapeHtml(data.viewer.username) + '</span>'
-           + '<span class="lb-pts">' + data.viewer.points.toLocaleString() + '</span>'
-           + '</div>';
+        h += '<div class="lb-divider"></div>' + _lbRow(data.viewer, true);
       }
       el.innerHTML = h;
     }).catch(() => {});
@@ -12180,6 +12213,12 @@ function _showWorldConquestOverlay(data) {
       '<span><b style="color:#93c5fd">#' + (i + 1) + '</b> ' + (p.username || '?') + '</span>' +
       '<span style="color:#cbd5e1">' + (p.points || 0).toLocaleString() + ' pts</span></div>';
   }).join('');
+  // v97: this round's top contributors (session pixels + conquests).
+  const topContribList = (data.topContributors || []).map(function(p, i) {
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:rgba(52,211,153,0.08);margin-bottom:4px;border-radius:4px;font-size:14px;">' +
+      '<span><b style="color:#34d399">#' + (i + 1) + '</b> ' + (p.username || '?') + '</span>' +
+      '<span style="color:#cbd5e1">' + (p.pixels || 0).toLocaleString() + ' px · ' + (p.conquests || 0) + ' ⚔️</span></div>';
+  }).join('');
   overlay.innerHTML =
     '<div style="font-size:36px;font-weight:800;letter-spacing:.12em;margin-bottom:8px;">🌍 WORLD CONQUERED 🌍</div>' +
     '<div style="font-size:14px;color:#94a3b8;margin-bottom:32px;letter-spacing:.08em;">' + (data.conquered || 0) + ' / ' + (data.total || 0) + ' COUNTRIES CLAIMED</div>' +
@@ -12188,6 +12227,9 @@ function _showWorldConquestOverlay(data) {
       (topCList || '<div style="color:#475569;font-size:11px">No conquests recorded.</div>') + '</div>' +
       '<div><h2 style="font-size:14px;color:#94a3b8;letter-spacing:.1em;margin-bottom:12px;">⭐ TOP PLAYERS</h2>' +
       (topPList || '<div style="color:#475569;font-size:11px">No ranked players.</div>') + '</div></div>' +
+    '<div style="max-width:800px;width:100%;margin-bottom:8px;">' +
+      '<h2 style="font-size:14px;color:#94a3b8;letter-spacing:.1em;margin-bottom:12px;">🔥 TOP CONTRIBUTORS — THIS SESSION</h2>' +
+      (topContribList || '<div style="color:#475569;font-size:11px">No contributors this round.</div>') + '</div>' +
     '<div style="margin-top:16px;font-size:16px;color:#fbbf24;">World restarting in <span id="wc-countdown" style="font-weight:800">5:00</span></div>' +
     '<div style="font-size:11px;color:#475569;margin-top:8px;">Fresh canvas, fresh chaos. Hold tight.</div>';
   document.body.appendChild(overlay);
