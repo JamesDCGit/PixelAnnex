@@ -417,6 +417,15 @@ Before editing any function:
     it in `detonateBomb` (`_nukeCenterCid`) + `getBombTypes` radius 30.
   - **Ranks ×2:** client `RANKS` (pixel-based) 100/300/1000/3000; server
     `RANK_THRESHOLDS` (XP) 100/300/600/1000.
+- **v97b (server-only) — LANDLESS PHANTOM HOLDERS:** a Natural Earth artifact with
+  no homeland (`geoTotal===0`, e.g. "Country 167") had conquered New Zealand and
+  stayed its ~80% majority holder, so the real attacker could never take it (client
+  showed 92%, server saw the phantom). `_isLandlessCountry(id)` = `geoTotal[id] not
+  > 0`; all four `_evaluateConqueror`/`applyPixels` candidate loops skip landless
+  ids (can't be a conqueror), and the 60s sweep liquidates any landless holder of a
+  real geo via `_onCountryConquered` (clears pixels → Fallen) just like a dead
+  country. Generalises the v95g/v95z machinery. Verified: 167/169/171 liquidated,
+  NZ freed (now Congo top holder).
 
 ## Screenshots for tweets (v88)
 
