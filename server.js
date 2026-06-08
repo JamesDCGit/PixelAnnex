@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-07-v97c';
+const SERVER_VERSION       = '2026-06-07-v97e';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2530,6 +2530,7 @@ function _resetWorld() {
   for (let i = 0; i < claimByPixel.length; i++) claimByPixel[i] = -1;
   conqueredSet.clear();
   permanentlyConquered.clear();
+  exiledSet.clear(); // v97e
   for (const k of Object.keys(geoClaimCnt)) delete geoClaimCnt[k];
   for (const k of Object.keys(countryPxCount)) countryPxCount[k] = 0;
   for (const k of Object.keys(ownerPixels)) ownerPixels[k] = new Set();
@@ -3273,6 +3274,12 @@ const conqueredSet = new Set();
 // pixel reversals (monsters / nukes can drop it below threshold). Cleared only
 // on world reset so the conquest is a lasting consequence.
 const permanentlyConquered = new Set(); // geoToId values
+// v97e: OUTPOST MODE — a country whose homeland falls while it still holds conquered
+// outposts is EXILED (alive, fighting from its outposts) rather than dead. Exiles
+// are NOT in permanentlyConquered (so they can still conquer + aren't liquidated);
+// they suffer a flat 0.5x regen debuff until they reclaim their homeland. If an
+// exile loses all its outposts too, it finally dies (→ permanentlyConquered).
+const exiledSet = new Set(); // geoToId values — homeland fallen but surviving via outposts
 
 // ── Conquest consequences ─────────────────────────────────────────
 // Pick the best country for a defeated bot to migrate to:
@@ -3642,6 +3649,37 @@ setInterval(() => {
       _onCountryConquered(String(deadId));
     }
   }
+  // v97e: EXILE resolution. (1) Reclaimed — homeland is native-held again → lift the
+  // exile + debuff. (2) Wiped out — homeland still lost AND no outposts left → the
+  // exile finally dies (forced re-pick).
+  for (const exId of [...exiledSet]) {
+    if (_foreignHolderOf(exId) === null) {
+      exiledSet.delete(exId);
+      console.log('[Exile]', exId, 'reclaimed its homeland — debuff lifted');
+      for (const [, pp] of players) {
+        if (!pp.isBot && pp.ws && String(pp.countryId) === String(exId)) {
+          try { pp.ws.send(JSON.stringify({ type: 'homeland_reclaimed', countryId: String(exId) })); } catch (e) {}
+        }
+      }
+    } else if (_countryOutposts(exId).length === 0) {
+      // Lost the homeland AND every outpost → truly dead now.
+      exiledSet.delete(exId);
+      permanentlyConquered.add(String(exId));
+      console.log('[Exile]', exId, 'lost all outposts — final death');
+      for (const [, pp] of players) {
+        if (!pp.isBot && pp.ws && String(pp.countryId) === String(exId)) {
+          const _prof = pp.discordId ? profiles.get(pp.discordId) : null;
+          try {
+            pp.ws.send(JSON.stringify({
+              type: 'your_country_lost', lostCountryId: String(exId), attackerId: null, mercenaryBonus: 50,
+              keep: _prof ? { conquests: _prof.conquestsMade || 0, rank: _prof.rank || 'Soldier', points: _prof.points || 0 } : null,
+            }));
+          } catch (e) {}
+        }
+      }
+      _onCountryConquered(String(exId)); // clear any stray pixels
+    }
+  }
 }, 60_000);
 
 
@@ -3684,25 +3722,83 @@ function getWorldShare(countryId) {
   const territory = geoTotal[geoIdx] || 0;
   return territory / totalLandPxCached;
 }
-function getRegenMultiplier(countryId) {
-  const share = getWorldShare(countryId);
-  if (share <= 0.001) return 5;
-  if (share <= 0.005) return 3;
-  if (share <= 0.01)  return 2;
-  if (share <= 0.05)  return 1.5;
-  return 1;
+// v97e: David↔Goliath is now a CONTINUOUS curve (was 5 hard tiers) with a wider
+// spread — tiny homelands get up to 7x, fading to 1x at >=5% world share. share is
+// STATIC (homeland size), so this is the inherent-underdog buff; the dynamic
+// balancing is the leader tax below (based on CURRENT holdings).
+const DAVID_FLAT_SHARE = 0.05; // >= this world share → no David bonus
+const DAVID_MAX = 7;
+function _davidMult(share) {
+  const t = Math.max(0, Math.min(1, share / DAVID_FLAT_SHARE)); // 0 (tiny) .. 1 (big)
+  return 1 + (DAVID_MAX - 1) * Math.pow(1 - t, 3);              // 7 .. 1
+}
+function getRegenMultiplier(countryId) { return _davidMult(getWorldShare(countryId)); }
+
+// v97e: alliance regen bonus, UNDERDOG-SCALED + additive. A small allied member
+// gets up to +2; a large allied member only +0.5 (so alliances help the weak gang
+// up without supercharging a dominant member). 0 if not in an alliance.
+function _allianceRegenAdd(countryId) {
+  const ally = getAllianceForCountry(countryId);
+  if (!ally) return 0;
+  const t = Math.max(0, Math.min(1, getWorldShare(countryId) / DAVID_FLAT_SHARE));
+  return 0.5 + 1.5 * (1 - t); // 2.0 (tiny) .. 0.5 (>=5%)
+}
+
+// v97e: leader tax — the top current land-holders get a -20% regen handicap (the
+// dynamic rubber-band). Based on ACTUAL holdings (countryPxCount), recomputed in
+// buildDavidSnapshot (~5s). Replaces a full ELO system with one cheap knob.
+const _leaderTaxSet = new Set();        // countryIds currently taxed
+const LEADER_TAX_TOP_N = 3;
+const LEADER_TAX_FACTOR = 0.8;
+const LEADER_TAX_MIN_SHARE = 0.04;      // must hold >=4% of painted land to be taxed
+function _recomputeLeaderTax() {
+  _leaderTaxSet.clear();
+  let totalPainted = 0;
+  const arr = [];
+  for (const id in countryPxCount) {
+    const c = countryPxCount[id] || 0;
+    if (c <= 0) continue;
+    totalPainted += c;
+    arr.push([id, c]);
+  }
+  if (totalPainted <= 0) return;
+  arr.sort((a, b) => b[1] - a[1]);
+  for (let i = 0; i < Math.min(LEADER_TAX_TOP_N, arr.length); i++) {
+    if (arr[i][1] / totalPainted >= LEADER_TAX_MIN_SHARE) _leaderTaxSet.add(String(arr[i][0]));
+  }
+}
+
+const REGEN_CAP = 12; // v97e: raised 10→12 to give the new sources headroom
+
+// v97e: unified server-side regen multiplier for a country (used by bot regen).
+// exile = flat 0.5x; else (largest passive David) + encircle + alliance, leader-
+// taxed, clamped. Bots have no rank/highlight/alliance → David + encircle + tax.
+function _serverRegen(countryId) {
+  if (exiledSet.has(String(countryId))) return 0.5;
+  const david = Math.max(1, _davidMult(getWorldShare(countryId)));
+  const enc   = getEncircleMultiplier(countryId);
+  const encAdd = enc > 1 ? enc : 0;
+  let r = david + encAdd + _allianceRegenAdd(countryId);
+  if (_leaderTaxSet.has(String(countryId))) r *= LEADER_TAX_FACTOR;
+  return Math.min(REGEN_CAP, Math.max(0.5, r));
 }
 
 // Build a snapshot of world shares + multipliers for the client to display.
 // Sent every ~5s as part of the players broadcast.
 function buildDavidSnapshot() {
   if (totalLandPxCached <= 0) recomputeTotalLand();
+  _recomputeLeaderTax(); // v97e: refresh the dynamic leader-tax set each snapshot
   const out = {};
   for (const geoIdx of Object.keys(geoTotal)) {
     const cid   = String(geoIdx);
     const share = getWorldShare(cid);
     const mult  = getRegenMultiplier(cid);
     out[cid] = { share, mult };
+    // v97e: extra fields so the client can mirror the exact regen formula.
+    const allyAdd = _allianceRegenAdd(cid);
+    if (allyAdd > 0) out[cid].allyAdd = allyAdd;
+    if (_leaderTaxSet.has(cid)) out[cid].leaderTax = true;
+    if (exiledSet.has(cid)) out[cid].exiled = true;
   }
   // Layer active encirclement bonuses on top — these stack with David
   for (const [cid, bonus] of encircleBonuses) {
@@ -4074,33 +4170,53 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
   // homeland falling for the first time (not a transfer between invaders, not a
   // re-conquest of an already-dead "Fallen" zone, not a self-conquest).
   const _alreadyDead = permanentlyConquered.has(geoId);
+  const _isExile     = exiledSet.has(geoId); // already exiled (homeland re-lost)
   const _freshKill = !_isTransfer && !_alreadyDead && !_isSelf;
+  // v97e: OUTPOST MODE — a fresh homeland fall is EXILE (survive via outposts) if the
+  // country still holds any conquered outpost; otherwise it's a true DEATH.
+  let _exiledNow = false;
   if (_freshKill) {
-    permanentlyConquered.add(geoId); // dead for the round (native never revives)
-    if (siegedSet.has(geo)) {        // a fallen country is out of the siege system
+    if (siegedSet.has(geo)) {        // a fallen homeland leaves the siege system
       siegedSet.delete(geo);
       broadcast(JSON.stringify({ type: 'siege', countryId: geoId, active: false }));
     }
-    setTimeout(() => _onCountryConquered(geoId), 0); // liquidate its empire (ally or clear)
+    if (!_isExile && _countryOutposts(geoId).length > 0) {
+      // EXILE: alive via outposts, -50% regen until the homeland is reclaimed.
+      // NOT added to permanentlyConquered → can still conquer + isn't liquidated.
+      _exiledNow = true;
+      exiledSet.add(geoId);
+    } else {
+      // DEATH: no outposts to retreat to (or an exile whose homeland re-fell).
+      permanentlyConquered.add(geoId);
+      exiledSet.delete(geoId);
+      setTimeout(() => _onCountryConquered(geoId), 0); // liquidate its empire (ally or clear)
+    }
   }
   // perm flag → client marks the geo's native as dead (drives "Fallen" rendering).
+  // An exile is NOT dead, so perm stays false (homeland is a normal conquest).
   conquests.push({ geoIdx: geo, countryId: conquerorId, perm: permanentlyConquered.has(geoId) });
   changed.push(...finisherFill(geo, conquerorId));
-  // Only a FRESH kill notifies the (now dead) country's players + Discord. Transfers,
+  // Only a FRESH kill notifies the falling country's players + Discord. Transfers,
   // self-conquest, and re-takes of already-fallen zones are silent (anti-spam).
   if (!_freshKill) return;
 
-  // Notify the fallen country's players → forced re-pick + revenge bonus (v95m: 50px).
+  // Notify the falling country's players: exile (keep playing, debuffed) or death
+  // (forced re-pick + revenge bonus).
   for (const [, pp] of players) {
     if (pp.isBot || !pp.ws || String(pp.countryId) !== String(geoId)) continue;
     const _prof = pp.discordId ? profiles.get(pp.discordId) : null;
     if (_prof) _prof.countriesLost = (_prof.countriesLost || 0) + 1;
     try {
-      pp.ws.send(JSON.stringify({
-        type: 'your_country_lost', lostCountryId: geoId, attackerId: conquerorId,
-        mercenaryBonus: 50,
-        keep: _prof ? { conquests: _prof.conquestsMade || 0, rank: _prof.rank || 'Soldier', points: _prof.points || 0 } : null,
-      }));
+      if (_exiledNow) {
+        // v97e: homeland fell but you survive via outposts.
+        pp.ws.send(JSON.stringify({ type: 'homeland_exiled', lostCountryId: geoId, attackerId: conquerorId }));
+      } else {
+        pp.ws.send(JSON.stringify({
+          type: 'your_country_lost', lostCountryId: geoId, attackerId: conquerorId,
+          mercenaryBonus: 50,
+          keep: _prof ? { conquests: _prof.conquestsMade || 0, rank: _prof.rank || 'Soldier', points: _prof.points || 0 } : null,
+        }));
+      }
     } catch (e) {}
   }
   // v92f: only REPORT (Discord war event + screenshot + tweet) conquests that
@@ -5125,14 +5241,11 @@ function updateOwnerIndex(pixelOffset, oldCidx, newCidx) {
 
 // Regen bot buckets — staggered to avoid GC spikes
 setInterval(() => {
-  // v96: bot regen = David passive multiplier + Encircle bonus ADDED on top,
-  // capped at 10x (was David × Encircle, which compounded into runaway regen).
-  // Mirrors the client getRegenMult.
+  // v97e: bot regen via the unified _serverRegen (David curve + encircle + leader
+  // tax + exile debuff; bots have no alliance/rank). Mirrors client getRegenMult.
   for (const bot of bots.values()) {
     if (bot.bucket >= BOT_BUCKET_MAX) continue;
-    const m1 = getRegenMultiplier(bot.countryId);      // david passive (1-5)
-    const m2 = getEncircleMultiplier(bot.countryId);   // 1 if inactive, else 3-6
-    const mult = Math.min(10, m1 + (m2 > 1 ? m2 : 0));
+    const mult = _serverRegen(bot.countryId);
     bot.bucket = Math.min(BOT_BUCKET_MAX, bot.bucket + mult);
   }
 }, BOT_REGEN_MS);

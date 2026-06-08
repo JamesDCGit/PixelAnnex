@@ -3396,7 +3396,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v97c';
+const CODE_VERSION = '2026-06-07-v97e';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5879,15 +5879,35 @@ function getMyMultiplier() {
 // country bonus 1.5x + 3x encircle = 4.5x, instead of being folded into the max.)
 function getRegenMult() {
   if (currentIdx < 0) return 1;
+  // v97e: exiled (homeland fallen, surviving via outposts) → flat 0.5x until reclaim.
+  if (_isExiledLocal()) return 0.5;
   const f = featList[currentIdx];
-  const davidBase = (f && f.id) ? getCountryMultiplier(f.id) : 1;
+  const cid = (f && f.id) ? String(f.id) : null;
+  const d = cid ? davidByCountry[cid] : null;
+  const davidBase = (d && d.mult) ? d.mult : 1;        // widened David curve (server)
   const rank = getRankRegenMult();
   const hl   = _highlightRegenMult || 1;
-  const baseBonus = Math.max(davidBase, rank, hl, 1); // largest passive bonus
-  const enc  = getEncircleMultiplierLocal();          // 1 if inactive, else 3-6 (v96)
-  const encAdd = enc > 1 ? enc : 0;                    // encircle adds ON TOP
-  const total = baseBonus + encAdd;
-  return Math.min(10, Math.max(1, Math.round(total * 10) / 10)); // cap 10x, 1-dp
+  const baseBonus = Math.max(davidBase, rank, hl, 1);  // largest passive bonus
+  const enc  = getEncircleMultiplierLocal();           // 1 if inactive, else 3-6
+  const encAdd = enc > 1 ? enc : 0;                     // encircle adds ON TOP
+  const allyAdd = (d && d.allyAdd) ? d.allyAdd : 0;     // v97e: underdog-scaled alliance bonus
+  let total = baseBonus + encAdd + allyAdd;
+  if (d && d.leaderTax) total *= 0.8;                  // v97e: top-holder rubber-band
+  return Math.min(12, Math.max(0.5, Math.round(total * 10) / 10)); // cap 12x, 1-dp
+}
+
+// v97e: exile state — set by the homeland_exiled/reclaimed messages, but the david
+// snapshot's per-country `exiled` flag is the robust source of truth (survives a
+// reconnect), so prefer it for the current country.
+let _exiledManual = false;
+function _isExiledLocal() {
+  if (currentIdx < 0) return false;
+  const f = featList[currentIdx];
+  const d = (f && f.id) ? davidByCountry[String(f.id)] : null;
+  // Snapshot is authoritative when we have data for this country (self-heals if the
+  // homeland_exiled/reclaimed message was missed); _exiledManual is a pre-snapshot stopgap.
+  if (d) return !!d.exiled;
+  return _exiledManual;
 }
 
 function getMyWorldShare() {
@@ -8688,7 +8708,32 @@ function mpHandleMessage(msg) {
     case 'your_country_lost': {
       // v93q (#3): your country held no territory anywhere → full re-pick.
       // msg.keep carries the progression you retain (shown in the modal).
+      _exiledManual = false; // dead now, not exiled
       _showCountryRepickModal(msg);
+      break;
+    }
+    case 'homeland_exiled': {
+      // v97e: OUTPOST MODE — your homeland fell but you survive via your outposts.
+      // No re-pick: keep playing your country at HALF regen until you retake it.
+      _exiledManual = true;
+      actPushCard({
+        variant: 'alert',
+        title: '🏴 Homeland Fallen — Exiled',
+        html: 'Your homeland was conquered, but your outposts hold! You fight on at '
+            + '<b>0.5× regen</b> until you <b>reclaim your homeland</b>. Rally your pixels.',
+      });
+      try { sfxSiegeFor && sfxSiegeFor(currentIdx); } catch(e) {}
+      break;
+    }
+    case 'homeland_reclaimed': {
+      // v97e: you retook your homeland — the exile debuff lifts.
+      _exiledManual = false;
+      actPushCard({
+        variant: 'win',
+        title: '🏛️ Homeland Reclaimed!',
+        html: 'You retook your homeland — full regen restored. Press the advantage.',
+      });
+      try { sfxConquestFor && sfxConquestFor(currentIdx); } catch(e) {}
       break;
     }
     case 'capital_relocated': {
