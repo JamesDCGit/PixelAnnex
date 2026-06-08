@@ -3396,7 +3396,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v97e';
+const CODE_VERSION = '2026-06-07-v97f';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3431,7 +3431,7 @@ function updateTabTitle() {
     if (document.title !== _baseTitle) document.title = _baseTitle;
     return;
   }
-  const next = '(' + pixelBucket + '/' + BUCKET_MAX + ') ' + _baseTitle;
+  const next = '(' + (Math.round(pixelBucket * 10) / 10) + '/' + BUCKET_MAX + ') ' + _baseTitle; // v97f: 1dp
   if (document.title !== next) document.title = next;
 }
 // Refresh title every 2s while hidden; immediately when tab becomes visible
@@ -5567,7 +5567,7 @@ function runAutoFill(){
 
 // ── Pixel bucket HUD + regen ─────────────────────────────────────
 function updateBucketHUD(){
-  $("bucket-count").textContent = pixelBucket;
+  $("bucket-count").textContent = Math.round(pixelBucket * 10) / 10; // v97f: 1dp, no float drift
   $("bucket-fill").style.width  = (pixelBucket/BUCKET_MAX*100)+"%";
   // Colour bucket bar: green when full-ish, amber mid, red low
   const pct = pixelBucket/BUCKET_MAX;
@@ -5584,7 +5584,8 @@ setInterval(()=>{
   if(regenSecsLeft<=0){
     // v95h: regen uses the LARGEST active bonus (capped 8x), not the product.
     const mult = getRegenMult();
-    pixelBucket = Math.min(BUCKET_MAX, pixelBucket + mult);
+    // v97f: round to 1dp so fractional regen (e.g. +4.5) can't drift to 99.9999999.
+    pixelBucket = Math.min(BUCKET_MAX, Math.round((pixelBucket + mult) * 10) / 10);
     regenSecsLeft = REGEN_INTERVAL;
     updateBucketHUD();
     sfxBucketRegen();
