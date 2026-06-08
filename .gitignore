@@ -52,6 +52,8 @@ profiles.json
 alliance_state.json
 board_state.json
 board_state.json.tmp
+session_state.json
+session_state.json.tmp
 tweet_queue.json
 shots/
 timelapse/

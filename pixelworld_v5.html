@@ -573,6 +573,9 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #world-state-bar .ws-cell:last-child{border-right:none;}
 #world-state-bar .ws-val{font-size:13px;color:#fff;font-weight:600;}
 #world-state-bar .ws-lbl{font-size:9px;color:#64748b;letter-spacing:.08em;text-transform:uppercase;}
+#world-state-bar .ws-war{flex-direction:column;align-items:center;gap:1px;}
+#world-state-bar .ws-war-label{font-size:8px;color:#fbbf24;letter-spacing:.1em;text-transform:uppercase;font-weight:700;}
+#world-state-bar .ws-war-num{font-size:13px;color:#fff;font-weight:700;font-variant-numeric:tabular-nums;}
 
 
 /* ── Encirclement bonus banner (top-right corner, with timer) ── */
@@ -1614,6 +1617,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     </div>
     <div id="daily-bonus-toast"></div>
     <div id="world-state-bar" title="Live world state">
+      <div class="ws-cell ws-war" title="The current PixelAnnex War (game number) — increments each time the world is conquered"><span class="ws-war-label">PixelAnnex War</span><span class="ws-war-num" id="ws-war-num">#—</span></div>
       <div class="ws-cell"><span class="ws-val" id="ws-players">—</span><span class="ws-lbl" data-i18n="hud.players">players</span></div>
       <div class="ws-cell"><span class="ws-val" id="ws-conquered">—</span><span class="ws-lbl" data-i18n="hud.conquered">conquered</span></div>
       <div class="ws-cell"><span class="ws-val" id="ws-alliances">—</span><span class="ws-lbl" data-i18n="hud.alliances">alliances</span></div>
@@ -3424,7 +3428,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v97g';
+const CODE_VERSION = '2026-06-07-v97h';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6285,6 +6289,7 @@ async function fetchWorldStats() {
     // NOT raw-geo (total geos - conquests), which counted artifacts + dead natives.
     if (ws && typeof ws.originalStanding === 'number') remaining = ws.originalStanding;
     if (ws && typeof ws.originalTotal === 'number') { originalTotal = ws.originalTotal; _originalTotalCache = ws.originalTotal; }
+    if (ws && typeof ws.warNumber === 'number') { const wn = document.getElementById('ws-war-num'); if (wn) wn.textContent = '#' + ws.warNumber; } // v97h
     alliances = (al && al.alliances) ? al.alliances.length : 0;
   } catch (e) { /* silent */ }
   // v83: server is the authoritative source. Only fall back to local
@@ -12852,6 +12857,7 @@ function _showMonsterBanner(type) {
       <button class="stats-tab active" data-panel="me" onclick="switchStatsTab('me')" data-i18n="stats.tab_me">My Stats</button>
       <button class="stats-tab" data-panel="lb" onclick="switchStatsTab('lb')" data-i18n="stats.tab_lb">Leaderboard</button>
       <button class="stats-tab" data-panel="about" onclick="switchStatsTab('about')">About</button>
+      <button class="stats-tab" data-panel="terms" onclick="switchStatsTab('terms')">Terms</button>
     </div>
     <div class="stats-panel active" id="stats-panel-me">
       <div id="stats-me-content" data-i18n="stats.loading">Loading…</div>
@@ -12883,6 +12889,17 @@ function _showMonsterBanner(type) {
           <a href="https://discord.gg/FcbzWCY2F" target="_blank" rel="noopener" style="color:#5865f2;text-decoration:none;">Discord</a>
           ·
           <a href="https://pixelannex.com" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none;">pixelannex.com</a>
+        </div>
+      </div>
+    </div>
+    <!-- v97h: Terms & Disclaimer -->
+    <div class="stats-panel" id="stats-panel-terms">
+      <div style="padding:8px 4px;max-width:520px;margin:0 auto;">
+        <h3 style="color:#fff;font-size:14px;margin-bottom:14px;letter-spacing:.04em;">Terms &amp; Disclaimer</h3>
+        <div style="font-size:12px;line-height:1.75;color:#cbd5e1;">
+          <p style="margin:0 0 14px;">Pixel Annex is a fictional game of strategy and visual art. The in-game world map is a low-resolution abstraction and does not represent real-world political borders, recognized territories, or sovereign disputes. It is not intended to reflect or promote real-world conflict.</p>
+          <p style="margin:0 0 14px;">All non-player factions, rivalries, and in-game events are simulated automatically by server-side algorithms and ambient bots. Matchups and territorial shifts are entirely randomized and disconnected from real-world current events.</p>
+          <p style="margin:0;">PixelAnnex is provided 'as-is' for entertainment purposes without any warranties. The developer is not liable for server downtime, loss of in-game progression, or player-generated content within connected community spaces like Discord.</p>
         </div>
       </div>
     </div>

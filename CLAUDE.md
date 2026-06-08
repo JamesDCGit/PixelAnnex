@@ -468,6 +468,22 @@ Before editing any function:
     (`homeland_reclaimed`); lost all outposts → final death (`your_country_lost`).
     New client msgs `homeland_exiled`/`homeland_reclaimed` (banner, NO re-pick).
     Cleared on world reset.
+- **v97f:** pixel bucket rounded to 1dp (was drifting to 99.9999999 from fractional
+  regen) — at the regen tick + HUD/title display.
+- **v97g (client):** "invert my pixels" toggle (toolbar 🔄 My Pixels, persisted,
+  default OFF). `_renderRgb(fi)` renders the CURRENT player's own pixels in the
+  inverse of their country colour (client-side only) so they're visible when
+  painting onto a same-coloured country. Routed through all paint paths; toggle/
+  country-change repaints via `mpRebuildClaimCanvas`, which now also preserves the
+  faint native base (alpha 26) vs painted (215).
+- **v97h (client + server):** leaderboard scoping + war counter + Terms tab.
+  - **Session = the current GAME** (until world conquered), now PERSISTED to
+    `session_state.json` (`_saveSessionState`/`_loadSessionState`, 30s + shutdown +
+    on reset) so a restart mid-game keeps the tally; cleared only on `_resetWorld`.
+    **All-time** = cumulative across games (persisted profiles, unchanged).
+  - **War counter:** `_warNumber` (persisted, +1 each `_resetWorld`); `/api/world-state`
+    `warNumber`; status bar shows "PixelAnnex War #N" (`ws-war-num`). Starts at #1.
+  - **Terms & Disclaimer tab** in the Stats & Leaderboard modal (`stats-panel-terms`).
 
 ## Screenshots for tweets (v88)
 

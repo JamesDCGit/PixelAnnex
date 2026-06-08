@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-07-v97g';
+const SERVER_VERSION       = '2026-06-07-v97h';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2060,8 +2060,8 @@ function saveProfiles() {
 setInterval(saveProfiles, 60 * 1000);
 // v93o: also persist the board on shutdown so deploys/restarts resume the world.
 // saveBoardSnapshot is a hoisted fn defined later; sync=true for a clean exit.
-process.on('SIGTERM', () => { saveProfiles(); saveBoardSnapshot(true); });
-process.on('SIGINT',  () => { saveProfiles(); saveBoardSnapshot(true); process.exit(0); });
+process.on('SIGTERM', () => { saveProfiles(); saveBoardSnapshot(true); _saveSessionState(true); });
+process.on('SIGINT',  () => { saveProfiles(); saveBoardSnapshot(true); _saveSessionState(true); process.exit(0); });
 // profile = { discordId, username, avatar, countryMain, countryB, countryC, rank, xp, joinedAt }
 
 function generateToken() {
@@ -2427,12 +2427,16 @@ let _worldResetAt = 0;
 // v61: persist the conquest payload so late-joiners and refreshes get the same screen
 let _worldConquestPayload = null;
 
-// ── v97: per-player SESSION stats (current round) ─────────────────
-// All-time stats live in the persisted profile; these are in-memory and reset on
-// boot + on _resetWorld, powering the leaderboard "This Session" tab and the win
-// screen's "Top Contributors" credit for the round that was just won.
+// ── v97: per-player SESSION stats + the "war" (game) counter ──────
+// SESSION = the CURRENT GAME, i.e. until the world is conquered (v97h). It now
+// PERSISTS to disk so a server restart mid-game keeps the running tally; it is
+// cleared ONLY on _resetWorld (world conquered), which also bumps the war number.
+// All-time stats live in the persisted profile (cumulative across all games).
+const SESSION_FILE = path.join(__dirname, 'session_state.json');
+let _warNumber = 1;                 // v97h: which PixelAnnex War (game #) this is
 let _sessionStartMs = Date.now();
 const _sessionStats = new Map(); // discordId → { discordId, username, avatar, country, pixels, conquests }
+let _sessionDirty = false;
 function _recordSession(discordId, username, avatar, country, dPixels, dConquests) {
   if (!discordId) return;
   let s = _sessionStats.get(discordId);
@@ -2442,6 +2446,7 @@ function _recordSession(discordId, username, avatar, country, dPixels, dConquest
   if (country)  s.country  = country;
   s.pixels    += dPixels    || 0;
   s.conquests += dConquests || 0;
+  _sessionDirty = true;
 }
 function _sessionLeaderboard(limit) {
   return [..._sessionStats.values()]
@@ -2449,6 +2454,27 @@ function _sessionLeaderboard(limit) {
     .sort((a, b) => (b.pixels - a.pixels) || (b.conquests - a.conquests))
     .slice(0, limit || 20);
 }
+function _saveSessionState(sync) {
+  try {
+    const data = JSON.stringify({ warNumber: _warNumber, startMs: _sessionStartMs, stats: [..._sessionStats.values()] });
+    const tmp = SESSION_FILE + '.tmp';
+    if (sync) { fs.writeFileSync(tmp, data); fs.renameSync(tmp, SESSION_FILE); }
+    else { fs.writeFile(tmp, data, e => { if (!e) fs.rename(tmp, SESSION_FILE, () => {}); }); }
+    _sessionDirty = false;
+  } catch (e) { console.warn('[Session] save failed:', e.message); }
+}
+function _loadSessionState() {
+  try {
+    if (!fs.existsSync(SESSION_FILE)) { console.log('[Session] none on disk — War #1, fresh tally'); return; }
+    const d = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+    if (d && typeof d.warNumber === 'number') _warNumber = d.warNumber;
+    if (d && typeof d.startMs === 'number') _sessionStartMs = d.startMs;
+    if (d && Array.isArray(d.stats)) for (const s of d.stats) if (s && s.discordId) _sessionStats.set(String(s.discordId), s);
+    console.log('[Session] restored War #' + _warNumber + ',', _sessionStats.size, 'players this game');
+  } catch (e) { console.warn('[Session] load failed:', e.message); }
+}
+_loadSessionState();
+setInterval(() => { if (_sessionDirty) _saveSessionState(false); }, 30 * 1000); // persist running tally
 
 function _countDistinctConquered() {
   const set = new Set();
@@ -2538,7 +2564,12 @@ function _resetWorld() {
   _worldConquestActive = false;
   _worldResetAt = 0;
   _worldConquestPayload = null; // v61: clear so new sessions don't see stale overlay
-  _sessionStats.clear(); _sessionStartMs = Date.now(); // v97: fresh session leaderboard
+  // v97h: a finished game → next War. Bump the counter, wipe the session tally
+  // (all-time profiles persist), persist immediately.
+  _warNumber += 1;
+  _sessionStats.clear(); _sessionStartMs = Date.now();
+  _saveSessionState(true);
+  console.log('[Session] world reset → now PixelAnnex War #' + _warNumber);
   _timelapseRoundStart = Date.now(); // v95x: fresh timelapse window after a reset
   broadcast(JSON.stringify({ type: 'world_reset' }));
   console.log('[v38] World reset complete — broadcasting fresh state');
@@ -5746,6 +5777,7 @@ const httpServer = http.createServer(async (req, res) => {
       originalTotal:     _pc.total,    // v97c: real playable nations at world start
       originalStanding:  _pc.standing, // v97c: nations not yet conquered (matches picker)
       originalConquered: _pc.fallen,   // v97c: nations whose homeland has fallen
+      warNumber:         _warNumber,   // v97h: which PixelAnnex War (game #) this is
       topPlayers,
       totalPlayers:    realHumans + activeBots,
       totalBots:       activeBots,
