@@ -446,6 +446,28 @@ Before editing any function:
   `defenderName="Holder (formerly Native)"` ONLY when conquered; bot.js uses it
   (normal sieges keep the native role-mention). NOTE: bot.js change → needs
   `pm2 restart pixelannex-bot` (done).
+- **v97e (client + server) — REGEN OVERHAUL + OUTPOST MODE.** Regen cap 10→**12**.
+  - **David curve:** `getRegenMultiplier`/`_davidMult` now CONTINUOUS (was 5 tiers):
+    `1 + 6·(1 − share/0.05)³`, clamped — tiny homelands ~7×, →1× at ≥5% world share
+    (`DAVID_FLAT_SHARE`). share is STATIC (homeland size).
+  - **Alliance bonus** (`_allianceRegenAdd`): underdog-scaled + ADDITIVE — small
+    allied member +2 → large allied member +0.5 (`0.5+1.5·(1−share/0.05)`).
+  - **Leader tax** (`_leaderTaxSet`, `_recomputeLeaderTax` each david snapshot): the
+    top-3 CURRENT land-holders (≥4% of painted) get ×0.8 regen — the dynamic
+    rubber-band (chosen over a full ELO system; David is static so it can't balance).
+  - **Unified formula:** server `_serverRegen(id)` (bots) + client `getRegenMult()`
+    mirror: `exile? 0.5 : clamp(0.5,12, max(david,rank,highlight,1) + encircleAdd +
+    allyAdd) × (leaderTax?0.8:1)`. The david snapshot carries `allyAdd`/`leaderTax`/
+    `exiled` per country so the client mirrors exactly.
+  - **Outpost mode (reinstated, v95m partially reverted):** a homeland fall is now
+    **EXILE** (not death) IF the country still holds a conquered outpost — it survives
+    at a flat **0.5× regen** until it reclaims its homeland. `exiledSet` (SEPARATE
+    from `permanentlyConquered`, so exiles can still conquer + aren't liquidated; not
+    "Fallen", `perm=false`). No outposts → true death as before. 60s sweep resolves
+    exiles: homeland reclaimed (`_foreignHolderOf(home)===null`) → lift debuff
+    (`homeland_reclaimed`); lost all outposts → final death (`your_country_lost`).
+    New client msgs `homeland_exiled`/`homeland_reclaimed` (banner, NO re-pick).
+    Cleared on world reset.
 
 ## Screenshots for tweets (v88)
 
