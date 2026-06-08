@@ -90,6 +90,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #btn-bomb{background:#1a1020;border:1px solid rgba(239,68,68,0.3);color:#f87171;}
 #btn-bomb:hover{background:#2d1020;border-color:#ef4444;color:#fca5a5;}
 #btn-bomb.active{background:#7f1d1d;border-color:#ef4444;color:#fef2f2;box-shadow:0 0 0 2px rgba(239,68,68,0.3);}
+#btn-invert.active{background:#1e3a5f;border-color:#60a5fa;color:#dbeafe;box-shadow:0 0 0 2px rgba(96,165,250,0.3);}
 #btn-bomb.cooldown-flash{animation:bomb-cd-flash .4s ease-out;}
 @keyframes bomb-cd-flash{0%,100%{background:#1a1020;}50%{background:#7f1d1d;box-shadow:0 0 0 3px rgba(239,68,68,0.6);}}
 #btn-bomb.cooldown::after{content:" "attr(data-cooldown)"s";font-size:9px;opacity:.7;}
@@ -1378,6 +1379,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <button class="btn" id="btn-bomb" title="Captain+ rank: click to arm your selected weapon (Mortar / MOAB / Nuke), then click the map to drop it. Higher ranks unlock bigger blasts.">&#128165; Nuke</button>
     <div id="bomb-menu"></div>
     <button class="btn" id="btn-highlight" title="Admiral: click to enter target-select mode, then click a country to designate as your attack target">&#127919; Select Target</button>
+    <button class="btn" id="btn-invert" onclick="toggleInvertOwn()" title="Invert MY pixels: shows your own pixels in a contrasting colour so you can see them when painting onto a same-coloured country">&#128260; My Pixels</button>
     <div class="sep"></div>
     <div id="bucket-hud">
       <div id="bucket-bar"><div id="bucket-fill"></div></div>
@@ -3374,6 +3376,32 @@ function rebuildFeatIndex(){
   }
 }
 
+// v97g: "invert my pixels" — render the CURRENT player's own pixels in the inverse
+// of their country colour so they stand out when painting onto a same-coloured
+// country (e.g. yellow on yellow). Client-side only (other players see normal
+// colours); toggleable + persisted. All paint paths resolve fill colour via
+// _renderRgb(fi); a full claim-layer repaint applies it to existing pixels.
+let _invertOwn = false;
+try { _invertOwn = localStorage.getItem('pa_invert_own') === '1'; } catch(e){}
+function _renderRgb(fi){
+  const c = colorCache[fi] || (featList[fi] && featList[fi].color ? hexRgb(featList[fi].color) : [128,128,128]);
+  if (_invertOwn && fi === currentIdx) return [255 - c[0], 255 - c[1], 255 - c[2]];
+  return c;
+}
+function toggleInvertOwn(){
+  _invertOwn = !_invertOwn;
+  try { localStorage.setItem('pa_invert_own', _invertOwn ? '1' : '0'); } catch(e){}
+  const btn = document.getElementById('btn-invert');
+  if (btn) btn.classList.toggle('active', _invertOwn);
+  // Repaint the claim layer so existing pixels pick up / drop the inversion.
+  if (typeof mpRebuildClaimCanvas === 'function') mpRebuildClaimCanvas();
+}
+// Reflect the persisted preference on the toolbar button at load.
+document.addEventListener('DOMContentLoaded', () => {
+  const b = document.getElementById('btn-invert');
+  if (b) b.classList.toggle('active', _invertOwn);
+});
+
 // v40: cull helper — countries with 0 land pixels (Antarctica + tiny artifact-removed
 // islands) shouldn't be selectable since they have no playable territory.
 // v41b: ISO IDs that aren't meaningful playable countries (research stations,
@@ -3396,7 +3424,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v97f';
+const CODE_VERSION = '2026-06-07-v97g';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4320,7 +4348,7 @@ function eraseFlag(geoIdx){
 // pixels. With aggressive bot conquests, this was firing repeatedly via
 // setTimeout chains and burning the main thread for hundreds of ms each.
 function finisherFill(geoIdx,claimerIdx){
-  const [r,g,b]=hexRgb(featList[claimerIdx].color);
+  const [r,g,b]=_renderRgb(claimerIdx); // v97g
   const toFill=[];
   const src = geoPixelList && geoPixelList[geoIdx];
   if(src){
@@ -5155,7 +5183,7 @@ function claimPixel(px,py){
     geoClaimCnt[geo][currentIdx]=(geoClaimCnt[geo][currentIdx]||0)+1;
        checkConquest(geo,currentIdx);
   }
-  const [r,g,b]=hexRgb(featList[currentIdx].color);
+  const [r,g,b]=_renderRgb(currentIdx); // v97g: inverted if "invert my pixels" is on
   // v73: fillRect is far cheaper than createImageData(1,1)+putImageData
   // (no allocation, GPU-accelerated). Alpha 215/255 ≈ 0.843.
   claimCtx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.843)';
@@ -5519,7 +5547,7 @@ function runAutoFill(){
     if(enclosed.length < FILL_MIN_PX || encTooLarge) continue;
 
     // Claim enclosed pixels
-    const [r,g,b]=hexRgb(featList[currentIdx].color);
+    const [r,g,b]=_renderRgb(currentIdx); // v97g
     for(const gi of enclosed){
       const prev=claimByPixel[gi];
       if(prev>=0){
@@ -5665,7 +5693,7 @@ function detonateBomb(mapX, mapY){
   // Claim all land pixels within radius circle for current player
   const x0=Math.max(0,mapX-radius), x1=Math.min(MAP_W-1,mapX+radius);
   const y0=Math.max(0,mapY-radius), y1=Math.min(MAP_H-1,mapY+radius);
-  const [cr,cg,cb]=hexRgb(featList[currentIdx].color);
+  const [cr,cg,cb]=_renderRgb(currentIdx); // v97g
 
   let bx0=MAP_W,by0=MAP_H,bx1=0,by1=0;
   const claimed=[];
@@ -8062,7 +8090,7 @@ function applySnapshotRuns(ab) {
     const fi = (o === 0xFFFF) ? undefined : idToFeatIdx.get(String(o));
     if (fi === undefined) continue;
     claimerCount[fi] = (claimerCount[fi] || 0) + l;
-    const [r, g, b] = hexRgb(featList[fi].color);
+    const [r, g, b] = _renderRgb(fi); // v97g
     let pos = s;
     const end = s + l;
     while (pos < end && pos < MAP_PX) {
@@ -8303,7 +8331,7 @@ const SWEEP_INSTANT_MIN = 8000; // px — above this, paint at once instead of q
 function enqueuePaintsSweep(pixelArr, fi, staggerMs) {
   if (!pixelArr || !pixelArr.length) return;
   if (pixelArr.length > SWEEP_INSTANT_MIN && claimCtx) {
-    const rgb = colorCache[fi];
+    const rgb = _renderRgb(fi); // v97g
     if (rgb) {
       claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.843)';
       for (let k = 0; k < pixelArr.length; k++) {
@@ -8379,7 +8407,7 @@ function flushPaintQueue() {
   if (flashCtx) flashCtx.fillStyle = '#ffffff';
   let anyFlash = false;
   for (const [fi, arr] of readyByFi) {
-    const rgb = colorCache[fi];
+    const rgb = _renderRgb(fi); // v97g
     if (!rgb) continue;
     claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.843)';
     for (let k = 0; k < arr.length; k++) {
@@ -9373,12 +9401,20 @@ function mpRebuildClaimCanvas() {
   // a recovery path.
   const img = claimCtx.createImageData(MAP_W, MAP_H);
   const d   = img.data;
+  // v97g: honour "invert my pixels" for the current player's own pixels.
+  let ownInv = null;
+  if (_invertOwn && currentIdx >= 0) { const c = colorCache[currentIdx] || [128,128,128]; ownInv = [255-c[0],255-c[1],255-c[2]]; }
   for (let i = 0; i < MAP_PX; i++) {
     const fi = claimByPixel[i];
     if (fi < 0 || !featList[fi]) continue;
-    const [r,g,b] = hexRgb(featList[fi].color);
+    const rgb = (ownInv && fi === currentIdx) ? ownInv : (colorCache[fi] || hexRgb(featList[fi].color));
+    // v97g: preserve the faint native base (alpha 26) vs actively-painted (215) so a
+    // rebuild doesn't blast the whole map to full opacity. A pixel still owned by its
+    // OWN native country (claimByPixel === featByPixel) is base fill; anything else
+    // was painted by a non-native and shows full.
+    const alpha = (fi === featByPixel[i]) ? 26 : 215;
     const p = i*4;
-    d[p]=r; d[p+1]=g; d[p+2]=b; d[p+3]=215;
+    d[p]=rgb[0]; d[p+1]=rgb[1]; d[p+2]=rgb[2]; d[p+3]=alpha;
   }
   claimCtx.putImageData(img, 0, 0);
 }
@@ -11360,6 +11396,9 @@ function selectCountry(idx){
   if(!f) return;
   if(_countryChanged) _resetBonusesForCountryChange();
   if(_countryChanged) paTrack('country_selected', { country: f.name }); // v95w
+  // v97g: if "invert my pixels" is on, repaint so the OLD country's pixels revert
+  // to normal and the NEW country's pixels render inverted.
+  if(_countryChanged && _invertOwn && typeof mpRebuildClaimCanvas === 'function') mpRebuildClaimCanvas();
   const sw = document.getElementById('swatch');
   if(sw) sw.style.background = f.color;
   document.getElementById('csel-label').textContent = f.name;
