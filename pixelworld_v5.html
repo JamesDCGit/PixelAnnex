@@ -659,8 +659,12 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 }
 
 #stats-overlay{
-  position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;
-  display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);
+  position:fixed;inset:0;background:rgba(0,0,0,0.78);z-index:200;
+  display:none;align-items:center;justify-content:center;
+  /* v97i: backdrop-filter removed — clicking a tab repainted the scrolling modal
+     content under the full-screen blur layer, which left a rectangular "ghost"
+     afterimage (a Chrome backdrop-filter compositing bug). The dark overlay alone
+     dims the background fine. */
 }
 #stats-overlay.open{display:flex;}
 #stats-modal{
@@ -3428,7 +3432,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v97h';
+const CODE_VERSION = '2026-06-07-v97i';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
