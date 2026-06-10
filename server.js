@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-07-v97k';
+const SERVER_VERSION       = '2026-06-11-v98a';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3481,13 +3481,13 @@ const BOMB_COOLDOWN_MS = 30_000;
 const _lastBombAt = new Map(); // discordId or countryId → timestamp
 
 // ── Conquest immunity — anti instant-trade-back ──────────────────
-const CONQUEST_IMMUNITY_MS = 20_000;  // 20s no re-conquest after a flip
+const CONQUEST_IMMUNITY_MS = 60_000;  // v98: 60s invincibility after a flip (was 20s) — client shows countdown under the flag
 const _conquestImmunity = new Map(); // geoCountryId → expiresAt
 
 // ── Nuke lockout zones — server authoritative ─────────────────────
 // On Nuke detonation, server: (1) clears all pixels in radius (sets to unclaimed),
 // (2) creates a 2-minute lockout zone, (3) rejects any paint inside the zone.
-const NUKE_LOCKOUT_MS = 2 * 60 * 1000; // v97: 2 minute no-paint lockout
+const NUKE_LOCKOUT_MS = 5 * 60 * 1000; // v98: 5 minute no-paint lockout (was 2min) — client draws countdown above the zone
 const _nukeZones = []; // { cx, cy, radius, expiresAt }
 
 // Run nuke zone expiry every 1s — guarantees timely cleanup even with no traffic
@@ -3648,7 +3648,7 @@ setInterval(() => {
     // when it's painted. Same threshold rule (_evaluateConqueror) so the periodic
     // pass and the live pass agree. (1) If a different country now qualifies →
     // transfer. (2) Else if the holder is wiped to 0 px → ghost-clear the flag.
-    const newOwner = _evaluateConqueror(geo, total, true, curId);
+    const newOwner = _evaluateConqueror(geo, total, true, curId, true); // v98: championOnly
     if (newOwner && String(newOwner) !== String(curId) && !NON_PLAYABLE_IDS.has(String(newOwner))) {
       if (_transfersThisTick >= MAX_TRANSFERS_PER_TICK) continue;      // smooth client flood load
       const imm = _conquestImmunity.get(_gid);
@@ -3658,7 +3658,7 @@ setInterval(() => {
       _lastTransferAt.set(geo, now);
       const _conqs = [], _chg = [];
       _conquerGeo(geo, newOwner, _conqs, _chg);   // drops old holder + floods + broadcasts old-flag reversal
-      _conqs.forEach(c => broadcast(JSON.stringify({ type: 'conquest', geoIdx: c.geoIdx, countryId: c.countryId })));
+      _conqs.forEach(c => broadcast(JSON.stringify({ type: 'conquest', ...c }))); // v98: keep perm + immunityMs
       // clients flood locally via the 'conquest' event — no need to ship the flood pixels
       console.log('[Conquest] periodic transfer:', _gid, curId, '->', newOwner);
     } else if (getAllyOwnedCount(geo, curId) <= 0) {
@@ -3744,14 +3744,18 @@ function recomputeTotalLand() {
   totalLandPxCached = Object.values(geoTotal).reduce((a, b) => a + b, 0);
 }
 function getWorldShare(countryId) {
-  // World share is based on a country's NATIVE territory size (geoTotal),
-  // not on actively-painted pixels. This makes the David buff geographic
-  // (USA is always Goliath; Vatican is always David) regardless of who's
-  // actively painting where.
+  // v98: world share = the LARGER of native homeland size and CURRENT pixels
+  // held anywhere (countryPxCount). A small country that conquers a big empire
+  // sheds its underdog buff as it grows (operator request: adjust with total
+  // pixels, re-evaluated as conquests land); a big country that gets wiped
+  // stays Goliath (max() means you can't farm the David buff by losing land).
+  // Recomputed live — countryPxCount moves with every conquest/clear, and the
+  // david snapshot rebroadcasts ~5s. Replaces the v97e leader tax entirely.
   if (totalLandPxCached <= 0) return 0;
   const geoIdx = parseInt(countryId, 10);
   const territory = geoTotal[geoIdx] || 0;
-  return territory / totalLandPxCached;
+  const held = countryPxCount[String(countryId)] || 0;
+  return Math.max(territory, held) / totalLandPxCached;
 }
 // v97e: David↔Goliath is now a CONTINUOUS curve (was 5 hard tiers) with a wider
 // spread — tiny homelands get up to 7x, fading to 1x at >=5% world share. share is
@@ -3775,29 +3779,9 @@ function _allianceRegenAdd(countryId) {
   return 0.5 + 1.5 * (1 - t); // 2.0 (tiny) .. 0.5 (>=5%)
 }
 
-// v97e: leader tax — the top current land-holders get a -20% regen handicap (the
-// dynamic rubber-band). Based on ACTUAL holdings (countryPxCount), recomputed in
-// buildDavidSnapshot (~5s). Replaces a full ELO system with one cheap knob.
-const _leaderTaxSet = new Set();        // countryIds currently taxed
-const LEADER_TAX_TOP_N = 3;
-const LEADER_TAX_FACTOR = 0.8;
-const LEADER_TAX_MIN_SHARE = 0.04;      // must hold >=4% of painted land to be taxed
-function _recomputeLeaderTax() {
-  _leaderTaxSet.clear();
-  let totalPainted = 0;
-  const arr = [];
-  for (const id in countryPxCount) {
-    const c = countryPxCount[id] || 0;
-    if (c <= 0) continue;
-    totalPainted += c;
-    arr.push([id, c]);
-  }
-  if (totalPainted <= 0) return;
-  arr.sort((a, b) => b[1] - a[1]);
-  for (let i = 0; i < Math.min(LEADER_TAX_TOP_N, arr.length); i++) {
-    if (arr[i][1] / totalPainted >= LEADER_TAX_MIN_SHARE) _leaderTaxSet.add(String(arr[i][0]));
-  }
-}
+// v98: the v97e leader tax is REMOVED — the David curve itself is now dynamic
+// (getWorldShare uses current holdings), which is the same rubber-band without
+// a second knob fighting the first.
 
 const REGEN_CAP = 12; // v97e: raised 10→12 to give the new sources headroom
 
@@ -3810,7 +3794,7 @@ function _serverRegen(countryId) {
   const enc   = getEncircleMultiplier(countryId);
   const encAdd = enc > 1 ? enc : 0;
   let r = david + encAdd + _allianceRegenAdd(countryId);
-  if (_leaderTaxSet.has(String(countryId))) r *= LEADER_TAX_FACTOR;
+  // v98: leader tax removed — David's share is dynamic now.
   return Math.min(REGEN_CAP, Math.max(0.5, r));
 }
 
@@ -3818,17 +3802,15 @@ function _serverRegen(countryId) {
 // Sent every ~5s as part of the players broadcast.
 function buildDavidSnapshot() {
   if (totalLandPxCached <= 0) recomputeTotalLand();
-  _recomputeLeaderTax(); // v97e: refresh the dynamic leader-tax set each snapshot
   const out = {};
   for (const geoIdx of Object.keys(geoTotal)) {
     const cid   = String(geoIdx);
-    const share = getWorldShare(cid);
+    const share = getWorldShare(cid); // v98: dynamic (max of homeland, current holdings)
     const mult  = getRegenMultiplier(cid);
     out[cid] = { share, mult };
     // v97e: extra fields so the client can mirror the exact regen formula.
     const allyAdd = _allianceRegenAdd(cid);
     if (allyAdd > 0) out[cid].allyAdd = allyAdd;
-    if (_leaderTaxSet.has(cid)) out[cid].leaderTax = true;
     if (exiledSet.has(cid)) out[cid].exiled = true;
   }
   // Layer active encirclement bonuses on top — these stack with David
@@ -4133,7 +4115,12 @@ function _foreignHolderOf(geo) {
 // alliance that already holds the geo doesn't perpetually "win" the evaluation
 // and block a new raw-pixel leader from taking it via the contested path.
 // Returns the winner's country id, or null.
-function _evaluateConqueror(geo, total, dropEmpireBonus, excludeId) {
+// v98: `championOnly` — for RE-conquest of an already-held geo. The contested
+// path (b) was trivially satisfied there (the dead native holds ~0, so
+// foreigners always dominate the painted area) → any >50% raw holder flipped
+// it. With championOnly a challenger must reach the SAME size-scaled threshold
+// (~70-75%) as a virgin conquest.
+function _evaluateConqueror(geo, total, dropEmpireBonus, excludeId, championOnly) {
   if (!total) return null;
   const _geoId = geoToId(geo);
   const claims = geoClaimCnt[geo] || {};
@@ -4150,6 +4137,7 @@ function _evaluateConqueror(geo, total, dropEmpireBonus, excludeId) {
     if (o > champOwned) { champOwned = o; champId = cId; }
   }
   if (champId && champOwned / total >= effThresh) return champId;
+  if (championOnly) return null; // v98: re-conquest needs the full champion bar
   // (b) contested — largest RAW holder when foreigners dominate the painted area.
   const nativeOwned = claims[_geoId] || 0;
   let topId = null, topCnt = 0, foreignSum = 0;
@@ -4225,7 +4213,8 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
   }
   // perm flag → client marks the geo's native as dead (drives "Fallen" rendering).
   // An exile is NOT dead, so perm stays false (homeland is a normal conquest).
-  conquests.push({ geoIdx: geo, countryId: conquerorId, perm: permanentlyConquered.has(geoId) });
+  conquests.push({ geoIdx: geo, countryId: conquerorId, perm: permanentlyConquered.has(geoId),
+                   immunityMs: CONQUEST_IMMUNITY_MS }); // v98: client shows shield countdown under the flag
   changed.push(...finisherFill(geo, conquerorId));
   // Only a FRESH kill notifies the falling country's players + Discord. Transfers,
   // self-conquest, and re-takes of already-fallen zones are silent (anti-spam).
@@ -4357,7 +4346,7 @@ function applyPixels(pixels, countryId) {
     // permanent lock (which froze ownership forever).
     const _curHolder = _foreignHolderOf(geo);
     if (_curHolder !== null) {
-      const _newOwner = _evaluateConqueror(geo, total, true, _curHolder);
+      const _newOwner = _evaluateConqueror(geo, total, true, _curHolder, true); // v98: championOnly
       if (_newOwner && String(_newOwner) !== String(_curHolder)) {
         _conquerGeo(geo, _newOwner, conquests, changed); // transfer (drops old holder inside)
       }
@@ -4448,8 +4437,9 @@ function applyPixels(pixels, countryId) {
 // clicks are detected the moment the ring closes.
 // Performance: BFS is bounded by own-pixel bbox area capped at 200k cells.
 const ENCIRCLE_MIN_PX      = 15;    // v97j: lowered 50→15 — reward small encirclements too
-const ENCIRCLE_MAX_PX      = 500;   // cap on auto-claimed enclosed pixels
-const ENCIRCLE_BBOX_PAD    = 8;     // padding around own-pixel bbox
+const ENCIRCLE_MAX_PX      = 10000; // v98: 500→10000, matches client MAX_FILL_PX (500 caused top-slice half-fills)
+const ENCIRCLE_BBOX_PAD    = 160;   // v98: padding around the STROKE bbox (was 8 around own-pixel bbox)
+const ENCIRCLE_BBOX_PAD_MIN = 8;    // v98: fallback pad when the generous pad blows the area cap
 const ENCIRCLE_MAX_BBOX_AREA = 200000; // bail if bbox area exceeds this
 
 // Bresenham line between two pixels — used to seal gaps where the mouse
@@ -4471,28 +4461,40 @@ function _bresenhamLine(x0, y0, x1, y1) {
   return out;
 }
 
-function detectEncirclement(strokePixels, countryId) {
+// v98 REWRITE — fixes three field bugs:
+//  (a) RETRIGGER: the old pass counted EVERY non-own pixel sealed inside the
+//      player's cumulative walls, so any stroke-end re-detected old pockets
+//      (bots chipping your interior re-armed it constantly) and reset the 60s
+//      timer. Now we run a second BFS with the new stroke pixels OPENED
+//      (changedSet = pixels this stroke actually flipped to own) and award only
+//      regions that are sealed WITH the stroke but reachable WITHOUT it — i.e.
+//      regions this stroke genuinely closed. Repainting your own wall flips
+//      nothing (changedSet empty) so it can never re-fire.
+//  (b) NO-TRIGGER: the bbox came from ALL own pixels in the geo — a player with
+//      scattered pixels across a big country blew ENCIRCLE_MAX_BBOX_AREA and
+//      detection silently bailed. The bbox now comes from the STROKE (+pad).
+//  (c) HALF-FILL: enclosed collection truncated at 500px in row-major order
+//      (top slice only) and only the single largest geo was awarded (a circle
+//      spanning a border filled one side). Cap is now 10k = client MAX_FILL_PX
+//      (over-cap regions are skipped whole, never truncated) and ALL geos
+//      inside the ring are collected in one pass.
+// changedSet: Set of pixel indices this stroke actually flipped to own
+// (accumulated in the 'stroke' handler, cleared at stroke-end).
+function detectEncirclement(strokePixels, countryId, changedSet) {
   if (!strokePixels || strokePixels.length < 1) return null;
   const cidx = getIdx(countryId);
 
-  // 1. Which geos does this stroke touch?
-  const touchedGeos = new Set();
-  for (const { x, y } of strokePixels) {
-    const gi = y * MAP_W + x;
-    if (gi >= 0 && gi < MAP_PX && landMask[gi]) {
-      const g = geoAtPixel[gi];
-      if (g >= 0) touchedGeos.add(g);
-    }
-  }
-  if (touchedGeos.size === 0) return null;
-
-  // 2. Build Bresenham-interpolated stroke wall once (seals fast-drag gaps).
-  //    These interpolated pixels are NOT in claimByPixel yet but must block BFS.
-  // We build a sparse map indexed by (y*MAP_W+x) for quick lookup.
+  // 1. Stroke bounding box + Bresenham-interpolated stroke wall (seals
+  //    fast-drag gaps; interpolated pixels are NOT in claimByPixel but must
+  //    block the pass-A BFS).
   const strokeWallMap = new Set();
+  let sMinX = MAP_W, sMinY = MAP_H, sMaxX = 0, sMaxY = 0;
   for (let s = 0; s < strokePixels.length; s++) {
     const p = strokePixels[s];
+    if (p.x < 0 || p.x >= MAP_W || p.y < 0 || p.y >= MAP_H) continue;
     strokeWallMap.add(p.y * MAP_W + p.x);
+    if (p.x < sMinX) sMinX = p.x; if (p.x > sMaxX) sMaxX = p.x;
+    if (p.y < sMinY) sMinY = p.y; if (p.y > sMaxY) sMaxY = p.y;
     if (s > 0) {
       const prev = strokePixels[s - 1];
       const dx = Math.abs(p.x - prev.x), dy = Math.abs(p.y - prev.y);
@@ -4502,49 +4504,40 @@ function detectEncirclement(strokePixels, countryId) {
       }
     }
   }
+  if (sMinX > sMaxX) return null; // no in-bounds stroke pixels
 
-  let bestResult = null;
+  // 2. Pad the stroke bbox. Generous pad covers multi-stroke rings whose final
+  //    closing stroke is small; fall back to a tight pad before giving up.
+  let pad = ENCIRCLE_BBOX_PAD;
+  let minX, minY, maxX, maxY, bw, bh;
+  for (;;) {
+    minX = Math.max(0, sMinX - pad); minY = Math.max(0, sMinY - pad);
+    maxX = Math.min(MAP_W - 1, sMaxX + pad); maxY = Math.min(MAP_H - 1, sMaxY + pad);
+    bw = maxX - minX + 1; bh = maxY - minY + 1;
+    if (bw * bh <= ENCIRCLE_MAX_BBOX_AREA) break;
+    if (pad <= ENCIRCLE_BBOX_PAD_MIN) return null; // stroke itself too large
+    pad = ENCIRCLE_BBOX_PAD_MIN;
+  }
 
-  for (const geoIdx of touchedGeos) {
-    const geoPxArr = geoPixels[geoIdx];
-    if (!geoPxArr || geoPxArr.length === 0) continue;
+  // 3. Two wall predicates.
+  //    A (with stroke):   own pixels + stroke/Bresenham pixels — current state.
+  //    B (without stroke): own pixels MINUS the ones this stroke just flipped —
+  //    the pre-stroke state. Regions enclosed in A but reachable in B were
+  //    closed by THIS stroke.
+  const isWallA = (gi) => strokeWallMap.has(gi) || claimByPixel[gi] === cidx;
+  const isWallB = (gi) => claimByPixel[gi] === cidx && !(changedSet && changedSet.has(gi));
 
-    // 3. Bounding box of all OWN pixels in this geo.
-    //    This works for rings built over many separate strokes because
-    //    claimByPixel reflects the full cumulative paint history.
-    let ownMinX = MAP_W, ownMinY = MAP_H, ownMaxX = 0, ownMaxY = 0, hasOwn = false;
-    for (let pi = 0; pi < geoPxArr.length; pi++) {
-      const i = geoPxArr[pi];
-      if (claimByPixel[i] !== cidx && !strokeWallMap.has(i)) continue;
-      const x = i % MAP_W, y = (i / MAP_W) | 0;
-      if (x < ownMinX) ownMinX = x; if (x > ownMaxX) ownMaxX = x;
-      if (y < ownMinY) ownMinY = y; if (y > ownMaxY) ownMaxY = y;
-      hasOwn = true;
-    }
-    if (!hasOwn) continue;
+  const cells = bw * bh;
+  const visitedA = new Uint8Array(cells);
+  const visitedB = new Uint8Array(cells);
+  const queue    = new Int32Array(cells);
 
-    const minX = Math.max(0, ownMinX - ENCIRCLE_BBOX_PAD);
-    const minY = Math.max(0, ownMinY - ENCIRCLE_BBOX_PAD);
-    const maxX = Math.min(MAP_W - 1, ownMaxX + ENCIRCLE_BBOX_PAD);
-    const maxY = Math.min(MAP_H - 1, ownMaxY + ENCIRCLE_BBOX_PAD);
-    const bw = maxX - minX + 1, bh = maxY - minY + 1;
-    if (bw * bh > ENCIRCLE_MAX_BBOX_AREA) continue; // too large, skip
-
-    // 4. Inline wall check: Bresenham gaps OR all own pixels (cumulative).
-    const isWall = (gx, gy) => {
-      const gi = gy * MAP_W + gx;
-      return strokeWallMap.has(gi) || claimByPixel[gi] === cidx;
-    };
-
-    // 5. BFS from bbox edges — anything reachable = "outside the ring".
-    const visited = new Uint8Array(bw * bh);
-    const queue   = new Int32Array(bw * bh);
+  const flood = (visited, isWall) => {
     let head = 0, tail = 0;
     const seed = (lx, ly) => {
-      if (lx < 0 || lx >= bw || ly < 0 || ly >= bh) return;
       const li = ly * bw + lx;
       if (visited[li]) return;
-      if (isWall(minX + lx, minY + ly)) return;
+      if (isWall((minY + ly) * MAP_W + (minX + lx))) return;
       visited[li] = 1; queue[tail++] = li;
     };
     for (let lx = 0; lx < bw; lx++) { seed(lx, 0); seed(lx, bh - 1); }
@@ -4557,41 +4550,44 @@ function detectEncirclement(strokePixels, countryId) {
         if (nx < 0 || nx >= bw || ny < 0 || ny >= bh) continue;
         const nli = ny * bw + nx;
         if (visited[nli]) continue;
-        if (isWall(minX + nx, minY + ny)) continue;
+        if (isWall((minY + ny) * MAP_W + (minX + nx))) continue;
         visited[nli] = 1; queue[tail++] = nli;
       }
     }
+  };
+  flood(visitedA, isWallA);
+  flood(visitedB, isWallB);
 
-    // 6. Collect enclosed: same geo, land, not own, not reachable from outside.
-    const enclosed = [];
-    for (let ly = 0; ly < bh && enclosed.length < ENCIRCLE_MAX_PX; ly++) {
-      for (let lx = 0; lx < bw && enclosed.length < ENCIRCLE_MAX_PX; lx++) {
-        const li = ly * bw + lx;
-        if (visited[li]) continue;
-        const gx = minX + lx, gy = minY + ly;
-        const gi = gy * MAP_W + gx;
-        if (!landMask[gi]) continue;
-        if (geoAtPixel[gi] !== geoIdx) continue; // stay within this geo
-        if (claimByPixel[gi] === cidx) continue; // exclude own pixels
-        if (strokeWallMap.has(gi)) continue;      // exclude Bresenham wall pixels
-        enclosed.push({ x: gx, y: gy });
-      }
-    }
-
-    if (enclosed.length >= ENCIRCLE_MIN_PX) {
-      if (!bestResult || enclosed.length > bestResult.count) {
-        let sumX = 0, sumY = 0;
-        for (const p of enclosed) { sumX += p.x; sumY += p.y; }
-        bestResult = {
-          enclosed, count: enclosed.length,
-          centerX: Math.round(sumX / enclosed.length),
-          centerY: Math.round(sumY / enclosed.length),
-        };
-      }
+  // 4. Collect NEWLY enclosed: land, in a geo, not own, sealed in A (not
+  //    reachable from bbox edge) but reachable in B (so this stroke closed it).
+  //    No geo restriction — a ring spanning a border claims both sides
+  //    (applyPixels handles per-geo conquest accounting).
+  const enclosed = [];
+  let tooLarge = false;
+  for (let ly = 0; ly < bh && !tooLarge; ly++) {
+    for (let lx = 0; lx < bw; lx++) {
+      const li = ly * bw + lx;
+      if (visitedA[li] || !visitedB[li]) continue; // reachable now / old pocket
+      const gx = minX + lx, gy = minY + ly;
+      const gi = gy * MAP_W + gx;
+      if (!landMask[gi]) continue;
+      if (geoAtPixel[gi] < 0) continue;            // unattributed land — skip
+      if (claimByPixel[gi] === cidx) continue;     // own pixels
+      if (strokeWallMap.has(gi)) continue;         // Bresenham wall pixels
+      enclosed.push({ x: gx, y: gy });
+      if (enclosed.length > ENCIRCLE_MAX_PX) { tooLarge = true; break; }
     }
   }
+  // Over-cap → no award at all (matches the client's skip — never half-fill).
+  if (tooLarge || enclosed.length < ENCIRCLE_MIN_PX) return null;
 
-  return bestResult;
+  let sumX = 0, sumY = 0;
+  for (const p of enclosed) { sumX += p.x; sumY += p.y; }
+  return {
+    enclosed, count: enclosed.length,
+    centerX: Math.round(sumX / enclosed.length),
+    centerY: Math.round(sumY / enclosed.length),
+  };
 }
 
 // Map enclosed pixel count → regen multiplier and duration
@@ -6803,6 +6799,14 @@ wss.on('connection', (ws, req) => {
         const limitedPixels = allowed < msg.pixels.length ? msg.pixels.slice(0, allowed) : msg.pixels;
         const { changed, conquests, reversals } = applyPixels(limitedPixels, player.countryId);
         if (changed.length) queueDelta(changed);
+        // v98: track pixels THIS stroke actually flipped to own — encirclement
+        // detection opens exactly these in its "without the stroke" BFS pass,
+        // so repainting your own wall can never re-trigger the bonus.
+        if (changed.length) {
+          if (!player._strokeChanged) player._strokeChanged = new Set();
+          if (player._strokeChanged.size < 20000)
+            for (const px of changed) player._strokeChanged.add(px.y * MAP_W + px.x);
+        }
         // Award XP and stats to logged-in players
         if (player.discordId && changed.length) {
           updateProfileXP(player.discordId, changed.length);
@@ -6843,8 +6847,11 @@ wss.on('connection', (ws, req) => {
         // Pixels have ALREADY been applied via per-pixel 'stroke' events.
         // We only run encirclement detection here.
         if (!player.countryId || !Array.isArray(msg.pixels)) return;
+        // v98: consume + clear the per-stroke changed set even on early returns.
+        const strokeChanged = player._strokeChanged;
+        player._strokeChanged = null;
         if (msg.pixels.length < 1 || msg.pixels.length > 5000) return; // v68: ≥1 (was ≥4)
-        const enc = detectEncirclement(msg.pixels, player.countryId);
+        const enc = detectEncirclement(msg.pixels, player.countryId, strokeChanged);
         if (!enc) return;
         const { changed: encChanged, conquests: encConquests, reversals: encReversals } =
           applyPixels(enc.enclosed, player.countryId);
@@ -6861,10 +6868,18 @@ wss.on('connection', (ws, req) => {
           markProfilesDirty();
         }
         const bonus = getEncircleBonus(enc.count);
-        encircleBonuses.set(String(player.countryId), {
-          mult:      bonus.mult,
-          expiresAt: Date.now() + bonus.durationMs,
-        });
+        // v98: ratchet — an overlapping smaller encirclement must not downgrade
+        // an active higher multiplier (mirrors the client's v93y rule). The
+        // timer still refreshes: this is a GENUINE new encirclement (the v98
+        // newly-enclosed-only detection killed the spurious re-triggers).
+        {
+          const _prev = encircleBonuses.get(String(player.countryId));
+          const _mult = (_prev && _prev.expiresAt > Date.now()) ? Math.max(_prev.mult, bonus.mult) : bonus.mult;
+          encircleBonuses.set(String(player.countryId), {
+            mult:      _mult,
+            expiresAt: Date.now() + bonus.durationMs,
+          });
+        }
         try {
           if (player.ws && player.ws.readyState === 1) {
             player.ws.send(JSON.stringify({

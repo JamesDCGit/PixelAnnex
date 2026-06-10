@@ -43,7 +43,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #retry-btn{display:none;background:#162035;border:1px solid rgba(255,255,255,0.15);color:#93c5fd;padding:6px 16px;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit}
 #retry-btn:hover{background:#1e2e4a}
 .hud{position:absolute;background:rgba(7,13,26,.9);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:9px 12px;}
-#legend{bottom:12px;left:12px;max-width:200px;max-height:260px;overflow-y:auto;overflow-x:hidden}
+#legend{bottom:12px;left:12px;max-width:200px;max-height:260px;overflow-y:auto;overflow-x:hidden;z-index:12}/* v98: above #flag-overlay (z7) — flags used to render over the panel */
 #legend::-webkit-scrollbar{width:6px;height:6px}
 #legend::-webkit-scrollbar-thumb{background:#2e5a8a;border-radius:3px}
 /* Territory panel tab bar — h3 becomes the tab strip */
@@ -1221,6 +1221,18 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   white-space: nowrap;
   pointer-events: none;
   transition: opacity .15s linear;
+  will-change: transform;
+}
+/* v98: post-conquest invincibility countdown under the flag label */
+#flag-overlay .pa-flag-shield {
+  position: absolute;
+  top: 0; left: 0;
+  font: 700 9px/1 "Courier New", monospace;
+  color: #fbbf24;
+  text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 1px #000;
+  white-space: nowrap;
+  pointer-events: none;
+  display: none;
   will-change: transform;
 }
 
@@ -3445,7 +3457,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v97k';
+const CODE_VERSION = '2026-06-11-v98a';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3466,6 +3478,8 @@ let claimerCount={},geoClaimCnt={},geoTotal={};
 // v70: per-geo pixel index — avoids O(MAP_PX) scans in runAutoFill
 let geoPixelList = {};   // geoIdx → Int32Array of pixel offsets (built once at load)
 let _autoFillOutside = null; // Uint8Array(MAP_PX), reused across runAutoFill calls
+let _autoFillOutsideB = null; // v98: second pass ("without the stroke") array
+let _autoFillQueue = null;    // v98: reusable BFS scratch queue (grown as needed)
 // ── Pixel inventory ──────────────────────────────────────────────
 const BUCKET_MAX       = 100;   // v87: max pixels a player can hold (was 1000)
 const REGEN_INTERVAL   = 5;     // seconds between +1 pixel — TEST MODE (production: 60)
@@ -3487,7 +3501,7 @@ function updateTabTitle() {
 setInterval(updateTabTitle, 2000);
 document.addEventListener('visibilitychange', updateTabTitle);
 
-let   regenSecsLeft    = REGEN_INTERVAL;
+// v98: regenSecsLeft removed — regen is timestamp-based (_regenTick).
 // ── Bomb mode ───────────────────────────────────────────────────
 let   bombMode         = false;
 let bordPixel=null;   // Uint8Array MAP_PX — 1 where a border pixel was drawn
@@ -3704,6 +3718,21 @@ function drawNukeZoneOverlay() {
           nukeCtx.fillRect(px, py, 1, 1);
         }
       }
+    }
+    // v98: lockout countdown above the trefoil (m:ss). Drawn in map pixels so
+    // it scales with zoom, like the zone itself.
+    {
+      const secs = Math.ceil(remaining / 1000);
+      const mm = Math.floor(secs / 60), ss = secs % 60;
+      const txt = mm + ':' + (ss < 10 ? '0' : '') + ss;
+      nukeCtx.font = '700 9px "Courier New", monospace';
+      nukeCtx.textAlign = 'center';
+      nukeCtx.textBaseline = 'bottom';
+      const ty = z.cy - z.radius - 2;
+      nukeCtx.fillStyle = 'rgba(0,0,0,' + (0.85 * outlineAlpha) + ')';
+      nukeCtx.fillText(txt, z.cx + 1, ty + 1);
+      nukeCtx.fillStyle = 'rgba(250,204,21,' + outlineAlpha + ')';
+      nukeCtx.fillText(txt, z.cx, ty);
     }
   }
   nukeCtx.restore();
@@ -4072,6 +4101,26 @@ function drawFlagAt(cx,cy,claimer){
 
 // ── v33: DOM flag overlay subsystem ───────────────────────────────
 const _flagDOMNodes = {};
+// v98: geoIdx (featList index) → ms timestamp the post-conquest invincibility
+// ends. Drives the gold "🛡️ Ns" countdown under the flag; the server enforces
+// the actual transfer block (CONQUEST_IMMUNITY_MS).
+const _geoImmuneUntil = {};
+setInterval(() => {
+  const now = Date.now();
+  for (const g in _geoImmuneUntil) {
+    const arr = _flagDOMNodes[g];
+    const left = _geoImmuneUntil[g] - now;
+    if (left <= 0) {
+      delete _geoImmuneUntil[g];
+      if (arr) for (const e of arr) if (e.shield) e.shield.style.display = 'none';
+      continue;
+    }
+    if (arr) for (const e of arr) if (e.shield) {
+      e.shield.textContent = '\u{1F6E1}️ ' + Math.ceil(left / 1000) + 's';
+      e.shield.style.display = 'block';
+    }
+  }
+}, 500);
 const _flagDataURLCache = {};
 
 
@@ -4183,7 +4232,11 @@ function _makeFlagNode(claimerFi, overlay) {
   const lbl = document.createElement('div');
   lbl.className = 'pa-flag-label';
   overlay.appendChild(lbl);
-  return { el: img, label: lbl, cx: 0, cy: 0, isoId: claimerFi.id };
+  // v98: invincibility countdown under the label
+  const shield = document.createElement('div');
+  shield.className = 'pa-flag-shield';
+  overlay.appendChild(shield);
+  return { el: img, label: lbl, shield, cx: 0, cy: 0, isoId: claimerFi.id };
 }
 
 // v95e: place/update one flag PER landmass. `centers` = [{cx,cy}, …] (largest first).
@@ -4225,8 +4278,9 @@ function _placeFlagDOM(geoIdx, claimerFi, centers) {
 function _eraseFlagDOM(geoIdx) {
   const arr = _flagDOMNodes[geoIdx];
   if (!arr) return;
-  for (const e of arr) { e.el.remove(); if (e.label) e.label.remove(); } // v94/v95e
+  for (const e of arr) { e.el.remove(); if (e.label) e.label.remove(); if (e.shield) e.shield.remove(); } // v94/v95e/v98
   delete _flagDOMNodes[geoIdx];
+  delete _geoImmuneUntil[geoIdx]; // v98: drop any pending shield countdown
 }
 
 function _updateFlagDOMPosition(entry) {
@@ -4235,6 +4289,8 @@ function _updateFlagDOMPosition(entry) {
   entry.el.style.transform = 'translate(' + (screenX - 13) + 'px, ' + (screenY - 8.5) + 'px)';
   // v94: centre the label horizontally under the flag (flag is ~17px tall).
   if (entry.label) entry.label.style.transform = 'translate(' + screenX + 'px, ' + (screenY + 10) + 'px) translateX(-50%)';
+  // v98: shield countdown sits one line below the label.
+  if (entry.shield) entry.shield.style.transform = 'translate(' + screenX + 'px, ' + (screenY + 21) + 'px) translateX(-50%)';
 }
 
 function _updateAllFlagPositions() {
@@ -5218,9 +5274,11 @@ function paintBrush(px,py){
   if(!landMask||!landMask[py*MAP_W+px]) return;
   // Block painting if this pixel already belongs to the same country (wastage prevention)
   if(claimByPixel[py*MAP_W+px]===currentIdx) return;
-  // Inventory gate: each brush call costs 1 pixel
-  if(pixelBucket<=0) return;
-  pixelBucket--;
+  // Inventory gate: each brush call costs 1 pixel.
+  // v98: require a FULL pixel and clamp — fractional accrual (e.g. 0.6) must
+  // never let a spend drive the bucket negative.
+  if(pixelBucket < 1) return;
+  pixelBucket = Math.max(0, pixelBucket - 1);
   updateBucketHUD();
   sfxPixelPlace();
   const half=Math.floor(brushSize/2),rsq=(brushSize/2)**2;
@@ -5317,14 +5375,19 @@ function scheduleLegend(){
       const pct=(cnt/base*100).toFixed(2);
       // Blend country colour against land base (#535353) at alpha=215
       // to match exactly how it looks painted on the map canvas
+      // v98: fallen (dead-homeland) countries are REMOVED from the panel
+      // entirely (was: greyed out) — operator request.
+      if(typeof _isCountryFallenClient==='function' && _isCountryFallenClient(f.id)) return;
       const row=document.createElement("div");row.className="leg-row";
-      // v95j: grey out fallen (conquered-homeland) countries, like the picker.
-      if(typeof _isCountryFallenClient==='function' && _isCountryFallenClient(f.id)) row.classList.add('fallen'); // v95k: survivors (holding outposts) aren't fallen
       row.dataset.countryId = f.id;
       // v93z: click highlights this country's painted footprint on the map (same
       // effect as right-click inspect) — no popup menu.
       row.onclick=()=>{ inspectCountryHighlight(+idx); if(typeof sfxUIClick==='function') sfxUIClick(); };
       row.title='Click to highlight ' + f.name + ' on the map';
+      // v98: hovering a row lists the countries this one currently OCCUPIES —
+      // lets players track an opponent's empire from the panel.
+      row.onmouseenter=(ev)=>_showLegendOccTip(row, f);
+      row.onmouseleave=_hideLegendOccTip;
       // v92b: rank-position badge (🥇🥈🥉 / #4…)
       const _lr=document.createElement('span'); _lr.className='leg-rank'; _lr.textContent=_rankBadge(_rankPos+1); row.appendChild(_lr);
       const _lf=createFlagEl(f.id,1); if(_lf)row.appendChild(_lf);
@@ -5355,6 +5418,52 @@ function scheduleLegend(){
       el.appendChild(row);
     });
   },120);
+}
+
+// ── v98: territory-panel hover → "occupies" tooltip ──────────────
+// conqueredSet entries are "geoCountryId:holderId" — collect the geos a given
+// holder currently occupies (excluding its own homeland) and show them in a
+// small floating panel beside the hovered row.
+function _occupationsOf(holderId) {
+  const out = [];
+  const hid = String(holderId);
+  for (const k of conqueredSet) {
+    const p = String(k).split(':');
+    if (p[1] !== hid || p[0] === hid) continue;
+    const fi = idToFeatIdx.get(String(p[0]));
+    const f  = fi !== undefined ? featList[fi] : null;
+    out.push(f && f.name ? f.name : ('Country ' + p[0]));
+  }
+  out.sort();
+  return out;
+}
+function _showLegendOccTip(row, f) {
+  let tipEl = document.getElementById('leg-occ-tip');
+  if (!tipEl) {
+    tipEl = document.createElement('div');
+    tipEl.id = 'leg-occ-tip';
+    tipEl.style.cssText = 'position:fixed;display:none;z-index:40;pointer-events:none;' +
+      'background:rgba(7,13,26,.97);border:1px solid rgba(255,255,255,.12);border-radius:7px;' +
+      'padding:7px 10px;font-size:11px;color:#cbd5e1;max-width:200px;line-height:1.45;' +
+      'box-shadow:0 4px 16px rgba(0,0,0,.4);';
+    document.body.appendChild(tipEl);
+  }
+  const occ = _occupationsOf(f.id);
+  if (!occ.length) { tipEl.style.display = 'none'; return; }
+  const shown = occ.slice(0, 10);
+  tipEl.innerHTML = '<b style="color:#e2e8f0">' + escapeHtml(f.name) + '</b> occupies ' + occ.length + ':<br>' +
+    shown.map(escapeHtml).join('<br>') +
+    (occ.length > shown.length ? '<br>+' + (occ.length - shown.length) + ' more' : '');
+  const r = row.getBoundingClientRect();
+  tipEl.style.display = 'block';
+  tipEl.style.left = (r.right + 8) + 'px';
+  // Clamp vertically so long lists stay on screen.
+  const th = tipEl.offsetHeight || 40;
+  tipEl.style.top = Math.max(8, Math.min(window.innerHeight - th - 8, r.top)) + 'px';
+}
+function _hideLegendOccTip() {
+  const tipEl = document.getElementById('leg-occ-tip');
+  if (tipEl) tipEl.style.display = 'none';
 }
 
 // ── View ─────────────────────────────────────────────────────────
@@ -5395,7 +5504,7 @@ function screenToMap(sx,sy){const r=vp.getBoundingClientRect();return{x:Math.flo
 //   - You cannot fill across country borders
 //   - Small border completes a loop → only the loop interior fills
 const MAX_FILL_PX = 10000;  // v70: cap at 10k — prevents slow GPU readback on large false-fills
-const FILL_MIN_PX = 10;     // v70: ignore tiny accidental enclosures
+const FILL_MIN_PX = 15;     // v70: ignore tiny accidental enclosures (v98: 10→15, matches server ENCIRCLE_MIN_PX)
 // v91: progressive, size-scaled conquest threshold — MUST stay byte-identical
 // to the copy in server.js so local prediction matches the authoritative server.
 // v91c: small=75% (was 90% — too hard), large=70%.
@@ -5432,7 +5541,9 @@ function _getAllyOwned(geoIdx, claimerIdx) {
   let sum = own;
   for (const memberId of ally.countries) {
     if (String(memberId) === claimerId) continue;
-    const fi = featList.findIndex(f => String(f.id) === String(memberId));
+    // v98 perf: O(1) Map lookup — findIndex here was the documented O(N)
+    // landmine (string compare across ~200 countries per ally per stroke).
+    const fi = idToFeatIdx.has(String(memberId)) ? idToFeatIdx.get(String(memberId)) : -1;
     if (fi >= 0) sum += (geoClaimCnt[geoIdx] && geoClaimCnt[geoIdx][fi]) || 0;
   }
   return sum;
@@ -5454,6 +5565,19 @@ let strokePixelBuffer = [];
 // Populated synchronously on mouseup/touchend (before strokePixelBuffer is cleared),
 // consumed by the async runAutoFill call.
 let _strokeWall = null;
+// v98: set of pixel indices THIS stroke flipped to own (strokePixelBuffer only
+// ever receives genuine flips — claimPixel rejects repaints of own pixels).
+// runAutoFill's "without the stroke" BFS pass opens exactly these, so only
+// regions the stroke genuinely closed get filled (kills phantom re-fills of
+// old pockets chipped by bots). Mirrors the server's v98 detectEncirclement.
+let _strokeChangedSet = null;
+function _buildStrokeChangedSet(buf) {
+  if (!buf || buf.length === 0) return null;
+  const s = new Set();
+  for (const p of buf)
+    if (p.x >= 0 && p.x < MAP_W && p.y >= 0 && p.y < MAP_H) s.add(p.y * MAP_W + p.x);
+  return s;
+}
 
 // v63: build stroke wall with Bresenham interpolation so fast mouse-drags don't
 // leave gaps that let the BFS flood through, causing encirclement to silently fail.
@@ -5507,14 +5631,25 @@ function buildGeoPixelList() {
   console.log('[GeoIndex] built for', Object.keys(geoPixelList).length, 'geos');
 }
 
+// v98: wall predicate for the "without this stroke" BFS pass — pre-stroke
+// state: own pixels minus the ones this stroke flipped (Bresenham gap pixels
+// were never own, so they're open here too).
+function isWallFillPre(i){
+  if(!landMask[i]) return true; // ocean: wall
+  return claimByPixel[i] === currentIdx && !(_strokeChangedSet && _strokeChangedSet.has(i));
+}
+
 function runAutoFill(){
   if(!bordPixel||strokeGeos.size===0)return;
   const geosToCheck = new Set(strokeGeos);
   strokeGeos = new Set(); // reset for next stroke
 
   // v70: reuse outside array — avoid 2MB allocation per geo per stroke
+  // v98: second array for the "without the stroke" pass.
   if(!_autoFillOutside) _autoFillOutside = new Uint8Array(MAP_PX);
-  const outside = _autoFillOutside;
+  if(!_autoFillOutsideB) _autoFillOutsideB = new Uint8Array(MAP_PX);
+  const outside  = _autoFillOutside;
+  const outsideB = _autoFillOutsideB;
 
   const DX=[-1,1,0,0], DY=[0,0,-1,1];
 
@@ -5525,40 +5660,49 @@ function runAutoFill(){
     const geoPixArr = geoPixelList[geo];
     if(!geoPixArr || geoPixArr.length===0) continue;
 
-    // Reset only this geo's pixels in the shared outside array
-    for(let pi=0; pi<geoPixArr.length; pi++) outside[geoPixArr[pi]] = 0;
+    // Reset only this geo's pixels in the shared outside arrays
+    for(let pi=0; pi<geoPixArr.length; pi++){ outside[geoPixArr[pi]] = 0; outsideB[geoPixArr[pi]] = 0; }
 
-    const queue=new Int32Array(geoPixArr.length);
-    let head=0, tail=0;
+    // v98 perf: reuse one scratch queue across geos/strokes (was a fresh
+    // Int32Array per geo per stroke — GC churn on big countries).
+    if(!_autoFillQueue || _autoFillQueue.length < geoPixArr.length)
+      _autoFillQueue = new Int32Array(geoPixArr.length);
+    const queue=_autoFillQueue;
 
-    // Seed: only iterate geo's own pixels (O(geoTotal) not O(MAP_PX))
-    for(let pi=0; pi<geoPixArr.length; pi++){
-      const i=geoPixArr[pi];
-      if(bordPixel[i]!==1) continue;
-      if(outside[i]||isWallFill(i)) continue;
-      outside[i]=1; queue[tail++]=i;
-    }
-
-    // BFS inward through the geo country
-    while(head<tail){
-      const i=queue[head++];
-      const x=i%MAP_W, y=(i/MAP_W)|0;
-      for(let d=0;d<4;d++){
-        const nx=x+DX[d], ny=y+DY[d];
-        if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
-        const ni=ny*MAP_W+nx;
-        if(featByPixel[ni]!==geo||outside[ni]||isWallFill(ni)) continue;
-        outside[ni]=1; queue[tail++]=ni;
+    // v98: shared flood — seeds from geo border pixels, BFS inward. Pass A
+    // uses the live walls (own + stroke); pass B uses pre-stroke walls.
+    const flood = (out, wallFn) => {
+      let head=0, tail=0;
+      for(let pi=0; pi<geoPixArr.length; pi++){
+        const i=geoPixArr[pi];
+        if(bordPixel[i]!==1) continue;
+        if(out[i]||wallFn(i)) continue;
+        out[i]=1; queue[tail++]=i;
       }
-    }
+      while(head<tail){
+        const i=queue[head++];
+        const x=i%MAP_W, y=(i/MAP_W)|0;
+        for(let d=0;d<4;d++){
+          const nx=x+DX[d], ny=y+DY[d];
+          if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
+          const ni=ny*MAP_W+nx;
+          if(featByPixel[ni]!==geo||out[ni]||wallFn(ni)) continue;
+          out[ni]=1; queue[tail++]=ni;
+        }
+      }
+    };
+    flood(outside,  isWallFill);
+    flood(outsideB, isWallFillPre);
 
-    // Collect enclosed: iterate geo pixels only (O(geoTotal) not O(MAP_PX))
-    // Early-exit once we exceed MAX_FILL_PX.
+    // Collect NEWLY enclosed: sealed in pass A but reachable in pass B — i.e.
+    // regions THIS stroke closed. Old pockets (sealed in both) are skipped, so
+    // bots chipping inside your existing perimeter no longer cause phantom
+    // re-fills on every stroke. Early-exit once we exceed MAX_FILL_PX.
     const enclosed=[];
     let encTooLarge = false;
     for(let pi=0; pi<geoPixArr.length; pi++){
       const i=geoPixArr[pi];
-      if(!outside[i] && !isWallFill(i) && claimByPixel[i]!==currentIdx){
+      if(!outside[i] && outsideB[i] && !isWallFill(i) && claimByPixel[i]!==currentIdx){
         enclosed.push(i);
         if(enclosed.length > MAX_FILL_PX){ encTooLarge = true; break; }
       }
@@ -5621,28 +5765,33 @@ function updateBucketHUD(){
   // Colour bucket bar: green when full-ish, amber mid, red low
   const pct = pixelBucket/BUCKET_MAX;
   $("bucket-fill").style.background = pct>0.5?"#22c55e":pct>0.2?"#f59e0b":"#ef4444";
-  // Dim cursor hint when empty
-  vp.style.cursor = pixelBucket>0 ? (bombMode?"crosshair":"crosshair") : "not-allowed";
+  // Dim cursor hint when empty (v98: <1 — a fractional bucket can't paint)
+  vp.style.cursor = pixelBucket>=1 ? (bombMode?"crosshair":"crosshair") : "not-allowed";
 }
 
-// Regen ticker: runs every second
-setInterval(()=>{
-  if(document.hidden) return;
-  if(pixelBucket>=BUCKET_MAX){ $("bucket-timer").textContent="FULL"; return; }
-  regenSecsLeft--;
-  if(regenSecsLeft<=0){
-    // v95h: regen uses the LARGEST active bonus (capped 8x), not the product.
-    const mult = getRegenMult();
-    // v97f: round to 1dp so fractional regen (e.g. +4.5) can't drift to 99.9999999.
-    pixelBucket = Math.min(BUCKET_MAX, Math.round((pixelBucket + mult) * 10) / 10);
-    regenSecsLeft = REGEN_INTERVAL;
+// Regen ticker — v98 rewrite.
+// Timestamp-based accrual: every wall-clock second is worth mult/REGEN_INTERVAL
+// pixels (SAME rate as the old +mult-per-5s tick, just smoother). Because we
+// accrue from elapsed time rather than counting interval fires, background-tab
+// throttling no longer freezes the bucket — whenever a tick eventually runs
+// (or the tab becomes visible again) the full elapsed time is credited.
+let _regenLastMs = Date.now();
+function _regenTick(){
+  const now = Date.now();
+  const dtSec = Math.min(86400, Math.max(0, (now - _regenLastMs) / 1000)); // clamp pathological gaps
+  _regenLastMs = now;
+  const mult = getRegenMult(); // v95h: largest active bonus, not the product
+  if(pixelBucket < BUCKET_MAX && dtSec > 0){
+    const before = Math.floor(pixelBucket);
+    pixelBucket = Math.max(0, Math.min(BUCKET_MAX, pixelBucket + (mult / REGEN_INTERVAL) * dtSec));
     updateBucketHUD();
-    sfxBucketRegen();
+    if(Math.floor(pixelBucket) > before && !document.hidden) sfxBucketRegen();
   }
-  const mult       = getRegenMult();
-  const suffix     = mult > 1 ? (' +' + mult) : '+1';
-  $("bucket-timer").textContent = suffix+" in "+regenSecsLeft+"s";
-}, 1000);
+  $("bucket-timer").textContent = pixelBucket >= BUCKET_MAX
+    ? "FULL"
+    : ('+' + Math.max(1, Math.round(mult * 60 / REGEN_INTERVAL)) + '/min');
+}
+setInterval(_regenTick, 1000);
 
 
 // ── Bomb cooldown ─────────────────────────────────────────────────
@@ -5695,7 +5844,6 @@ function detonateBomb(mapX, mapY){
 
   // Deduct cost
   pixelBucket = Math.max(0, pixelBucket - bt.cost);
-  regenSecsLeft = REGEN_INTERVAL;
   updateBucketHUD();
 
   const radius = bt.radius;
@@ -5797,7 +5945,7 @@ function detonateBomb(mapX, mapY){
     startCraterTicker();
   } else {
     // Nuke special-case: predict the lockout zone for instant visual feedback
-    const lockoutMs = bt.lockoutMs || (2*60*1000);
+    const lockoutMs = bt.lockoutMs || (5*60*1000); // v98: 2→5min
     addNukeZone(mapX, mapY, radius, Date.now() + lockoutMs);
     startNukeZoneTicker();
   }
@@ -5950,8 +6098,9 @@ function getRegenMult() {
   const encAdd = enc > 1 ? enc : 0;                     // encircle adds ON TOP
   const allyAdd = (d && d.allyAdd) ? d.allyAdd : 0;     // v97e: underdog-scaled alliance bonus
   let total = baseBonus + encAdd + allyAdd;
-  if (d && d.leaderTax) total *= 0.8;                  // v97e: top-holder rubber-band
-  return Math.min(12, Math.max(0.5, Math.round(total * 10) / 10)); // cap 12x, 1-dp
+  // v98: leader tax removed (David share is dynamic server-side now); round to a
+  // whole multiplier — no decimals anywhere in regen display or accrual rate.
+  return Math.min(12, Math.max(1, Math.round(total)));
 }
 
 // v97e: exile state — set by the homeland_exiled/reclaimed messages, but the david
@@ -7156,13 +7305,25 @@ function buildSiegeCache(geoIdx){
   // v74: use geoPixelList (per-geo Int32Array built at load) instead of
   // scanning all MAP_PX (2M) pixels. landMask filter still needed because
   // geoPixelList includes the country's full pixel set.
-  const src = geoPixelList && geoPixelList[geoIdx];
+  // v98: aggregate ALL polygons sharing this country's id (multipolygon split —
+  // Finland's mainland is several Natural Earth polygons, so flashing only
+  // geoIdx lit half the country). Same pattern as placeFlag.
   const arr = [];
-  if(src){
+  const f0 = featList && featList[geoIdx];
+  const cid = f0 && f0.id != null ? String(f0.id) : null;
+  const pushGeo = (ix) => {
+    const src = geoPixelList && geoPixelList[ix];
+    if(!src) return;
     for(let pi = 0; pi < src.length; pi++){
       const i = src[pi];
       if(landMask[i]) arr.push(i);
     }
+  };
+  if(cid && geoPixelList){
+    for(let i = 0; i < featList.length; i++)
+      if(featList[i] && String(featList[i].id) === cid) pushGeo(i);
+  } else if(geoPixelList && geoPixelList[geoIdx]){
+    pushGeo(geoIdx);
   } else {
     for(let i=0;i<MAP_PX;i++){
       if(featByPixel[i]===geoIdx && landMask[i]) arr.push(i);
@@ -7188,9 +7349,19 @@ function tickSiegeFlash(){
   if(!_siegeScratch) _siegeScratch = [];
   const sieged = _siegeScratch;
   sieged.length = 0;
+  // v98: dedupe by country id — buildSiegeCache now aggregates all polygons of
+  // a country, so two sieged polygons of the same id would double-draw (alpha
+  // stacking) without this.
+  if(!_siegeSeenIds) _siegeSeenIds = new Set();
+  _siegeSeenIds.clear();
   for(let gi=0; gi<featList.length; gi++){
     // v92w: flash if the client heuristic says sieged OR the server told us so.
-    if(isUnderSiege(gi) || _serverSieged.has(gi)) sieged.push(gi);
+    if(isUnderSiege(gi) || _serverSieged.has(gi)){
+      const _id = featList[gi] && featList[gi].id != null ? String(featList[gi].id) : ('#'+gi);
+      if(_siegeSeenIds.has(_id)) continue;
+      _siegeSeenIds.add(_id);
+      sieged.push(gi);
+    }
   }
 
   // Detect newly sieged countries (entered state) → play alert.
@@ -7213,8 +7384,10 @@ function tickSiegeFlash(){
   }
 
   // Always clear siege canvas first
+  // v98 perf: keep _siegePixelCache across empty frames — wiping it on every
+  // zero-siege tick forced a full rebuild each time a siege flapped on/off.
   siegeCtx.clearRect(0,0,MAP_W,MAP_H);
-  if(sieged.length === 0){ _siegePixelCache = {}; return; }
+  if(sieged.length === 0) return;
 
   // Pulse: strong red, alpha 0.25–0.60
   const t = Date.now() / 1000;
@@ -7251,6 +7424,7 @@ function tickSiegeFlash(){
   }
 }
 let _siegeScratch = null;
+let _siegeSeenIds = null; // v98: per-frame country-id dedupe (multi-polygon countries)
 let _siegeNewSet = null;
 
 // ── Chiptune background music ─────────────────────────────────────
@@ -8636,6 +8810,8 @@ function mpHandleMessage(msg) {
       }
       showConquestToast(targetFi, fi);
       placeFlag(targetFi, fi);
+      // v98: arm the invincibility countdown under the new flag.
+      _geoImmuneUntil[targetFi] = Date.now() + (msg.immunityMs || 60000);
       // Flood-fill the conquered country in the conqueror's colour
       finisherFill(targetFi, fi);
       scheduleLegend();
@@ -10938,17 +11114,10 @@ document.addEventListener('visibilitychange', () => {
     if (_hiddenAt !== null) {
       const elapsed = (performance.now() - _hiddenAt) / 1000; // seconds hidden
 
-      // Award banked pixel regen (capped at BUCKET_MAX)
-      if (elapsed > 0) {
-        const gained = Math.floor(elapsed / REGEN_INTERVAL);
-        if (gained > 0) {
-          pixelBucket = Math.min(BUCKET_MAX, pixelBucket + gained);
-          // Recalculate countdown timer
-          const remainder = elapsed % REGEN_INTERVAL;
-          regenSecsLeft = Math.max(1, REGEN_INTERVAL - Math.floor(remainder));
-          updateBucketHUD();
-        }
-      }
+      // v98: banked pixel regen is handled by the timestamp-based _regenTick
+      // (which also honours the active multiplier) — just run it now so the
+      // catch-up is instant instead of waiting for the next interval fire.
+      if (typeof _regenTick === 'function') _regenTick();
 
       // Reset animation timestamps so they resume from now,
       // not from 12 hours ago
@@ -11134,7 +11303,7 @@ function getBombTypes(){
   // v38: Only Nuke remains (Admiral-only). Mortar+MOAB removed; their old
   // ranks now provide regen multipliers via getRankRegenMult() instead.
   const types = [];
-  if(ri >= 4) types.push({ key:'nuke', label:'Nuke', radius:30, cost:100, sound:'nuclear', clears:true, lockoutMs: 2*60*1000 }); // v97: radius 15→30
+  if(ri >= 4) types.push({ key:'nuke', label:'Nuke', radius:30, cost:100, sound:'nuclear', clears:true, lockoutMs: 5*60*1000 }); // v97: radius 15→30; v98: lockout 2→5min
   return types;
 }
 
@@ -11743,6 +11912,7 @@ window.addEventListener("mouseup",()=>{
   if(isPainting){
     // v63: build interpolated stroke wall before clearing buffer (runAutoFill is async)
     _strokeWall = _buildStrokeWall(strokePixelBuffer);
+    _strokeChangedSet = _buildStrokeChangedSet(strokePixelBuffer); // v98
     setTimeout(runAutoFill, 10);
     // v68: send stroke-end for ANY stroke length ≥ 1 so the server can detect
     // rings closed by single-pixel clicks, not just fast continuous drags.
@@ -12064,6 +12234,7 @@ vp.addEventListener('touchend', e => {
   if (_touchMode === 'paint' && isPainting) {
     // v63: build interpolated stroke wall before clearing buffer (runAutoFill is async)
     _strokeWall = _buildStrokeWall(strokePixelBuffer);
+    _strokeChangedSet = _buildStrokeChangedSet(strokePixelBuffer); // v98
     setTimeout(runAutoFill, 0);
     if (strokePixelBuffer.length >= 1 && wsReady) { // v68: ≥1 (was ≥4)
       try { ws.send(JSON.stringify({ type:'stroke-end', pixels: strokePixelBuffer.slice() })); } catch (err) {}
