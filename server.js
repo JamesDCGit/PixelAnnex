@@ -40,7 +40,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-07-v97i';
+const SERVER_VERSION       = '2026-06-07-v97j';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -4447,7 +4447,7 @@ function applyPixels(pixels, countryId) {
 // (not just the current stroke) so rings built pixel-by-pixel over multiple
 // clicks are detected the moment the ring closes.
 // Performance: BFS is bounded by own-pixel bbox area capped at 200k cells.
-const ENCIRCLE_MIN_PX      = 50;    // min enclosed pixels for any reward
+const ENCIRCLE_MIN_PX      = 15;    // v97j: lowered 50→15 — reward small encirclements too
 const ENCIRCLE_MAX_PX      = 500;   // cap on auto-claimed enclosed pixels
 const ENCIRCLE_BBOX_PAD    = 8;     // padding around own-pixel bbox
 const ENCIRCLE_MAX_BBOX_AREA = 200000; // bail if bbox area exceeds this
@@ -4596,17 +4596,16 @@ function detectEncirclement(strokePixels, countryId) {
 
 // Map enclosed pixel count → regen multiplier and duration
 function getEncircleBonus(count) {
-  // v96: encircle bonus rescaled to 3x–6x (was 1.5/2.5/4/5). It now ADDS on top of
-  // the country's passive bonus (see getRegenMult / bot regen) rather than folding
-  // into the max, so the floor was raised to make encirclement always meaningful.
-  //   50–149   → 3× for 60s
-  //   150–299  → 4× for 60s
-  //   300–499  → 5× for 60s
-  //   500+     → 6× for 60s
+  // v96: encircle bonus 3x–6x, ADDS on top of the passive bonus.
+  // v97j: tiers shifted down so small encirclements still feel rewarding.
+  //   15–49    → 3× for 60s   (Nice!)
+  //   50–149   → 4× for 60s   (Amazing!)
+  //   150–299  → 5× for 60s   (Outstanding!)
+  //   300+     → 6× for 60s   (Legendary!)
   let mult = 3;
-  if (count >= 500) mult = 6;
-  else if (count >= 300) mult = 5;
-  else if (count >= 150) mult = 4;
+  if (count >= 300) mult = 6;
+  else if (count >= 150) mult = 5;
+  else if (count >= 50) mult = 4;
   else                    mult = 3;
   return { mult, durationMs: 60_000 };
 }

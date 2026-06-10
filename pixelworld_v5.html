@@ -3421,18 +3421,22 @@ const NON_PLAYABLE_IDS = new Set([
   '334', // Heard Island & McDonald Islands
   '239', // South Georgia & South Sandwich Is.
 ]);
+// v97j: countries that rasterise to fewer than this many pixels are too small to
+// play meaningfully (e.g. Vatican/San Marino/Brunei → 0-2px) and are removed from
+// the picker. They remain inert native land.
+const MIN_PLAYABLE_PX = 5;
 function isPlayableCountry(fi) {
   if (typeof fi !== 'number' || fi < 0) return false;
   if (typeof featList === 'undefined' || !featList[fi]) return false;
   const f = featList[fi];
-  if (!f.id) return false; // unidentified (Akrotiri, Dhekelia, Siachen)
+  if (!f.id) return false; // unidentified (Akrotiri, Dhekelia, Siachen, Kosovo)
   if (NON_PLAYABLE_IDS.has(String(f.id))) return false;
   if (typeof geoTotal === 'undefined' || !geoTotal) return true;
-  return (geoTotal[fi] || 0) > 0;
+  return (geoTotal[fi] || 0) >= MIN_PLAYABLE_PX;
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v97i';
+const CODE_VERSION = '2026-06-07-v97j';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3467,7 +3471,7 @@ function updateTabTitle() {
     if (document.title !== _baseTitle) document.title = _baseTitle;
     return;
   }
-  const next = '(' + (Math.round(pixelBucket * 10) / 10) + '/' + BUCKET_MAX + ') ' + _baseTitle; // v97f: 1dp
+  const next = '(' + Math.floor(pixelBucket) + '/' + BUCKET_MAX + ') ' + _baseTitle; // v97j: whole pixels
   if (document.title !== next) document.title = next;
 }
 // Refresh title every 2s while hidden; immediately when tab becomes visible
@@ -5603,7 +5607,7 @@ function runAutoFill(){
 
 // ── Pixel bucket HUD + regen ─────────────────────────────────────
 function updateBucketHUD(){
-  $("bucket-count").textContent = Math.round(pixelBucket * 10) / 10; // v97f: 1dp, no float drift
+  $("bucket-count").textContent = Math.floor(pixelBucket); // v97j: whole pixels (no decimal)
   $("bucket-fill").style.width  = (pixelBucket/BUCKET_MAX*100)+"%";
   // Colour bucket bar: green when full-ish, amber mid, red low
   const pct = pixelBucket/BUCKET_MAX;
@@ -5818,6 +5822,14 @@ function getEncircleMultiplierLocal() {
 }
 
 
+// v97j: tiered celebration text by encirclement size (mult 3/4/5/6).
+function _encircleLabel(mult) {
+  if (mult >= 6) return 'LEGENDARY!';
+  if (mult >= 5) return 'OUTSTANDING!';
+  if (mult >= 4) return 'AMAZING!';
+  return 'NICE!';
+}
+
 // Render a brief celebration burst centred at map pixel (cx, cy).
 // Uses the same ox/oy/scale transform as the map canvases.
 function showEncircleBurst(mapCX, mapCY, enclosedCount, mult) {
@@ -5846,7 +5858,7 @@ function showEncircleBurst(mapCX, mapCY, enclosedCount, mult) {
   burst.style.top  = screenY + 'px';
   burst.innerHTML =
     '<span class="eb-mult">×' + mult + '</span>' +
-    '<span class="eb-label">ENCIRCLED</span>' +
+    '<span class="eb-label">' + _encircleLabel(mult) + '</span>' + // v97j: tiered text
     '<span class="eb-px">' + enclosedCount + ' px</span>';
   viewport.appendChild(burst);
 
@@ -5893,7 +5905,7 @@ function applyEncirclementBonus(enclosed, mult, durationMs, cx, cy) {
   // Show a quick activity card too
   actPushCard({
     variant: 'win',
-    title:   t('act.encircle_title'),
+    title:   '🎯 ' + _encircleLabel(mult), // v97j: tiered (Nice!/Amazing!/Outstanding!/Legendary!)
     html:    t('act.encircle_enclosed_html', { pixels: enclosed, mult: '×' + mult, seconds: durationMs/1000 }),
   });
   sfxConquest && sfxConquest(); // reuse the conquest sting (if available)
