@@ -3355,15 +3355,23 @@ function topoFeatures(topo){
     return null;
   }
 
-  return topo.objects.countries.geometries.map(g=>({
-    id:(()=>{const s=String(g.id??'');const n=parseInt(s,10);return(n>=0&&String(n))?String(n):s;})(),
-    // v93j: Natural Earth has a few unnamed features (disputed/buffer zones, e.g.
-    // ids 65 & 171). Empty names surfaced as "Country 65"/"Country 171" in the
-    // inspector + Discord. Give them a clean fallback — which also flows to the
-    // server/bot via the join geoNames map (mpSendJoin only sends named features).
-    name:(g.properties&&g.properties.name)||"Disputed Territory",
-    geometry:geomToGeoJSON(g)
-  }));
+  return topo.objects.countries.geometries.map((g,gi)=>{
+    const s=String(g.id??'');const n=parseInt(s,10);
+    let id=(n>=0&&String(n))?String(n):s;
+    // v97k: some Natural Earth features have NO id (e.g. Kosovo + disputed zones).
+    // They ALL collapsed to '' and merged into ONE degenerate geo — so you could
+    // only ever hold a fraction of it (Kosovo stuck >80%, "can't conquer") and its
+    // scattered pixels showed as stray dots of "another country". Give each a UNIQUE
+    // synthetic NUMERIC id. 9000+ stays clear of real ISO codes (≤894) AND fits the
+    // server's Int16 geoAtPixel (max 32767) — 900000 would overflow/truncate.
+    if(!id) id=String(9000+gi);
+    return{
+      id,
+      // v93j: unnamed features get a clean fallback name (vs "Country 65").
+      name:(g.properties&&g.properties.name)||"Disputed Territory",
+      geometry:geomToGeoJSON(g)
+    };
+  });
 }
 
 // ── State ─────────────────────────────────────────────────────────
@@ -3429,14 +3437,15 @@ function isPlayableCountry(fi) {
   if (typeof fi !== 'number' || fi < 0) return false;
   if (typeof featList === 'undefined' || !featList[fi]) return false;
   const f = featList[fi];
-  if (!f.id) return false; // unidentified (Akrotiri, Dhekelia, Siachen, Kosovo)
+  if (!f.id) return false; // unidentified
+  if (f.name === 'Disputed Territory') return false; // v97k: unnamed NE artifacts — valid geo but not a pickable nation
   if (NON_PLAYABLE_IDS.has(String(f.id))) return false;
   if (typeof geoTotal === 'undefined' || !geoTotal) return true;
   return (geoTotal[fi] || 0) >= MIN_PLAYABLE_PX;
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-07-v97j';
+const CODE_VERSION = '2026-06-07-v97k';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
