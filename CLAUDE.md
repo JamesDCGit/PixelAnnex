@@ -484,6 +484,21 @@ Before editing any function:
   - **War counter:** `_warNumber` (persisted, +1 each `_resetWorld`); `/api/world-state`
     `warNumber`; status bar shows "PixelAnnex War #N" (`ws-war-num`). Starts at #1.
   - **Terms & Disclaimer tab** in the Stats & Leaderboard modal (`stats-panel-terms`).
+- **v97i:** removed `backdrop-filter:blur` from `#stats-overlay` — it left a ghost/
+  afterimage rectangle when a tab repainted under the blur (Chrome compositing bug);
+  the 0.78 dark overlay dims fine without it.
+- **v97j:** encircle `ENCIRCLE_MIN_PX` 50→15 + tiers shifted (15/50/150/300 →
+  3/4/5/6×); tiered celebration text Nice!/Amazing!/Outstanding!/Legendary!
+  (`_encircleLabel`). Pixel bucket displays whole pixels (`Math.floor`, no decimal).
+  Picker drops countries below `MIN_PLAYABLE_PX` (5px) — Vatican/San Marino/Brunei
+  etc. no longer selectable.
+- **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
+  MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
+  scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
+  (`9000+index` — clear of real ISO ≤894, fits Int16 `geoAtPixel`). Picker hides
+  "Disputed Territory" artifacts; Kosovo (real name) is selectable + conquerable.
+  NOTE: not-reproducible "country resets to Afghanistan after conquering" — no
+  definitive cause found; left for a repro rather than a blind fix.
 
 ## Screenshots for tweets (v88)
 
