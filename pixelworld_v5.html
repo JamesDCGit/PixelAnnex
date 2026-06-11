@@ -3457,7 +3457,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-11-v98a';
+const CODE_VERSION = '2026-06-11-v99';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4904,6 +4904,52 @@ async function boot(){
       }
     }
     console.log("Micro-islands removed:",removed,"pixels");
+  }
+
+  // ── v99: absorb micro-EXCLAVES (<5px per-country components) ─────────────
+  // The micro-island pass above only removes small CONNECTED-LAND components —
+  // a 1px sliver of country A rasterized inside country B's landmass survives
+  // it (the "single pixel somewhere else on the map" strays). Here we flood
+  // per-COUNTRY components: any same-geo component under 5px is reassigned to
+  // the dominant neighbouring country (keeps coastlines/borders solid), or
+  // removed to ocean when isolated. Countries reduced to <5px total become
+  // unpickable via MIN_PLAYABLE_PX (+ the server mirrors the floor in v98b).
+  prog(85,"Absorbing micro-exclaves…");
+  {
+    const visited=new Uint8Array(MAP_PX);
+    const DX2=[-1,1,0,0],DY2=[0,0,-1,1];
+    const MIN_EXCLAVE_PX=5;
+    let absorbed=0, oceaned=0;
+    for(let seed=0;seed<MAP_PX;seed++){
+      if(!landMask[seed]||visited[seed]) continue;
+      const g=featByPixel[seed];
+      if(g<0){ visited[seed]=1; continue; }
+      // BFS within this geo only; tally foreign land neighbours as we go.
+      const comp=[seed]; visited[seed]=1; let qh=0;
+      const neighborCnt=new Map();
+      while(qh<comp.length){
+        const ci=comp[qh++];
+        const cx=ci%MAP_W,cy=(ci/MAP_W)|0;
+        for(let d=0;d<4;d++){
+          const nx=cx+DX2[d],ny=cy+DY2[d];
+          if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H) continue;
+          const ni=ny*MAP_W+nx;
+          if(!landMask[ni]) continue;
+          const ng=featByPixel[ni];
+          if(ng===g){ if(!visited[ni]){visited[ni]=1;comp.push(ni);} }
+          else if(ng>=0) neighborCnt.set(ng,(neighborCnt.get(ng)||0)+1);
+        }
+      }
+      if(comp.length>=MIN_EXCLAVE_PX) continue;
+      let best=-1,bestN=0;
+      for(const [ng,n] of neighborCnt) if(n>bestN){bestN=n;best=ng;}
+      for(const ci of comp){
+        if(geoTotal[g]) geoTotal[g]=Math.max(0,geoTotal[g]-1);
+        if(best>=0){ featByPixel[ci]=best; geoTotal[best]=(geoTotal[best]||0)+1; absorbed++; }
+        else { landMask[ci]=0; featByPixel[ci]=-1; oceaned++; }
+      }
+    }
+    console.log("Micro-exclaves: absorbed",absorbed,"px into neighbours, removed",oceaned,"px to ocean");
   }
 
   // v93k: rebuild the in-game country picker now that geoTotal is final.
