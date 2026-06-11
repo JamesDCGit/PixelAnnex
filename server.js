@@ -33,6 +33,7 @@ const http      = require('http');
 const WebSocket = require('ws');
 const path      = require('path');
 const fs        = require('fs');
+const crypto    = require('crypto'); // v98b: timing-safe admin auth
 const os        = require('os');
 const { execFile } = require('child_process');
 const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require('./mapshot'); // v88/v92e/v92m: tweet screenshots + flags
@@ -57,6 +58,23 @@ const NON_PLAYABLE_IDS   = new Set([
   '334', // Heard Island & McDonald Islands
   '239', // South Georgia & South Sandwich Is.
 ]);
+// v98b: full server-side playability check — mirrors the client picker rules
+// (NON_PLAYABLE_IDS + MIN_PLAYABLE_PX + real name) so Vatican/Gibraltar/
+// "Country 133"-style artifacts can't be picked via stale clients or raw WS,
+// and never get bots. geoTotal arrives with the first client join, so the size
+// floor only applies once the map data exists (otherwise nothing would be
+// pickable at boot).
+const MIN_PLAYABLE_PX_SRV = 5; // keep in sync with client MIN_PLAYABLE_PX
+function _isPlayableCountry(id) {
+  const s = String(id);
+  if (NON_PLAYABLE_IDS.has(s)) return false;
+  const nm = countryNames[s];
+  if (!nm || nm === 'Disputed Territory') return false; // unnamed NE artifacts
+  if (Object.keys(geoTotal).length > 0) {
+    if ((geoTotal[parseInt(s, 10)] || 0) < MIN_PLAYABLE_PX_SRV) return false;
+  }
+  return true;
+}
 const CONQUEST_THRESHOLD = 0.60; // legacy base — superseded by conquestThreshold() below (kept for any stray refs)
 // ── v91: progressive, size-scaled conquest threshold ──────────────
 // Small countries need a HIGHER share to conquer (75%) because 70% of a tiny
@@ -840,6 +858,11 @@ const SASS_CONQUEST = [
   v => `⚒️ ${v.a} hammered ${v.d} flat. ${v.held} in the trophy case. ` + _suffix(),
   v => `🧭 Strategy guide for ${v.d}: it's too late. ${v.a} already painted it. ` + _suffix(),
   v => `🪖 ${v.a}'s pixel battalion marched into ${v.d}. The defenders went home. ` + _suffix(),
+  // v98b additions — revenge bait (operator request: rally patriots of the fallen)
+  v => `💔 ${v.d} has fallen to ${v.a}. Patriots won't take that lying down… will they?? ` + _suffix(),
+  v => `🩸 ${v.d} is off the map — courtesy of ${v.a}. Revenge is a dish best served in pixels. ` + _suffix(),
+  v => `🔥 ${v.a} just toppled ${v.d}. Somewhere, a resistance is loading its brushes. ` + _suffix(),
+  v => `🏴 ${v.d} flies the ${v.a} flag tonight. Who's taking it back? ` + _suffix(),
 ];
 
 // REVERSAL variants — {victim} {oppressor}
@@ -861,16 +884,16 @@ const SASS_REVERSAL = [
 
 // NUKE variants — {attacker} {target}
 const SASS_NUKE = [
-  v => `☢️ ${v.a} just nuked ${v.target}. No-paint zone active for 2 minutes. ` + _suffix(),
+  v => `☢️ ${v.a} just nuked ${v.target}. No-paint zone active for 5 minutes. ` + _suffix(),
   v => `💥 ${v.a} chose violence. ${v.target} is a smoking crater. ` + _suffix(),
   v => `🚨 BREAKING: ${v.a} went nuclear on ${v.target}. Literally. ` + _suffix(),
   v => `☢️ Diplomatic resolution attempted via ${v.a}'s nuke at ${v.target}. ` + _suffix(),
-  v => `☢️ ${v.a} fired off a nuke at ${v.target}. The 2-minute lockout will give everyone time to reflect. ` + _suffix(),
+  v => `☢️ ${v.a} fired off a nuke at ${v.target}. The 5-minute lockout will give everyone time to reflect. ` + _suffix(),
   // v84 additions ↓
   v => `💀 ${v.a} dropped the big one on ${v.target}. Some pixels you can't unpaint. ` + _suffix(),
   v => `🎆 ${v.a} delivered an unforgettable light show to ${v.target}. RSVP: declined. ` + _suffix(),
   v => `☣️ ${v.a} went thermonuclear at ${v.target}. The cockroaches are taking notes. ` + _suffix(),
-  v => `🚀 ${v.a} launched the big payload at ${v.target}. No-paint lockout: 2 minutes of regret. ` + _suffix(),
+  v => `🚀 ${v.a} launched the big payload at ${v.target}. No-paint lockout: 5 minutes of regret. ` + _suffix(),
   v => `🔥 ${v.a} ended the conversation with ${v.target} — using a 50-megapixel exclamation mark. ` + _suffix(),
   v => `📛 ${v.a} solved ${v.target} the old-fashioned way. Loudly. ` + _suffix(),
   v => `🏔️ ${v.a} ended the day with a mushroom cloud over ${v.target}. War room: very loud. ` + _suffix(),
@@ -891,6 +914,9 @@ const SASS_MULTI = [
   v => `🌪️ A perfect storm hits ${v.d}: ${v.n} attackers (${v.atk}). Brace for impact. ` + _suffix(),
   v => `📯 ${v.n} horns blow on the borders of ${v.d}. (${v.atk}) The defenders sleep no more. ` + _suffix(),
   v => `🪖 ${v.d} requests reinforcements: ${v.n} attackers (${v.atk}) on the perimeter. ` + _suffix(),
+  // v98b additions — defend-or-overthrow framing (operator request)
+  v => `🚨 ${v.d} is under attack — will you defend or overthrow?? (${v.atk}) ` + _suffix(),
+  v => `⚔️ ${v.d} bleeds on ${v.n} fronts (${v.atk}). Defend it… or finish the job. ` + _suffix(),
 ];
 
 // ADMIRAL promotion variants — {username} {country?}
@@ -1697,6 +1723,113 @@ setTimeout(() => {
     dedupeKey: 'community:boot:' + Math.floor(Date.now() / (60 * 60 * 1000)),
   });
 }, 5 * 60 * 1000);
+
+// ── v98b: fallen-country revenge spotlight — every 12h ────────────
+// Operator request: mention fallen countries more often to bait revenge runs.
+// Picks a random NOTABLE fallen homeland and drafts a patriot-rally tweet
+// (manual approve, like everything else). Deduped per 12h slot.
+const SASS_FALLEN_SPOTLIGHT = [
+  v => `🏴 Reminder: ${v.d} is still under ${v.a}'s rule. Any patriots left out there? ` + _suffix(),
+  v => `💔 ${v.d} has fallen to ${v.a} — and nobody's done a thing about it. Yet. ` + _suffix(),
+  v => `🕯️ Day after day, the ${v.a} flag flies over ${v.d}. Revenge is one brush away. ` + _suffix(),
+  v => `📜 History remembers liberators. ${v.d} waits under ${v.a}'s thumb. ` + _suffix(),
+];
+function _queueFallenSpotlight() {
+  try {
+    const fallen = [];
+    for (const k of conqueredSet) {
+      const p = String(k).split(':');
+      if (p[1] === p[0]) continue;
+      if (!permanentlyConquered.has(p[0])) continue;     // homeland actually dead
+      if (!isNotableCountry(p[0]) && !isNotableCountry(p[1])) continue;
+      fallen.push({ geo: p[0], holder: p[1] });
+    }
+    if (!fallen.length) return;
+    const pick = fallen[Math.floor(Math.random() * fallen.length)];
+    const slot = new Date().toISOString().slice(0, 10) + (new Date().getUTCHours() < 12 ? 'AM' : 'PM');
+    pushTweetDraft({
+      type:      'fallen_spotlight',
+      text:      _pickSassy(SASS_FALLEN_SPOTLIGHT)({ d: _natHashtag(pick.geo), a: _natHashtag(pick.holder) }),
+      dedupeKey: 'fallen_spotlight:' + slot,
+      countries: [pick.geo, pick.holder],
+    });
+    console.log('[Tweets] fallen-spotlight queued:', pick.geo, 'held by', pick.holder);
+  } catch (e) { console.warn('[Tweets] fallen-spotlight failed:', e.message); }
+}
+setInterval(_queueFallenSpotlight, 12 * 60 * 60 * 1000);
+setTimeout(_queueFallenSpotlight, 10 * 60 * 1000); // one shortly after boot
+
+// ── v98b: football fixture hype — country-vs-country matchups ─────
+// Scrapes the public BBC Sport football RSS (no key) for "X v Y" fixture
+// headlines where BOTH sides resolve to game countries, then pitches the
+// matchup as a pixel showdown. DELIBERATELY no tournament branding in the
+// copy ("FIFA"/"World Cup" are trademarks — operator request to avoid them).
+// Tweets stay manual-approve like everything else; Discord gets a #general
+// card via the 'football_matchup' bot event.
+const FOOTBALL_FEED_URLS = [
+  'https://feeds.bbci.co.uk/sport/football/rss.xml',
+  'https://www.espn.com/espn/rss/soccer/news',
+];
+const FOOTBALL_MAX_PER_RUN = 2;
+const SASS_FOOTBALL = [
+  v => `⚽ ${v.a} and ${v.b} face off on the pitch tonight — but which country wins in PIXELS? Settle it on the map: ` + _suffix(),
+  v => `⚽ ${v.a} vs ${v.b} on the grass. The REAL territory dispute is on the map. ` + _suffix(),
+  v => `⚽ ${v.a} and ${v.b} play 90 minutes. Pixel wars have no final whistle. Pick a side: ` + _suffix(),
+  v => `🏟️ Today's grudge match: ${v.a} v ${v.b}. We checked — annexing each other is allowed here. ` + _suffix(),
+];
+function _footballMatchFromTitle(title) {
+  if (!_newsCountryAliases) _newsCountryAliases = _buildNewsCountryAliases();
+  // "Iran v Congo", "Iran vs Congo", "Iran 1-0 Congo" — take the two sides.
+  const m = String(title).match(/^([A-Za-z .'-]{3,30})\s+(?:vs?\.?|\d+\s*-\s*\d+)\s+([A-Za-z .'-]{3,30})(?:[:,|–-]|$)/);
+  if (!m) return null;
+  const a = _newsCountryAliases.get(m[1].trim().toLowerCase());
+  const b = _newsCountryAliases.get(m[2].trim().toLowerCase());
+  if (!a || !b || a === b) return null;
+  return { a, b };
+}
+async function _scrapeFootballAndQueue() {
+  const UA = 'Mozilla/5.0 (compatible; PixelAnnexBot/1.0; +https://pixelannex.com)';
+  let items = [];
+  for (const url of FOOTBALL_FEED_URLS) {
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept': 'application/rss+xml, application/xml, text/xml; q=0.9, */*; q=0.8' } });
+      if (!res.ok) continue;
+      items = _parseRSSItems(await res.text());
+      if (items.length) break;
+    } catch (e) { /* try next feed */ }
+  }
+  if (!items.length) { console.log('[Football] no feed items'); return; }
+  const day = new Date().toISOString().slice(0, 10);
+  let queued = 0;
+  const seenPairs = new Set();
+  for (const it of items) {
+    if (queued >= FOOTBALL_MAX_PER_RUN) break;
+    const match = _footballMatchFromTitle(it.title);
+    if (!match) continue;
+    const pairKey = [match.a, match.b].sort().join(':');
+    if (seenPairs.has(pairKey)) continue;
+    seenPairs.add(pairKey);
+    const text = _pickSassy(SASS_FOOTBALL)({ a: _natHashtag(match.a), b: _natHashtag(match.b) });
+    pushTweetDraft({
+      type:      'football',
+      text,
+      dedupeKey: 'football:' + pairKey + ':' + day,
+      countries: [match.a, match.b],
+    });
+    emitBotEvent({
+      type:      'football_matchup',
+      tier:      3,
+      text,
+      aId: match.a, bId: match.b,
+      aName: _countryName(match.a), bName: _countryName(match.b),
+      timestamp: Date.now(),
+    });
+    queued++;
+    console.log('[Football] matchup queued:', _countryName(match.a), 'v', _countryName(match.b));
+  }
+}
+setInterval(_scrapeFootballAndQueue, 6 * 60 * 60 * 1000); // 4x daily — fixtures roll over fast
+setTimeout(_scrapeFootballAndQueue, 3 * 60 * 1000);
 
 
 
@@ -2584,11 +2717,38 @@ function _resetWorld() {
 setInterval(_checkWorldConquest, 30 * 1000);
 
 // v95v: admin auth — reuse the tweet-panel secret. key via ?key= or x-admin-key header.
+// v98b hardening: timing-safe compare + HttpOnly cookie support so the secret
+// doesn't have to live in the URL (history/logs/Referer leak). The HTML pages
+// set the cookie on a valid ?key= load and redirect to a clean URL.
+function _secretEquals(given, expected) {
+  try {
+    const a = Buffer.from(String(given)), b = Buffer.from(String(expected));
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch (e) { return false; }
+}
+function _adminCookieKey(req) {
+  const c = req.headers.cookie || '';
+  const m = c.match(/(?:^|;\s*)pa_admin=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
 function _adminOK(url, req) {
   const expected = process.env.TWEETS_ADMIN_SECRET;
   if (!expected) return false;
-  const key = url.searchParams.get('key') || req.headers['x-admin-key'] || '';
-  return key === expected;
+  // Any valid source wins — dashboard JS may send a stale/empty ?key= ("null")
+  // after the cookie redirect, which must not shadow a valid cookie.
+  return [url.searchParams.get('key'), req.headers['x-admin-key'], _adminCookieKey(req)]
+    .some(k => k && _secretEquals(k, expected));
+}
+// Set the admin cookie + strip ?key= from the address bar. Returns true if a
+// redirect was issued (caller should stop).
+function _adminCookieRedirect(url, req, res) {
+  if (!url.searchParams.get('key')) return false;
+  res.writeHead(302, {
+    'Set-Cookie': 'pa_admin=' + encodeURIComponent(url.searchParams.get('key')) + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400',
+    'Location': url.pathname,
+  });
+  res.end();
+  return true;
 }
 
 // v95v: operator dashboard — live KPIs + safe world controls. Served at /admin
@@ -3823,7 +3983,37 @@ function buildDavidSnapshot() {
   return out;
 }
 
-const countryNames   = {}; // countryId → display name (populated from client bootstrap)
+const countryNames   = {}; // countryId → display name (v98b: loaded from TopoJSON at boot)
+
+// v98b: country names come from countries-10m.json ON THE SERVER, at boot.
+// Previously they were wiped + wholesale replaced by whatever the next joining
+// client sent in `geoNames` — which (a) left every name blank between a restart
+// and the first join, so anything generated in that window (news-scrape tweets,
+// rivalry lines) fell back to "Country 710" [= South Africa], and (b) let ANY
+// client rename every country in tweets/Discord (content injection into the
+// public X account). Mirrors the client's v97k parse exactly: id = parsed
+// numeric id, no-id features get synthetic 9000+index, unnamed features fall
+// back to "Disputed Territory".
+function loadCountryNamesFromDisk() {
+  try {
+    const topo = JSON.parse(fs.readFileSync(path.join(__dirname, 'countries-10m.json'), 'utf8'));
+    const geoms = topo && topo.objects && topo.objects.countries && topo.objects.countries.geometries;
+    if (!Array.isArray(geoms)) { console.warn('[Names] countries-10m.json: unexpected shape'); return; }
+    let n = 0;
+    geoms.forEach((g, gi) => {
+      const s = String(g.id ?? '');
+      const parsed = parseInt(s, 10);
+      let id = (parsed >= 0 && String(parsed)) ? String(parsed) : s;
+      if (!id) id = String(9000 + gi); // v97k synthetic ids — keep in sync with the client
+      countryNames[id] = (g.properties && g.properties.name) || 'Disputed Territory';
+      n++;
+    });
+    console.log('[Names] loaded ' + n + ' country names from countries-10m.json');
+  } catch (e) {
+    console.warn('[Names] failed to load countries-10m.json:', e.message);
+  }
+}
+loadCountryNamesFromDisk();
 const indexToId      = {}; // featList index → real country ID (geoAtPixel stores indices)
 
 // geoAtPixel stores country IDs directly (not featList indices) since the
@@ -5297,7 +5487,7 @@ function checkMapReady() {
   const validCountries = new Set(Object.keys(geoPixels).map(String));
   let removed = 0;
   for (const countryId of [...bots.keys()]) {
-    if (!validCountries.has(countryId) || NON_PLAYABLE_IDS.has(String(countryId))) {
+    if (!validCountries.has(countryId) || !_isPlayableCountry(countryId)) { // v98b: size+name floor too
       bots.delete(countryId);
       // Also remove from players map
       for (const [pid, p] of players) {
@@ -5314,7 +5504,7 @@ function checkMapReady() {
   let added = 0;
   for (const geoIdx of Object.keys(geoPixels)) {
     const countryId = String(geoIdx);
-    if (NON_PLAYABLE_IDS.has(countryId)) continue;
+    if (!_isPlayableCountry(countryId)) continue; // v98b: was NON_PLAYABLE_IDS only
     if (!bots.has(countryId)) {
       botInit(countryId);
       added++;
@@ -5329,7 +5519,7 @@ function checkMapReady() {
     const parts = String(key).split(':');
     if (parts.length !== 2) continue;
     const geo = parseInt(parts[0], 10), holder = parts[1];
-    if (NON_PLAYABLE_IDS.has(String(geo)) || NON_PLAYABLE_IDS.has(String(holder))) {
+    if (!_isPlayableCountry(geo) || !_isPlayableCountry(holder)) { // v98b: also unnamed/micro features
       conqueredSet.delete(key);
       _clearPermanentIfFree(geo);
       broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: holder, reason: 'non-playable' }));
@@ -5496,6 +5686,7 @@ const httpServer = http.createServer(async (req, res) => {
       res.end(process.env.TWEETS_ADMIN_SECRET ? '<h2>Unauthorized — append ?key=YOUR_SECRET</h2>' : '<h2>Admin disabled — set TWEETS_ADMIN_SECRET in .env</h2>');
       return;
     }
+    if (_adminCookieRedirect(url, req, res)) return; // v98b: move secret URL→cookie
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(ADMIN_DASHBOARD_HTML);
     return;
@@ -5588,18 +5779,17 @@ const httpServer = http.createServer(async (req, res) => {
 
   // ── /admin/tweets — operator-facing draft queue page ──
   if (url.pathname === '/admin/tweets') {
-    const expected = process.env.TWEETS_ADMIN_SECRET;
-    const key = url.searchParams.get('key');
-    if (!expected) {
+    if (!process.env.TWEETS_ADMIN_SECRET) {
       res.writeHead(503, { 'Content-Type': 'text/plain' });
       res.end('Tweet admin disabled — set TWEETS_ADMIN_SECRET in .env');
       return;
     }
-    if (key !== expected) {
+    if (!_adminOK(url, req)) { // v98b: timing-safe + cookie support
       res.writeHead(401, { 'Content-Type': 'text/plain' });
       res.end('Unauthorized');
       return;
     }
+    if (_adminCookieRedirect(url, req, res)) return; // v98b: move secret URL→cookie
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(TWEET_ADMIN_HTML);
     return;
@@ -5607,14 +5797,12 @@ const httpServer = http.createServer(async (req, res) => {
 
   // ── /api/tweets — admin-only ──
   if (url.pathname.startsWith('/api/tweets')) {
-    const expected = process.env.TWEETS_ADMIN_SECRET;
-    if (!expected) {
+    if (!process.env.TWEETS_ADMIN_SECRET) {
       res.writeHead(503, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'admin disabled' }));
       return;
     }
-    const key = url.searchParams.get('key') || (req.headers['x-admin-key'] || '');
-    if (key !== expected) {
+    if (!_adminOK(url, req)) { // v98b: timing-safe + cookie support
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'unauthorized' }));
       return;
@@ -5783,11 +5971,9 @@ const httpServer = http.createServer(async (req, res) => {
   // ── /api/admin/force-win — end game now, winner by pixel count ─────
   // Protected by the same TWEETS_ADMIN_SECRET used for the tweet panel.
   if (url.pathname === '/api/admin/force-win' && req.method === 'POST') {
-    const expected = process.env.TWEETS_ADMIN_SECRET;
-    const key = url.searchParams.get('key') || (req.headers['x-admin-key'] || '');
-    if (!expected || key !== expected) {
-      res.writeHead(expected ? 401 : 503, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: expected ? 'unauthorized' : 'admin disabled' }));
+    if (!_adminOK(url, req)) { // v98b: timing-safe + cookie support
+      res.writeHead(process.env.TWEETS_ADMIN_SECRET ? 401 : 503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: process.env.TWEETS_ADMIN_SECRET ? 'unauthorized' : 'admin disabled' }));
       return;
     }
     if (_worldConquestActive) {
@@ -6619,9 +6805,21 @@ function getClientIP(req) {
   return req.socket && req.socket.remoteAddress;
 }
 
+// v98b: per-IP WS connection cap — a single host scripting dozens of clients
+// was previously unbounded. Generous limit (multiple tabs/family NAT are fine).
+const MAX_WS_PER_IP = 10;
+const _wsPerIP = new Map(); // ip → live connection count
+
 wss.on('connection', (ws, req) => {
   const pid = nextPid++;
   const ip  = getClientIP(req);
+  const ipCount = (_wsPerIP.get(ip) || 0) + 1;
+  if (ipCount > MAX_WS_PER_IP) {
+    console.log(`[!] Connection from ${ip} rejected — ${ipCount - 1} already open`);
+    try { ws.close(1013, 'too many connections'); } catch (e) {}
+    return;
+  }
+  _wsPerIP.set(ip, ipCount);
   console.log(`[+] Player ${pid} connected from ${ip}`);
 
   const player = { ws, countryId: null, countryIdx: -1, lastSeen: Date.now(), isBot: false, viewport: null };
@@ -6698,10 +6896,12 @@ wss.on('connection', (ws, req) => {
           recomputeTotalLand();
         }
         // Country names from client (used by bot war reporter)
+        // v98b SECURITY: client-sent geoNames are IGNORED. Names load from
+        // countries-10m.json at boot (loadCountryNamesFromDisk) — previously any
+        // client could wholesale rename every country server-wide, and those
+        // names flowed into tweets/Discord/the admin dashboard.
         if (msg.geoNames && Object.keys(msg.geoNames).length > 0) {
-          for (const k of Object.keys(countryNames)) delete countryNames[k];
-          Object.assign(countryNames, msg.geoNames);
-          console.log(`  geoNames: ${Object.keys(countryNames).length} country names cached`);
+          console.log(`  geoNames: ignored ${Object.keys(msg.geoNames).length} client-sent names (server loads from disk)`);
         }
         // featList index → real country ID mapping (geoAtPixel stores indices, not IDs)
         // featList index → real country ID mapping (geoAtPixel stores indices, not IDs)
@@ -6742,6 +6942,18 @@ wss.on('connection', (ws, req) => {
         }
         checkMapReady();
 
+        // v98b: playability gate, evaluated AFTER this join's map data is
+        // ingested (geoTotal may have been empty before it on a fresh boot).
+        // Don't reject the join (the client would hang with no welcome) —
+        // strip the country (strokes already no-op on a null countryId) and
+        // force the client's re-pick modal right after the welcome below.
+        let _forceRepickId = null;
+        if (player.countryId && !_isPlayableCountry(player.countryId)) {
+          console.log('[v98b] join with unplayable country', player.countryId, '— forcing re-pick');
+          _forceRepickId = player.countryId;
+          player.countryId = null;
+        }
+
         // v92s: split the snapshot — welcome JSON carries the small metadata
         // (conquered set + player list); the heavy claimed-pixel runs go in a
         // separate compact binary frame (tag=3) sent right after.
@@ -6756,6 +6968,11 @@ wss.on('connection', (ws, req) => {
           nukeZones: (_pruneServerNukeZones(), _nukeZones.slice()),
         }));
         try { ws.send(encodeSnapshotRuns(_snap.runs)); } catch (e) {}
+        // v98b: stale unplayable country (e.g. Vatican in localStorage) → open
+        // the client's re-pick modal via the existing your_country_lost flow.
+        if (_forceRepickId) {
+          try { ws.send(JSON.stringify({ type: 'your_country_lost', lostCountryId: _forceRepickId, attackerId: null, mercenaryBonus: 0, keep: null })); } catch (e) {}
+        }
         // v61: if a world conquest is active, immediately replay it for this client
         // so refreshers and late-joiners see the conquest screen rather than the map
         if (_worldConquestActive && _worldConquestPayload) {
@@ -6772,6 +6989,7 @@ wss.on('connection', (ws, req) => {
         const geoIdx = parseInt(cid, 10);
         const hasPixels = geoPixels[geoIdx] && geoPixels[geoIdx].length > 0;
         if (permanentlyConquered.has(cid)) break; // can't select a conquered country
+        if (!_isPlayableCountry(cid)) { console.log('[v98b] Rejected set-country for', cid, '(not playable: micro/unnamed/non-playable)'); break; }
         if (countryNames && countryNames[cid] && hasPixels) {
           // v93n: was `p.` — `p` is undefined in this scope (the player var is
           // `player`). This threw ReferenceError and CRASHED the whole server
@@ -7013,6 +7231,9 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     clearInterval(keepalive);
     players.delete(pid);
+    // v98b: release the per-IP connection slot
+    const c = (_wsPerIP.get(ip) || 1) - 1;
+    if (c <= 0) _wsPerIP.delete(ip); else _wsPerIP.set(ip, c);
     console.log(`[-] Player ${pid} disconnected (${players.size - bots.size} real players)`);
     broadcastPlayers();
   });

@@ -905,6 +905,22 @@ async function handleDailyReport(event) {
   try { await ch.send({ embeds: [embed] }); }
   catch (e) { console.error('[Daily] post failed:', e.message); }
 }
+// v98b: football matchup hype — "which country wins in pixels?" -> #general.
+// (No tournament branding in the copy — trademark caution, operator request.)
+async function handleFootballMatchup(event) {
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (!guild) return;
+  const ch = _getGeneralChannel(guild);
+  if (!ch) { console.log(`[Football] #${GENERAL_CHANNEL} not found — skipped`); return; }
+  const embed = new EmbedBuilder()
+    .setColor(0x22c55e)
+    .setTitle(`⚽ ${event.aName} v ${event.bName}`)
+    .setDescription((event.text || '').replace(/https?:\S+\s*#\w+\s*$/, '').trim() || `${event.aName} and ${event.bName} play tonight — which country wins in pixels?`)
+    .setTimestamp(new Date(event.timestamp || Date.now()));
+  try { await ch.send({ embeds: [embed] }); }
+  catch (e) { console.error('[Football] post failed:', e.message); }
+}
+
 // /worldstate — public world standings in #general.
 async function handleWorldstateCommand(interaction) {
   try {
@@ -1388,6 +1404,10 @@ function handleGameEvent(event) {
 
     case 'daily_report':        // v93j: 12h state-of-the-world GIF -> #general
       handleDailyReport(event);
+      break;
+
+    case 'football_matchup':    // v98b: country-vs-country fixture hype -> #general
+      handleFootballMatchup(event);
       break;
 
     case 'alliance_formed': {
