@@ -41,8 +41,9 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-11-v99a`.** (v98/v98a client+server, v98b
-server-only at v98a, v99 client map cleanup, v99a UI polish — see changelog below.)
+**Current production triad: `2026-06-12-v99b`.** (v98/v98a client+server, v98b
+server-only at v98a, v99 client map cleanup, v99a UI polish, v99b exile regen +
+tweet cadence — see changelog below.)
 (Previously `2026-06-07-v97`.) (CLIENT changes since v95w: v96
 encircle-additive regen, v96a dead-land clear-on-reversal, v97 leaderboard tabs +
 win contributors + nuke + ranks. Server-only runs v95x/v95y/v95z stayed at v95w.)
@@ -571,6 +572,17 @@ Before editing any function:
   (politically risky phrasing); news scrape stays daily, football 6h. NOTE: the
   bot roster dropped 183→166 once a v99 client sent cleaned geo data — the
   remaining micro-feature cull, intended.
+- **v99b (client + server):** (1) EXILE REGEN: no longer flat 0.5× — the passive
+  base (David/rank/rally) is replaced by 0.5, but earned bonuses (encircle,
+  alliance) still ADD on top; sub-1 totals stay at exactly 0.5 (no round-up).
+  Mirrored in client `getRegenMult` + server `_serverRegen`. Client shows a
+  pulsing red `#exile-badge` ("REGEN LIMITED — RECLAIM YOUR HOMELAND") in the
+  toolbar while exiled (2s sync off the david snapshot's `exiled` flag).
+  (2) TWEET CADENCE: news scrape 24h→12h (football stays 6h); community tweet
+  pinned to literal 24h; NEW hourly draft-freshness watchdog
+  (`_draftFreshnessTick`) — if the newest draft is >3h old, runs the next
+  generator in rotation (status → activity → fallen spotlight → football),
+  fixing multi-hour draft gaps. Posting stays manual-approve.
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
