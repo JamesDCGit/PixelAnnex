@@ -41,7 +41,9 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-07-v97`.** (CLIENT changes since v95w: v96
+**Current production triad: `2026-06-11-v99`.** (v98/v98a client+server, v98b
+server-only at v98a, v99 client map cleanup — see changelog below.)
+(Previously `2026-06-07-v97`.) (CLIENT changes since v95w: v96
 encircle-additive regen, v96a dead-land clear-on-reversal, v97 leaderboard tabs +
 win contributors + nuke + ranks. Server-only runs v95x/v95y/v95z stayed at v95w.)
 (v95d was a server-only conquest owner-transfer change that
@@ -492,6 +494,66 @@ Before editing any function:
   (`_encircleLabel`). Pixel bucket displays whole pixels (`Math.floor`, no decimal).
   Picker drops countries below `MIN_PLAYABLE_PX` (5px) — Vatican/San Marino/Brunei
   etc. no longer selectable.
+- **v98 (client + server) — encircle rewrite + regen overhaul + reconquest rules:**
+  (1) ENCIRCLE: `detectEncirclement` + client `runAutoFill` now run a TWO-PASS BFS
+  (with vs without the stroke's actually-flipped pixels — server tracks a
+  per-stroke `changedSet`, client uses `_strokeChangedSet`) so only regions THIS
+  stroke closed are awarded — kills the retrigger/60s-reset loop (old pockets
+  chipped by bots re-detected on every stroke-end). Server bbox now from the
+  STROKE (+160px pad), not cumulative own pixels (scattered own pixels used to
+  blow the 200k-cell cap → silent no-trigger). Enclosed collection spans ALL geos
+  (border circles) and the cap is 10000 = client `MAX_FILL_PX`, skip-whole not
+  truncate (the old 500 row-major cap filled the TOP SLICE of big circles — the
+  "half fill" bug). `FILL_MIN_PX` 10→15 = `ENCIRCLE_MIN_PX`. Server bonus ratchets
+  (no mult downgrade while active). (2) REGEN: timestamp-based 1s accrual at the
+  SAME rate (`mult/REGEN_INTERVAL` per second), works in background tabs
+  (`document.hidden` early-return removed; visibilitychange calls `_regenTick`),
+  multiplier rounds to a whole number, bucket clamped [0,MAX], `paintBrush`
+  requires a full pixel (fractional bucket could go negative before).
+  `regenSecsLeft` removed; timer text is now "+N/min". (3) RECONQUEST: taking an
+  already-held geo needs the FULL champion threshold (`_evaluateConqueror`
+  championOnly — the contested path was trivially satisfied on conquered geos, so
+  any >50% raw holder flipped them). `CONQUEST_IMMUNITY_MS` 20s→60s, broadcast as
+  `immunityMs` on the conquest msg; client draws a gold "🛡️ Ns" countdown under
+  the flag (`_geoImmuneUntil` + `pa-flag-shield` node). (4) NUKE: lockout 2→5min
+  (server + client `lockoutMs`), m:ss countdown drawn above the zone on `c-nuke`.
+  (5) DAVID: `getWorldShare` = max(homeland geoTotal, CURRENT `countryPxCount`) /
+  total land — a small country's underdog buff fades as its empire grows, a wiped
+  Goliath stays Goliath; the v97e leader tax is REMOVED (client + server).
+  (6) PERF: `_alliedCnt` uses `idToFeatIdx` (the documented findIndex landmine had
+  been re-added), `runAutoFill` reuses a scratch queue, siege pixel cache survives
+  zero-siege frames.
+- **v98a (client):** territory panel — fallen countries REMOVED from the list
+  (was greyed); hovering a row shows the countries it currently OCCUPIES
+  (`_occupationsOf` from conqueredSet → `#leg-occ-tip`); `#legend` z-index 12 so
+  flags (z7) no longer render over it. Siege flash aggregates ALL polygons of a
+  country id (`buildSiegeCache` + per-frame id dedupe) — Finland flashed half.
+- **v98b (server-only + bot.js, triad stayed v98a):** (1) country names load from
+  `countries-10m.json` at boot (`loadCountryNamesFromDisk`, mirrors client v97k
+  parse incl. synthetic 9000+ids); client `geoNames` IGNORED — fixes
+  "#Country710" (=South Africa; names were empty between restart and first join)
+  and closes the any-client-renames-every-country injection into tweets/Discord.
+  (2) `_isPlayableCountry` (NON_PLAYABLE + real name + ≥5px `MIN_PLAYABLE_PX_SRV`)
+  enforced at set-country, join (graceful: strips country + forces re-pick via
+  `your_country_lost`, never hangs the join), bot roster (191→183 bots), and the
+  conquest-clear sweep — Vatican/Gibraltar/"Country 133"/171 fully blocked.
+  (3) sass: +4 conquest revenge-bait lines, +2 multi-attack defend-or-overthrow
+  lines, nuke copy 2→5min, NEW 12h fallen-country spotlight draft
+  (`_queueFallenSpotlight`, notable only). (4) football matchups: BBC/ESPN
+  football RSS → "X v Y" fixtures where both sides are game countries →
+  tweet draft + `football_matchup` bot event → #general embed
+  (`handleFootballMatchup` in bot.js — needs `pm2 restart pixelannex-bot`).
+  Copy deliberately avoids FIFA/World Cup wording (trademarks). (5) security:
+  timing-safe admin compare; /admin + /admin/tweets set an HttpOnly SameSite
+  cookie from ?key= and 302 to a clean URL; `/api/tweets` + force-win unified on
+  `_adminOK` (any of query/header/cookie); per-IP WS cap (`MAX_WS_PER_IP` 10).
+- **v99 (client):** map cleanup — new per-COUNTRY connected-component pass at map
+  build (after micro-island removal, before `buildCselOptions`): same-geo
+  components <5px are reassigned to the dominant neighbouring country (keeps
+  coastlines solid) or removed to ocean when isolated. Kills stray single-pixel
+  exclaves; countries shrunk below 5px become unpickable (client picker + v98b
+  server floor) and lose bots. Server inherits the cleaned geo data from the next
+  v99 client join.
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
