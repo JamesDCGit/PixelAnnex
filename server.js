@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-11-v99a';
+const SERVER_VERSION       = '2026-06-12-v99b';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1521,7 +1521,7 @@ const NEWS_FEED_URLS = [
   'https://rss.cnn.com/rss/edition_world.rss',
 ];
 const NEWS_MAX_DRAFTS  = 3;
-const NEWS_SCRAPE_MS   = 24 * 60 * 60 * 1000; // daily
+const NEWS_SCRAPE_MS   = 12 * 60 * 60 * 1000; // v99b: 24h→12h (operator request; football stays 6h)
 
 // Lazy-built map of (lowercased name → country id) for keyword matching.
 // Includes some demonyms / alternate names for common countries.
@@ -1707,14 +1707,16 @@ setTimeout(_scrapeNewsAndQueue, 90 * 1000); // 90s after start (let map data set
 setInterval(_scrapeNewsAndQueue, NEWS_SCRAPE_MS);
 
 // ── v37: Community tweet scheduler — every 24h ────────────────────
+// v99b: literal 24h — NEWS_SCRAPE_MS dropped to 12h and community should stay daily.
+const COMMUNITY_TWEET_MS = 24 * 60 * 60 * 1000;
 setInterval(() => {
   pushTweetDraft({
     type:      'community',
     text:      tweetForCommunity(),
-    dedupeKey: 'community:' + Math.floor(Date.now() / NEWS_SCRAPE_MS),
+    dedupeKey: 'community:' + Math.floor(Date.now() / COMMUNITY_TWEET_MS),
   });
   console.log('[Community] Daily community tweet queued');
-}, NEWS_SCRAPE_MS);
+}, COMMUNITY_TWEET_MS);
 // Also schedule one within 5 minutes of boot
 setTimeout(() => {
   pushTweetDraft({
@@ -1830,6 +1832,32 @@ async function _scrapeFootballAndQueue() {
 }
 setInterval(_scrapeFootballAndQueue, 6 * 60 * 60 * 1000); // 4x daily — fixtures roll over fast
 setTimeout(_scrapeFootballAndQueue, 3 * 60 * 1000);
+
+// ── v99b: draft-freshness watchdog — drafts spread through day/night ──
+// The fixed schedules (status 0/6/18 UTC, daily 12 UTC, news 12h, football 6h)
+// can still leave long gaps when a generator dedupes or finds nothing (operator
+// saw a 10h-old latest draft). Hourly: if the NEWEST draft is older than 3h,
+// run the next generator in rotation. Dedupe keys make a redundant fire a
+// harmless no-op, and the next hour tries the next generator in the cycle.
+const DRAFT_FRESH_MS = 3 * 60 * 60 * 1000;
+let _draftRotationIdx = 0;
+function _draftFreshnessTick() {
+  try {
+    const newest = tweetQueue.length ? tweetQueue[0].ts : 0; // unshift → [0] is newest
+    if (Date.now() - newest < DRAFT_FRESH_MS) return;
+    const rotation = [
+      ['status_report',    () => _emitStatusReport()],
+      ['active_report',    () => _emitActiveReport()],
+      ['fallen_spotlight', () => _queueFallenSpotlight()],
+      ['football',         () => _scrapeFootballAndQueue()],
+    ];
+    const [name, fn] = rotation[_draftRotationIdx % rotation.length];
+    _draftRotationIdx++;
+    console.log('[Tweets] freshness watchdog: queue stale, running', name);
+    fn();
+  } catch (e) { console.warn('[Tweets] freshness watchdog failed:', e.message); }
+}
+setInterval(_draftFreshnessTick, 60 * 60 * 1000);
 
 
 
@@ -3956,11 +3984,18 @@ const REGEN_CAP = 12; // v97e: raised 10→12 to give the new sources headroom
 // exile = flat 0.5x; else (largest passive David) + encircle + alliance, leader-
 // taxed, clamped. Bots have no rank/highlight/alliance → David + encircle + tax.
 function _serverRegen(countryId) {
-  if (exiledSet.has(String(countryId))) return 0.5;
-  const david = Math.max(1, _davidMult(getWorldShare(countryId)));
   const enc   = getEncircleMultiplier(countryId);
   const encAdd = enc > 1 ? enc : 0;
-  let r = david + encAdd + _allianceRegenAdd(countryId);
+  const allyAdd = _allianceRegenAdd(countryId);
+  // v99b: exile is no longer FLAT 0.5x — base 0.5 replaces the David passive,
+  // but earned bonuses (encircle, alliance) still add on top. Mirrors the
+  // client getRegenMult exactly.
+  if (exiledSet.has(String(countryId))) {
+    const exTotal = 0.5 + encAdd + allyAdd;
+    return exTotal < 1 ? 0.5 : Math.min(REGEN_CAP, Math.round(exTotal));
+  }
+  const david = Math.max(1, _davidMult(getWorldShare(countryId)));
+  let r = david + encAdd + allyAdd;
   // v98: leader tax removed — David's share is dynamic now.
   return Math.min(REGEN_CAP, Math.max(0.5, r));
 }

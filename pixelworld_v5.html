@@ -19,6 +19,18 @@ body{width:100%;height:100%;overflow:hidden;background:#070d1a;font-family:'Cour
 #app{display:flex;flex-direction:column;width:100vw;height:100vh}
 #main{display:flex;flex-direction:row;flex:1;overflow:hidden;min-height:0}
 #toolbar{display:flex;align-items:center;gap:8px;padding:7px 14px;flex-shrink:0;background:#0c1526;border-bottom:1px solid rgba(255,255,255,0.07);flex-wrap:wrap;z-index:20;min-height:46px;}
+/* v99b: pulsing exile notice in the menu bar */
+#exile-badge{
+  display:none;align-items:center;padding:3px 10px;border-radius:5px;
+  font-size:10px;font-weight:700;letter-spacing:.06em;white-space:nowrap;
+  color:#fca5a5;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.45);
+  animation:exilePulse 1.6s ease-in-out infinite;cursor:help;
+}
+#exile-badge.active{display:inline-flex;}
+@keyframes exilePulse{
+  0%,100%{ box-shadow:0 0 4px 1px rgba(239,68,68,.25); opacity:.85; }
+  50%{ box-shadow:0 0 14px 4px rgba(239,68,68,.55); opacity:1; }
+}
 #toolbar h1{font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#e2e8f0;white-space:nowrap}
 #toolbar h1 span{color:#3b82f6}
 .sep{width:1px;height:20px;background:rgba(255,255,255,0.08);flex-shrink:0}
@@ -1388,6 +1400,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 <div id="app">
   <div id="toolbar">
     <h1>Pixel<span>Annex</span></h1><span id="ver-badge"></span>
+    <!-- v99b: pulsing exile notice — shown while the player's homeland is held -->
+    <span id="exile-badge" title="Your homeland has fallen. Regen is limited to a 0.5× base (bonuses still apply) until you reconquer it.">⚠️ REGEN LIMITED — RECLAIM YOUR HOMELAND</span>
     <button class="z-btn" id="btn-stats" onclick="openStats()" title="Stats &amp; Leaderboard" style="margin-left:6px;font-size:9px;padding:2px 6px;">📊</button>
     <button class="z-btn" id="btn-font-scale" onclick="cycleFontScale()" title="Font Scale: Normal / Mid / Large" style="margin-left:6px;font-size:9px;padding:2px 6px;">Aa</button>
     <span id="font-scale-label" style="font-size:9px;color:#475569;margin-left:2px;margin-right:2px">Normal</span>
@@ -3470,7 +3484,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-11-v99a';
+const CODE_VERSION = '2026-06-12-v99b';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6145,18 +6159,24 @@ function getMyMultiplier() {
 // country bonus 1.5x + 3x encircle = 4.5x, instead of being folded into the max.)
 function getRegenMult() {
   if (currentIdx < 0) return 1;
-  // v97e: exiled (homeland fallen, surviving via outposts) → flat 0.5x until reclaim.
-  if (_isExiledLocal()) return 0.5;
   const f = featList[currentIdx];
   const cid = (f && f.id) ? String(f.id) : null;
   const d = cid ? davidByCountry[cid] : null;
+  const enc  = getEncircleMultiplierLocal();           // 1 if inactive, else 3-6
+  const encAdd = enc > 1 ? enc : 0;                     // encircle adds ON TOP
+  const allyAdd = (d && d.allyAdd) ? d.allyAdd : 0;     // v97e: underdog-scaled alliance bonus
+  // v99b: exile is no longer a FLAT 0.5x — the passive base (David/rank/rally)
+  // is replaced by 0.5, but EARNED bonuses (encirclement, alliance) still add
+  // on top. So an exiled player can fight back up the curve until the homeland
+  // is reclaimed. Sub-1 totals stay at the exact 0.5 (no rounding to 1).
+  if (_isExiledLocal()) {
+    const exTotal = 0.5 + encAdd + allyAdd;
+    return exTotal < 1 ? 0.5 : Math.min(12, Math.round(exTotal));
+  }
   const davidBase = (d && d.mult) ? d.mult : 1;        // widened David curve (server)
   const rank = getRankRegenMult();
   const hl   = _highlightRegenMult || 1;
   const baseBonus = Math.max(davidBase, rank, hl, 1);  // largest passive bonus
-  const enc  = getEncircleMultiplierLocal();           // 1 if inactive, else 3-6
-  const encAdd = enc > 1 ? enc : 0;                     // encircle adds ON TOP
-  const allyAdd = (d && d.allyAdd) ? d.allyAdd : 0;     // v97e: underdog-scaled alliance bonus
   let total = baseBonus + encAdd + allyAdd;
   // v98: leader tax removed (David share is dynamic server-side now); round to a
   // whole multiplier — no decimals anywhere in regen display or accrual rate.
@@ -6176,6 +6196,13 @@ function _isExiledLocal() {
   if (d) return !!d.exiled;
   return _exiledManual;
 }
+
+// v99b: keep the pulsing menu-bar exile notice in sync with the exile state.
+// 2s poll — the david snapshot (the authoritative source) only updates ~5s.
+setInterval(() => {
+  const b = document.getElementById('exile-badge');
+  if (b) b.classList.toggle('active', _isExiledLocal());
+}, 2000);
 
 function getMyWorldShare() {
   if (currentIdx < 0) return 0;
