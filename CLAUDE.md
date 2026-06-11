@@ -41,9 +41,9 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-12-v99b`.** (v98/v98a client+server, v98b
+**Current production triad: `2026-06-12-v99c`.** (v98/v98a client+server, v98b
 server-only at v98a, v99 client map cleanup, v99a UI polish, v99b exile regen +
-tweet cadence — see changelog below.)
+tweet cadence, v99c panel alignment/zoom — see changelog below.)
 (Previously `2026-06-07-v97`.) (CLIENT changes since v95w: v96
 encircle-additive regen, v96a dead-land clear-on-reversal, v97 leaderboard tabs +
 win contributors + nuke + ranks. Server-only runs v95x/v95y/v95z stayed at v95w.)
@@ -583,6 +583,15 @@ Before editing any function:
   (`_draftFreshnessTick`) — if the newest draft is >3h old, runs the next
   generator in rotation (status → activity → fallen spotlight → football),
   fixing multi-hour draft gaps. Posting stays manual-approve.
+- **v99c (client):** leaderboard panel was the ONLY panel missing from the
+  font-scale zoom targets (`_applyFontScale` + the boot-time default-zoom copy)
+  — un-zoomed font, Aa button had no effect, and its 14px offsets didn't scale
+  like the zoomed panels'. Added to both lists. Leaderboard bottom 50→14px (the
+  50px cleared the old floating `#zoom-hud`, which no longer exists — zoom
+  buttons live in the toolbar as `#zoom-hud-tb`; the dead `#zoom-hud` CSS rule
+  + zoom-target entries remain harmlessly). Rank panel top 54→14px (stale
+  double offset — it's positioned inside the viewport, which already starts
+  below the toolbar). All corner panels now share the same zoomed 14px edge gap.
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
