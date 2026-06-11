@@ -41,8 +41,8 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-11-v99`.** (v98/v98a client+server, v98b
-server-only at v98a, v99 client map cleanup — see changelog below.)
+**Current production triad: `2026-06-11-v99a`.** (v98/v98a client+server, v98b
+server-only at v98a, v99 client map cleanup, v99a UI polish — see changelog below.)
 (Previously `2026-06-07-v97`.) (CLIENT changes since v95w: v96
 encircle-additive regen, v96a dead-land clear-on-reversal, v97 leaderboard tabs +
 win contributors + nuke + ranks. Server-only runs v95x/v95y/v95z stayed at v95w.)
@@ -554,6 +554,23 @@ Before editing any function:
   exclaves; countries shrunk below 5px become unpickable (client picker + v98b
   server floor) and lose bots. Server inherits the cleaned geo data from the next
   v99 client join.
+- **v99a (client + server) — UI polish + notification tuning:** popup fonts
+  normalised to game-default body size (13px body / 11px meta across welcome,
+  FTUE, daily popup); country pickers (welcome, csel, re-pick modal) list ACTIVE
+  countries first with fallen sunk to the bottom; territory-panel fallen filter
+  moved BEFORE the top-20 slice; ONE global scrollbar style (8px #1e293b)
+  replaces per-panel variants; CTA pulse (`ctaPulse`) on enabled primary
+  tutorial buttons + welcome-back close; music+SFX OFF by default
+  (`_audioPrefsDefault`), audio buttons icon-only (no MUTE text, 13px glyphs);
+  conquest tile copy corrected (70–75%, smaller countries need a HIGHER share);
+  #legend/#leaderboard/#zoom-hud unified at 14px edge gap; encircle + fightback
+  banners top 60→100px (cleared the #social-links row); rally cooldown 60s→10min
+  (client + server) with visible m:ss countdown on the button. Server:
+  multi-attack now SUSTAINED-only (≥3min per-attacker firstTs, 12 attackers,
+  50px/attacker, 400px window floor); "swept clean" conquest sass reworded
+  (politically risky phrasing); news scrape stays daily, football 6h. NOTE: the
+  bot roster dropped 183→166 once a v99 client sent cleaned geo data — the
+  remaining micro-feature cull, intended.
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
