@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-11-v99';
+const SERVER_VERSION       = '2026-06-11-v99a';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -852,7 +852,7 @@ const SASS_CONQUEST = [
   v => `📜 The High Command of ${v.a} decrees: ${v.d} is now theirs. Effective immediately. ` + _suffix(),
   v => `🏴 ${v.a} planted the flag on ${v.d}. The cartographers are crying. ` + _suffix(),
   v => `🐉 ${v.a} burned through ${v.d}. There is no peace at the end of pixel war, only more pixels. ` + _suffix(),
-  v => `🗡️ ${v.a} swept ${v.d} clean. The map has spoken. ${v.held} territories. ` + _suffix(),
+  v => `🗡️ ${v.a} repainted ${v.d} corner to corner. The map has spoken. ${v.held} territories. ` + _suffix(), // v99a: reworded — "swept clean" reads badly in a war context
   v => `🎬 ${v.a} cut a long story short with ${v.d}. ${v.held} held, none returned. ` + _suffix(),
   v => `📯 Service guaranteed pixels for the ${v.a} legions. ${v.d}: claimed. ` + _suffix(),
   v => `⚒️ ${v.a} hammered ${v.d} flat. ${v.held} in the trophy case. ` + _suffix(),
@@ -2432,10 +2432,14 @@ function checkSiegeState(geoIdx) {
 // v94a: slowed for "major events only" — multi-attack was still too frequent.
 // Require more attackers (6) and a much longer per-defender cooldown (30 min) so
 // the SAME defender doesn't re-announce every 5 minutes.
-const MULTI_ATTACK_THRESHOLD    = 10;            // v95p: 6→10 distinct attackers (was still firing several/hour)
+const MULTI_ATTACK_THRESHOLD    = 12;            // v99a: 10→12 distinct attackers (sustained-only tuning)
 const MULTI_ATTACK_WINDOW_MS    = 5 * 60 * 1000; // was 60s
-const MULTI_ATTACK_MIN_PIXELS   = 200;            // absolute floor — total px painted by all attackers in window
+const MULTI_ATTACK_MIN_PIXELS   = 400;            // v99a: 200→400 — total px painted by all attackers in window
 const MULTI_ATTACK_COOLDOWN_MS  = 60 * 60 * 1000; // v95p: 30→60 min per defender (≤1/hr each)
+// v99a: SUSTAINED-only — an attacker must have been hitting this defender for at
+// least this long (firstTs) to count toward the headcount. A burst that appears
+// and vanishes inside 3 minutes never announces, however many countries join.
+const MULTI_ATTACK_MIN_SUSTAIN_MS = 3 * 60 * 1000;
 // v92k (#5): size-relative pixel floor. 200px is a huge deal for a micro-state but
 // trivial for Russia (91k px). The effective floor scales with the defender's land
 // area: floor = clamp(land * FRAC, MIN_PIXELS, MAX_PIXELS). So a multi-attack means
@@ -2447,7 +2451,7 @@ const MULTI_ATTACK_MIN_FRAC     = 0.08;           // 8% of defender land...
 const MULTI_ATTACK_MAX_PIXELS   = 2500;           // ...but never demand more than this
 // v92k (#6): minimum pixels a single country must paint to COUNT as an attacker.
 // Stops "4 one-pixel flybys + 1 real attacker" from tripping the 5-country headcount.
-const MULTI_ATTACK_MIN_PIXELS_PER_ATTACKER = 25;
+const MULTI_ATTACK_MIN_PIXELS_PER_ATTACKER = 50; // v99a: 25→50
 // defenderGeoIdx → { attackers: Map(attackerId → { lastTs, pixels }), lastNotifyAt }
 const _multiAttackTracker = new Map();
 
@@ -2471,7 +2475,7 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
   const aidStr = String(attackerCountryId);
   let info = entry.attackers.get(aidStr);
   if (!info) {
-    info = { lastTs: now, pixels: 1 };
+    info = { firstTs: now, lastTs: now, pixels: 1 }; // v99a: firstTs for the sustain check
     entry.attackers.set(aidStr, info);
   } else {
     info.lastTs = now;
@@ -2485,7 +2489,10 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
     const attackerIds = [];
     for (const [aid, info] of entry.attackers) {
       totalPixels += info.pixels;
-      if (info.pixels >= MULTI_ATTACK_MIN_PIXELS_PER_ATTACKER) attackerIds.push(aid);
+      // v99a: sustained-only — must clear the pixel floor AND have been attacking
+      // for ≥3min (firstTs may be missing on entries from before this deploy).
+      if (info.pixels >= MULTI_ATTACK_MIN_PIXELS_PER_ATTACKER &&
+          (now - (info.firstTs || info.lastTs)) >= MULTI_ATTACK_MIN_SUSTAIN_MS) attackerIds.push(aid);
     }
     if (attackerIds.length < MULTI_ATTACK_THRESHOLD) return;
     // #5: total-pixel floor scales with the defender's land area.
@@ -7122,7 +7129,7 @@ wss.on('connection', (ws, req) => {
         if (!rallyCountryId) break;
         const nowR = Date.now();
         const lastR = _rallyLastByPid.get(pid) || 0;
-        if (nowR - lastR < 60000) break; // 60s per-player cooldown
+        if (nowR - lastR < 600000) break; // v99a: 10min per-player cooldown (was 60s), matches client RALLY_COOLDOWN_MS
         _rallyLastByPid.set(pid, nowR);
         const whoName = (player.discordId && getProfile(player.discordId)?.username)
           || ('A ' + (player.countryId ? _countryName(player.countryId) : 'player') + ' commander');

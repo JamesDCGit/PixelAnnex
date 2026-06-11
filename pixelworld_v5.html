@@ -43,9 +43,13 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #retry-btn{display:none;background:#162035;border:1px solid rgba(255,255,255,0.15);color:#93c5fd;padding:6px 16px;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit}
 #retry-btn:hover{background:#1e2e4a}
 .hud{position:absolute;background:rgba(7,13,26,.9);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:9px 12px;}
-#legend{bottom:12px;left:12px;max-width:200px;max-height:260px;overflow-y:auto;overflow-x:hidden;z-index:12}/* v98: above #flag-overlay (z7) — flags used to render over the panel */
-#legend::-webkit-scrollbar{width:6px;height:6px}
-#legend::-webkit-scrollbar-thumb{background:#2e5a8a;border-radius:3px}
+#legend{bottom:14px;left:14px;max-width:200px;max-height:260px;overflow-y:auto;overflow-x:hidden;z-index:12}/* v98: above #flag-overlay (z7); v99a: 14px edge gap (matches rank/leaderboard) */
+/* v99a: ONE scrollbar style everywhere (the country-select look) — replaces the
+   per-panel variants (#legend 6px blue, #leaderboard 6px navy, default elsewhere). */
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-thumb{background:#1e293b;border-radius:4px}
+*::-webkit-scrollbar-thumb:hover{background:#334155}
+*::-webkit-scrollbar-track{background:transparent}
 /* Territory panel tab bar — h3 becomes the tab strip */
 #legend h3{display:flex;gap:0;padding-bottom:5px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.07);font-size:9px;color:#334155;letter-spacing:.08em;text-transform:uppercase}
 .leg-tab{flex:1;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-6px;color:#475569;font-family:inherit;font-size:9px;letter-spacing:.07em;text-transform:uppercase;padding:0 2px 5px;cursor:pointer;transition:color .15s,border-color .15s;white-space:nowrap;text-align:left;}
@@ -68,7 +72,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .leg-size-M{background:#1e3a2b;color:#6ee7b7;}
 .leg-size-L{background:#3a2e1e;color:#fbbf24;}
 .leg-size-XL{background:#3a1e2e;color:#f9a8d4;}
-#zoom-hud{bottom:12px;right:12px;display:flex;flex-direction:column;gap:4px;padding:6px}
+#zoom-hud{bottom:14px;right:14px;display:flex;flex-direction:column;gap:4px;padding:6px}/* v99a: 14px edge gap */
 .z-btn{width:27px;height:27px;border-radius:5px;background:#162035;border:1px solid rgba(255,255,255,.08);color:#64748b;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;line-height:1;font-family:inherit;}
 .z-btn:hover{background:#1e2e4a;color:#e2e8f0}
 #tip{position:fixed;display:none;z-index:30;pointer-events:none;background:rgba(7,13,26,.97);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:8px 12px;font-size:11px;color:#cbd5e1;min-width:140px;max-width:220px;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,.4);}
@@ -210,8 +214,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 }
 #csel-search::placeholder{color:#334155;}
 #csel-list{max-height:240px;overflow-y:auto;padding:4px 0;}
-#csel-list::-webkit-scrollbar{width:8px;}
-#csel-list::-webkit-scrollbar-thumb{background:#1e293b;border-radius:4px;}
+/* v99a: #csel-list scrollbar now covered by the global style */
 .csel-opt{
   display:flex;align-items:center;gap:6px;padding:4px 8px;
   cursor:pointer;font-size:11px;color:#94a3b8;
@@ -277,7 +280,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 
 /* ── Fight-back indicator banner (under sign-in HUD, shares viewport positioning) ── */
 #fightback-banner{
-  position:absolute;top:60px;left:50%;transform:translateX(-50%);
+  /* v99a: top 60→100px — was overlapping the #social-links row (top:54px) */
+  position:absolute;top:100px;left:50%;transform:translateX(-50%);
   background:linear-gradient(90deg,#dc2626,#ef4444,#dc2626);
   color:#fff;font-family:'Courier New',monospace;
   padding:10px 22px;border-radius:8px;
@@ -387,7 +391,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   letter-spacing:.06em; text-transform:uppercase;
 }
 #daily-popup-card .dp-sub{
-  font-size:11px; color:#94a3b8; margin-bottom:18px; letter-spacing:.05em;
+  font-size:13px; color:#94a3b8; margin-bottom:18px; letter-spacing:.05em; /* v99a: 11→13 (game default body size) */
 }
 #daily-popup-card .dp-section{
   margin-bottom:18px; padding:14px 16px;
@@ -418,7 +422,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 }
 .dp-world-row{
   display:flex; justify-content:space-between; align-items:center;
-  padding:5px 0; font-size:12px;
+  padding:5px 0; font-size:13px; /* v99a: 12→13 */
 }
 .dp-world-row .dp-label{ color:#94a3b8; }
 .dp-world-row .dp-val{ color:#fbbf24; font-weight:700; }
@@ -426,6 +430,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .dp-country-name{ color:#e2e8f0; }
 .dp-pixel-count{ color:#60a5fa; font-size:11px; }
 #daily-popup-card button.dp-close{
+  animation:ctaPulse 1.6s ease-in-out infinite; /* v99a: CTA pulse */
   display:block; width:100%; margin-top:6px; padding:12px;
   background:linear-gradient(135deg,#3b82f6,#1d4ed8);
   border:none; color:#fff; font-family:'Courier New', monospace;
@@ -484,7 +489,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .tut-tile{background:#0f1729;border:1px solid #1e293b;border-radius:8px;padding:14px;}
 .tut-tile .tut-tile-icon{font-size:22px;margin-bottom:6px;}
 .tut-tile .tut-tile-title{font-size:12px;color:#fff;font-weight:600;margin-bottom:4px;}
-.tut-tile .tut-tile-desc{font-size:10px;color:#94a3b8;line-height:1.5;}
+.tut-tile .tut-tile-desc{font-size:12px;color:#94a3b8;line-height:1.5;} /* v99a: 10→12 */
 /* v83: page-flip controls for multi-page Step 1 */
 .tut-page-indicator{display:flex;justify-content:center;align-items:center;gap:14px;margin-top:6px;}
 .tut-page-btn{
@@ -500,7 +505,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .tut-country-picker{margin-top:8px;}
 .tut-country-search{
   width:100%;padding:10px 14px;background:#0f1729;border:1px solid #334155;color:#fff;
-  border-radius:8px;font-family:inherit;font-size:12px;margin-bottom:10px;
+  border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:10px; /* v99a: 12→13 */
 }
 .tut-country-search:focus{outline:none;border-color:#818cf8;}
 .tut-country-list{
@@ -508,7 +513,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 }
 .tut-country-row{
   display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;
-  border-bottom:1px solid rgba(30,41,59,0.4);font-size:11px;
+  border-bottom:1px solid rgba(30,41,59,0.4);font-size:13px; /* v99a: 11→13 (game default body size) */
 }
 .tut-country-row:hover{background:rgba(99,102,241,.12);}
 .tut-country-row.selected{background:rgba(99,102,241,.22);border-color:#818cf8;}
@@ -519,7 +524,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .tut-country-row.disabled .tut-country-meta::after{content:' · fallen';color:#ef4444;}
 .tut-country-color{width:14px;height:14px;border-radius:2px;flex-shrink:0;}
 .tut-country-name{flex:1;color:#e2e8f0;font-weight:600;}
-.tut-country-meta{font-size:9px;color:#64748b;}
+.tut-country-meta{font-size:11px;color:#64748b;} /* v99a: 9→11 */
 
 /* World state stats */
 .tut-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0;}
@@ -544,7 +549,14 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .tut-btn:hover{background:#1e293b;color:#fff;}
 .tut-btn.primary{background:#6366f1;border-color:#818cf8;color:#fff;font-weight:600;}
 .tut-btn.primary:hover{background:#7c3aed;}
-.tut-btn.primary:disabled{background:#475569;border-color:#475569;color:#94a3b8;cursor:not-allowed;}
+.tut-btn.primary:disabled{background:#475569;border-color:#475569;color:#94a3b8;cursor:not-allowed;animation:none;}
+/* v99a: pulse-glow the active call-to-action, same style family as the other
+   in-game pulses (ftuePulse / wcm-pulse box-shadow breathing). */
+.tut-btn.primary:not(:disabled){animation:ctaPulse 1.6s ease-in-out infinite;}
+@keyframes ctaPulse{
+  0%,100%{ box-shadow:0 0 8px 2px rgba(129,140,248,.30); }
+  50%{ box-shadow:0 0 22px 7px rgba(129,140,248,.70); }
+}
 .tut-btn.discord{background:#5865f2;border-color:#5865f2;color:#fff;}
 .tut-btn.discord:hover{background:#4752c4;}
 .tut-btn.skip{margin-left:auto;color:#475569;border-color:transparent;}
@@ -633,7 +645,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 }
 
 #encircle-banner{
-  position:absolute;top:60px;left:50%;transform:translateX(-50%);
+  /* v99a: top 60→100px — was overlapping the #social-links row (top:54px) */
+  position:absolute;top:100px;left:50%;transform:translateX(-50%);
   background:linear-gradient(135deg,#7c2d12,#f97316);
   color:#fff;font-family:'Courier New',monospace;
   padding:10px 18px;border-radius:8px;
@@ -754,7 +767,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   border-top:1px solid #1e293b;
 }
 .aud-btn{
-  flex:1;padding:4px 6px;font-size:9px;font-family:inherit;
+  /* v99a: icon-only buttons (no MUTE text) — bigger glyph, state shown by colour */
+  flex:1;padding:4px 6px;font-size:13px;line-height:1;font-family:inherit;
   background:#0a0f1a;border:1px solid #1e293b;border-radius:4px;
   color:#475569;cursor:pointer;transition:all .15s;text-align:center;
   letter-spacing:.04em;
@@ -1238,9 +1252,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 
 
 /* v35: Persistent leaderboard panel — mirrors #legend layout */
-#leaderboard-panel{position:absolute;bottom:50px;right:12px;max-width:240px;max-height:60vh;overflow-y:auto;z-index:11}
-#leaderboard-panel::-webkit-scrollbar{width:6px}
-#leaderboard-panel::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:3px}
+#leaderboard-panel{position:absolute;bottom:50px;right:14px;max-width:240px;max-height:60vh;overflow-y:auto;z-index:11}/* v99a: 14px edge gap */
+/* v99a: #leaderboard-panel scrollbar now covered by the global style */
 #leaderboard-panel h3{font-size:9px;color:#334155;letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px;display:flex;justify-content:space-between;align-items:center}
 #leaderboard-panel .lb-count{font-size:9px;color:#475569;font-weight:normal}
 .lb-row{display:flex;align-items:center;gap:5px;margin-bottom:3px;font-size:10px;color:#64748b;white-space:nowrap;cursor:default}
@@ -1417,8 +1430,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
         <button class="trk-btn active" id="btn-trk1" onclick="selectTrack(1)" title="Chiptune">♪1</button>
         <button class="trk-btn" id="btn-trk2" onclick="selectTrack(2)" title="Classical">♪2</button>
         <button class="trk-btn" id="btn-trk3" onclick="selectTrack(3)" title="Military">♪3</button>
-        <button class="aud-btn active" id="btn-music" onclick="toggleMusic()" title="Toggle music">♪</button>
-        <button class="aud-btn active" id="btn-sfx" onclick="toggleSFX()" title="Toggle sound effects">▶</button>
+        <button class="aud-btn muted" id="btn-music" onclick="toggleMusic()" title="Toggle music">♪</button>
+        <button class="aud-btn muted" id="btn-sfx" onclick="toggleSFX()" title="Toggle sound effects">🔊</button>
       </div>
       <!-- Zoom (compact) -->
       <div id="zoom-hud-tb" class="tb-zoom">
@@ -1541,7 +1554,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
               <div class="tut-tile">
                 <div class="tut-tile-icon">⚔️</div>
                 <div class="tut-tile-title" data-i18n="tut.tile_conquer_title">Conquer countries</div>
-                <div class="tut-tile-desc" data-i18n="tut.tile_conquer_desc">Hold 70% of a country's pixels to claim it. Larger countries are tougher.</div>
+                <div class="tut-tile-desc" data-i18n="tut.tile_conquer_desc">Hold 70–75% of a country's pixels to claim it — smaller countries need a higher share.</div>
               </div>
               <div class="tut-tile">
                 <div class="tut-tile-icon">💥</div>
@@ -1785,7 +1798,7 @@ const LANGS = {
     'tut.tile_paint_title':  'Paint pixels',
     'tut.tile_paint_desc':   'Click and drag on the map to paint. Each pixel costs 1 from your bucket.',
     'tut.tile_conquer_title':'Conquer countries',
-    'tut.tile_conquer_desc': "Hold 70% of a country's pixels to claim it. Larger countries are tougher.",
+    'tut.tile_conquer_desc': "Hold 70–75% of a country's pixels to claim it — smaller countries need a higher share.", // v99a: corrected (small countries need MORE, not less)
     'tut.tile_bombs_title':  'Nukes & ranks',
     'tut.tile_bombs_desc':   'Earn XP per pixel placed. Higher ranks unlock bigger bonuses, rally calls, and the Nuke.',
     'tut.tile_fightback_title':'Fight back',
@@ -3457,7 +3470,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-11-v99';
+const CODE_VERSION = '2026-06-11-v99a';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5416,15 +5429,16 @@ function scheduleLegend(){
       const e=_terrByCountry.get(cid);
       if(e) e.cnt+=v; else _terrByCountry.set(cid,{cnt:v,fi:+fiStr});
     }
-    [..._terrByCountry.values()].map(e=>[e.fi,e.cnt]).sort((a,b)=>b[1]-a[1]).slice(0,20).forEach(([idx,cnt],_rankPos)=>{
+    // v99a: filter fallen BEFORE the top-20 slice so the panel always shows a
+    // full list of ACTIVE countries (the v98a in-loop filter shrank the list).
+    [..._terrByCountry.values()].map(e=>[e.fi,e.cnt])
+      .filter(([idx])=>{ const f=featList[+idx]; return f && !(typeof _isCountryFallenClient==='function' && _isCountryFallenClient(f.id)); })
+      .sort((a,b)=>b[1]-a[1]).slice(0,20).forEach(([idx,cnt],_rankPos)=>{
       const f=featList[+idx];if(!f)return;
       const pct=(cnt/base*100).toFixed(2);
       // Blend country colour against land base (#535353) at alpha=215
       // to match exactly how it looks painted on the map canvas
-      // v98: fallen (dead-homeland) countries are REMOVED from the panel
-      // entirely (was: greyed out) — operator request.
-      if(typeof _isCountryFallenClient==='function' && _isCountryFallenClient(f.id)) return;
-      const row=document.createElement("div");row.className="leg-row";
+      const row=document.createElement("div");row.className="leg-row"; // v99a: fallen filtered pre-slice above
       row.dataset.countryId = f.id;
       // v93z: click highlights this country's painted footprint on the map (same
       // effect as right-click inspect) — no popup menu.
@@ -6461,11 +6475,17 @@ function tryPopulateTutCountries() {
 // after the list builds AND from the welcome handler (permanentlyConqueredSet may
 // be seeded after the list is first rendered).
 function _applyTutFallenRows() {
+  // v99a: ACTIVE countries list first — fallen rows are greyed AND moved to the
+  // bottom (alphabetical order preserved within each group).
+  const list = document.getElementById('tut-country-list');
+  const fallenRows = [];
   document.querySelectorAll('.tut-country-row').forEach(r => {
     if (!r.dataset.id) return;
     const fallen = (typeof _isCountryFallenClient === 'function') && _isCountryFallenClient(r.dataset.id);
     r.classList.toggle('disabled', !!fallen);
+    if (fallen) fallenRows.push(r);
   });
+  if (list) for (const r of fallenRows) list.appendChild(r); // re-append → sinks to bottom
 }
 
 function selectTutCountry(c, rowEl) {
@@ -7478,7 +7498,7 @@ let _siegeNewSet = null;
 // Built entirely with Web Audio API oscillators — no external files.
 // ── Audio preferences (persisted to localStorage in v28) ───────
 // Load saved music/SFX state + selected track. Stored as JSON under 'pa_audio_prefs'.
-const _audioPrefsDefault = { musicOn: true, sfxOn: true, currentTrack: 1 };
+const _audioPrefsDefault = { musicOn: false, sfxOn: false, currentTrack: 1 }; // v99a: audio OFF by default (saved prefs still win)
 function _loadAudioPrefs(){
   try {
     const raw = localStorage.getItem('pa_audio_prefs');
@@ -7676,7 +7696,7 @@ async function prerenderAllTracks(){
     }
   }
 
-  if(btn) btn.textContent = _musicOn ? '♪ Music' : '♪ Muted';
+  if(btn) btn.textContent = '♪'; // v99a: icon-only (state shown by colour class)
   _renderPending = false;
 }
 
@@ -7730,11 +7750,11 @@ function toggleMusic(){
   const btn = document.getElementById('btn-music');
   if(_musicOn){
     btn.classList.remove('muted');btn.classList.add('active');
-    btn.textContent = _trackBuffers[_currentTrack] ? '♪ Music' : '♪ …';
+    btn.textContent = _trackBuffers[_currentTrack] ? '♪' : '…'; // v99a: icon-only
     startMusic();
   } else {
     btn.classList.remove('active');btn.classList.add('muted');
-    btn.textContent='♪ Muted';
+    btn.textContent='♪';
     stopMusic();
   }
   _saveAudioPrefs();
@@ -7745,10 +7765,10 @@ function toggleSFX(){
   const btn = document.getElementById('btn-sfx');
   if(_sfxOn){
     btn.classList.remove('muted');btn.classList.add('active');
-    btn.textContent='▶ SFX';
+    btn.textContent='🔊'; // v99a: icon-only
   } else {
     btn.classList.remove('active');btn.classList.add('muted');
-    btn.textContent='▶ Muted';
+    btn.textContent='🔊';
   }
   _saveAudioPrefs();
 }
@@ -7898,13 +7918,15 @@ function selectTrack(n){
 function _syncAudioUI(){
   const bm = document.getElementById('btn-music');
   if(bm){
-    if(_musicOn){ bm.classList.remove('muted'); bm.classList.add('active'); bm.textContent='♪ Music'; }
-    else { bm.classList.remove('active'); bm.classList.add('muted'); bm.textContent='♪ Muted'; }
+    if(_musicOn){ bm.classList.remove('muted'); bm.classList.add('active'); }
+    else { bm.classList.remove('active'); bm.classList.add('muted'); }
+    bm.textContent='♪'; // v99a: icon-only
   }
   const bs = document.getElementById('btn-sfx');
   if(bs){
-    if(_sfxOn){ bs.classList.remove('muted'); bs.classList.add('active'); bs.textContent='▶ SFX'; }
-    else { bs.classList.remove('active'); bs.classList.add('muted'); bs.textContent='▶ Muted'; }
+    if(_sfxOn){ bs.classList.remove('muted'); bs.classList.add('active'); }
+    else { bs.classList.remove('active'); bs.classList.add('muted'); }
+    bs.textContent='🔊'; // v99a: icon-only
   }
   [1,2,3].forEach(i=>{
     const b = document.getElementById('btn-trk'+i);
@@ -11252,7 +11274,7 @@ let _highlightRegenMult = 1.0;
 // players farm huge bonuses. Now a rally locks out the next one for
 // RALLY_COOLDOWN_MS (highlight lasts 30s → ~50% uptime). Client-side gate; the
 // server's stroke-rate cap remains the hard anti-cheat backstop.
-const RALLY_COOLDOWN_MS = 60000;
+const RALLY_COOLDOWN_MS = 600000; // v99a: 60s→10min (operator request)
 let _rallyCooldownUntil = 0;
 function rallyCooldownLeftMs(){ return Math.max(0, _rallyCooldownUntil - Date.now()); }
 
@@ -11440,7 +11462,8 @@ function enterHighlightMode(){
     const btn = document.getElementById('btn-highlight');
     if (btn) { btn.style.borderColor = '#ef4444'; setTimeout(() => btn.style.borderColor = '', 800); }
     if (typeof actPushCard === 'function') {
-      actPushCard({ variant: 'alert', title: '⏳ Rally recharging', html: 'You can rally again in <b>' + Math.ceil(cdLeft / 1000) + 's</b>.' });
+      const _cm = Math.floor(cdLeft / 60000), _cs = Math.floor((cdLeft % 60000) / 1000);
+      actPushCard({ variant: 'alert', title: '⏳ Rally recharging', html: 'You can rally again in <b>' + _cm + ':' + (_cs < 10 ? '0' : '') + _cs + '</b>.' }); // v99a: m:ss
     }
     return;
   }
@@ -11457,15 +11480,23 @@ function _refreshHighlightBtnLockState(){
   const ri = getRankIndex();
   const locked = ri < 1;
   btn.classList.toggle('locked', locked);
+  // v99a: visible m:ss countdown ON the button (10min cooldown is too long for
+  // a hover-only hint). Original label stashed once.
+  if (!btn.dataset.baseLabel) btn.dataset.baseLabel = btn.textContent;
   if (locked) {
     btn.title = '🔒 Locked — reach Lieutenant (50 px) to call rallies';
     btn.style.opacity = '0.55';
+    btn.textContent = btn.dataset.baseLabel;
   } else {
     const cd = rallyCooldownLeftMs(); // v93i
     if (cd > 0) {
-      btn.title = '⏳ Rally recharging — ' + Math.ceil(cd / 1000) + 's';
+      const _mm = Math.floor(cd / 60000), _ss = Math.floor((cd % 60000) / 1000);
+      const _cdTxt = _mm + ':' + (_ss < 10 ? '0' : '') + _ss;
+      btn.title = '⏳ Rally recharging — ' + _cdTxt;
+      btn.textContent = btn.dataset.baseLabel + ' ⏳' + _cdTxt;
       btn.style.opacity = '0.55';
     } else {
+      btn.textContent = btn.dataset.baseLabel;
       const perk = HIGHLIGHT_PERKS[ri];
       const extra = perk && perk.initialBonus > 0
         ? ' (' + perk.regenMult + '× regen + ' + perk.initialBonus + 'px first pixel while active)'
@@ -11586,7 +11617,14 @@ function renderCselList(filter){
   if(!list) return;
   const q = filter.toLowerCase();
   list.innerHTML = '';
-  for(const {idx,f} of _cselOptions){
+  // v99a: ACTIVE countries first, fallen sink to the bottom (alphabetical
+  // within each group — _cselOptions is already name-sorted).
+  const _opts = [..._cselOptions].sort((a,b)=>{
+    const fa = _isCountryFallenClient(a.f.id) ? 1 : 0;
+    const fb = _isCountryFallenClient(b.f.id) ? 1 : 0;
+    return fa - fb;
+  });
+  for(const {idx,f} of _opts){
     if(q && !f.name.toLowerCase().includes(q)) continue;
     // v93k: the authoritative server 'conquest' path keys conqueredSet by COUNTRY
     // ID (geoCountryId:countryId), not featList index. The old check compared
@@ -12680,7 +12718,13 @@ function _showCountryRepickModal(data) {
                && (typeof isPlayableCountry === 'function' ? isPlayableCountry(featList.indexOf(f)) : true)
                && (!fl || f.name.toLowerCase().includes(fl));
       })
-      .sort(function(a, b) { return a.name.localeCompare(b.name); });
+      .sort(function(a, b) {
+        // v99a: ACTIVE countries first, fallen at the bottom; alphabetical within.
+        var fa = _isCountryFallenClient(a.id) ? 1 : 0;
+        var fb = _isCountryFallenClient(b.id) ? 1 : 0;
+        if (fa !== fb) return fa - fb;
+        return a.name.localeCompare(b.name);
+      });
     for (var i = 0; i < Math.min(items.length, 200); i++) {
       var f = items[i];
       var fallen = _isCountryFallenClient(f.id); // v95k: survivors (holding outposts) are pickable
