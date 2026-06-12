@@ -44,7 +44,8 @@ is: **always bump all three together**.
 **Current production triad: `2026-06-12-v99e`.** (v98/v98a client+server, v98b
 server-only at v98a, v99 client map cleanup, v99a UI polish, v99b exile regen +
 tweet cadence, v99c panel alignment/zoom, v99d occupation tracker + map tint,
-v99e polish pack, v99f flags/borders/rim — see changelog below.)
+v99e polish pack, v99f flags/borders/rim, v99g ocean-halo borders — see
+changelog below.)
 (Previously `2026-06-07-v97`.) (CLIENT changes since v95w: v96
 encircle-additive regen, v96a dead-land clear-on-reversal, v97 leaderboard tabs +
 win contributors + nuke + ranks. Server-only runs v95x/v95y/v95z stayed at v95w.)
@@ -621,6 +622,15 @@ Before editing any function:
   coast with 2px of border over the water; trade-off: strait-crossing border
   bridges are gone — the rim is the separation cue now). Coast rim 2px→3px
   (third ring, soft falloff).
+- **v99g (client):** visual borders moved entirely OFF the land — a 1px OCEAN
+  HALO (`bordVisPixel`: ocean pixels 8-adjacent to land, drawn on the border
+  canvas). No land pixel is ever covered, and the 1px rasterization ocean
+  seams between adjacent countries are halo-filled (ocean-touching-land on
+  both sides). Halo pixels are ocean → inherently unpaintable. `bordPixel` is
+  now GAMEPLAY-ONLY (encirclement BFS seeds, symmetric 4-neighbor land-edge
+  marking, NOT drawn) — keep the two arrays distinct; `reborderCanvas` (the
+  dark/light toggle) repaints from `bordVisPixel`. Internal land-land borders
+  (no ocean gap) have no drawn line — native tints mark the boundary.
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
