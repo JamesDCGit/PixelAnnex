@@ -41,10 +41,10 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-12-v99d`.** (v98/v98a client+server, v98b
+**Current production triad: `2026-06-12-v99e`.** (v98/v98a client+server, v98b
 server-only at v98a, v99 client map cleanup, v99a UI polish, v99b exile regen +
-tweet cadence, v99c panel alignment/zoom, v99d occupation tracker + map tint —
-see changelog below.)
+tweet cadence, v99c panel alignment/zoom, v99d occupation tracker + map tint,
+v99e polish pack — see changelog below.)
 (Previously `2026-06-07-v97`.) (CLIENT changes since v95w: v96
 encircle-additive regen, v96a dead-land clear-on-reversal, v97 leaderboard tabs +
 win contributors + nuke + ranks. Server-only runs v95x/v95y/v95z stayed at v95w.)
@@ -604,6 +604,15 @@ Before editing any function:
   (S=2.2, +5 lift) and ocean remapped teal→blue (`oceanColour` returns
   r*0.3+34 / b*1.25) to sit closer to a topographic reference; the waves layer
   shares `oceanColour` so it follows automatically.
+- **v99e (client) — polish pack:** (1) coastline shelf — 2px lighter shallow-
+  water rim along every coast, pre-baked in `buildWaveBase` (waves restore from
+  the same image); (2) terrain grain — deterministic ±3 value noise per land
+  pixel baked into the biome pass; (3) eased zoom — `doZoom` sets a target,
+  rAF loop converges scale ~35%/frame cursor-anchored (`_zoomApply`); (4)
+  conquest shockwave — `.conquest-ring` red ring spawned at the flag on every
+  conquest broadcast (`_spawnConquestRing`, positioned once, 1.1s); (5) flag
+  drop-in bounce on placement (margin-top keyframe `flagDrop` — transform is
+  owned by `_updateFlagDOMPosition`; class removed on animationend).
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
