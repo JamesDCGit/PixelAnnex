@@ -655,6 +655,14 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   30%  { transform:translate(-50%,-50%) scale(1.1); opacity:1;}
   100% { transform:translate(-50%,-50%) scale(2.2); opacity:0;}
 }
+/* v99e: conquest shockwave — red ring expanding from the new flag when a
+   country falls. Same animation family as the encircle ring. */
+.conquest-ring{
+  position:absolute; pointer-events:none; border-radius:50%;
+  border:2px solid rgba(239,68,68,0.9); z-index:129;
+  box-shadow: 0 0 20px rgba(239,68,68,0.6) inset, 0 0 20px rgba(239,68,68,0.6);
+  animation:encircle-ring-anim 1.1s cubic-bezier(.22,1,.36,1) forwards;
+}
 
 #encircle-banner{
   /* v99a: top 60→100px — was overlapping the #social-links row (top:54px) */
@@ -1250,6 +1258,14 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   pointer-events: none;
   transition: opacity .15s linear;
   will-change: transform;
+}
+/* v99e: flags drop in with a small bounce on placement. margin-top keyframe —
+   NOT transform (the position updater owns transform inline per frame). */
+#flag-overlay .pa-flag.flag-drop{ animation:flagDrop .55s cubic-bezier(.3,1.6,.4,1); }
+@keyframes flagDrop{
+  0%  { margin-top:-24px; opacity:0; }
+  60% { margin-top:3px;   opacity:1; }
+  100%{ margin-top:0; }
 }
 /* v99d: occupation-tracker flag pulse — the inspected holder's conquest flags
    glow so its occupied countries are findable at a glance. filter-based (the
@@ -3498,7 +3514,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-12-v99d';
+const CODE_VERSION = '2026-06-12-v99e';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4261,7 +4277,10 @@ function _renderFlagToDataURL(claimerFi) {
 // (one per landmass). _flagDOMNodes[geoIdx] is now an ARRAY of these entries.
 function _makeFlagNode(claimerFi, overlay) {
   const img = document.createElement('img');
-  img.className = 'pa-flag';
+  img.className = 'pa-flag flag-drop'; // v99e: drop-in bounce on placement
+  img.addEventListener('animationend', function _fd(e){
+    if (e.animationName === 'flagDrop') { img.classList.remove('flag-drop'); img.removeEventListener('animationend', _fd); }
+  });
   // v41a: if the real PNG 404s, fall back to procedural data URL
   img.onerror = function() {
     markRealFlagMissing(claimerFi);
@@ -5107,9 +5126,13 @@ async function boot(){
           // moderate so player paint still dominates the map.
           {
             const _gy=(tr+tg+tb)/3, _S=2.2;
-            tr=Math.max(0,Math.min(255,Math.round(_gy+(tr-_gy)*_S)+5));
-            tg=Math.max(0,Math.min(255,Math.round(_gy+(tg-_gy)*_S)+5));
-            tb=Math.max(0,Math.min(255,Math.round(_gy+(tb-_gy)*_S)+2));
+            // v99e: terrain grain — deterministic per-pixel value noise (±3,
+            // hashed from the pixel index, pre-baked: zero runtime cost).
+            // Breaks up the flat fill and reads as subtle relief texture.
+            const _n=((((i*2654435761)>>>0)>>>13)%7)-3;
+            tr=Math.max(0,Math.min(255,Math.round(_gy+(tr-_gy)*_S)+5+_n));
+            tg=Math.max(0,Math.min(255,Math.round(_gy+(tg-_gy)*_S)+5+_n));
+            tb=Math.max(0,Math.min(255,Math.round(_gy+(tb-_gy)*_S)+2+_n));
           }
           cd[p]=tr;cd[p+1]=tg;cd[p+2]=tb;
         }
@@ -5591,7 +5614,25 @@ function applyT(){
 // users drag the world off-screen, useful for inspecting edges and far-away regions.
 function clamp(){ /* no-op — free panning */ }
 function resetView(){const cw=vp.clientWidth,ch=vp.clientHeight;scale=Math.min(cw/MAP_W,ch/MAP_H)*.98;ox=(cw-MAP_W*scale)/2;oy=(ch-MAP_H*scale)/2;applyT();}
-function doZoom(f,cx,cy){const ns=Math.max(.25,Math.min(40,scale*f));ox=cx-(cx-ox)*(ns/scale);oy=cy-(cy-oy)*(ns/scale);scale=ns;clamp();applyT();}
+// v99e: eased zoom — instead of stepping scale instantly, each doZoom call
+// updates a TARGET and a rAF loop converges scale toward it (~35%/frame,
+// cursor-anchored every frame). Rapid wheel ticks compound into one smooth
+// glide; pinch (many small factors) feels buttery instead of stepped.
+function _zoomApply(ns,cx,cy){ns=Math.max(.25,Math.min(40,ns));ox=cx-(cx-ox)*(ns/scale);oy=cy-(cy-oy)*(ns/scale);scale=ns;clamp();applyT();}
+let _zoomAnim=null,_zoomAnimRAF=0;
+function doZoom(f,cx,cy){
+  const cur=_zoomAnim?_zoomAnim.target:scale;
+  _zoomAnim={target:Math.max(.25,Math.min(40,cur*f)),cx,cy};
+  if(_zoomAnimRAF) return;
+  const step=()=>{
+    if(!_zoomAnim){_zoomAnimRAF=0;return;}
+    const t=_zoomAnim;
+    if(Math.abs(t.target-scale)<0.002*scale){_zoomApply(t.target,t.cx,t.cy);_zoomAnim=null;_zoomAnimRAF=0;return;}
+    _zoomApply(scale+(t.target-scale)*0.35,t.cx,t.cy);
+    _zoomAnimRAF=requestAnimationFrame(step);
+  };
+  _zoomAnimRAF=requestAnimationFrame(step);
+}
 function screenToMap(sx,sy){const r=vp.getBoundingClientRect();return{x:Math.floor((sx-r.left-ox)/scale),y:Math.floor((sy-r.top-oy)/scale)};}
 
 
@@ -6094,6 +6135,27 @@ function _encircleLabel(mult) {
 
 // Render a brief celebration burst centred at map pixel (cx, cy).
 // Uses the same ox/oy/scale transform as the map canvases.
+// v99e: conquest shockwave — red expanding ring at the conquered country's
+// flag. Positioned once at spawn (1.1s lifetime; no per-frame tracking).
+function _spawnConquestRing(geoIdx) {
+  try {
+    const viewport = document.getElementById('viewport');
+    const arr = _flagDOMNodes[geoIdx];
+    if (!viewport || !arr || !arr.length) return;
+    const screenX = ox + arr[0].cx * scale;
+    const screenY = oy + arr[0].cy * scale;
+    const ring = document.createElement('div');
+    ring.className = 'conquest-ring';
+    const radius = Math.max(36, Math.min(110, 26 * Math.max(0.8, Math.min(scale, 4))));
+    ring.style.left   = screenX + 'px';
+    ring.style.top    = screenY + 'px';
+    ring.style.width  = (radius * 2) + 'px';
+    ring.style.height = (radius * 2) + 'px';
+    viewport.appendChild(ring);
+    setTimeout(() => ring.remove(), 1200);
+  } catch (e) { /* cosmetic only */ }
+}
+
 function showEncircleBurst(mapCX, mapCY, enclosedCount, mult) {
   const viewport = document.getElementById('viewport');
   if (!viewport) return;
@@ -8939,6 +9001,8 @@ function mpHandleMessage(msg) {
       placeFlag(targetFi, fi);
       // v98: arm the invincibility countdown under the new flag.
       _geoImmuneUntil[targetFi] = Date.now() + (msg.immunityMs || 60000);
+      // v99e: shockwave ring from the new flag's position.
+      _spawnConquestRing(targetFi);
       // Flood-fill the conquered country in the conqueror's colour
       finisherFill(targetFi, fi);
       scheduleLegend();
@@ -10581,6 +10645,34 @@ function buildWaveBase(){
       d[p]=or2; d[p+1]=og2; d[p+2]=ob2; d[p+3]=255;
     }
     // Land stays transparent (bctx base canvas shows through)
+  }
+  // ── v99e: coastline shelf — a lighter 2px shallow-water rim hugging every
+  // coast (rim 1 = ocean touching land, rim 2 = ocean touching rim 1). Pre-
+  // baked into the static base, zero runtime cost; the wave animation
+  // restores from this image so sparkles inherit it automatically.
+  {
+    const rim = new Uint8Array(MAP_PX);
+    const isLand = (x,y)=> x>=0&&x<MAP_W&&y>=0&&y<MAP_H&&landMask[y*MAP_W+x]===1;
+    for(let i=0;i<MAP_PX;i++){
+      if(landMask[i]!==0) continue;
+      const x=i%MAP_W, y=(i/MAP_W)|0;
+      if(isLand(x-1,y)||isLand(x+1,y)||isLand(x,y-1)||isLand(x,y+1)||
+         isLand(x-1,y-1)||isLand(x+1,y-1)||isLand(x-1,y+1)||isLand(x+1,y+1)) rim[i]=1;
+    }
+    const isRim1 = (x,y)=> x>=0&&x<MAP_W&&y>=0&&y<MAP_H&&rim[y*MAP_W+x]===1;
+    for(let i=0;i<MAP_PX;i++){
+      if(landMask[i]!==0||rim[i]) continue;
+      const x=i%MAP_W, y=(i/MAP_W)|0;
+      if(isRim1(x-1,y)||isRim1(x+1,y)||isRim1(x,y-1)||isRim1(x,y+1)) rim[i]=2;
+    }
+    for(let i=0;i<MAP_PX;i++){
+      if(!rim[i]) continue;
+      const p=i*4;
+      const lift = rim[i]===1 ? [22,26,24] : [10,13,12]; // shallow teal-ish lift
+      d[p]  =Math.min(255,d[p]  +lift[0]);
+      d[p+1]=Math.min(255,d[p+1]+lift[1]);
+      d[p+2]=Math.min(255,d[p+2]+lift[2]);
+    }
   }
   waveWorkImg = new ImageData(new Uint8ClampedArray(waveBaseImg.data), MAP_W, MAP_H);
   wctx.putImageData(waveBaseImg, 0, 0);
