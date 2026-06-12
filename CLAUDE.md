@@ -41,9 +41,10 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-12-v99c`.** (v98/v98a client+server, v98b
+**Current production triad: `2026-06-12-v99d`.** (v98/v98a client+server, v98b
 server-only at v98a, v99 client map cleanup, v99a UI polish, v99b exile regen +
-tweet cadence, v99c panel alignment/zoom — see changelog below.)
+tweet cadence, v99c panel alignment/zoom, v99d occupation tracker + map tint —
+see changelog below.)
 (Previously `2026-06-07-v97`.) (CLIENT changes since v95w: v96
 encircle-additive regen, v96a dead-land clear-on-reversal, v97 leaderboard tabs +
 win contributors + nuke + ranks. Server-only runs v95x/v95y/v95z stayed at v95w.)
@@ -592,6 +593,17 @@ Before editing any function:
   + zoom-target entries remain harmlessly). Rank panel top 54→14px (stale
   double offset — it's positioned inside the viewport, which already starts
   below the toolbar). All corner panels now share the same zoomed 14px edge gap.
+- **v99d (client):** (1) OCCUPATION TRACKER: `inspectCountryHighlight`
+  (right-click + territory-panel click) also collects the geos the inspected
+  country currently occupies (`_inspectOccSet` from conqueredSet, all polygons
+  per id); `tickInspectHighlight` adds a pulsing RED wash over those FULL
+  territories (pass 1.5, between the gold home wash and cyan footprint), and
+  the holder's conquest flags glow (`.occ-pulse`, filter-based — transform is
+  owned by `_updateFlagDOMPosition`). Inspect card shows "occupies N countries".
+  (2) MAP TINT: land biome output saturated around the per-pixel grey axis
+  (S=2.2, +5 lift) and ocean remapped teal→blue (`oceanColour` returns
+  r*0.3+34 / b*1.25) to sit closer to a topographic reference; the waves layer
+  shares `oceanColour` so it follows automatically.
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
