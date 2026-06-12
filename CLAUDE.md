@@ -44,7 +44,7 @@ is: **always bump all three together**.
 **Current production triad: `2026-06-12-v99e`.** (v98/v98a client+server, v98b
 server-only at v98a, v99 client map cleanup, v99a UI polish, v99b exile regen +
 tweet cadence, v99c panel alignment/zoom, v99d occupation tracker + map tint,
-v99e polish pack — see changelog below.)
+v99e polish pack, v99f flags/borders/rim — see changelog below.)
 (Previously `2026-06-07-v97`.) (CLIENT changes since v95w: v96
 encircle-additive regen, v96a dead-land clear-on-reversal, v97 leaderboard tabs +
 win contributors + nuke + ranks. Server-only runs v95x/v95y/v95z stayed at v95w.)
@@ -613,6 +613,14 @@ Before editing any function:
   conquest broadcast (`_spawnConquestRing`, positioned once, 1.1s); (5) flag
   drop-in bounce on placement (margin-top keyframe `flagDrop` — transform is
   owned by `_updateFlagDOMPosition`; class removed on animationend).
+- **v99f (client):** flags no longer fade out at high zoom (`_updateFlagOpacity`
+  faded to 0 at scale≥10 — max zoom is the typical gameplay view and the fade
+  hid flags + the v99e bounce + v99d occupation pulse). Borders are 1px and
+  ALWAYS land-side (the scan used to mark the left/top pixel — ocean on west/
+  north coasts) and the v33 2-pass ocean dilation is REMOVED (it padded every
+  coast with 2px of border over the water; trade-off: strait-crossing border
+  bridges are gone — the rim is the separation cue now). Coast rim 2px→3px
+  (third ring, soft falloff).
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
