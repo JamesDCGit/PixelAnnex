@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-12-v99g';
+const SERVER_VERSION       = '2026-06-12-v99i';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -832,7 +832,7 @@ console.log('[Timelapse] capture every ' + (TL_FRAME_MS / 1000) + 's, ' +
 
 // v37: Sassy template pools — picked at random per event for variety
 const TWITTER_HANDLE = '@PixelAnnexGame';
-const DISCORD_INVITE = 'https://discord.gg/FcbzWCY2F';
+const DISCORD_INVITE = 'https://discord.gg/gM7t7Vm86';
 const GAME_URL       = 'pixelannex.com';
 function _pickSassy(pool) { return pool[Math.floor(Math.random() * pool.length)]; }
 // v39a: tweet posted by @PixelAnnexGame anyway — drop the self-mention

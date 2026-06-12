@@ -435,7 +435,7 @@ async function handleMeCommand(interaction) {
         { name: '🏠 Main Country',   value: mainName,                                            inline: true },
         { name: '🌍 Top Painted',    value: topCountries,                                        inline: false },
       ],
-      footer: { text: 'PixelAnnex · pixelannex.com · X: @PixelAnnexGame · discord.gg/FcbzWCY2F' },
+      footer: { text: 'PixelAnnex · pixelannex.com · X: @PixelAnnexGame · discord.gg/gM7t7Vm86' },
     };
 
     await interaction.reply({ embeds: [embed], flags: 64 });
