@@ -3514,7 +3514,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-12-v99e';
+const CODE_VERSION = '2026-06-12-v99f';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4361,14 +4361,13 @@ function _updateAllFlagPositions() {
 }
 
 function _updateFlagOpacity() {
+  // v99f: flags no longer fade out when zoomed IN — max zoom is the typical
+  // gameplay view, and the fade hid the flags (and the v99e drop/bounce +
+  // v99d occupation pulse) exactly when players were looking at them.
   const overlay = document.getElementById('flag-overlay');
   if (!overlay) return;
-  let opacity;
-  if (scale <= 6) opacity = 1;
-  else if (scale >= 10) opacity = 0;
-  else opacity = 1 - (scale - 6) / 4;
-  overlay.style.opacity = String(opacity);
-  overlay.style.display = (opacity <= 0.02) ? 'none' : '';
+  overlay.style.opacity = '1';
+  overlay.style.display = '';
 }
 
 // v95f: centre of a single connected landmass = its pixel CENTROID, snapped to
@@ -5170,36 +5169,22 @@ async function boot(){
     for(let i=s;i<end2;i++){
       const x=i%MAP_W,y=(i/MAP_W)|0;
       const ci=featByPixel[i];
-      if(x<MAP_W-1&&featByPixel[i+1]!==ci){wb(i);}
-      if(y<MAP_H-1&&featByPixel[i+MAP_W]!==ci){wb(i);}
+      // v99f: borders are 1px and ALWAYS on the LAND side. The old code marked
+      // the left/top pixel of each differing pair — on west/north coasts that
+      // pixel is OCEAN, drawing the border over the water (and hiding the v99e
+      // coastline rim).
+      if(x<MAP_W-1&&featByPixel[i+1]!==ci){ if(ci!==-1)wb(i); else if(featByPixel[i+1]!==-1)wb(i+1); }
+      if(y<MAP_H-1&&featByPixel[i+MAP_W]!==ci){ if(ci!==-1)wb(i); else if(featByPixel[i+MAP_W]!==-1)wb(i+MAP_W); }
     }
     prog(86+Math.floor(s/MAP_PX*12),"Drawing borders…");
     await sleep(1);
   }
-  // v33: Dilate borders into ocean — fills 1-5px ocean gaps between adjacent
-  // countries so the border line stays continuous instead of breaking up.
-  const DILATION_PASSES = 2;
-  for (let pass = 0; pass < DILATION_PASSES; pass++) {
-    const toAdd = [];
-    for (let i = 0; i < MAP_PX; i++) {
-      if (bordPixel[i] !== 0) continue;
-      if (featByPixel[i] !== -1) continue; // only dilate into ocean
-      const x = i % MAP_W, y = (i / MAP_W) | 0;
-      let touches = false;
-      if (x > 0          && bordPixel[i - 1]     === 1) touches = true;
-      else if (x < MAP_W-1 && bordPixel[i + 1]     === 1) touches = true;
-      else if (y > 0       && bordPixel[i - MAP_W] === 1) touches = true;
-      else if (y < MAP_H-1 && bordPixel[i + MAP_W] === 1) touches = true;
-      if (touches) toAdd.push(i);
-    }
-    for (const i of toAdd) {
-      bordPixel[i] = 1;
-      const p = i*4;
-      bd[p]=_br0; bd[p+1]=_bg0; bd[p+2]=_bb0; bd[p+3]=255;
-    }
-    await sleep(1);
-  }
-  console.log("[Borders] Dilation done — " + DILATION_PASSES + " passes, ocean gaps filled");
+  // v99f: the v33 ocean-dilation (2 passes into the sea around every coast) is
+  // REMOVED — it padded all coastlines with 2px of border over the water,
+  // which buried the coastline shelf and read as fat borders. Trade-off:
+  // border lines across narrow straits between countries are no longer
+  // bridged; the coast rim now provides that separation cue instead.
+  console.log("[Borders] 1px land-side borders (no ocean dilation)");
 
   bordCtx.putImageData(borderImg,0,0);
   console.log("Borders drawn – pixel-perfect with ocean-gap fix");
@@ -10665,10 +10650,18 @@ function buildWaveBase(){
       const x=i%MAP_W, y=(i/MAP_W)|0;
       if(isRim1(x-1,y)||isRim1(x+1,y)||isRim1(x,y-1)||isRim1(x,y+1)) rim[i]=2;
     }
+    // v99f: third ring — rim extended 2px→3px so the shelf stays readable
+    // next to the (now land-side-only) country borders.
+    const isRim2 = (x,y)=> x>=0&&x<MAP_W&&y>=0&&y<MAP_H&&rim[y*MAP_W+x]===2;
+    for(let i=0;i<MAP_PX;i++){
+      if(landMask[i]!==0||rim[i]) continue;
+      const x=i%MAP_W, y=(i/MAP_W)|0;
+      if(isRim2(x-1,y)||isRim2(x+1,y)||isRim2(x,y-1)||isRim2(x,y+1)) rim[i]=3;
+    }
     for(let i=0;i<MAP_PX;i++){
       if(!rim[i]) continue;
       const p=i*4;
-      const lift = rim[i]===1 ? [22,26,24] : [10,13,12]; // shallow teal-ish lift
+      const lift = rim[i]===1 ? [22,26,24] : rim[i]===2 ? [12,15,14] : [5,7,6]; // shallow teal-ish lift, 3-step falloff
       d[p]  =Math.min(255,d[p]  +lift[0]);
       d[p+1]=Math.min(255,d[p+1]+lift[1]);
       d[p+2]=Math.min(255,d[p+2]+lift[2]);
