@@ -3514,7 +3514,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-12-v99f';
+const CODE_VERSION = '2026-06-12-v99g';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3561,7 +3561,8 @@ document.addEventListener('visibilitychange', updateTabTitle);
 // v98: regenSecsLeft removed — regen is timestamp-based (_regenTick).
 // ── Bomb mode ───────────────────────────────────────────────────
 let   bombMode         = false;
-let bordPixel=null;   // Uint8Array MAP_PX — 1 where a border pixel was drawn
+let bordPixel=null;   // Uint8Array MAP_PX — GAMEPLAY: land pixels on a geo edge (BFS seeds; NOT drawn since v99g)
+let bordVisPixel=null;// v99g: VISUAL: ocean halo pixels actually drawn on the border canvas
 // Stroke tracking for auto-fill (geo countries touched this stroke)
 // strokeGeos is declared inside runAutoFill's outer scope above
 let totalClaimed=0,totalLandPx=0,showBorders=true,borderDark=true,brushSize=1,currentIdx=0;
@@ -5159,32 +5160,46 @@ async function boot(){
   const borderImg=bordCtx.createImageData(MAP_W,MAP_H);
   const bd=borderImg.data;
   bordPixel=new Uint8Array(MAP_PX);
+  bordVisPixel=new Uint8Array(MAP_PX);
   // v35: respect borderDark state on initial draw (was hardcoded to light)
   const [_br0, _bg0, _bb0] = borderDark ? [63, 50, 30] : [182, 157, 107];
-  function wb(i){bd[i*4]=_br0;bd[i*4+1]=_bg0;bd[i*4+2]=_bb0;bd[i*4+3]=255;bordPixel[i]=1;}
 
+  // v99g: VISUAL borders live entirely OUTSIDE the land — no land pixel is
+  // ever hidden from the player.
+  //   bordPixel    (gameplay, NOT drawn): land pixels on a geo edge — BFS
+  //                seeds for encirclement (runAutoFill). Now marked on BOTH
+  //                sides of internal borders (more correct seeding).
+  //   bordVisPixel (visual, drawn): ocean pixels 8-adjacent to land — a 1px
+  //                halo hugging every coastline. The 1px rasterization gaps
+  //                of ocean between adjacent countries are ocean-touching-
+  //                land on both sides, so the halo fills them: no more
+  //                see-through ocean seams between countries.
   const CHUNK2=262144;
   for(let s=0;s<MAP_PX;s+=CHUNK2){
     const end2=Math.min(s+CHUNK2,MAP_PX);
     for(let i=s;i<end2;i++){
       const x=i%MAP_W,y=(i/MAP_W)|0;
       const ci=featByPixel[i];
-      // v99f: borders are 1px and ALWAYS on the LAND side. The old code marked
-      // the left/top pixel of each differing pair — on west/north coasts that
-      // pixel is OCEAN, drawing the border over the water (and hiding the v99e
-      // coastline rim).
-      if(x<MAP_W-1&&featByPixel[i+1]!==ci){ if(ci!==-1)wb(i); else if(featByPixel[i+1]!==-1)wb(i+1); }
-      if(y<MAP_H-1&&featByPixel[i+MAP_W]!==ci){ if(ci!==-1)wb(i); else if(featByPixel[i+MAP_W]!==-1)wb(i+MAP_W); }
+      if(ci!==-1){
+        if((x>0        &&featByPixel[i-1]    !==ci)||
+           (x<MAP_W-1  &&featByPixel[i+1]    !==ci)||
+           (y>0        &&featByPixel[i-MAP_W]!==ci)||
+           (y<MAP_H-1  &&featByPixel[i+MAP_W]!==ci)) bordPixel[i]=1; // seed only — not drawn
+      } else {
+        let touch=false;
+        for(let dy=-1;dy<=1&&!touch;dy++)for(let dx=-1;dx<=1;dx++){
+          if(!dx&&!dy)continue;
+          const nx=x+dx,ny=y+dy;
+          if(nx<0||nx>=MAP_W||ny<0||ny>=MAP_H)continue;
+          if(landMask[ny*MAP_W+nx]===1){touch=true;break;}
+        }
+        if(touch){bordVisPixel[i]=1;const p=i*4;bd[p]=_br0;bd[p+1]=_bg0;bd[p+2]=_bb0;bd[p+3]=255;}
+      }
     }
     prog(86+Math.floor(s/MAP_PX*12),"Drawing borders…");
     await sleep(1);
   }
-  // v99f: the v33 ocean-dilation (2 passes into the sea around every coast) is
-  // REMOVED — it padded all coastlines with 2px of border over the water,
-  // which buried the coastline shelf and read as fat borders. Trade-off:
-  // border lines across narrow straits between countries are no longer
-  // bridged; the coast rim now provides that separation cue instead.
-  console.log("[Borders] 1px land-side borders (no ocean dilation)");
+  console.log("[Borders] v99g: 1px ocean-halo borders — zero land pixels covered");
 
   bordCtx.putImageData(borderImg,0,0);
   console.log("Borders drawn – pixel-perfect with ocean-gap fix");
@@ -10786,12 +10801,13 @@ function showConquestToast(geoIdx, claimerIdx){
 // ── Redraw border canvas in the currently selected colour ────────
 // Called by the colour toggle; reads bordPixel[] and repaints.
 function reborderCanvas(){
-  if(!bordPixel) return;
+  // v99g: repaint from the VISUAL halo set — bordPixel is gameplay-only now.
+  if(!bordVisPixel) return;
   const [br,bg,bb] = borderDark ? [63,50,30] : [182,157,107];
   const img = bordCtx.createImageData(MAP_W, MAP_H);
   const d   = img.data;
   for(let i=0;i<MAP_PX;i++){
-    if(bordPixel[i]===1){
+    if(bordVisPixel[i]===1){
       const p=i*4;
       d[p]=br; d[p+1]=bg; d[p+2]=bb; d[p+3]=255;
     }
