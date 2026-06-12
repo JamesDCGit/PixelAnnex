@@ -1251,6 +1251,18 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   transition: opacity .15s linear;
   will-change: transform;
 }
+/* v99d: occupation-tracker flag pulse — the inspected holder's conquest flags
+   glow so its occupied countries are findable at a glance. filter-based (the
+   position updater owns transform, so scale would be overwritten per frame). */
+#flag-overlay .pa-flag.occ-pulse{
+  animation: flagOccPulse .8s ease-in-out infinite;
+  z-index: 2; /* above sibling flags inside the overlay */
+}
+#flag-overlay .pa-flag-label.occ-pulse-label{ color:#fca5a5; }
+@keyframes flagOccPulse{
+  0%,100%{ filter: brightness(1.05) drop-shadow(0 0 2px rgba(248,113,113,.9)); }
+  50%   { filter: brightness(1.7)  drop-shadow(0 0 9px rgba(248,113,113,1)); }
+}
 /* v98: post-conquest invincibility countdown under the flag label */
 #flag-overlay .pa-flag-shield {
   position: absolute;
@@ -3486,7 +3498,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-12-v99c';
+const CODE_VERSION = '2026-06-12-v99d';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4582,11 +4594,15 @@ function oceanColour(lat,lon){
     const w=zW*Math.max(0,1-d/1.8);
     wR+=zR*w;wG+=zG*w;wB+=zB*w;wT+=w;
   }
+  // v99d: remap the teal palette toward a truer topographic blue — add a touch
+  // of red, lift blue ~25%. (0,84,132) base → ~(34,88,165). Zone DEPTH
+  // differences (deep polar vs bright tropical shelf) are preserved.
+  const _of=(r,g,b)=>[Math.round(r*0.3+34), Math.min(255,Math.round(g+4)), Math.min(255,Math.round(b*1.25))];
   if(wT>0.5){
     const b=Math.min(1,wT/1.2);
-    return[Math.round(bR*(1-b)+(wR/wT)*b),Math.round(bG*(1-b)+(wG/wT)*b),Math.round(bB*(1-b)+(wB/wT)*b)];
+    return _of(bR*(1-b)+(wR/wT)*b, bG*(1-b)+(wG/wT)*b, bB*(1-b)+(wB/wT)*b);
   }
-  return[bR,bG,bB];
+  return _of(bR,bG,bB);
 }
 
 // ── Ocean / water body name lookup ───────────────────────────────
@@ -5084,6 +5100,17 @@ async function boot(){
             tg=Math.round(bG*(1-bl)+(wG/wT)*bl);
             tb=Math.round(bB*(1-bl)+(wB/wT)*bl);
           } else {tr=bR;tg=bG;tb=bB;}
+          // v99d: push toward the topographic reference — the zone table is
+          // near-grey (all channels 70-99), so saturate around each pixel's
+          // grey axis (amplifies the existing green-forest / tan-desert hue
+          // differences without redesigning the table) + a small lift. Kept
+          // moderate so player paint still dominates the map.
+          {
+            const _gy=(tr+tg+tb)/3, _S=2.2;
+            tr=Math.max(0,Math.min(255,Math.round(_gy+(tr-_gy)*_S)+5));
+            tg=Math.max(0,Math.min(255,Math.round(_gy+(tg-_gy)*_S)+5));
+            tb=Math.max(0,Math.min(255,Math.round(_gy+(tb-_gy)*_S)+2));
+          }
           cd[p]=tr;cd[p+1]=tg;cd[p+2]=tb;
         }
       }else{
@@ -12058,7 +12085,21 @@ vp.addEventListener("mouseleave",()=>{$("tip").style.display="none";isPainting=f
 // throttled to ~15fps so per-frame cost is bounded.
 let _inspectPainted = null;     // Int32Array — owner+ally painted pixels (everywhere)
 let _inspectHomeSet = null;     // Set<featIdx> — home territories for gold wash
+let _inspectOccSet  = null;     // v99d: Set<featIdx> — geos the owner currently OCCUPIES (red wash)
 let _inspectExpiry = 0;
+
+// v99d: pulse the inspected holder's conquest flags so occupied countries are
+// findable at a glance. Class-based glow (transform is owned by the position
+// updater, so we animate filter, not scale).
+function _setOccFlagPulse(holderId) {
+  for (const g in _flagDOMNodes) {
+    for (const e of _flagDOMNodes[g]) {
+      const on = holderId != null && String(e.isoId) === String(holderId);
+      if (e.el)    e.el.classList.toggle('occ-pulse', on);
+      if (e.label) e.label.classList.toggle('occ-pulse-label', on);
+    }
+  }
+}
 let _lastInspectTick = 0;
 const INSPECT_DURATION_MS = 3500;
 
@@ -12082,8 +12123,25 @@ function inspectCountryHighlight(ownerFi){
   for (let k = 0; k < MAP_PX; k++) { if (ownerSet.has(claimByPixel[k])) painted.push(k); }
   _inspectPainted = new Int32Array(painted);
   _inspectHomeSet = ownerSet;
+  // v99d: collect the geos this country currently OCCUPIES (conqueredSet keys
+  // are "geoCountryId:holderId") — ALL polygons of each occupied country id, so
+  // multipolygon countries wash fully. Drives the red occupation wash + the
+  // flag pulse, the "track down Chile's conquests" tool.
+  const occIds = new Set();
+  for (const k of conqueredSet) {
+    const p = String(k).split(':');
+    if (p[1] === String(owner.id) && p[0] !== String(owner.id)) occIds.add(p[0]);
+  }
+  _inspectOccSet = new Set();
+  if (occIds.size) {
+    for (let fi = 0; fi < featList.length; fi++) {
+      const f = featList[fi];
+      if (f && occIds.has(String(f.id))) _inspectOccSet.add(fi);
+    }
+  }
+  _setOccFlagPulse(occIds.size ? owner.id : null);
   _inspectExpiry  = performance.now() + INSPECT_DURATION_MS;
-  return { name: owner.name, count: painted.length, allyCount };
+  return { name: owner.name, count: painted.length, allyCount, occCount: occIds.size };
 }
 vp.addEventListener("contextmenu", e => {
   e.preventDefault();
@@ -12116,6 +12174,10 @@ vp.addEventListener("contextmenu", e => {
     const allyLine = info.allyCount > 0
       ? '<div>+ <b>' + info.allyCount + '</b> allied countr' + (info.allyCount === 1 ? 'y' : 'ies') + '</div>'
       : '';
+    // v99d: surface the occupation count + red swatch in the legend
+    const occLine = info.occCount > 0
+      ? '<div>🚩 occupies <b>' + info.occCount + '</b> countr' + (info.occCount === 1 ? 'y' : 'ies') + ' (flashing red)</div>'
+      : '';
     actPushCard({
       variant: 'info',
       bodyBlock: true,
@@ -12123,10 +12185,12 @@ vp.addEventListener("contextmenu", e => {
       html:
         '<div><b>' + cnt + '</b> pixel' + (info.count === 1 ? '' : 's') + ' on the map</div>' +
         allyLine +
+        occLine +
         '<div class="insp-legend">' +
           '<span class="insp-sw" style="background:#fbbf24;"></span>home territory' +
           ' &nbsp; ' +
           '<span class="insp-sw" style="background:#22d3ee;"></span>painted footprint' +
+          (info.occCount > 0 ? ' &nbsp; <span class="insp-sw" style="background:#f87171;"></span>occupied' : '') +
         '</div>',
     });
   }
@@ -12145,6 +12209,8 @@ function tickInspectHighlight() {
     hlCtx.clearRect(0, 0, MAP_W, MAP_H);
     _inspectPainted = null;
     _inspectHomeSet = null;
+    _inspectOccSet  = null;        // v99d
+    _setOccFlagPulse(null);        // v99d: stop the flag glow
     return;
   }
   if (!_inspectPainted) return;
@@ -12161,6 +12227,21 @@ function tickInspectHighlight() {
   if (_inspectHomeSet) {
     hlCtx.fillStyle = 'rgba(251, 191, 36, ' + (0.10 + 0.10 * pulse).toFixed(3) + ')';
     for (const fi of _inspectHomeSet) {
+      const src = geoPixelList && geoPixelList[fi];
+      if (!src) continue;
+      for (let pi = 0; pi < src.length; pi++) {
+        const idx = src[pi];
+        hlCtx.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1);
+      }
+    }
+  }
+
+  // v99d Pass 1.5: red wash over the FULL territory of every country the
+  // inspected holder OCCUPIES — highlights the whole conquered country, not
+  // just its painted pixels, so occupations are easy to track down.
+  if (_inspectOccSet && _inspectOccSet.size) {
+    hlCtx.fillStyle = 'rgba(248, 113, 113, ' + (0.16 + 0.14 * pulse).toFixed(3) + ')';
+    for (const fi of _inspectOccSet) {
       const src = geoPixelList && geoPixelList[fi];
       if (!src) continue;
       for (let pi = 0; pi < src.length; pi++) {
