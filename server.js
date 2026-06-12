@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-12-v99i';
+const SERVER_VERSION       = '2026-06-12-v99j';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -832,7 +832,7 @@ console.log('[Timelapse] capture every ' + (TL_FRAME_MS / 1000) + 's, ' +
 
 // v37: Sassy template pools — picked at random per event for variety
 const TWITTER_HANDLE = '@PixelAnnexGame';
-const DISCORD_INVITE = 'https://discord.gg/gM7t7Vm86';
+const DISCORD_INVITE = 'https://discord.gg/UHQRqXDpBE'; // v99j: permanent (never-expiring) invite
 const GAME_URL       = 'pixelannex.com';
 function _pickSassy(pool) { return pool[Math.floor(Math.random() * pool.length)]; }
 // v39a: tweet posted by @PixelAnnexGame anyway — drop the self-mention
@@ -1881,9 +1881,22 @@ setInterval(_draftFreshnessTick, 60 * 60 * 1000);
 // Kill switch: X_AUTOPOST=0 in .env (no restart of cadence needed otherwise).
 const X_AUTOPOST_INTERVAL_MS = 2.5 * 60 * 60 * 1000;
 const X_AUTOPOST_COUNTRY_GAP_MS = 12 * 60 * 60 * 1000;
+// v99j: runtime toggle (dashboard "⚡ Auto-fire" button), persisted so it
+// survives restarts. Initial default comes from env (X_AUTOPOST=0 → off).
+const AUTOPOST_STATE_FILE = path.join(__dirname, 'autopost_state.json');
+let _autopostOn = process.env.X_AUTOPOST !== '0';
+try {
+  const s = JSON.parse(fs.readFileSync(AUTOPOST_STATE_FILE, 'utf8'));
+  if (typeof s.on === 'boolean') _autopostOn = s.on;
+} catch (e) { /* no state file yet — use the env default */ }
+function _setAutopost(on) {
+  _autopostOn = !!on;
+  try { fs.writeFileSync(AUTOPOST_STATE_FILE, JSON.stringify({ on: _autopostOn })); } catch (e) {}
+  console.log('[X] auto-fire ' + (_autopostOn ? 'ENABLED' : 'DISABLED'));
+}
 async function _autoPostTick() {
   try {
-    if (process.env.X_AUTOPOST === '0' || !xposter.isXEnabled()) return;
+    if (!_autopostOn || !xposter.isXEnabled()) return;
     const now = Date.now();
     const recentPosted = tweetQueue.filter(d => d.status === 'posted' && d.postedAt &&
                                                 now - d.postedAt < X_AUTOPOST_COUNTRY_GAP_MS);
@@ -2044,6 +2057,8 @@ const TWEET_ADMIN_HTML = `<!DOCTYPE html>
   <button class="filter" data-filter="posted">Posted</button>
   <button class="filter" data-filter="dismissed">Dismissed</button>
   <button class="filter" data-filter="">All</button>
+  <!-- v99j: auto-fire toggle — controls the v99h autopost scheduler -->
+  <button id="autopost-btn" style="margin-left:auto;" title="When ACTIVE, the oldest eligible pending draft is auto-posted to X every 2.5h (12h per-country gap, drafts >24h old skipped). Dismiss a draft to stop it posting.">⚡ Auto-fire: …</button>
 </div>
 
 <div id="tweets"></div>
@@ -2052,7 +2067,31 @@ const TWEET_ADMIN_HTML = `<!DOCTYPE html>
 const KEY = new URLSearchParams(location.search).get('key');
 const headers = { 'Content-Type': 'application/json', 'X-Admin-Key': KEY };
 let activeFilter = 'pending';
-let X_ENABLED = false; // v93l: set from /api/tweets — gates the real "Post to X" button
+let X_ENABLED = false;
+let AUTOPOST_ON = false; // v99j: auto-fire status, set from /api/tweets
+function renderAutopostBtn() {
+  const b = document.getElementById('autopost-btn');
+  if (!b) return;
+  b.textContent = '⚡ Auto-fire: ' + (AUTOPOST_ON ? 'ACTIVE' : 'OFF');
+  b.style.background  = AUTOPOST_ON ? '#14532d' : '#1e293b';
+  b.style.borderColor = AUTOPOST_ON ? '#22c55e' : '#334155';
+  b.style.color       = AUTOPOST_ON ? '#86efac' : '#94a3b8';
+  b.style.display     = X_ENABLED ? '' : 'none'; // pointless without X creds
+}
+document.addEventListener('click', async (e) => {
+  if (e.target && e.target.id === 'autopost-btn') {
+    const next = !AUTOPOST_ON;
+    if (!confirm(next
+      ? 'Enable auto-fire? Pending drafts will be posted to X automatically (one every 2.5h).'
+      : 'Disable auto-fire? Posting goes back to manual-only.')) return;
+    const r = await fetch('/api/tweets/autopost?key=' + KEY, {
+      method: 'POST', headers, body: JSON.stringify({ on: next }),
+    });
+    const d = await r.json();
+    AUTOPOST_ON = !!d.autopost;
+    renderAutopostBtn();
+  }
+}); // v93l: set from /api/tweets — gates the real "Post to X" button
 
 function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -2069,6 +2108,8 @@ async function load() {
   const r = await fetch(url);
   const d = await r.json();
   X_ENABLED = !!d.xEnabled;
+  AUTOPOST_ON = !!d.autopost; // v99j
+  renderAutopostBtn();
   render(d.tweets || []);
 }
 
@@ -5900,7 +5941,19 @@ const httpServer = http.createServer(async (req, res) => {
       const filtered = status ? tweetQueue.filter(t => t.status === status) : tweetQueue;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       // v93l: xEnabled tells the dashboard whether to show the real "Post to X" button.
-      res.end(JSON.stringify({ tweets: filtered, xEnabled: xposter.isXEnabled() }));
+      // v99j: autopost = auto-fire toggle state for the dashboard button.
+      res.end(JSON.stringify({ tweets: filtered, xEnabled: xposter.isXEnabled(), autopost: _autopostOn }));
+      return;
+    }
+    // v99j: auto-fire toggle (admin-gated by the surrounding /api/tweets block).
+    if (req.method === 'POST' && url.pathname === '/api/tweets/autopost') {
+      let body = '';
+      req.on('data', c => { body += c.toString(); if (body.length > 1024) req.destroy(); });
+      req.on('end', () => {
+        try { _setAutopost(!!JSON.parse(body || '{}').on); } catch (e) {}
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ autopost: _autopostOn }));
+      });
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/tweets') {

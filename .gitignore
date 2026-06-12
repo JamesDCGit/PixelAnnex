@@ -57,3 +57,4 @@ session_state.json.tmp
 tweet_queue.json
 shots/
 timelapse/
+autopost_state.json
