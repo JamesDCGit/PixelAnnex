@@ -375,6 +375,16 @@ function pushTweetDraft({ type, text, dedupeKey, throttleKey, countries, imageUr
   if (Array.isArray(countries) && countries.length > 0) {
     const hasNotable = countries.some(c => isNotableCountry(c));
     if (!hasNotable) return null;
+    // v99h: per-country cooldown — at most ONE draft mentioning a given country
+    // per 12h window, across ALL generators (operator saw two #Iran drafts
+    // queued at the same moment — Iran in two football fixtures). Checked
+    // against the persisted queue so it survives restarts. Older drafts
+    // (pre-v99h) have no countries field and don't block.
+    const COUNTRY_DRAFT_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+    const _cs = countries.map(String);
+    if (tweetQueue.some(d => Array.isArray(d.countries) &&
+          (now - d.ts) < COUNTRY_DRAFT_COOLDOWN_MS &&
+          d.countries.some(c => _cs.includes(String(c))))) return null;
   }
   // Dedupe: same event recently? skip.
   if (dedupeKey) {
@@ -399,6 +409,7 @@ function pushTweetDraft({ type, text, dedupeKey, throttleKey, countries, imageUr
     type,
     text:   _text,
     dedupeKey: dedupeKey || null, // v95s: stored so dedupe survives restarts
+    countries: (Array.isArray(countries) && countries.length) ? countries.map(String) : null, // v99h: for per-country cooldowns
     imageUrl: imageUrl || null,   // v88: optional screenshot URL for the post
     status: 'pending',  // 'pending' | 'posted' | 'dismissed'
   };
@@ -1858,6 +1869,41 @@ function _draftFreshnessTick() {
   } catch (e) { console.warn('[Tweets] freshness watchdog failed:', e.message); }
 }
 setInterval(_draftFreshnessTick, 60 * 60 * 1000);
+
+// ── v99h: AUTOPOST — automated, spread-out posting over the day ──────
+// Operator request: posts go out automatically, spaced across 24h, never two
+// posts mentioning the same country within 12h. Every 2.5h (≈9 posts/day max)
+// the OLDEST eligible pending draft is posted via the X API:
+//   - skipped if any of its countries appeared in a tweet POSTED <12h ago
+//   - skipped if the draft is >24h old (stale news — left pending for manual)
+// Manual review still works: anything you dismiss in /admin/tweets before its
+// slot never posts; the postx button still posts immediately.
+// Kill switch: X_AUTOPOST=0 in .env (no restart of cadence needed otherwise).
+const X_AUTOPOST_INTERVAL_MS = 2.5 * 60 * 60 * 1000;
+const X_AUTOPOST_COUNTRY_GAP_MS = 12 * 60 * 60 * 1000;
+async function _autoPostTick() {
+  try {
+    if (process.env.X_AUTOPOST === '0' || !xposter.isXEnabled()) return;
+    const now = Date.now();
+    const recentPosted = tweetQueue.filter(d => d.status === 'posted' && d.postedAt &&
+                                                now - d.postedAt < X_AUTOPOST_COUNTRY_GAP_MS);
+    const pending = tweetQueue.filter(d => d.status === 'pending').sort((a, b) => a.ts - b.ts);
+    for (const t of pending) {
+      if (now - t.ts > 24 * 60 * 60 * 1000) continue; // stale — manual only
+      if (Array.isArray(t.countries) && t.countries.length &&
+          recentPosted.some(p => Array.isArray(p.countries) &&
+                                 p.countries.some(c => t.countries.includes(c)))) continue;
+      const result = await xposter.postToX({ text: t.text, imageUrl: t.imageUrl });
+      t.status = 'posted'; t.postedUrl = result.url || null; t.postedAt = Date.now();
+      t.autoPosted = true; // visible in the dashboard JSON for auditing
+      saveTweetQueue();
+      console.log('[X] auto-posted draft', t.id, '(' + t.type + ')');
+      return; // one post per tick — this is what spreads them out
+    }
+  } catch (e) { console.warn('[X] autopost failed:', e && e.message ? e.message : e); }
+}
+setInterval(_autoPostTick, X_AUTOPOST_INTERVAL_MS);
+setTimeout(_autoPostTick, 20 * 60 * 1000); // first slot ~20min after boot
 
 
 

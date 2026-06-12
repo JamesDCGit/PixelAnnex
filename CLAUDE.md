@@ -631,6 +631,11 @@ Before editing any function:
   marking, NOT drawn) — keep the two arrays distinct; `reborderCanvas` (the
   dark/light toggle) repaints from `bordVisPixel`. Internal land-land borders
   (no ocean gap) have no drawn line — native tints mark the boundary.
+- **v99h (server-only):** (1) per-country 12h draft cooldown in `pushTweetDraft`
+  (drafts persist `countries[]`; fixes two #Iran drafts from one football
+  scrape). (2) AUTOPOST: `_autoPostTick` every 2.5h posts the oldest eligible
+  pending draft (no country posted <12h ago, draft <24h old); `autoPosted:true`
+  flag for auditing; `X_AUTOPOST=0` disables. See the X posting section.
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
@@ -654,11 +659,18 @@ v93l. The earlier "dropped, native dep breaks install" note was stale — do
 NOT remove it or the `[Mapshot] preloaded N flag images` path breaks. The 0.x
 line (esp. 0.1.80, `os:win32`) is what broke linux installs; 1.x is fine.
 
-## X (Twitter) posting (v93l) — manual-approve only
+## X (Twitter) posting (v93l manual + v99h autopost)
 
 `xposter.js` posts tweet drafts to X via `twitter-api-v2` (pure JS, no native
-dep). **The game server never auto-posts** — the operator clicks "🚀 Post to
-X" per draft in the admin dashboard (`/admin/tweets?key=$TWEETS_ADMIN_SECRET`).
+dep). The operator can post per-draft via "🚀 Post to X" in the admin dashboard
+(`/admin/tweets?key=$TWEETS_ADMIN_SECRET`). **v99h added AUTOPOST** (operator
+request): every 2.5h the oldest eligible PENDING draft is posted automatically
+— skipped if any of its countries appeared in a tweet posted <12h ago, or if
+the draft is >24h old (stale → manual only). One post per tick spreads posts
+across the day. Dismissing a draft in the dashboard before its slot prevents
+it posting. Kill switch: `X_AUTOPOST=0` in `.env`. Drafts also enforce a
+12h per-country cooldown at CREATION time (`pushTweetDraft`, persisted
+`countries[]` on each draft).
 
 - Flow: dashboard `postx` button → `POST /api/tweets/:id/postx` → `postToX()`
   uploads media (`/shots` or `/timelapse` file) via `client.v1.uploadMedia`,
