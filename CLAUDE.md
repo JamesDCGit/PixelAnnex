@@ -41,10 +41,13 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-12-v99i`.** (v99h was server-only at v99g
-— per-country draft cooldown + autopost; v99i = Discord invite update to
-discord.gg/gM7t7Vm86 across client links, tweet copy, and the bot embed
-footer.) (v98/v98a client+server, v98b
+**Current production triad: `2026-06-12-v99j`.** (v99h was server-only at v99g
+— per-country draft cooldown + autopost. v99i: Discord invite update. v99j:
+PERMANENT invite discord.gg/UHQRqXDpBE, "Created by Pretty Neat Pixels ·
+www.prettyneatpixels.com · 2026" About credit, dashboard "⚡ Auto-fire" toggle
+(`_autopostOn` persisted in gitignored `autopost_state.json`; `X_AUTOPOST=0`
+only sets the initial default; POST `/api/tweets/autopost`). World was reset
+2026-06-12 → PixelAnnex War #2.) (v98/v98a client+server, v98b
 server-only at v98a, v99 client map cleanup, v99a UI polish, v99b exile regen +
 tweet cadence, v99c panel alignment/zoom, v99d occupation tracker + map tint,
 v99e polish pack, v99f flags/borders/rim, v99g ocean-halo borders — see
