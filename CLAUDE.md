@@ -41,11 +41,15 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v101`.** (v101 = Phase 2B: sudden
-death + new win condition + endgame panel + leaderboard arrows — client+server.
-v100a was a server-only run at v100 = Phase 2A bot redistribution pool. v100 =
-client-only Phase 1 bug/polish bundle — see changelog entries below.) (v99j was
-the prior triad.) (v99h was server-only at v99g
+**Current production triad: `2026-06-16-v102`.** (v102 = Phase 2C: conquest-fall
+"winner vs loser" popup + leader-portrait system [renderer/cache/popup/card hooks]
+shipped FLAG-FALLBACK ONLY — hand-authored pixel portraits disabled via
+`PORTRAITS_ENABLED=false` pending an art-direction decision; also endgame-panel
+alignment fix [sits below login HUD] + v101a micro-country endgame fix folded in.)
+(v101 = Phase 2B: sudden death + new win condition + endgame panel + leaderboard
+arrows — client+server. v100a was a server-only run at v100 = Phase 2A bot
+redistribution pool. v100 = client-only Phase 1 bug/polish bundle — see changelog
+entries below.) (v99j was the prior triad.) (v99h was server-only at v99g
 — per-country draft cooldown + autopost. v99i: Discord invite update. v99j:
 PERMANENT invite discord.gg/UHQRqXDpBE, "Created by Pretty Neat Pixels ·
 www.prettyneatpixels.com · 2026" About credit, dashboard "⚡ Auto-fire" toggle
@@ -713,6 +717,29 @@ Before editing any function:
     `_rankTrend(id,curRank)` returns ▲ (green, gained places) / ▼ (red, lost) shown
     in the territory panel (`scheduleLegend`) and the country-select dropdown
     (`renderCselList`).
+- **v101a (server-only, triad stayed v101):** `_isPlayableNation` now requires
+  `geoTotal >= MIN_PLAYABLE_PX_SRV` (was `> 0`) so micro countries (Vatican etc.,
+  residual px, no bot, unselectable) stop showing as standing endgame-panel
+  contenders; `_playableCountryStats` reuses the same gate so the status-bar
+  "countries left" matches.
+- **v102 (client+server) — Phase 2C scaffold:**
+  - **Conquest-fall popup** (`_showConquestFallPopup`, `#fall-popup`): big
+    winner-vs-loser modal on a FRESH nation fall — both leaders' faces, gold crown
+    on the winner, greyed loser with a big red ✕, auto-dismiss ~5s / click to close.
+    Triggered from the `conquest` handler when `msg.perm && !_wasPerm` (fresh kill,
+    not a transfer — detected via `permanentlyConqueredSet` read BEFORE the add).
+  - **Leader-portrait system:** `PORTRAIT_PAL` + `PORTRAITS` (grid strings) +
+    `_renderPortraitGrid` (→64x64 dataURL, cached) + `leaderPortraitURL` +
+    `_leaderFaceURL` (portrait else flag). Portraits added to the conquest-event +
+    victory activity cards too.
+  - **SHIPPED FLAG-FALLBACK ONLY:** `PORTRAITS_ENABLED=false` — the hand-authored
+    16x16/24x24 pixel drafts didn't land in review, so every country uses its FLAG
+    in the popup/cards for now. Art direction (AI-gen vs supplied art vs larger
+    hand-authored) is an open decision; flip the flag + fill `PORTRAITS` once final
+    art exists. `.fp-port` uses `object-fit:contain` so flags show un-cropped.
+  - **Endgame panel alignment:** `_renderEndgamePanel` now measures `#login-hud` +
+    `#social-links` bottoms and sets the panel `top` below them (was overlapping
+    the login button).
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
