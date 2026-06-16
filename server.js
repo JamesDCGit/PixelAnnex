@@ -2803,10 +2803,7 @@ function _totalCountries() {
 function _playableCountryStats() {
   let total = 0, fallen = 0;
   for (const id of Object.keys(countryNames || {})) {
-    if (NON_PLAYABLE_IDS.has(String(id))) continue;
-    if (!((geoTotal[id] || 0) > 0)) continue;                 // landless artifact
-    const nm = countryNames[id];
-    if (!nm || /^Country \d+$/.test(nm) || nm === 'Disputed Territory') continue; // unnamed
+    if (!_isPlayableNation(id)) continue; // v101a: excludes micro countries (Vatican etc.) too
     total++;
     if (permanentlyConquered.has(String(id))) fallen++;
   }
@@ -2824,11 +2821,14 @@ const WIN_PIXELS_FRAC       = 0.65;
 let _suddenDeath   = false;   // mirrored to clients (regen x2) + drives the panel
 let _endgamePayload = null;   // last _computeEndgame() result (served + broadcast)
 
-// Is a country a real playable nation? (same filter as _playableCountryStats)
+// Is a country a real playable nation? (matches the engine's _isPlayableCountry
+// gate). v101a: must clear MIN_PLAYABLE_PX_SRV — the old `> 0` check let micro
+// countries (Vatican etc., a few residual px, no bot, unselectable) show up as
+// standing endgame contenders.
 function _isPlayableNation(id) {
   const sid = String(id);
   if (NON_PLAYABLE_IDS.has(sid)) return false;
-  if (!((geoTotal[id] || 0) > 0)) return false;
+  if ((geoTotal[id] || 0) < MIN_PLAYABLE_PX_SRV) return false;
   const nm = countryNames[id];
   if (!nm || /^Country \d+$/.test(nm) || nm === 'Disputed Territory') return false;
   return true;
