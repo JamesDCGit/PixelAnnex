@@ -287,6 +287,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* Variant: info (blue) */
 .act-card.info{background:#0a121a;border-color:rgba(99,102,241,0.6);color:#c7d2fe;}
 .act-card.info .act-title{color:#818cf8;}
+/* v100: pixel inspector — slightly transparent so the map shows through */
+.act-card.inspect{background:rgba(10,18,26,0.78);}
 
 @keyframes act-slide-in{from{opacity:0;transform:translateX(30px);}to{opacity:1;transform:translateX(0);}}
 
@@ -1275,9 +1277,11 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   z-index: 2; /* above sibling flags inside the overlay */
 }
 #flag-overlay .pa-flag-label.occ-pulse-label{ color:#fca5a5; }
+/* v100: bounce + glow so occupied flags are spotted instantly. transform is owned
+   by the position updater, so the hop uses margin-top (same trick as flagDrop). */
 @keyframes flagOccPulse{
-  0%,100%{ filter: brightness(1.05) drop-shadow(0 0 2px rgba(248,113,113,.9)); }
-  50%   { filter: brightness(1.7)  drop-shadow(0 0 9px rgba(248,113,113,1)); }
+  0%,100%{ filter: brightness(1.1) drop-shadow(0 0 3px rgba(248,113,113,.95)); margin-top:0; }
+  50%   { filter: brightness(1.8) drop-shadow(0 0 10px rgba(248,113,113,1)); margin-top:-7px; }
 }
 /* v98: post-conquest invincibility countdown under the flag label */
 #flag-overlay .pa-flag-shield {
@@ -3514,7 +3518,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-12-v99j';
+const CODE_VERSION = '2026-06-16-v100';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4506,7 +4510,9 @@ function finisherFill(geoIdx,claimerIdx){
       claimerCount[prev]=Math.max(0,(claimerCount[prev]||1)-1);
       if(geoClaimCnt[geoIdx]&&geoClaimCnt[geoIdx][prev])
         geoClaimCnt[geoIdx][prev]=Math.max(0,(geoClaimCnt[geoIdx][prev]||1)-1);
-      const prevKey=geoIdx+":"+prev;
+      // v100: conqueredSet is keyed by COUNTRY IDs ("geoId:holderId"), not featList
+      // indices — build the key from ids so it matches server-authored entries.
+      const prevKey=(featList[geoIdx]&&featList[geoIdx].id)+":"+(featList[prev]&&featList[prev].id);
       if(conqueredSet.has(prevKey)){conqueredSet.delete(prevKey);eraseFlag(geoIdx);}
     }else{totalClaimed++;}
     claimByPixel[gi]=claimerIdx;
@@ -4532,7 +4538,13 @@ function finisherFill(geoIdx,claimerIdx){
 // Client-side prediction only — the server is authoritative and broadcasts the
 // real 'conquest' event. This just drives the local toast/banner.
 function checkConquest(geoIdx,claimerIdx){
-  const key=geoIdx+":"+claimerIdx;
+  // v100: key by COUNTRY IDs to match the server-authoritative conqueredSet format
+  // ("geoId:holderId"). Index keys polluted the set and made refreshCsel /
+  // placeFlag misread entries (silent Afghanistan switch + ghost flags).
+  const _gId=featList[geoIdx]&&String(featList[geoIdx].id);
+  const _cId=featList[claimerIdx]&&String(featList[claimerIdx].id);
+  if(!_gId||!_cId)return false;
+  const key=_gId+":"+_cId;
   if(conqueredSet.has(key))return false;
   // v95i: if this geo is already held by ANOTHER country it's a re-conquest /
   // transfer — the SERVER decides that (contested/threshold rules, empire bonus
@@ -4554,6 +4566,7 @@ function checkConquest(geoIdx,claimerIdx){
   const _eff=Math.min(EMPIRE_DEF_CEIL, conquestThreshold(total)+(_defId?empireDefenseBonus(_defId):0));
   if(total===0||owned/total<_eff)return false;
   conqueredSet.add(key);
+  if(claimerIdx===currentIdx) _conquerBoostUntil = Date.now() + CONQUER_BOOST_MS; // v100: instant surge on your own conquest
   sfxConquestFor(claimerIdx);
   showConquestToast(geoIdx,claimerIdx);
   refreshCsel();
@@ -4567,7 +4580,11 @@ function checkConquest(geoIdx,claimerIdx){
 
 // ── checkConquestReversal: only erase if drops below threshold ───────────────
 function checkConquestReversal(geoIdx,prev){
-  const key=geoIdx+":"+prev;
+  // v100: id-based key (see checkConquest).
+  const _gId=featList[geoIdx]&&String(featList[geoIdx].id);
+  const _pId=featList[prev]&&String(featList[prev].id);
+  if(!_gId||!_pId)return;
+  const key=_gId+":"+_pId;
   if(!conqueredSet.has(key))return;
   // v64: use combined alliance count — conquest only breaks when whole alliance drops below threshold
   const owned=_getAllyOwned(geoIdx,prev);
@@ -6250,8 +6267,14 @@ function getMyMultiplier() {
 // (v95h made the passive sources non-stacking — whichever is highest applies — and
 // that still holds; v96 changes only how ENCIRCLE combines: it's now additive, e.g.
 // country bonus 1.5x + 3x encircle = 4.5x, instead of being folded into the max.)
+// v100: conquering a country maxes out your regen for 60s (operator request).
+// Set on your own confirmed/predicted conquest; overrides every other source
+// (incl. exile) while active so a conqueror can immediately press the advantage.
+let _conquerBoostUntil = 0;
+const CONQUER_BOOST_MS = 60000;
 function getRegenMult() {
   if (currentIdx < 0) return 1;
+  if (_conquerBoostUntil > Date.now()) return 12; // v100: post-conquest surge (cap)
   const f = featList[currentIdx];
   const cid = (f && f.id) ? String(f.id) : null;
   const d = cid ? davidByCountry[cid] : null;
@@ -7296,7 +7319,7 @@ function actPushCard(opts) {
   const wrap = document.getElementById('activity-toast');
   if (!wrap) return;
   const card = document.createElement('div');
-  card.className = 'act-card ' + (opts.variant || 'alert');
+  card.className = 'act-card ' + (opts.variant || 'alert') + (opts.cls ? ' ' + opts.cls : ''); // v100: optional extra class
 
   const title = document.createElement('div');
   title.className = 'act-title';
@@ -8991,10 +9014,12 @@ function mpHandleMessage(msg) {
       }
       // YOU conquered someone
       else if(fi === currentIdx){
+        _conquerBoostUntil = Date.now() + CONQUER_BOOST_MS; // v100: 60s max-regen surge
         actPushCard({
           variant: 'win',
           title: t('act.victory_title'),
-          html: t('act.victory_text', { defender: featList[targetFi].name }),
+          html: t('act.victory_text', { defender: featList[targetFi].name })
+              + '<br><b>⚡ Conquest surge — max regen for 60s!</b>',
         });
       }
       showConquestToast(targetFi, fi);
@@ -10676,7 +10701,7 @@ function buildWaveBase(){
     for(let i=0;i<MAP_PX;i++){
       if(!rim[i]) continue;
       const p=i*4;
-      const lift = rim[i]===1 ? [22,26,24] : rim[i]===2 ? [12,15,14] : [5,7,6]; // shallow teal-ish lift, 3-step falloff
+      const lift = rim[i]===1 ? [33,39,36] : rim[i]===2 ? [18,22,21] : [8,11,9]; // v100: shoreline +50% brighter (was 22,26,24 / 12,15,14 / 5,7,6)
       d[p]  =Math.min(255,d[p]  +lift[0]);
       d[p+1]=Math.min(255,d[p+1]+lift[1]);
       d[p+2]=Math.min(255,d[p+2]+lift[2]);
@@ -10746,16 +10771,14 @@ function tickWaves(){
 function refreshCsel(){
   // Re-render dropdown list with updated conquered state
   if(_cselOptions.length > 0) renderCselList('');
-  // If current country is now conquered by someone else, switch to first available
-  const isCurrentConquered=[...conqueredSet].some(k=>{
-    const [g,c]=k.split(':'); return +g===currentIdx && +c!==currentIdx;
-  });
-  if(isCurrentConquered){
-    const avail=_cselOptions.find(({idx})=>{
-      return ![...conqueredSet].some(k=>{ const [g,c]=k.split(':'); return +g===idx && +c!==idx; });
-    });
-    if(avail) selectCountry(avail.idx);
-  }
+  // v100: REMOVED the silent client-side country auto-switch. It read conqueredSet
+  // (keyed by COUNTRY IDs) as if the keys were featList INDICES, so a numeric
+  // id/index collision among the ~100 conquered countries made it think YOUR
+  // homeland had fallen and silently swap you to the first available country
+  // (index 0 = Afghanistan) with no popup — the reported high-priority bug.
+  // Re-pick / exile is now driven STRICTLY by the server's targeted
+  // your_country_lost / homeland_exiled messages (see CLAUDE.md "client never
+  // guesses"), which show the proper modal/banner.
 }
 
 // ── Show conquest toast (top-right, 3s) ──────────────────────────
@@ -12189,6 +12212,44 @@ let _inspectHomeSet = null;     // Set<featIdx> — home territories for gold wa
 let _inspectOccSet  = null;     // v99d: Set<featIdx> — geos the owner currently OCCUPIES (red wash)
 let _inspectExpiry = 0;
 
+// v100: PERF — pre-render the 3 highlight layers (gold home / red occ / cyan
+// footprint) to an offscreen canvas ONCE per inspect, then the per-frame tick
+// just drawImages it with a pulsing globalAlpha. Previously the tick issued a
+// fillRect(x,y,1,1) per pixel EVERY frame at 15fps — hundreds of thousands of
+// draw calls/frame for a large country, which "slowed the game considerably"
+// (the reported right-click-inspect lag). Now the per-frame cost is O(1).
+let _inspectLayer = null, _inspectLayerCtx = null;
+function _buildInspectLayer() {
+  if (!_inspectLayer) {
+    _inspectLayer = document.createElement('canvas');
+    _inspectLayer.width = MAP_W; _inspectLayer.height = MAP_H;
+    _inspectLayerCtx = _inspectLayer.getContext('2d');
+  }
+  const c = _inspectLayerCtx;
+  c.clearRect(0, 0, MAP_W, MAP_H);
+  // Baked at each layer's PEAK alpha; the tick modulates with globalAlpha
+  // (0.55–1.0) to reproduce the original per-layer pulse troughs/peaks.
+  if (_inspectHomeSet) {
+    c.fillStyle = 'rgba(251,191,36,0.20)';
+    for (const fi of _inspectHomeSet) {
+      const src = geoPixelList && geoPixelList[fi]; if (!src) continue;
+      for (let pi = 0; pi < src.length; pi++) { const idx = src[pi]; c.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1); }
+    }
+  }
+  if (_inspectOccSet && _inspectOccSet.size) {
+    c.fillStyle = 'rgba(248,113,113,0.30)';
+    for (const fi of _inspectOccSet) {
+      const src = geoPixelList && geoPixelList[fi]; if (!src) continue;
+      for (let pi = 0; pi < src.length; pi++) { const idx = src[pi]; c.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1); }
+    }
+  }
+  if (_inspectPainted) {
+    c.fillStyle = 'rgba(34,211,238,0.60)';
+    const arr = _inspectPainted;
+    for (let pi = 0; pi < arr.length; pi++) { const idx = arr[pi]; c.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1); }
+  }
+}
+
 // v99d: pulse the inspected holder's conquest flags so occupied countries are
 // findable at a glance. Class-based glow (transform is owned by the position
 // updater, so we animate filter, not scale).
@@ -12241,6 +12302,7 @@ function inspectCountryHighlight(ownerFi){
     }
   }
   _setOccFlagPulse(occIds.size ? owner.id : null);
+  _buildInspectLayer(); // v100: pre-render layers once (per-frame tick is now O(1))
   _inspectExpiry  = performance.now() + INSPECT_DURATION_MS;
   return { name: owner.name, count: painted.length, allyCount, occCount: occIds.size };
 }
@@ -12282,6 +12344,7 @@ vp.addEventListener("contextmenu", e => {
     actPushCard({
       variant: 'info',
       bodyBlock: true,
+      cls: 'inspect', // v100: slightly-transparent inspector background
       title: '🔍 ' + owner.name,
       html:
         '<div><b>' + cnt + '</b> pixel' + (info.count === 1 ? '' : 's') + ' on the map</div>' +
@@ -12324,40 +12387,13 @@ function tickInspectHighlight() {
   // noticeable even on small countries (was only ~2 pulses across the whole window).
   const pulse = Math.abs(Math.sin(now / 1000 * Math.PI * 2)); // ~2 pulses/sec
 
-  // Pass 1: gold wash over home territory ("country of origin")
-  if (_inspectHomeSet) {
-    hlCtx.fillStyle = 'rgba(251, 191, 36, ' + (0.10 + 0.10 * pulse).toFixed(3) + ')';
-    for (const fi of _inspectHomeSet) {
-      const src = geoPixelList && geoPixelList[fi];
-      if (!src) continue;
-      for (let pi = 0; pi < src.length; pi++) {
-        const idx = src[pi];
-        hlCtx.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1);
-      }
-    }
-  }
-
-  // v99d Pass 1.5: red wash over the FULL territory of every country the
-  // inspected holder OCCUPIES — highlights the whole conquered country, not
-  // just its painted pixels, so occupations are easy to track down.
-  if (_inspectOccSet && _inspectOccSet.size) {
-    hlCtx.fillStyle = 'rgba(248, 113, 113, ' + (0.16 + 0.14 * pulse).toFixed(3) + ')';
-    for (const fi of _inspectOccSet) {
-      const src = geoPixelList && geoPixelList[fi];
-      if (!src) continue;
-      for (let pi = 0; pi < src.length; pi++) {
-        const idx = src[pi];
-        hlCtx.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1);
-      }
-    }
-  }
-
-  // Pass 2: bright cyan over all painted pixels (the footprint, anywhere on map)
-  hlCtx.fillStyle = 'rgba(34, 211, 238, ' + (0.35 + 0.25 * pulse).toFixed(3) + ')';
-  const arr = _inspectPainted;
-  for (let pi = 0; pi < arr.length; pi++) {
-    const idx = arr[pi];
-    hlCtx.fillRect(idx % MAP_W, (idx / MAP_W) | 0, 1, 1);
+  // v100: single drawImage of the pre-rendered layer (built once in
+  // inspectCountryHighlight), modulated by a pulsing globalAlpha. Replaces the
+  // three per-pixel fillRect loops that ran every frame — see _buildInspectLayer.
+  if (_inspectLayer) {
+    hlCtx.globalAlpha = 0.55 + 0.45 * pulse;
+    hlCtx.drawImage(_inspectLayer, 0, 0);
+    hlCtx.globalAlpha = 1;
   }
 }
 requestAnimationFrame(tickInspectHighlight);
