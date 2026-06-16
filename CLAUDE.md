@@ -41,7 +41,11 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v103`.** (v103 = Phase 2C art: restored
+**Current production triad: `2026-06-16-v104`.** (v104 = Phase 2C art: all 33
+notable-country 16x16 leader portraits authored [`PORTRAITS`], plus per-country
+region-appropriate skin tones [`PORTRAIT_SKIN` overrides the grids' `s`/`S` cells
+at render time, respectful: fair/East-Asian/olive/tan/deep, default light].)
+(v103 = Phase 2C art: restored
 the hand-authored 16x16 grid leader portraits [PORTRAIT_PAL + PORTRAITS +
 `_renderPortraitGrid`, no anime influence]; conquest-fall popup now shows the
 portrait with the FLAG as a SEPARATE item beneath it [`_fpSideHTML`, `.fp-flag`].

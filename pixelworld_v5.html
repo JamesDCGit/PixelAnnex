@@ -3518,7 +3518,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-16-v103';
+const CODE_VERSION = '2026-06-16-v104';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6458,11 +6458,53 @@ const PORTRAITS = {
     '....sKssKs......','....ssssss......','.....sSSs.......','....ssssss......',
     '.....ssss.......','...WWWWWWWWWW...','...WWWrrrrWWW...','...WWWrrrrWWW...',
     '...WWWWWWWWWW...','...WW......WW...','................','................'
-  ]
+  ],
+  '156':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....rrrrrrrr....','....rrryyrrr....','....rrrrrrrr....','...rrr..rrr.....','................','................'],
+  '826':['................','.....KKKKKK.....','....KKKKKKKK....','...KKKKKKKKKK...','......ssss......','.....sKssKs.....','.....ssssss.....','......sSSs......','.....ssssss.....','....WWWWWWWW....','....WWWrrWWW....','....WWWrrWWW....','....KKKrrKKK....','...KK....KK.....','................','................'],
+  '276':['................','....dddddddd....','...dddddddddd...','...ddssssssdd...','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....KKKKKKKK....','....rrrrrrrr....','....yyyyyyyy....','...KK....yy.....','................','................','................'],
+  '356':['................','....oooooooo....','...oooooooooo...','...ooooyyoooo...','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....oooooooo....','....WWWWWWWW....','....nnnnnnnn....','...WW....WW.....','................','................','................'],
+  '76':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....nnnnnnnn....','....nyyyyyyn....','....nnnnnnnn....','...nn....nn.....','................','................','................'],
+  '36':['................','...dddddddddd...','..dddddddddddd..','.dddddddddddddd.','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....nnnnnnnn....','....nndddnnn....','....nnnnnnnn....','...nn....nn.....','................','................','................'],
+  '124':['................','....rrrrrrrr....','...rrrrrrrrrr...','...rrssssssrr...','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....WWWWWWWW....','....WWrWWrWW....','....WWWrrWWW....','...rr....rr.....','................','................','................'],
+  '380':['................','....mmmmmmmm....','...mmssssssmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....nnnnnnnn....','....WWWWWWWW....','....rrrrrrrr....','...nn....rr.....','................','................','................'],
+  '724':['................','....KKKKKKKK....','...KKKKKKKKKK...','...KKssssssKK...','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....rrrrrrrr....','....yyyyyyyy....','....rrrrrrrr....','...rr....rr.....','................','................','................'],
+  '484':['................','..yyyyyyyyyyyy..','.yyyyyyyyyyyyyy.','...ddssssssdd...','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....nnnnnnnn....','....WWWWWWWW....','....rrrrrrrr....','...nn....rr.....','................','................','................'],
+  '410':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....WWWWWWWW....','....rrrrrrrr....','....bbbbbbbb....','...rr....bb.....','................','................','................'],
+  '364':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','.....smmms......','....ssssssss....','....nnnnnnnn....','....WWWWWWWW....','....rrrrrrrr....','...nn....rr.....','................','................'],
+  '376':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....WWWWWWWW....','....WWbbbWWW....','....bbbbbbbb....','...WW....WW.....','................','................'],
+  '792':['................','.....rrrrrr.....','....rrrrrrrr....','....rrssssrr....','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....rrrrrrrr....','....rWcWrrrr....','....rrrrrrrr....','...rr....rr.....','................','................'],
+  '682':['................','...WWWWWWWWWW...','..WWWWWWWWWWWW..','..WWssssssssWW..','..WWsKssssKsWW..','..WWssssssssWW..','...WssssssssW...','....ssssssss....','......sSSs......','....nnnnnnnn....','....nnnnnnnn....','....nnnnnnnn....','...nn....nn.....','................','................'],
+  '360':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....rrrrrrrr....','....rrrrrrrr....','....WWWWWWWW....','...rr....WW.....','................','................'],
+  '586':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....nnnWWnnn....','....nnnWWnnn....','....nnnnnnnn....','...nn....nn.....','................','................'],
+  '408':['................','...gggggggggg...','...gKKKKKKKKg...','...ggssssssgg...','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....nnnnnnnn....','....nryyyyrn....','....nnnnnnnn....','...nn....nn.....','................','................'],
+  '804':['................','....yyyyyyyy....','...yyyyyyyyyy...','...yyssssssyy...','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....bbbbbbbb....','....bbbbbbbb....','....yyyyyyyy....','...bb....yy.....','................','................'],
+  '616':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....WWWWWWWW....','....WWWWWWWW....','....rrrrrrrr....','...WW....rr.....','................','................'],
+  '710':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....nnyybbbb....','....nnyyrrrr....','....WWWWWWWW....','...nn....bb.....','................','................'],
+  '818':['................','...bybybybyby...','...yKKKKKKKKy...','...ybssssssby...','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....yyyyyyyy....','....ybybybyy....','....yyyyyyyy....','...yy....yy.....','................','................'],
+  '566':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....nnnWWnnn....','....nnnWWnnn....','....nnnWWnnn....','...nn....nn.....','................','................'],
+  '32':['................','....dddddddd....','...dddddddddd...','...ddssssssdd...','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....cccccccc....','....WWWWWWWW....','....cccccccc....','...cc....cc.....','................','................','................'],
+  '170':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....yyyyyyyy....','....bbbbbbbb....','....rrrrrrrr....','...yy....rr.....','................','................'],
+  '764':['................','.......yy.......','....yyyyyyyy....','...yyyyyyyyyy...','...yyssssssyy...','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....rrrrrrrr....','....WWWWWWWW....','....bbbbbbbb....','...rr....bb.....','................','................'],
+  '704':['................','..yyyyyyyyyyyy..','.yyyyyyyyyyyyyy.','....KssssssK....','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....rrrrrrrr....','....rryyyrrr....','....rrrrrrrr....','...rr....rr.....','................','................'],
+  '275':['................','...WKWKWKWKWK...','...KWKWKWKWKW...','...WKssssssKW...','....ssssssss....','....sKssssKs....','.....ssssss.....','......sSSs......','.....ssssss.....','....KKKKKKKK....','....rrnrrnrr....','....WWWWWWWW....','...KK....WW.....','................','................'],
+  '158':['................','....mmmmmmmm....','...mmmmmmmmmm...','...mmssssssmm...','....msKssKsm....','....mssssssm....','.....ssssss.....','......sSSs......','.....ssssss.....','....bbbWWbbb....','....brrrrrrb....','....bbbbbbbb....','...bb....bb.....','................','................']
+};
+// v104: respectful, region-appropriate skin tones — applied to the 's' (base) and
+// 'S' (shadow) cells per country at render time so grids stay shared. Ids not
+// listed use the PALETTE default (light).
+const _SK_FAIR=['#f0cba4','#d8aa7e'], _SK_EA=['#f2c89c','#d4a06e'], _SK_OLIVE=['#d6a070','#b07a48'], _SK_TAN=['#c2895a','#9c6638'], _SK_DEEP=['#9a6638','#754a26'];
+const PORTRAIT_SKIN = {
+  '643':_SK_FAIR,'826':_SK_FAIR,'276':_SK_FAIR,'124':_SK_FAIR,'804':_SK_FAIR,'616':_SK_FAIR,
+  '392':_SK_EA,'156':_SK_EA,'410':_SK_EA,'408':_SK_EA,'158':_SK_EA,
+  '380':_SK_OLIVE,'724':_SK_OLIVE,'364':_SK_OLIVE,'376':_SK_OLIVE,'792':_SK_OLIVE,'170':_SK_OLIVE,'76':_SK_OLIVE,'484':_SK_OLIVE,
+  '356':_SK_TAN,'682':_SK_TAN,'360':_SK_TAN,'586':_SK_TAN,'818':_SK_TAN,'764':_SK_TAN,'704':_SK_TAN,'275':_SK_TAN,
+  '710':_SK_DEEP,'566':_SK_DEEP
 };
 const PORTRAIT_ARCHETYPE = {}; // nonNotableId -> portraitId (grid sharing)
 const _portraitCache = {};
-function _renderPortraitGrid(grid){
+function _renderPortraitGrid(grid, skin){
+  const base = (skin && skin[0]) || PORTRAIT_PAL['s'];
+  const shadow = (skin && skin[1]) || PORTRAIT_PAL['S'];
   const N = grid.length;
   const c = document.createElement('canvas'); c.width = 64; c.height = 64;
   const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
@@ -6470,7 +6512,8 @@ function _renderPortraitGrid(grid){
   for(let y=0;y<N;y++){
     const row = grid[y] || '';
     for(let x=0;x<row.length;x++){
-      const col = PORTRAIT_PAL[row[x]];
+      const ch = row[x];
+      const col = ch === 's' ? base : ch === 'S' ? shadow : PORTRAIT_PAL[ch]; // v104: per-country skin
       if(!col) continue;
       ctx.fillStyle = col;
       ctx.fillRect(Math.round(x*cell), Math.round(y*cell), Math.ceil(cell), Math.ceil(cell));
@@ -6482,8 +6525,9 @@ function _renderPortraitGrid(grid){
 function _portraitURL(countryId){
   const id = String(countryId);
   if(id in _portraitCache) return _portraitCache[id];
-  const g = PORTRAITS[PORTRAIT_ARCHETYPE[id] || id] || null;
-  const url = g ? _renderPortraitGrid(g) : null;
+  const srcId = PORTRAIT_ARCHETYPE[id] || id;
+  const g = PORTRAITS[srcId] || null;
+  const url = g ? _renderPortraitGrid(g, PORTRAIT_SKIN[srcId]) : null; // v104: region skin tone
   _portraitCache[id] = url;
   return url;
 }
