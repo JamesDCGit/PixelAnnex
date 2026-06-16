@@ -41,7 +41,9 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-12-v99j`.** (v99h was server-only at v99g
+**Current production triad: `2026-06-16-v100`.** (v100 = client-only Phase 1
+bug/polish bundle — see the v100 changelog entry below.) (v99j was the prior
+triad.) (v99h was server-only at v99g
 — per-country draft cooldown + autopost. v99i: Discord invite update. v99j:
 PERMANENT invite discord.gg/UHQRqXDpBE, "Created by Pretty Neat Pixels ·
 www.prettyneatpixels.com · 2026" About credit, dashboard "⚡ Auto-fire" toggle
@@ -642,6 +644,39 @@ Before editing any function:
   scrape). (2) AUTOPOST: `_autoPostTick` every 2.5h posts the oldest eligible
   pending draft (no country posted <12h ago, draft <24h old); `autoPosted:true`
   flag for auditing; `X_AUTOPOST=0` disables. See the X posting section.
+- **v100 (client-only) — Phase 1 bug/polish bundle:**
+  1. **conqueredSet key consistency (the big one).** The set is canonically
+     keyed by COUNTRY IDs (`"geoId:holderId"`), but `checkConquest`,
+     `checkConquestReversal`, and the `finisherFill` prevKey wrote featList-INDEX
+     keys. Two bugs fell out of the mixed set: (a) **silent Afghanistan
+     reselection** — `refreshCsel` read the keys as indices, so an id↔index
+     numeric collision among the ~100 conquests made it think YOUR homeland fell
+     and silently `selectCountry(first available)` (idx 0 = Afghanistan), no
+     popup; (b) **ghost flags** (e.g. Bangladesh on Afghanistan/China/Taiwan) —
+     the snapshot replay + finisherFill resolved polluted index keys into
+     wrong-country flags via `idToFeatIdx` (a hard refresh "sometimes" cleared
+     them by rebuilding from the cleaned set). Fix: all three writers now build
+     ID keys; **`refreshCsel`'s silent country auto-switch was REMOVED entirely**
+     (re-pick/exile is server-driven via `your_country_lost`/`homeland_exiled`,
+     per the "client never guesses" rule).
+  2. **Right-click inspect lag.** `tickInspectHighlight` issued a `fillRect(1×1)`
+     per home/occ/footprint pixel EVERY frame at 15fps (100k+ calls/frame on big
+     countries). Now `_buildInspectLayer()` pre-renders the 3 layers to an
+     offscreen canvas ONCE per inspect; the tick just `drawImage`s it with a
+     pulsing `globalAlpha` → O(1)/frame. Baked peak alphas (gold .20/red .30/cyan
+     .60) × globalAlpha 0.55–1.0 reproduce the old per-layer pulse.
+  3. **Conquer → max regen 60s.** `_conquerBoostUntil`/`CONQUER_BOOST_MS`;
+     `getRegenMult()` returns the 12× cap while active (overrides exile). Set on
+     your own confirmed conquest (`fi===currentIdx`) AND the instant local
+     prediction in `checkConquest`. Victory card notes the surge.
+  4. **Shoreline +50% brighter** — `buildWaveBase` coastline-shelf lift ×1.5
+     (22,26,24/12,15,14/5,7,6 → 33,39,36/18,22,21/8,11,9).
+  5. **Inspector menu transparency** — scoped `.act-card.inspect`
+     `rgba(10,18,26,0.78)` via new `actPushCard` `opts.cls`; other cards
+     unaffected.
+  6. **Territory-panel flag bounce** — `flagOccPulse` now also hops via
+     `margin-top` (transform is owned by the position updater) on top of the glow,
+     so a clicked opponent's occupied flags are spotted instantly.
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
