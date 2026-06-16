@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-16-v100';
+const SERVER_VERSION       = '2026-06-16-v101';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2738,6 +2738,7 @@ let _worldConquestActive = false;
 let _worldResetAt = 0;
 // v61: persist the conquest payload so late-joiners and refreshes get the same screen
 let _worldConquestPayload = null;
+let _worldWinnerName = null; // v100: winning bloc name for the win screen
 
 // ── v97: per-player SESSION stats + the "war" (game) counter ──────
 // SESSION = the CURRENT GAME, i.e. until the world is conquered (v97h). It now
@@ -2813,14 +2814,101 @@ function _playableCountryStats() {
 }
 function _isPaintLocked() { return _worldConquestActive; }
 
+// ── v100 (Phase 2B): endgame — sudden death + new win condition ──────────────
+// Win = a BLOC (an alliance counts as one, else a solo country) controls
+// >=65% of playable countries AND >=65% of total land pixels. Sudden death (2x
+// regen) + the endgame panel kick in at <=5 standing countries.
+const SUDDEN_DEATH_STANDING = 5;
+const WIN_COUNTRIES_FRAC    = 0.65;
+const WIN_PIXELS_FRAC       = 0.65;
+let _suddenDeath   = false;   // mirrored to clients (regen x2) + drives the panel
+let _endgamePayload = null;   // last _computeEndgame() result (served + broadcast)
+
+// Is a country a real playable nation? (same filter as _playableCountryStats)
+function _isPlayableNation(id) {
+  const sid = String(id);
+  if (NON_PLAYABLE_IDS.has(sid)) return false;
+  if (!((geoTotal[id] || 0) > 0)) return false;
+  const nm = countryNames[id];
+  if (!nm || /^Country \d+$/.test(nm) || nm === 'Disputed Territory') return false;
+  return true;
+}
+
+// Compute per-bloc control of countries + pixels and the sudden-death flag.
+function _computeEndgame() {
+  if (totalLandPxCached <= 0) recomputeTotalLand();
+  // Who currently HOLDS each fallen geo (geo:holder)? last writer wins (1 holder).
+  const holderOf = {};
+  for (const k of conqueredSet) {
+    const p = String(k).split(':');
+    if (p[0] && p[1] && p[0] !== p[1]) holderOf[p[0]] = p[1];
+  }
+  const blocs = new Map(); // blocKey -> { key, name, members:Set, countriesHeld, pixels }
+  const blocFor = (cid) => {
+    const ally = getAllianceForCountry(String(cid));
+    const key  = ally ? ('ally:' + ally.key) : ('solo:' + cid);
+    if (!blocs.has(key)) {
+      blocs.set(key, {
+        key,
+        name: ally ? (ally.name || 'Alliance') : _countryName(cid),
+        members: ally ? new Set(ally.countries.map(String)) : new Set([String(cid)]),
+        countriesHeld: 0, pixels: 0,
+      });
+    }
+    return blocs.get(key);
+  };
+  let total = 0, fallen = 0;
+  for (const id of Object.keys(countryNames || {})) {
+    if (!_isPlayableNation(id)) continue;
+    total++;
+    const sid = String(id);
+    let controller = null;
+    if (!permanentlyConquered.has(sid)) controller = sid;        // standing: holds itself
+    else { fallen++; controller = holderOf[sid] || null; }       // fallen: current holder or neutral
+    if (controller) blocFor(controller).countriesHeld++;
+  }
+  for (const b of blocs.values()) {
+    let px = 0;
+    for (const m of b.members) px += countryPxCount[m] || 0;
+    b.pixels = px;
+  }
+  const standing = Math.max(0, total - fallen);
+  _suddenDeath = standing > 0 && standing <= SUDDEN_DEATH_STANDING;
+  const denomC = total || 1;
+  const denomP = totalLandPxCached || 1;
+  const contenders = [...blocs.values()]
+    .map(b => ({
+      key: b.key, name: b.name,
+      countriesHeld: b.countriesHeld,
+      countriesFrac: b.countriesHeld / denomC,
+      pixelsFrac: b.pixels / denomP,
+    }))
+    .sort((a, b) => Math.min(b.countriesFrac, b.pixelsFrac) - Math.min(a.countriesFrac, a.pixelsFrac));
+  return {
+    suddenDeath: _suddenDeath, standing, total,
+    winCountriesFrac: WIN_COUNTRIES_FRAC, winPixelsFrac: WIN_PIXELS_FRAC,
+    contenders: contenders.slice(0, 8),
+  };
+}
+
+// Broadcast the endgame state (panel + sudden-death flag) to all clients.
+function _broadcastEndgame(eg) {
+  _endgamePayload = eg;
+  broadcast(JSON.stringify({ type: 'endgame', ...eg }));
+}
+
 function _checkWorldConquest() {
   if (_worldConquestActive) return;
-  const total = _totalCountries();
+  const eg = _computeEndgame();
+  _broadcastEndgame(eg); // keep clients' sudden-death + panel current
+  // v100: win = a bloc holds >=65% of countries AND >=65% of land pixels.
+  const winner = eg.contenders.find(c =>
+    c.countriesFrac >= WIN_COUNTRIES_FRAC && c.pixelsFrac >= WIN_PIXELS_FRAC);
+  if (!winner) return;
+  const total = eg.total;
   const conquered = _countDistinctConquered();
-  if (total === 0) return;
-  const ratio = conquered / total;
-  if (ratio < WORLD_CONQUEST_THRESHOLD) return;
   _worldConquestActive = true;
+  _worldWinnerName = winner.name; // v100: surfaced on the win screen
   _worldResetAt = Date.now() + WORLD_RESET_COUNTDOWN_MS;
   const conquestsByCountry = {};
   for (const key of conqueredSet) {
@@ -2841,9 +2929,10 @@ function _checkWorldConquest() {
   const topContributors = _sessionLeaderboard(5).map(s => ({
     username: s.username, avatar: s.avatar, pixels: s.pixels, conquests: s.conquests, country: s.country,
   }));
-  console.log('[v38] WORLD CONQUERED! ratio=' + (ratio*100).toFixed(1) + '% top=' + topCountries.map(c => c.name).join(','));
+  console.log('[v100] WORLD WON by ' + winner.name + '! countries=' + (winner.countriesFrac*100).toFixed(1) + '% pixels=' + (winner.pixelsFrac*100).toFixed(1) + '%');
   // v61: store payload so late-joiners and refreshers get the same screen
-  _worldConquestPayload = { type: 'world_conquest', conquered, total, topCountries, topPlayers, topContributors, resetAt: _worldResetAt };
+  _worldConquestPayload = { type: 'world_conquest', conquered, total, topCountries, topPlayers, topContributors, resetAt: _worldResetAt,
+    winnerName: winner.name, winnerCountriesFrac: winner.countriesFrac, winnerPixelsFrac: winner.pixelsFrac }; // v100
   broadcast(JSON.stringify(_worldConquestPayload));
   emitBotEvent({
     type:        'world_conquest',
@@ -4125,17 +4214,19 @@ function _serverRegen(countryId) {
   const enc   = getEncircleMultiplier(countryId);
   const encAdd = enc > 1 ? enc : 0;
   const allyAdd = _allianceRegenAdd(countryId);
+  const sd = _suddenDeath ? 2 : 1; // v100 (Phase 2B): sudden death doubles regen
   // v99b: exile is no longer FLAT 0.5x — base 0.5 replaces the David passive,
   // but earned bonuses (encircle, alliance) still add on top. Mirrors the
   // client getRegenMult exactly.
   if (exiledSet.has(String(countryId))) {
     const exTotal = 0.5 + encAdd + allyAdd;
-    return exTotal < 1 ? 0.5 : Math.min(REGEN_CAP, Math.round(exTotal));
+    const base = exTotal < 1 ? 0.5 : Math.min(REGEN_CAP, Math.round(exTotal));
+    return base * sd;
   }
   const david = Math.max(1, _davidMult(getWorldShare(countryId)));
   let r = david + encAdd + allyAdd;
   // v98: leader tax removed — David's share is dynamic now.
-  return Math.min(REGEN_CAP, Math.max(0.5, r));
+  return Math.min(REGEN_CAP, Math.max(0.5, r)) * sd;
 }
 
 // Build a snapshot of world shares + multipliers for the client to display.
@@ -7166,6 +7257,7 @@ wss.on('connection', (ws, req) => {
           david: buildDavidSnapshot(),
           serverVersion: SERVER_VERSION,
           nukeZones: (_pruneServerNukeZones(), _nukeZones.slice()),
+          endgame: _endgamePayload || _computeEndgame(), // v100: sudden death + panel for late-joiners
         }));
         try { ws.send(encodeSnapshotRuns(_snap.runs)); } catch (e) {}
         // v98b: stale unplayable country (e.g. Vatican in localStorage) → open

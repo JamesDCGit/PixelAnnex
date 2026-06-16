@@ -3518,7 +3518,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-16-v100';
+const CODE_VERSION = '2026-06-16-v101';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5498,6 +5498,31 @@ function _rankBadge(pos){
   return '#' + pos;
 }
 
+// v100 (Phase 2B): leaderboard movement arrows. Snapshot the active-country
+// pixel ranking every ~30s; the territory + country-select panels compare the
+// current rank to the snapshot and show ▲/▼ if a country gained/lost places.
+function _computeActiveRanks(){
+  const byCid=new Map();
+  for(const [fiStr,v] of Object.entries(claimerCount)){
+    if(!(v>0)) continue;
+    const f=featList[+fiStr]; if(!f) continue;
+    if(typeof _isCountryFallenClient==='function' && _isCountryFallenClient(f.id)) continue;
+    const cid=String(f.id);
+    byCid.set(cid,(byCid.get(cid)||0)+v);
+  }
+  const ranks=new Map();
+  [...byCid.entries()].sort((a,b)=>b[1]-a[1]).forEach(([cid],i)=>ranks.set(cid,i+1));
+  return ranks;
+}
+let _rankSnapshot=new Map();
+setInterval(()=>{ try{ _rankSnapshot=_computeActiveRanks(); }catch(e){} }, 30000);
+// Returns {sym,color} for a country id's trend vs the last snapshot, or null.
+function _rankTrend(countryId, curRank){
+  const prev=_rankSnapshot.get(String(countryId));
+  if(!prev || !curRank || prev===curRank) return null;
+  return curRank<prev ? {sym:'▲',color:'#4ade80'} : {sym:'▼',color:'#f87171'};
+}
+
 function scheduleLegend(){
   clearTimeout(legTimer);legTimer=setTimeout(()=>{
     const el=$("leg-items");el.innerHTML="";
@@ -5535,6 +5560,10 @@ function scheduleLegend(){
       row.onmouseleave=_hideLegendOccTip;
       // v92b: rank-position badge (🥇🥈🥉 / #4…)
       const _lr=document.createElement('span'); _lr.className='leg-rank'; _lr.textContent=_rankBadge(_rankPos+1); row.appendChild(_lr);
+      // v100 (Phase 2B): leaderboard movement arrow vs the last 30s snapshot.
+      const _tr=_rankTrend(f.id,_rankPos+1);
+      if(_tr){ const _la=document.createElement('span'); _la.className='leg-trend'; _la.textContent=_tr.sym;
+        _la.style.cssText='font-size:9px;margin-right:1px;color:'+_tr.color; _la.title='Moved '+(_tr.sym==='▲'?'up':'down')+' the leaderboard'; row.appendChild(_la); }
       const _lf=createFlagEl(f.id,1); if(_lf)row.appendChild(_lf);
       const _ld=document.createElement('div'); _ld.className='leg-dot'; _ld.style.cssText='background:'+f.color+';box-shadow:inset 0 0 0 1px rgba(0,0,0,0.4)'; row.appendChild(_ld);
       const _ls=document.createElement('span'); _ls.className='leg-name'; _ls.style.color='#e2e8f0'; _ls.textContent=f.name; row.appendChild(_ls);
@@ -6272,9 +6301,14 @@ function getMyMultiplier() {
 // (incl. exile) while active so a conqueror can immediately press the advantage.
 let _conquerBoostUntil = 0;
 const CONQUER_BOOST_MS = 60000;
+// v100 (Phase 2B): sudden death — when <=5 countries stand, regen doubles.
+// Mirrors the server's _serverRegen sd*2. Set from the 'endgame'/welcome payload.
+let _suddenDeathClient = false;
+let _endgameData = null;
 function getRegenMult() {
   if (currentIdx < 0) return 1;
-  if (_conquerBoostUntil > Date.now()) return 12; // v100: post-conquest surge (cap)
+  const sd = _suddenDeathClient ? 2 : 1; // v100 (Phase 2B): sudden death doubles regen
+  if (_conquerBoostUntil > Date.now()) return 12 * sd; // v100: post-conquest surge (cap)
   const f = featList[currentIdx];
   const cid = (f && f.id) ? String(f.id) : null;
   const d = cid ? davidByCountry[cid] : null;
@@ -6287,7 +6321,7 @@ function getRegenMult() {
   // is reclaimed. Sub-1 totals stay at the exact 0.5 (no rounding to 1).
   if (_isExiledLocal()) {
     const exTotal = 0.5 + encAdd + allyAdd;
-    return exTotal < 1 ? 0.5 : Math.min(12, Math.round(exTotal));
+    return (exTotal < 1 ? 0.5 : Math.min(12, Math.round(exTotal))) * sd;
   }
   const davidBase = (d && d.mult) ? d.mult : 1;        // widened David curve (server)
   const rank = getRankRegenMult();
@@ -6296,7 +6330,7 @@ function getRegenMult() {
   let total = baseBonus + encAdd + allyAdd;
   // v98: leader tax removed (David share is dynamic server-side now); round to a
   // whole multiplier — no decimals anywhere in regen display or accrual rate.
-  return Math.min(12, Math.max(1, Math.round(total)));
+  return Math.min(12, Math.max(1, Math.round(total))) * sd;
 }
 
 // v97e: exile state — set by the homeland_exiled/reclaimed messages, but the david
@@ -6319,6 +6353,59 @@ setInterval(() => {
   const b = document.getElementById('exile-badge');
   if (b) b.classList.toggle('active', _isExiledLocal());
 }, 2000);
+
+// ── v100 (Phase 2B): endgame panel — sudden death + win-progress dashboard ────
+// Shown when <=5 countries stand. Lists each bloc's progress toward the win
+// (control 65% of countries AND 65% of the map). Data comes from the server's
+// 'endgame' broadcast / welcome payload via _applyEndgame.
+function _applyEndgame(data) {
+  if (!data) return;
+  _endgameData = data;
+  _suddenDeathClient = !!data.suddenDeath;
+  try { _renderEndgamePanel(); } catch (e) {}
+}
+function _renderEndgamePanel() {
+  if (!document.getElementById('endgame-style')) {
+    const st = document.createElement('style'); st.id = 'endgame-style';
+    st.textContent =
+      '#endgame-panel{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:30;' +
+      'width:340px;max-width:calc(100vw - 24px);background:rgba(12,6,3,0.92);' +
+      'border:1px solid rgba(239,68,68,0.6);border-radius:10px;padding:9px 12px;color:#fee2e2;' +
+      'font-size:12px;box-shadow:0 6px 24px rgba(0,0,0,.55);font-family:inherit;display:none;}' +
+      '#endgame-panel.show{display:block;animation:egIn .4s ease;}' +
+      '#endgame-panel h4{margin:0 0 2px;font-size:13px;color:#fca5a5;letter-spacing:.04em;}' +
+      '#endgame-panel .eg-req{font-size:10px;opacity:.85;margin-bottom:7px;line-height:1.4;}' +
+      '#endgame-panel .eg-row{margin:6px 0;}' +
+      '#endgame-panel .eg-name{display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;}' +
+      '#endgame-panel .eg-bar{position:relative;height:6px;background:#1f1414;border-radius:3px;margin-bottom:2px;}' +
+      '#endgame-panel .eg-fill{position:absolute;left:0;top:0;bottom:0;border-radius:3px;}' +
+      '#endgame-panel .eg-fill.c{background:linear-gradient(90deg,#f59e0b,#fbbf24);}' +
+      '#endgame-panel .eg-fill.p{background:linear-gradient(90deg,#ef4444,#f87171);}' +
+      '#endgame-panel .eg-mark{position:absolute;top:-1px;bottom:-1px;width:2px;background:#fff;opacity:.75;}' +
+      '#endgame-panel .eg-lead span:first-child{color:#fde68a;font-weight:700;}' +
+      '@keyframes egIn{from{opacity:0;transform:translate(-50%,-8px);}to{opacity:1;transform:translateX(-50%);}}';
+    document.head.appendChild(st);
+  }
+  let panel = document.getElementById('endgame-panel');
+  if (!panel) { panel = document.createElement('div'); panel.id = 'endgame-panel'; document.body.appendChild(panel); }
+  const d = _endgameData;
+  if (!d || !d.suddenDeath) { panel.classList.remove('show'); return; }
+  const winC = Math.round((d.winCountriesFrac || 0.65) * 100);
+  const winP = Math.round((d.winPixelsFrac || 0.65) * 100);
+  let html = '<h4>⚔️ SUDDEN DEATH — ' + d.standing + ' countr' + (d.standing === 1 ? 'y' : 'ies') + ' left</h4>';
+  html += '<div class="eg-req">Regen ×2 active. First bloc to <b>' + winC + '% of countries</b> AND <b>' + winP + '% of the map</b> wins.</div>';
+  for (const c of (d.contenders || []).slice(0, 6)) {
+    const cf = Math.round(c.countriesFrac * 100), pf = Math.round(c.pixelsFrac * 100);
+    const won = c.countriesFrac >= (d.winCountriesFrac || 0.65) && c.pixelsFrac >= (d.winPixelsFrac || 0.65);
+    html += '<div class="eg-row' + (won ? ' eg-lead' : '') + '">' +
+      '<div class="eg-name"><span>' + escapeHtml(c.name) + '</span><span>' + cf + '% · ' + pf + '%</span></div>' +
+      '<div class="eg-bar"><div class="eg-fill c" style="width:' + Math.min(100, cf) + '%"></div><div class="eg-mark" style="left:' + winC + '%"></div></div>' +
+      '<div class="eg-bar"><div class="eg-fill p" style="width:' + Math.min(100, pf) + '%"></div><div class="eg-mark" style="left:' + winP + '%"></div></div>' +
+      '</div>';
+  }
+  panel.innerHTML = html;
+  panel.classList.add('show');
+}
 
 function getMyWorldShare() {
   if (currentIdx < 0) return 0;
@@ -8859,6 +8946,7 @@ function mpHandleMessage(msg) {
         }
         if (msg.nukeZones.length) startNukeZoneTicker();
       }
+      if (msg.endgame) _applyEndgame(msg.endgame); // v100 (Phase 2B): sudden death + panel for late-joiners
       console.log('[MP] Welcome, player', _localPlayerId, '· server', window.SERVER_VERSION, '· client', CODE_VERSION);
       // v92p: now that we have a player id, report our current viewport so the
       // server can start filtering deltas to what we see.
@@ -9141,6 +9229,12 @@ function mpHandleMessage(msg) {
 
     case 'world_conquest': {
       _showWorldConquestOverlay(msg);
+      break;
+    }
+
+    case 'endgame': {
+      // v100 (Phase 2B): sudden-death flag + win-progress for the endgame panel.
+      _applyEndgame(msg);
       break;
     }
     case 'world_reset': {
@@ -11800,6 +11894,7 @@ function renderCselList(filter){
   if(!list) return;
   const q = filter.toLowerCase();
   list.innerHTML = '';
+  const _curRanks = (typeof _computeActiveRanks==='function') ? _computeActiveRanks() : new Map(); // v100 (Phase 2B)
   // v99a: ACTIVE countries first, fallen sink to the bottom (alphabetical
   // within each group — _cselOptions is already name-sorted).
   const _opts = [..._cselOptions].sort((a,b)=>{
@@ -11827,6 +11922,12 @@ function renderCselList(filter){
     _nm.className = 'csel-opt-name';
     _nm.textContent = f.name;
     div.appendChild(_nm);
+    // v100 (Phase 2B): leaderboard movement arrow vs the last 30s snapshot.
+    if(!isConquered){
+      const _tr=_rankTrend(f.id, _curRanks.get(String(f.id)));
+      if(_tr){ const _a=document.createElement('span'); _a.textContent=_tr.sym;
+        _a.style.cssText='font-size:9px;margin-left:3px;color:'+_tr.color; _a.title='Moved '+(_tr.sym==='▲'?'up':'down')+' the leaderboard'; div.appendChild(_a); }
+    }
     // Player count badge
     const count = _playerCountByCountry[f.id] || (idx===currentIdx ? 1 : 0);
     if(count > 0){
@@ -12803,6 +12904,9 @@ document.addEventListener('DOMContentLoaded', () => setTimeout(refreshLeaderboar
 function _showWorldConquestOverlay(data) {
   const old = document.getElementById('world-conquest-overlay');
   if (old) old.remove();
+  // v100: the game's over — drop the sudden-death panel/regen.
+  _suddenDeathClient = false;
+  const _ep = document.getElementById('endgame-panel'); if (_ep) _ep.classList.remove('show');
   const overlay = document.createElement('div');
   overlay.id = 'world-conquest-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;background:linear-gradient(135deg,#070d1a,#1a0a14);' +
@@ -12846,7 +12950,11 @@ function _showWorldConquestOverlay(data) {
   }).join('');
   overlay.innerHTML =
     '<div style="font-size:36px;font-weight:800;letter-spacing:.12em;margin-bottom:8px;">🌍 WORLD CONQUERED 🌍</div>' +
-    '<div style="font-size:14px;color:#94a3b8;margin-bottom:32px;letter-spacing:.08em;">' + (data.conquered || 0) + ' / ' + (data.total || 0) + ' COUNTRIES CLAIMED</div>' +
+    (data.winnerName ? '<div style="font-size:22px;font-weight:800;color:#fde68a;margin-bottom:6px;">👑 ' + escapeHtml(data.winnerName) + ' WINS</div>' : '') +
+    '<div style="font-size:14px;color:#94a3b8;margin-bottom:32px;letter-spacing:.08em;">' +
+      ((data.winnerName && data.winnerCountriesFrac != null)
+        ? Math.round(data.winnerCountriesFrac * 100) + '% OF COUNTRIES · ' + Math.round(data.winnerPixelsFrac * 100) + '% OF THE MAP'
+        : ((data.conquered || 0) + ' / ' + (data.total || 0) + ' COUNTRIES CLAIMED')) + '</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:800px;width:100%;margin-bottom:24px;">' +
       '<div><h2 style="font-size:14px;color:#94a3b8;letter-spacing:.1em;margin-bottom:12px;">🏆 TOP CONQUERORS</h2>' +
       (topCList || '<div style="color:#475569;font-size:11px">No conquests recorded.</div>') + '</div>' +
