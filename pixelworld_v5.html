@@ -3518,7 +3518,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-16-v102';
+const CODE_VERSION = '2026-06-16-v103';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6419,30 +6419,95 @@ function _renderEndgamePanel() {
 }
 
 // ── v102 (Phase 2C): leader portraits + conquest-fall popup ──────────────────
-// Operator-supplied 64x64 PNGs served at /portraits/{countryId}.png (numeric id,
-// e.g. 840.png = USA). Non-notable countries can SHARE a notable's portrait via
-// PORTRAIT_ARCHETYPE. If a portrait file is missing, the <img> onerror handler
-// falls back to the country's flag — so the feature degrades gracefully and new
-// art appears simply by dropping a PNG in public/portraits/ and deploying.
-const PORTRAIT_DIR = 'portraits/';
-const PORTRAIT_ARCHETYPE = {}; // nonNotableId -> portraitId (filled as art arrives)
-function _portraitSrc(countryId){
+// Hand-authored 16x16 pixel-art portraits (simple, no anime influence), rendered
+// to a crisp 64x64 dataURL and cached. The FLAG is shown as a SEPARATE item under
+// the portrait in the popup (not baked in). Countries with no portrait fall back
+// to their flag; non-notable countries can SHARE a notable's grid via
+// PORTRAIT_ARCHETYPE.
+const PORTRAIT_PAL = {
+  '.':null,'K':'#1c1c1c','W':'#ffffff','s':'#ecb98c','S':'#c98a5a','r':'#d83030',
+  'b':'#2a5fd0','y':'#f4c430','o':'#e0902c','g':'#9aa0a8','d':'#6b4423','m':'#2e1d10',
+  'p':'#f2a0a8','n':'#2faa55','c':'#9fd0ff','e':'#efe6d0'
+};
+// Each portrait = 16 strings of 16 chars.
+const PORTRAITS = {
+  // USA (840) — Lincoln stovepipe hat, buff jaw, stars-and-stripes collar
+  '840':[
+    '.....KKKKKK.....','.....KKKKKK.....','.....KKKKKK.....','.....KrrrrK.....',
+    '...KKKKKKKKKK...','......ssss......','.....ssssss.....','.....sKssKs.....',
+    '.....ssssss.....','......sSSs......','.....ssssss.....','....bbbbbbbb....',
+    '....bWrWrWrb....','...bbbbbbbbbb...','...bbb..bbb.....','................'
+  ],
+  // France (250) — black beret, bleu-blanc-rouge collar
+  '250':[
+    '.......K........','....KKKKKKK.....','...KKKKKKKKK....','......ssss......',
+    '.....ssssss.....','.....sKssKs.....','.....ssssss.....','......sSSs......',
+    '.....ssssss.....','......ssss......','....WWWWWWWW....','...bWWWWWWWWr...',
+    '...bbbWWWWrrr...','...bb......rr...','................','................'
+  ],
+  // Russia (643) — grey ushanka, stern face, white-blue-red collar
+  '643':[
+    '..gggggggggg....','.gggggggggggg...','.ggKKKKKKKKgg...','..g.ssssss.g....',
+    '....ssssss......','....sKssKs......','....ssssss......','.....sSSs.......',
+    '....ssssss......','.....ssss.......','...WWWWWWWWWW...','...bbbbbbbbbb...',
+    '...rrrrrrrrrr...','...rr......rr...','................','................'
+  ],
+  // Japan (392) — black hair, white collar with a rising-sun disc
+  '392':[
+    '...mmmmmmmmmm...','...mmmmmmmmmm...','..mmssssssmm....','..mmssssssmm....',
+    '....sKssKs......','....ssssss......','.....sSSs.......','....ssssss......',
+    '.....ssss.......','...WWWWWWWWWW...','...WWWrrrrWWW...','...WWWrrrrWWW...',
+    '...WWWWWWWWWW...','...WW......WW...','................','................'
+  ]
+};
+const PORTRAIT_ARCHETYPE = {}; // nonNotableId -> portraitId (grid sharing)
+const _portraitCache = {};
+function _renderPortraitGrid(grid){
+  const N = grid.length;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
+  const cell = 64 / N;
+  for(let y=0;y<N;y++){
+    const row = grid[y] || '';
+    for(let x=0;x<row.length;x++){
+      const col = PORTRAIT_PAL[row[x]];
+      if(!col) continue;
+      ctx.fillStyle = col;
+      ctx.fillRect(Math.round(x*cell), Math.round(y*cell), Math.ceil(cell), Math.ceil(cell));
+    }
+  }
+  return c.toDataURL();
+}
+// 64x64 portrait dataURL for a country id (own grid or a shared archetype), else null.
+function _portraitURL(countryId){
   const id = String(countryId);
-  return PORTRAIT_DIR + (PORTRAIT_ARCHETYPE[id] || id) + '.png';
+  if(id in _portraitCache) return _portraitCache[id];
+  const g = PORTRAITS[PORTRAIT_ARCHETYPE[id] || id] || null;
+  const url = g ? _renderPortraitGrid(g) : null;
+  _portraitCache[id] = url;
+  return url;
 }
 function _flagURLFor(f){
   try { return (typeof getRealFlagURL==='function' && getRealFlagURL(f)) || (typeof _renderFlagToDataURL==='function' && _renderFlagToDataURL(f)) || ''; }
   catch(e){ return ''; }
 }
-// An <img> tag whose src is the leader portrait, with an onerror fallback to the
-// country flag so a missing portrait never shows a broken image.
+// <img> for cards: portrait if one exists, else the flag.
 function _leaderFaceImg(f, cls, style){
   if(!f) return '';
-  const flag = _flagURLFor(f).replace(/'/g, '%27');
-  const src = _portraitSrc(f.id);
-  return '<img' + (cls ? ' class="'+cls+'"' : '') + ' src="' + src + '"' +
-    ' onerror="this.onerror=null;this.src=\'' + flag + '\';"' +
-    (style ? ' style="'+style+'"' : '') + '>';
+  const url = _portraitURL(f.id) || _flagURLFor(f);
+  if(!url) return '';
+  return '<img' + (cls ? ' class="'+cls+'"' : '') + ' src="' + url + '"' + (style ? ' style="'+style+'"' : '') + '>';
+}
+// One popup side: portrait on top, FLAG as a separate item below, then the name.
+function _fpSideHTML(f, win){
+  const port = _portraitURL(f.id);
+  const flag = _flagURLFor(f);
+  let h = '<div class="fp-side ' + (win ? 'fp-win' : 'fp-loser') + '">';
+  h += '<img class="fp-port" src="' + (port || flag) + '">';
+  if(!win) h += '<div class="fp-cross">✕</div>';
+  if(port && flag) h += '<img class="fp-flag" src="' + flag + '">';
+  h += '<div class="fp-name">' + (win ? '👑 ' : '') + escapeHtml(f.name) + '</div></div>';
+  return h;
 }
 
 // Big "winner vs loser" popup when a country falls (fresh kill only).
@@ -6466,6 +6531,7 @@ function _showConquestFallPopup(winnerFi, loserFi){
       '#fall-popup .fp-loser{position:relative;}' +
       '#fall-popup .fp-cross{position:absolute;top:0;left:4px;width:96px;height:96px;font-size:96px;line-height:96px;' +
       'color:#ef4444;font-weight:900;text-shadow:0 0 8px rgba(0,0,0,.8);pointer-events:none;animation:fpCross .5s .15s both;}' +
+      '#fall-popup .fp-flag{width:26px;height:17px;image-rendering:pixelated;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.5);}' +
       '#fall-popup .fp-name{font-size:13px;font-weight:700;color:#e2e8f0;max-width:104px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
       '#fall-popup .fp-win .fp-name{color:#fde68a;}' +
       '#fall-popup .fp-vs{font-size:22px;font-weight:900;color:#ef4444;}' +
@@ -6479,9 +6545,9 @@ function _showConquestFallPopup(winnerFi, loserFi){
   el.innerHTML =
     '<div class="fp-title">⚔️ A NATION HAS FALLEN ⚔️</div>' +
     '<div class="fp-faces">' +
-      '<div class="fp-side fp-win">' + _leaderFaceImg(W, 'fp-port') + '<div class="fp-name">👑 ' + escapeHtml(W.name) + '</div></div>' +
+      _fpSideHTML(W, true) +
       '<div class="fp-vs">▶</div>' +
-      '<div class="fp-side fp-loser">' + _leaderFaceImg(L, 'fp-port') + '<div class="fp-cross">✕</div><div class="fp-name">' + escapeHtml(L.name) + '</div></div>' +
+      _fpSideHTML(L, false) +
     '</div>' +
     '<div class="fp-foot"><b style="color:#fca5a5">' + escapeHtml(W.name) + '</b> conquered <b>' + escapeHtml(L.name) + '</b></div>';
   document.body.appendChild(el);

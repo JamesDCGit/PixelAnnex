@@ -41,7 +41,12 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v102`.** (v102 = Phase 2C: conquest-fall
+**Current production triad: `2026-06-16-v103`.** (v103 = Phase 2C art: restored
+the hand-authored 16x16 grid leader portraits [PORTRAIT_PAL + PORTRAITS +
+`_renderPortraitGrid`, no anime influence]; conquest-fall popup now shows the
+portrait with the FLAG as a SEPARATE item beneath it [`_fpSideHTML`, `.fp-flag`].
+Replaced the v102 file-based PNG client path [the /portraits route stays, unused].)
+(v102 = Phase 2C: conquest-fall
 "winner vs loser" popup + leader-portrait system [renderer/cache/popup/card hooks]
 shipped FLAG-FALLBACK ONLY — hand-authored pixel portraits disabled via
 `PORTRAITS_ENABLED=false` pending an art-direction decision; also endgame-panel
