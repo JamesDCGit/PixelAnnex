@@ -41,9 +41,11 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v100`.** (v100 = client-only Phase 1
-bug/polish bundle — see the v100 changelog entry below.) (v99j was the prior
-triad.) (v99h was server-only at v99g
+**Current production triad: `2026-06-16-v101`.** (v101 = Phase 2B: sudden
+death + new win condition + endgame panel + leaderboard arrows — client+server.
+v100a was a server-only run at v100 = Phase 2A bot redistribution pool. v100 =
+client-only Phase 1 bug/polish bundle — see changelog entries below.) (v99j was
+the prior triad.) (v99h was server-only at v99g
 — per-country draft cooldown + autopost. v99i: Discord invite update. v99j:
 PERMANENT invite discord.gg/UHQRqXDpBE, "Created by Pretty Neat Pixels ·
 www.prettyneatpixels.com · 2026" About credit, dashboard "⚡ Auto-fire" toggle
@@ -677,6 +679,40 @@ Before editing any function:
   6. **Territory-panel flag bounce** — `flagOccPulse` now also hops via
      `margin-top` (transform is owned by the position updater) on top of the glow,
      so a clicked opponent's occupied flags are spotted instantly.
+- **v100a (server-only, triad stayed v100) — Phase 2A bot redistribution:** bots
+  are a redistributable POOL. Each country's bot carries `units` (1..`BOT_UNITS_MAX`
+  =5); paint throughput + bucket capacity scale with units (`botTickSingle` budget
+  = `BOT_PIXELS_PER_TICK*effUnits`, regen loop `*units`, cap `BOT_BUCKET_MAX*units`).
+  On a country's fall, `_redistributeBotUnits` moves its units to active under-cap
+  countries (alliance heir first, then fewest-units/fewest-pixels) and the fallen
+  bot + its player slot retire — so total painting activity is preserved as the
+  field shrinks. Live humans deactivate one unit each (`_effectiveBotUnits` =
+  `units - _humansByCountry`, rebuilt in `broadcastPlayers`). NOTE: the old
+  `humanClaimedCountries` gate in `botTickSingle` was dead code (`.add` is never
+  called anywhere) — replaced by the per-unit reduction.
+- **v101 (client+server) — Phase 2B endgame:**
+  - **New win condition:** a BLOC (an alliance counts as one bloc, else a solo
+    country) wins when it controls **>=65% of playable countries AND >=65% of total
+    land pixels** (`WIN_COUNTRIES_FRAC`/`WIN_PIXELS_FRAC`). Replaces the old
+    `WORLD_CONQUEST_THRESHOLD` 70%-of-countries check. `_computeEndgame()` assigns
+    each playable country to a controlling bloc (standing → itself; fallen → current
+    `conqueredSet` holder; else neutral), sums bloc pixels via `countryPxCount`, and
+    `_checkWorldConquest` fires when a bloc clears both bars. Win screen shows the
+    winning bloc name + its two percentages (`winnerName`/`winnerCountriesFrac`/
+    `winnerPixelsFrac`).
+  - **Sudden death:** at **<=5 standing countries** (`SUDDEN_DEATH_STANDING`),
+    `_suddenDeath` flips on → regen **x2** in both `_serverRegen` and client
+    `getRegenMult` (`sd` factor, applied after the cap so max → 24).
+  - **Endgame panel** (`#endgame-panel`, client-built + injected CSS): shown while
+    sudden death is active; lists each bloc's two progress bars (countries% / map%)
+    with the 65% win markers. Fed by the server `endgame` broadcast (every 30s from
+    `_checkWorldConquest` via `_broadcastEndgame`) + the `welcome` payload's
+    `endgame` field (late-joiners). `_applyEndgame` stores `_suddenDeathClient` +
+    `_endgameData`; hidden when the win overlay shows.
+  - **Leaderboard arrows:** `_computeActiveRanks` + a 30s `_rankSnapshot`;
+    `_rankTrend(id,curRank)` returns ▲ (green, gained places) / ▼ (red, lost) shown
+    in the territory panel (`scheduleLegend`) and the country-select dropdown
+    (`renderCselList`).
 - **v97k:** no-id Natural Earth features (Kosovo, disputed zones) parsed to id='' and
   MERGED into one degenerate geo (Kosovo stuck >80% "can't conquer"; the blob's
   scattered pixels showed as stray dots). Each now gets a UNIQUE synthetic numeric id
