@@ -5866,6 +5866,24 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── v102 (Phase 2C): leader portraits at /portraits/{countryId}.png ──
+  // Operator-supplied 64x64 PNGs in public/portraits/, named by numeric country
+  // id (e.g. 840.png = USA; synthetic 9000+ ids allowed). 404 → client falls
+  // back to the flag.
+  if (url.pathname.startsWith('/portraits/') && url.pathname.endsWith('.png')) {
+    const m = url.pathname.match(/^\/portraits\/(\d{1,5})\.png$/);
+    if (!m) { res.writeHead(400); res.end('invalid portrait path'); return; }
+    const f = path.join(__dirname, 'public', 'portraits', m[1] + '.png');
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end('portrait not found'); return; }
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=86400',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
+
   // ── v88: tweet screenshots at /shots/{name}.png ────────────────
   if (url.pathname.startsWith('/shots/') && url.pathname.endsWith('.png')) {
     const m = url.pathname.match(/^\/shots\/([A-Za-z0-9_]+\.png)$/);
