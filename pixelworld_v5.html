@@ -3518,7 +3518,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-16-v101';
+const CODE_VERSION = '2026-06-16-v102';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6404,7 +6404,143 @@ function _renderEndgamePanel() {
       '</div>';
   }
   panel.innerHTML = html;
+  // v101a: sit BELOW the top-centre login HUD + social-links row (it was
+  // overlapping the login button). Measure their rendered bottoms each show.
+  let topPx = 64;
+  for (const eid of ['login-hud', 'social-links']) {
+    const e = document.getElementById(eid);
+    if (e && e.offsetParent !== null) {
+      const r = e.getBoundingClientRect();
+      if (r.bottom + 8 > topPx) topPx = r.bottom + 8;
+    }
+  }
+  panel.style.top = topPx + 'px';
   panel.classList.add('show');
+}
+
+// ── v102 (Phase 2C): leader portraits + conquest-fall popup ──────────────────
+// 16x16 hand-authored pixel-art portraits (cute, bombastic, stereotypical),
+// rendered to a crisp 64x64 dataURL and cached. Countries without a portrait
+// fall back to their flag. Shared master palette keeps each grid compact.
+const PORTRAIT_PAL = {
+  '.':null,'K':'#1c1c1c','W':'#ffffff','s':'#ecb98c','S':'#c98a5a','r':'#d83030',
+  'b':'#2a5fd0','y':'#f4c430','o':'#e0902c','g':'#9aa0a8','d':'#6b4423','m':'#2e1d10',
+  'p':'#f2a0a8','n':'#2faa55','c':'#9fd0ff','e':'#efe6d0'
+};
+// Each portrait = 16 strings of 16 chars. (First sample batch — style draft.)
+const PORTRAITS = {
+  // USA (840) — Lincoln stovepipe hat, buff jaw, stars-and-stripes collar
+  '840':[
+    '.....KKKKKK.....','.....KKKKKK.....','.....KKKKKK.....','.....KrrrrK.....',
+    '...KKKKKKKKKK...','......ssss......','.....ssssss.....','.....sKssKs.....',
+    '.....ssssss.....','......sSSs......','.....ssssss.....','....bbbbbbbb....',
+    '....bWrWrWrb....','...bbbbbbbbbb...','...bbb..bbb.....','................'
+  ],
+  // France (250) — black beret, bleu-blanc-rouge collar
+  '250':[
+    '.......K........','....KKKKKKK.....','...KKKKKKKKK....','......ssss......',
+    '.....ssssss.....','.....sKssKs.....','.....ssssss.....','......sSSs......',
+    '.....ssssss.....','......ssss......','....WWWWWWWW....','...bWWWWWWWWr...',
+    '...bbbWWWWrrr...','...bb......rr...','................','................'
+  ],
+  // Russia (643) — grey ushanka, stern face, white-blue-red collar
+  '643':[
+    '..gggggggggg....','.gggggggggggg...','.ggKKKKKKKKgg...','..g.ssssss.g....',
+    '....ssssss......','....sKssKs......','....ssssss......','.....sSSs.......',
+    '....ssssss......','.....ssss.......','...WWWWWWWWWW...','...bbbbbbbbbb...',
+    '...rrrrrrrrrr...','...rr......rr...','................','................'
+  ],
+  // Japan (392) — black hair, white collar with a rising-sun disc
+  '392':[
+    '...mmmmmmmmmm...','...mmmmmmmmmm...','..mmssssssmm....','..mmssssssmm....',
+    '....sKssKs......','....ssssss......','.....sSSs.......','....ssssss......',
+    '.....ssss.......','...WWWWWWWWWW...','...WWWrrrrWWW...','...WWWrrrrWWW...',
+    '...WWWWWWWWWW...','...WW......WW...','................','................'
+  ]
+};
+// v102: hand-authored pixel portraits are DISABLED pending an art-direction
+// decision (the 16x16/24x24 drafts didn't land). While off, every country uses
+// its FLAG in the popup + cards. Flip to true once final portrait art is in.
+const PORTRAITS_ENABLED = false;
+const _portraitCache = {};
+function _renderPortraitGrid(grid){
+  const N = grid.length;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false;
+  const cell = 64 / N;
+  for(let y=0;y<N;y++){
+    const row = grid[y] || '';
+    for(let x=0;x<row.length;x++){
+      const col = PORTRAIT_PAL[row[x]];
+      if(!col) continue;
+      ctx.fillStyle = col;
+      ctx.fillRect(Math.round(x*cell), Math.round(y*cell), Math.ceil(cell), Math.ceil(cell));
+    }
+  }
+  return c.toDataURL();
+}
+// Returns a 64x64 leader-portrait dataURL for a country id, or null (caller
+// falls back to the flag). Non-notable countries currently have no portrait yet
+// (archetype sharing comes once the style is approved).
+function leaderPortraitURL(countryId){
+  const id = String(countryId);
+  if(id in _portraitCache) return _portraitCache[id];
+  const g = PORTRAITS_ENABLED ? PORTRAITS[id] : null;
+  const url = g ? _renderPortraitGrid(g) : null;
+  _portraitCache[id] = url;
+  return url;
+}
+// Best portrait-or-flag image for a featList entry (for cards + the popup).
+function _leaderFaceURL(f){
+  if(!f) return '';
+  const p = leaderPortraitURL(f.id);
+  if(p) return p;
+  try { return (typeof getRealFlagURL==='function' && getRealFlagURL(f)) || (typeof _renderFlagToDataURL==='function' && _renderFlagToDataURL(f)) || ''; }
+  catch(e){ return ''; }
+}
+
+// Big "winner vs loser" popup when a country falls (fresh kill only).
+function _showConquestFallPopup(winnerFi, loserFi){
+  const W = featList[winnerFi], L = featList[loserFi];
+  if(!W || !L) return;
+  if(!document.getElementById('fallpop-style')){
+    const st = document.createElement('style'); st.id = 'fallpop-style';
+    st.textContent =
+      '#fall-popup{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9000;' +
+      'background:linear-gradient(135deg,#120808,#1a0f1a);border:2px solid rgba(239,68,68,.7);' +
+      'border-radius:14px;padding:18px 26px;box-shadow:0 12px 48px rgba(0,0,0,.6);color:#fee2e2;' +
+      'font-family:inherit;text-align:center;animation:fpIn .4s cubic-bezier(.2,.8,.3,1.2);cursor:pointer;}' +
+      '#fall-popup.fall-out{opacity:0;transform:translate(-50%,-50%) scale(.9);transition:.35s;}' +
+      '#fall-popup .fp-title{font-size:13px;letter-spacing:.12em;color:#fca5a5;margin-bottom:12px;font-weight:700;}' +
+      '#fall-popup .fp-faces{display:flex;align-items:center;justify-content:center;gap:18px;}' +
+      '#fall-popup .fp-side{display:flex;flex-direction:column;align-items:center;gap:6px;width:104px;}' +
+      '#fall-popup .fp-port{width:96px;height:96px;image-rendering:pixelated;border-radius:8px;' +
+      'border:2px solid rgba(255,255,255,.15);background:#0a0a12;object-fit:contain;}' +
+      '#fall-popup .fp-loser .fp-port{filter:grayscale(1) brightness(.6);position:relative;}' +
+      '#fall-popup .fp-loser{position:relative;}' +
+      '#fall-popup .fp-cross{position:absolute;top:0;left:4px;width:96px;height:96px;font-size:96px;line-height:96px;' +
+      'color:#ef4444;font-weight:900;text-shadow:0 0 8px rgba(0,0,0,.8);pointer-events:none;animation:fpCross .5s .15s both;}' +
+      '#fall-popup .fp-name{font-size:13px;font-weight:700;color:#e2e8f0;max-width:104px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+      '#fall-popup .fp-win .fp-name{color:#fde68a;}' +
+      '#fall-popup .fp-vs{font-size:22px;font-weight:900;color:#ef4444;}' +
+      '#fall-popup .fp-foot{margin-top:12px;font-size:11px;color:#94a3b8;}' +
+      '@keyframes fpIn{from{opacity:0;transform:translate(-50%,-50%) scale(.7);}to{opacity:1;transform:translate(-50%,-50%) scale(1);}}' +
+      '@keyframes fpCross{from{opacity:0;transform:scale(2) rotate(-20deg);}to{opacity:1;transform:scale(1) rotate(0);}}';
+    document.head.appendChild(st);
+  }
+  const old = document.getElementById('fall-popup'); if(old) old.remove();
+  const el = document.createElement('div'); el.id = 'fall-popup';
+  el.innerHTML =
+    '<div class="fp-title">⚔️ A NATION HAS FALLEN ⚔️</div>' +
+    '<div class="fp-faces">' +
+      '<div class="fp-side fp-win"><img class="fp-port" src="' + _leaderFaceURL(W) + '"><div class="fp-name">👑 ' + escapeHtml(W.name) + '</div></div>' +
+      '<div class="fp-vs">▶</div>' +
+      '<div class="fp-side fp-loser"><img class="fp-port" src="' + _leaderFaceURL(L) + '"><div class="fp-cross">✕</div><div class="fp-name">' + escapeHtml(L.name) + '</div></div>' +
+    '</div>' +
+    '<div class="fp-foot"><b style="color:#fca5a5">' + escapeHtml(W.name) + '</b> conquered <b>' + escapeHtml(L.name) + '</b></div>';
+  document.body.appendChild(el);
+  el.onclick = () => { el.remove(); };
+  setTimeout(() => { if(!el.parentNode) return; el.classList.add('fall-out'); setTimeout(() => el.remove(), 380); }, 5200);
 }
 
 function getMyWorldShare() {
@@ -9075,11 +9211,19 @@ function mpHandleMessage(msg) {
       // Convert to featList indices for client-side use.
       const { geoIdx: geoCountryId, countryId } = msg;
       conqueredSet.add(geoCountryId + ':' + countryId);
+      // v102: detect a FRESH fall (native newly dead) for the leader popup — must
+      // read permanentlyConqueredSet BEFORE we add this geo. perm+already-dead =
+      // a transfer/re-take, not a fresh kill (no popup).
+      const _wasPerm = permanentlyConqueredSet.has(String(geoCountryId));
       if (msg.perm) permanentlyConqueredSet.add(String(geoCountryId)); // v95m: native is dead
       // v75: O(1) lookups via idToFeatIdx
       const fi = idToFeatIdx.get(String(countryId));
       const targetFi = idToFeatIdx.get(String(geoCountryId));
       if (targetFi === undefined || fi === undefined) { scheduleLegend(); break; }
+      // v102 (Phase 2C): big winner-vs-loser popup on a fresh nation fall.
+      if (msg.perm && !_wasPerm && targetFi !== fi && typeof _showConquestFallPopup === 'function') {
+        _showConquestFallPopup(fi, targetFi);
+      }
       // Attack detection: if WE were conquered, show direction arrow + card + force repick
       if(targetFi === currentIdx && fi !== currentIdx){
         showAttackArrow(fi);
@@ -9093,21 +9237,26 @@ function mpHandleMessage(msg) {
         const conqueror = featList[fi];
         const target    = featList[targetFi];
         if(conqueror && target){
+          // v102: lead with the conqueror's leader portrait.
+          const _pf = _leaderFaceURL(conqueror);
+          const _pimg = _pf ? '<img src="'+_pf+'" style="width:30px;height:30px;image-rendering:pixelated;border-radius:4px;margin-right:7px;flex-shrink:0;">' : '';
           actPushCard({
             variant: 'info',
             title: t('act.conquest_event_title'),
-            html: t('act.conquest_event_text', { attacker: conqueror.name, defender: target.name }),
+            html: _pimg + '<span>' + t('act.conquest_event_text', { attacker: conqueror.name, defender: target.name }) + '</span>',
           });
         }
       }
       // YOU conquered someone
       else if(fi === currentIdx){
         _conquerBoostUntil = Date.now() + CONQUER_BOOST_MS; // v100: 60s max-regen surge
+        const _df = _leaderFaceURL(featList[targetFi]); // v102: defeated leader's portrait
+        const _dimg = _df ? '<img src="'+_df+'" style="width:30px;height:30px;image-rendering:pixelated;border-radius:4px;margin-right:7px;flex-shrink:0;filter:grayscale(.5);">' : '';
         actPushCard({
           variant: 'win',
           title: t('act.victory_title'),
-          html: t('act.victory_text', { defender: featList[targetFi].name })
-              + '<br><b>⚡ Conquest surge — max regen for 60s!</b>',
+          html: _dimg + '<span>' + t('act.victory_text', { defender: featList[targetFi].name })
+              + '<br><b>⚡ Conquest surge — max regen for 60s!</b></span>',
         });
       }
       showConquestToast(targetFi, fi);
