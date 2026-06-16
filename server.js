@@ -152,6 +152,12 @@ const TIMEOUT_MS         = 30000;
 const BOT_TICK_MS         = 1000;  // v35: doubled paint rate (was 2000)
 const BOT_PIXELS_PER_TICK  = 1;    // pixels per stroke per bot — halved
 const BOT_BUCKET_MAX       = 60;   // smaller cap to prevent burst spikes
+// v100 (Phase 2A): bots are a redistributable POOL. Each country's bot carries
+// `units` (1..BOT_UNITS_MAX); throughput + bucket capacity scale with units.
+// When a country falls its units move to active countries (cap below), keeping
+// the map lively as the field shrinks. Each live human on a country deactivates
+// one unit ("one bot per player").
+const BOT_UNITS_MAX        = 5;
 
 // ── v34: Bot activity cycle — simulates "real player" login/logout ──
 // Each bot drifts between active and idle states. Only active bots paint and
@@ -200,6 +206,57 @@ function _activeBotCount() {
   let n = 0;
   for (const a of _botActivity.values()) if (a.active) n++;
   return n;
+}
+// v100 (Phase 2A): live human count per country (rebuilt in broadcastPlayers on
+// every join/leave). Drives "one bot unit deactivated per human player".
+const _humansByCountry = new Map();
+function _rebuildHumansByCountry() {
+  _humansByCountry.clear();
+  for (const p of players.values()) {
+    if (p.isBot || !p.ws || !p.countryId) continue;
+    const k = String(p.countryId);
+    _humansByCountry.set(k, (_humansByCountry.get(k) || 0) + 1);
+  }
+}
+function _effectiveBotUnits(bot) {
+  if (!bot) return 0;
+  const humans = _humansByCountry.get(String(bot.countryId)) || 0;
+  return Math.max(0, (bot.units || 1) - humans);
+}
+// Move `units` bot-units from a fallen country to active under-cap countries —
+// alliance heir (preferId) first, then the countries that need help most.
+function _redistributeBotUnits(fromCountryId, units, preferId) {
+  if (!(units > 0)) return;
+  const underCap = () => {
+    const out = [];
+    for (const [cid, b] of bots) {
+      if (String(cid) === String(fromCountryId)) continue;
+      if (permanentlyConquered.has(String(cid))) continue;
+      if ((b.units || 1) >= BOT_UNITS_MAX) continue;
+      out.push(cid);
+    }
+    return out;
+  };
+  let moved = 0;
+  for (let n = 0; n < units; n++) {
+    const cands = underCap();
+    if (!cands.length) break;
+    let pick = null;
+    if (preferId && bots.has(String(preferId)) &&
+        (bots.get(String(preferId)).units || 1) < BOT_UNITS_MAX &&
+        !permanentlyConquered.has(String(preferId))) {
+      pick = String(preferId);
+    } else {
+      cands.sort((a, b) => ((bots.get(a).units || 1) - (bots.get(b).units || 1)) ||
+                           ((countryPxCount[a] || 0) - (countryPxCount[b] || 0)));
+      pick = cands[0];
+    }
+    const tb = bots.get(pick);
+    tb.units = (tb.units || 1) + 1;
+    tb.bucket = Math.min(BOT_BUCKET_MAX * tb.units, (tb.bucket || 0) + BOT_BUCKET_MAX * 0.5);
+    moved++;
+  }
+  if (moved) console.log(`[Bot] redistributed ${moved} unit(s) from ${fromCountryId}` + (preferId ? ` (heir ${preferId})` : ''));
 }
 function _tickBotActivity() {
   const now = Date.now();
@@ -3736,26 +3793,20 @@ function _onCountryConquered(conqueredGeoId) {
   // positive (else it would re-liquidate every tick).
   countryPxCount[conqueredGeoId] = 0;
 
-  // ── Bot migration ────────────────────────────────────────────
-  const migTarget = transferTo || _pickBotMigrationTarget(conqueredGeoId);
-  if (migTarget) {
-    if (bots.has(migTarget)) {
-      // Boost target bot's bucket with the conquered bot's remaining energy
-      const targetBot = bots.get(migTarget);
-      targetBot.bucket = Math.min(BOT_BUCKET_MAX, (targetBot.bucket || 0) + BOT_BUCKET_MAX * 0.5);
-    }
-    // Reassign the conquered bot's player slot to the new country so it shows
-    // in the player list as playing there instead of a dead country
-    for (const [, p] of players) {
-      if (p.isBot && String(p.countryId) === conqueredGeoId) {
-        p.countryId  = migTarget;
-        p.countryIdx = getIdx(migTarget);
-        break; // only reassign one slot
-      }
-    }
-    console.log(`[Bot] ${conqueredGeoId} conquered → migrated to ${migTarget}`);
-    broadcastPlayers();
+  // ── Bot redistribution (v100 Phase 2A) ───────────────────────
+  // The fallen country's bot units move to active countries (cap BOT_UNITS_MAX
+  // each) so total painting activity is preserved as the field shrinks — the
+  // alliance heir gets priority, then the countries that need help most. The
+  // fallen bot + its player slot retire (its ticker already no-ops once
+  // permanentlyConquered, and units now live on the survivors).
+  const fallenBot   = bots.get(conqueredGeoId);
+  const unitsToMove = fallenBot ? (fallenBot.units || 1) : 1;
+  _redistributeBotUnits(conqueredGeoId, unitsToMove, transferTo || _pickBotMigrationTarget(conqueredGeoId));
+  if (fallenBot) bots.delete(conqueredGeoId);
+  for (const [pid, p] of players) {
+    if (p.isBot && String(p.countryId) === conqueredGeoId) { players.delete(pid); break; }
   }
+  broadcastPlayers();
 }
 
 // ── Bomb cooldown — anti-spam ────────────────────────────────────
@@ -4313,6 +4364,7 @@ function broadcast(msg, excludePid = -1) {
 }
 
 function broadcastPlayers() {
+  _rebuildHumansByCountry(); // v100 (Phase 2A): keep per-country human counts fresh
   const davidSnapshot = buildDavidSnapshot();
   const list = [];
   for (const [pid, p] of players) {
@@ -5397,7 +5449,7 @@ function getBotTargets(countryId, limit) {
 }
 
 function botInit(countryId) {
-  const bot = { countryId, bucket: BOT_BUCKET_MAX, geoIdx: getGeoForCountry(countryId) };
+  const bot = { countryId, bucket: BOT_BUCKET_MAX, geoIdx: getGeoForCountry(countryId), units: 1 }; // v100: units
   bots.set(countryId, bot);
   players.set(nextPid++, { ws: null, countryId, countryIdx: getIdx(countryId), lastSeen: Date.now(), isBot: true });
   ownerPixels[getIdx(countryId)] = new Set();
@@ -5543,9 +5595,13 @@ function botTickSingle(countryId) {
   // Active conquest gate (redundant with permanentlyConquered, but kept for
   // clarity and to block mid-conquest activity before the set is populated).
   if (_isCountryConquered(countryId)) return;
-  // (legacy: humanClaimedCountries is still consulted in case it gets used
-  // elsewhere; the new gate above covers it as a superset.)
-  if (humanClaimedCountries.has(countryId)) return;
+  // v100 (Phase 2A): humans replace bot units 1:1. (humanClaimedCountries is dead
+  // code — .add is never called anywhere — so the old all-or-nothing gate was a
+  // no-op; replaced by the per-unit human reduction below.)
+  const bot = bots.get(countryId);
+  if (!bot) return;
+  const effUnits = _effectiveBotUnits(bot);
+  if (effUnits <= 0) return; // live humans cover this country
   // v56: bot stands down when overwhelmed so the attacker can reach the formal
   // conquest threshold (60%) without constant reclaim interference.
   const _homeGeoIdx = getGeoForCountry(countryId);
@@ -5562,13 +5618,15 @@ function botTickSingle(countryId) {
   }
   // v34: only active bots paint
   if (!_isBotActive(countryId)) return;
-  const bot = bots.get(countryId);
-  if (!bot || bot.bucket < BOT_PIXELS_PER_TICK) return;
+  if (bot.bucket < BOT_PIXELS_PER_TICK) return;
 
-  const targets = getBotTargets(countryId, BOT_PIXELS_PER_TICK);
+  // v100 (Phase 2A): paint scales with effective units so concentrated late-game
+  // bots stay lively (a 5-unit survivor paints ~5x a fresh country's bot).
+  const budget = Math.min(BOT_PIXELS_PER_TICK * effUnits, Math.floor(bot.bucket));
+  const targets = getBotTargets(countryId, budget);
   if (targets.length === 0) return;
 
-  bot.bucket -= Math.min(BOT_PIXELS_PER_TICK, targets.length);
+  bot.bucket -= Math.min(budget, targets.length);
   const { changed, conquests, reversals } = applyPixels(targets, countryId);
   if (changed.length) queueDelta(changed);
   conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest', ...c })));
@@ -5589,9 +5647,10 @@ setInterval(() => {
   // v97e: bot regen via the unified _serverRegen (David curve + encircle + leader
   // tax + exile debuff; bots have no alliance/rank). Mirrors client getRegenMult.
   for (const bot of bots.values()) {
-    if (bot.bucket >= BOT_BUCKET_MAX) continue;
-    const mult = _serverRegen(bot.countryId);
-    bot.bucket = Math.min(BOT_BUCKET_MAX, bot.bucket + mult);
+    const cap = BOT_BUCKET_MAX * (bot.units || 1); // v100: capacity scales with units
+    if (bot.bucket >= cap) continue;
+    const mult = _serverRegen(bot.countryId) * (bot.units || 1); // v100: rate scales too
+    bot.bucket = Math.min(cap, bot.bucket + mult);
   }
 }, BOT_REGEN_MS);
 
