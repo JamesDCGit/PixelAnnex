@@ -966,6 +966,27 @@ geos). Transfers via `_conquerGeo`; still ghost-clears a holder wiped to 0 px.
 - [x] **i18n conquest threshold (v95t):** all locales updated 60%→70%.
 - [x] **Dead own-stroke layer removed (v95t).**
 
+### Backlog (2026-06-16) — Phase 3 + UI/font/tweet polish (operator)
+- [ ] **Phase 3 — Pixi.js pros/cons analysis** (rendering port evaluation, no build
+  until decided) + **mobile port** (game currently crashes on mobile — investigate
+  the crash first).
+- [ ] **Notification overlap:** activity cards / popups can overlap each other —
+  clean up stacking/positioning so nothing collides.
+- [ ] **Font sizing audit — things NOT obeying the global font-size (`_applyFontScale`):**
+  - flag labels (text under on-map flags)
+  - encirclement popup (and likely other bonus/banner popups)
+  - Discord + Twitter/X login text
+  - sweep ALL text/windows and confirm each respects the global font setting.
+- [ ] **Flag image smoothing:** flags in notifications are being filtered/smoothed
+  when scaled — force NEAREST-NEIGHBOUR (`image-rendering:pixelated`) everywhere a
+  flag renders (cards, popup `.fp-flag`, etc.).
+- [ ] **Popup transparency:** make popups more transparent — try ~65% opacity
+  (i.e. background alpha ~0.65) across the popup/card backgrounds.
+- [ ] **Tweet on endgame triggers (xposter/server):** on WORLD CONQUEST and SUDDEN
+  DEATH, fire a tweet IMMEDIATELY (bypass the manual-approve queue for these two),
+  attach a fresh SNAPSHOT of the final world state (mapshot), and include the final
+  2 standing countries + the top players in the text.
+
 ## FTUE — guided first paint (v95)
 
 First-time onboarding has two layers (both client, `pixelworld_v5.html`):
