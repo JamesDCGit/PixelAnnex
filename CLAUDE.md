@@ -41,7 +41,12 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v106`.** (v106 = operator-supplied art:
+**Current production triad: `2026-06-16-v107`.** (v107 = avatar/FTUE/rank polish:
+welcome how-to-play split to 2 tips/page over 4 pages [`_TUT_PAGE_COUNT` now DOM-derived]
+to give the hero banner more room; rank-panel avatar now refreshes on country change
+[`selectCountry` + `_pickRepick` call `refreshRankUI`]; `RANKS` broadened to
+0/250/750/1500/3000 px [admiral stays 3000]; avatars doubled — rank 44→88, conquest/
+victory cards 30→60, monster card 34→68.) (v106 = operator-supplied art:
 128x128 pixel-art leader AVATARS in `public/Avatars/` [served at `/Avatars/{name}.png`]
 replace the hand-drawn 16x16 grids for the popup/cards/rank — `COUNTRY_AVATAR` map
 for the 33 notable, region-matched generics [GenericAsia/Africa/MiddleEast/West/West2]

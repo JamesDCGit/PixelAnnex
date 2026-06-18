@@ -1598,7 +1598,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
         <!-- Step 1: How to play (multi-page) -->
         <div class="tut-section active" id="tut-step-0">
           <div class="tut-content">
-            <!-- Page 1 of 2 -->
+            <!-- v107: 2 tips per page (4 pages) — leaves more room for the hero -->
             <div class="tut-grid tut-page" data-tut-page="1">
               <div class="tut-tile">
                 <div class="tut-tile-icon">🎨</div>
@@ -1610,6 +1610,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
                 <div class="tut-tile-title" data-i18n="tut.tile_conquer_title">Conquer countries</div>
                 <div class="tut-tile-desc" data-i18n="tut.tile_conquer_desc">Hold 70–75% of a country's pixels to claim it — smaller countries need a higher share.</div>
               </div>
+            </div>
+            <div class="tut-grid tut-page" data-tut-page="2" style="display:none;">
               <div class="tut-tile">
                 <div class="tut-tile-icon">💥</div>
                 <div class="tut-tile-title" data-i18n="tut.tile_bombs_title">Nukes &amp; ranks</div>
@@ -1621,8 +1623,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
                 <div class="tut-tile-desc" data-i18n="tut.tile_fightback_desc">When your country is &gt;50% lost, painting your own land grants progressive bonus pixels — the more you've lost, the bigger the boost.</div>
               </div>
             </div>
-            <!-- Page 2 of 2 -->
-            <div class="tut-grid tut-page" data-tut-page="2" style="display:none;">
+            <div class="tut-grid tut-page" data-tut-page="3" style="display:none;">
               <div class="tut-tile">
                 <div class="tut-tile-icon">🤝</div>
                 <div class="tut-tile-title">Alliances</div>
@@ -1633,6 +1634,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
                 <div class="tut-tile-title">Monsters</div>
                 <div class="tut-tile-desc">UFOs, Krakens and Giant Lizards roam the map periodically — they wipe pixels in their path. Stay clear or strike while they're rampaging.</div>
               </div>
+            </div>
+            <div class="tut-grid tut-page" data-tut-page="4" style="display:none;">
               <div class="tut-tile">
                 <div class="tut-tile-icon">🎯</div>
                 <div class="tut-tile-title">Select Target</div>
@@ -1646,7 +1649,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
             </div>
             <div class="tut-page-indicator">
               <button class="tut-page-btn" onclick="flipTutPage(-1)" title="Previous page">←</button>
-              <span style="font-size:10px;color:#64748b;letter-spacing:.08em;text-transform:uppercase;">Page <span id="tut-page-num">1</span> of 2</span>
+              <span style="font-size:10px;color:#64748b;letter-spacing:.08em;text-transform:uppercase;">Page <span id="tut-page-num">1</span> of 4</span>
               <button class="tut-page-btn" onclick="flipTutPage(1)" title="Next page">→</button>
             </div>
             <div style="font-size:11px;color:#64748b;text-align:center;margin-top:14px;">
@@ -3524,7 +3527,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-16-v106';
+const CODE_VERSION = '2026-06-16-v107';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6844,7 +6847,8 @@ function prevTutStep() {
 
 // v83: page flip within Step 1 (multi-page tile grid)
 let _tutPage = 1;
-const _TUT_PAGE_COUNT = 2;
+// v107: derive from the DOM so adding/removing tip pages "just works".
+const _TUT_PAGE_COUNT = Math.max(1, document.querySelectorAll('#tut-step-0 .tut-page').length);
 function flipTutPage(direction) {
   _tutPage = ((_tutPage - 1 + direction) % _TUT_PAGE_COUNT + _TUT_PAGE_COUNT) % _TUT_PAGE_COUNT + 1;
   document.querySelectorAll('.tut-page').forEach(el => {
@@ -9368,7 +9372,7 @@ function mpHandleMessage(msg) {
         const target    = featList[targetFi];
         if(conqueror && target){
           // v102: lead with the conqueror's leader portrait (flag fallback).
-          const _pimg = _leaderFaceImg(conqueror, '', 'width:30px;height:30px;object-fit:contain;border-radius:4px;margin-right:7px;flex-shrink:0;');
+          const _pimg = _leaderFaceImg(conqueror, '', 'width:60px;height:60px;object-fit:contain;border-radius:6px;margin-right:8px;flex-shrink:0;'); /* v107: 2x */
           actPushCard({
             variant: 'info',
             title: t('act.conquest_event_title'),
@@ -9379,7 +9383,7 @@ function mpHandleMessage(msg) {
       // YOU conquered someone
       else if(fi === currentIdx){
         _conquerBoostUntil = Date.now() + CONQUER_BOOST_MS; // v100: 60s max-regen surge
-        const _dimg = _leaderFaceImg(featList[targetFi], '', 'width:30px;height:30px;object-fit:contain;border-radius:4px;margin-right:7px;flex-shrink:0;filter:grayscale(.5);'); // v102: defeated leader (flag fallback)
+        const _dimg = _leaderFaceImg(featList[targetFi], '', 'width:60px;height:60px;object-fit:contain;border-radius:6px;margin-right:8px;flex-shrink:0;filter:grayscale(.5);'); // v102: defeated leader (flag fallback) — v107: 2x
         actPushCard({
           variant: 'win',
           title: t('act.victory_title'),
@@ -11755,11 +11759,12 @@ document.addEventListener('visibilitychange', () => {
 const RANKS = [
   // v38: Mortar + MOAB removed. Captain/General now provide regen multipliers
   // (see getRankRegenMult), not bombs.
-  // v97: thresholds doubled (was 50/150/500/1500) so ranks take ~2x longer to earn.
+  // v107: broadened, smoother progression (was 0/100/300/1000/3000) — admiral stays
+  // at 3000px so the lower ranks span a wider, more even range.
   { name:'Soldier',    min:0,    bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.0  },
-  { name:'Lieutenant', min:100,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.25 },
-  { name:'Captain',    min:300,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.5  },
-  { name:'General',    min:1000, bombType:null,  bombCost:0,  bombRadius:0,   regenMult:2.0  },
+  { name:'Lieutenant', min:250,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.25 },
+  { name:'Captain',    min:750,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.5  },
+  { name:'General',    min:1500, bombType:null,  bombCost:0,  bombRadius:0,   regenMult:2.0  },
   { name:'Admiral',    min:3000, bombType:'Nuke',bombCost:100,bombRadius:300, regenMult:3.0  },
 ];
 
@@ -11978,7 +11983,7 @@ function refreshRankUI(){
   const _cf = (typeof currentIdx === 'number' && featList[currentIdx]) ? featList[currentIdx] : null;
   const _av = (_cf && typeof _avatarURL === 'function') ? _avatarURL(_cf.id) : null;
   const _avImg = _av
-    ? '<img class="pa-avatar" src="' + _av + '" alt="" style="width:44px;height:44px;border-radius:7px;flex-shrink:0;border:1px solid rgba(255,255,255,0.12);">'
+    ? '<img class="pa-avatar" src="' + _av + '" alt="" style="width:88px;height:88px;border-radius:9px;flex-shrink:0;border:1px solid rgba(255,255,255,0.12);">'
     : '';
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:9px;">
@@ -12258,6 +12263,7 @@ function selectCountry(idx){
   if(sw) sw.style.background = f.color;
   document.getElementById('csel-label').textContent = f.name;
   document.getElementById('csel-flag').innerHTML = flagAny(f.id, 2);
+  if(_countryChanged && typeof refreshRankUI === 'function') refreshRankUI(); // v107: update rank-panel avatar to the new country
   if(wsReady) { ws.send(JSON.stringify({type:'join', countryId:f.id})); }
   // If logged in via Discord, push country change back to profile
   // (so /country show in Discord stays in sync with in-game choice)
@@ -13418,6 +13424,7 @@ function _showCountryRepickModal(data) {
     const sw = document.getElementById('swatch');
     if (sw) sw.style.background = f.color;
     if (typeof markOutlineDirty === 'function') markOutlineDirty();
+    if (typeof refreshRankUI === 'function') refreshRankUI(); // v107: update rank-panel avatar
     overlay.remove();
     if (typeof ws !== 'undefined' && ws && ws.readyState === 1) {
       try { ws.send(JSON.stringify({ type: 'set-country', countryId: f.id })); } catch (e) {}
@@ -13718,7 +13725,7 @@ function _onMonsterSpawn(msg) {
   const _ma = _MALERT[type] || { icon: '👾', title: 'Monster!', text: '' };
   // v106: monster avatar (public/Avatars/) on the alert card.
   const _mav = { ufo: 'UFO', kraken: 'Kraken', godzilla: 'GiantLizard' }[type];
-  const _mimg = _mav ? '<img class="pa-avatar" src="/Avatars/' + _mav + '.png" alt="" style="width:34px;height:34px;border-radius:5px;margin-right:7px;flex-shrink:0;">' : '';
+  const _mimg = _mav ? '<img class="pa-avatar" src="/Avatars/' + _mav + '.png" alt="" style="width:68px;height:68px;border-radius:7px;margin-right:8px;flex-shrink:0;">' : '';
   actPushCard({ variant: 'alert', title: _ma.icon + ' ' + _ma.title, html: _mimg + '<span>' + _ma.text + '</span>' });
 }
 
