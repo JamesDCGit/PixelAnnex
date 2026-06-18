@@ -136,7 +136,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* ── Bomb notification toast ── */
 #bomb-toast{
   position:absolute;top:62px;right:14px;
-  background:#1a0808;border:1px solid rgba(239,68,68,0.6);border-radius:8px;
+  background:rgba(26,8,8,0.65);border:1px solid rgba(239,68,68,0.6);border-radius:8px;/* v105 */
   padding:10px 16px;font-size:12px;color:#fca5a5;
   display:none;z-index:59;max-width:260px;line-height:1.5;
   box-shadow:0 4px 20px rgba(239,68,68,.2);
@@ -248,7 +248,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   pointer-events:none;max-width:300px;
 }
 .act-card{
-  background:#1a0f00;border:1px solid rgba(251,146,60,0.7);border-radius:8px;
+  background:rgba(26,15,0,0.65);border:1px solid rgba(251,146,60,0.7);border-radius:8px;/* v105: ~65% transparent */
   padding:8px 12px;font-size:11px;color:#fed7aa;
   min-width:200px;
   box-shadow:0 4px 12px rgba(0,0,0,0.4);
@@ -268,27 +268,29 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .act-card .act-body.block .insp-legend{display:block;margin-top:5px;font-size:10px;opacity:.85;}
 .act-card .act-body.block .insp-sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:3px;vertical-align:middle;}
 
-/* Variant: fight-back (green) */
-.act-card.fightback{background:#001a0f;border-color:rgba(34,197,94,0.7);color:#86efac;}
+/* Variant: fight-back (green) — v105 ~65% transparent */
+.act-card.fightback{background:rgba(0,26,15,0.65);border-color:rgba(34,197,94,0.7);color:#86efac;}
 .act-card.fightback .act-title{color:#4ade80;}
 
 /* Variant: conquest event (red) */
-.act-card.conquest{background:#1a0a0d;border-color:rgba(239,68,68,0.7);color:#fecaca;}
+.act-card.conquest{background:rgba(26,10,13,0.65);border-color:rgba(239,68,68,0.7);color:#fecaca;}
 .act-card.conquest .act-title{color:#f87171;}
 
 /* Variant: self-conquest (green = win) */
-.act-card.win{background:#0a1a12;border-color:rgba(34,197,94,0.7);color:#bbf7d0;}
+.act-card.win{background:rgba(10,26,18,0.65);border-color:rgba(34,197,94,0.7);color:#bbf7d0;}
 .act-card.win .act-title{color:#4ade80;}
 
 /* Variant: alert (orange — under attack) */
-.act-card.alert{background:#1a0f00;border-color:rgba(251,146,60,0.7);color:#fed7aa;}
+.act-card.alert{background:rgba(26,15,0,0.65);border-color:rgba(251,146,60,0.7);color:#fed7aa;}
 .act-card.alert .act-title{color:#fb923c;}
 
 /* Variant: info (blue) */
-.act-card.info{background:#0a121a;border-color:rgba(99,102,241,0.6);color:#c7d2fe;}
+.act-card.info{background:rgba(10,18,26,0.65);border-color:rgba(99,102,241,0.6);color:#c7d2fe;}
 .act-card.info .act-title{color:#818cf8;}
 /* v100: pixel inspector — slightly transparent so the map shows through */
-.act-card.inspect{background:rgba(10,18,26,0.78);}
+.act-card.inspect{background:rgba(10,18,26,0.65);}
+/* v105: notification flags/portraits are pixel art — never smooth-scale them */
+#activity-toast img,#conquest-toast img,#bomb-toast img,#fall-popup img,#flag-overlay img,#world-conquest-overlay img{image-rendering:pixelated;image-rendering:crisp-edges;}
 
 @keyframes act-slide-in{from{opacity:0;transform:translateX(30px);}to{opacity:1;transform:translateX(0);}}
 
@@ -847,7 +849,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* ── Conquest toast (top-right) ── */
 #conquest-toast{
   position:absolute;top:14px;right:14px;
-  background:#0b1e3d;border:1px solid #2563eb;border-radius:8px;
+  background:rgba(11,30,61,0.65);border:1px solid #2563eb;border-radius:8px;/* v105 */
   padding:10px 16px;font-size:12px;color:#93c5fd;
   display:none;z-index:60;max-width:260px;line-height:1.5;
   box-shadow:0 4px 20px rgba(0,0,0,.5);
@@ -857,7 +859,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #conquest-toast .toast-title{font-weight:700;color:#e2e8f0;font-size:11px;
   text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
 #conquest-toast .toast-body{color:#93c5fd;}
-#banner{position:absolute;top:56px;left:50%;transform:translateX(-50%);background:#0b1e3d;border:1px solid #2563eb;border-radius:7px;padding:7px 20px;font-size:12px;color:#93c5fd;display:none;z-index:50;white-space:nowrap;}
+#banner{position:absolute;top:56px;left:50%;transform:translateX(-50%);background:rgba(11,30,61,0.65);border:1px solid #2563eb;border-radius:7px;padding:7px 20px;font-size:12px;color:#93c5fd;display:none;z-index:50;white-space:nowrap;}/* v105 */
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -1253,7 +1255,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 #flag-overlay .pa-flag-label {
   position: absolute;
   top: 0; left: 0;
-  font: 700 9px/1 "Courier New", monospace;
+  font: 700 var(--pa-flag-label-size, 9px)/1 "Courier New", monospace;
   color: #fff;
   text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 1px #000;
   white-space: nowrap;
@@ -3518,7 +3520,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-16-v104';
+const CODE_VERSION = '2026-06-16-v105';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5460,6 +5462,7 @@ function paintBrush(px,py){
 function showBonusPop(n, prefix, opts){
   const el=document.createElement('div');
   el.className='bonus-pop';
+  el.style.zoom=_uiZoom; // v105: obey global font scale
   el.textContent=(prefix||'')+'+'+n+' bonus!';
   const useLoginAnchor = (opts && opts.encirclement) || /encircle/i.test(String(prefix||''));
   if (useLoginAnchor) {
@@ -6369,7 +6372,7 @@ function _renderEndgamePanel() {
     const st = document.createElement('style'); st.id = 'endgame-style';
     st.textContent =
       '#endgame-panel{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:30;' +
-      'width:340px;max-width:calc(100vw - 24px);background:rgba(12,6,3,0.92);' +
+      'width:340px;max-width:calc(100vw - 24px);background:rgba(12,6,3,0.65);' + /* v105 ~65% */
       'border:1px solid rgba(239,68,68,0.6);border-radius:10px;padding:9px 12px;color:#fee2e2;' +
       'font-size:12px;box-shadow:0 6px 24px rgba(0,0,0,.55);font-family:inherit;display:none;}' +
       '#endgame-panel.show{display:block;animation:egIn .4s ease;}' +
@@ -6404,18 +6407,11 @@ function _renderEndgamePanel() {
       '</div>';
   }
   panel.innerHTML = html;
-  // v101a: sit BELOW the top-centre login HUD + social-links row (it was
-  // overlapping the login button). Measure their rendered bottoms each show.
-  let topPx = 64;
-  for (const eid of ['login-hud', 'social-links']) {
-    const e = document.getElementById(eid);
-    if (e && e.offsetParent !== null) {
-      const r = e.getBoundingClientRect();
-      if (r.bottom + 8 > topPx) topPx = r.bottom + 8;
-    }
-  }
-  panel.style.top = topPx + 'px';
+  panel.style.zoom = _uiZoom; // v105: obey global font scale
   panel.classList.add('show');
+  // v105: position is owned by _restackHud (stacks the top-centre column below the
+  // login HUD / social row without overlapping the conquest/encircle banners).
+  if (typeof _restackHud === 'function') _restackHud();
 }
 
 // ── v102 (Phase 2C): leader portraits + conquest-fall popup ──────────────────
@@ -6562,7 +6558,7 @@ function _showConquestFallPopup(winnerFi, loserFi){
     const st = document.createElement('style'); st.id = 'fallpop-style';
     st.textContent =
       '#fall-popup{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9000;' +
-      'background:linear-gradient(135deg,#120808,#1a0f1a);border:2px solid rgba(239,68,68,.7);' +
+      'background:linear-gradient(135deg,rgba(18,8,8,0.7),rgba(26,15,26,0.7));border:2px solid rgba(239,68,68,.7);' + /* v105 ~70% */
       'border-radius:14px;padding:18px 26px;box-shadow:0 12px 48px rgba(0,0,0,.6);color:#fee2e2;' +
       'font-family:inherit;text-align:center;animation:fpIn .4s cubic-bezier(.2,.8,.3,1.2);cursor:pointer;}' +
       '#fall-popup.fall-out{opacity:0;transform:translate(-50%,-50%) scale(.9);transition:.35s;}' +
@@ -6586,6 +6582,7 @@ function _showConquestFallPopup(winnerFi, loserFi){
   }
   const old = document.getElementById('fall-popup'); if(old) old.remove();
   const el = document.createElement('div'); el.id = 'fall-popup';
+  el.style.zoom = _uiZoom; // v105: obey global font scale
   el.innerHTML =
     '<div class="fp-title">⚔️ A NATION HAS FALLEN ⚔️</div>' +
     '<div class="fp-faces">' +
@@ -8587,26 +8584,40 @@ const _fontScales = [
   {label:'Normal', val:'1.1'},
 ];
 let _fontScaleIdx = 0;
+let _uiZoom = '1.2'; // v105: current font-scale zoom, applied to popups built at runtime
 function _applyFontScale(){
   const s = _fontScales[_fontScaleIdx];
   // Apply zoom to all UI panels — zoom scales px values, borders, everything
   // NOTE: #tip is excluded — it uses position:fixed and must not be zoomed
   const zoom = s.val;
+  _uiZoom = zoom;
+  // v105: panels/popups that can be zoomed whole (corner- or centre-anchored).
+  // Added the previously-unscaled login HUD, social links, bonus banners, and the
+  // runtime popups so ALL of their text obeys the global font setting.
   const targets = [
     // v99c: leaderboard-panel added (was missing → un-zoomed font + offsets)
     'toolbar','legend','leaderboard-panel','zoom-hud','audio-hud','bucket-hud',
     'conquest-toast','bomb-toast','activity-toast',
     'banner','highlight-banner',
+    'rank-display','bomb-menu',
+    'login-hud','social-links','encircle-banner','fightback-banner', // v105
+    'endgame-panel','fall-popup',                                    // v105 runtime popups
   ];
   targets.forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.zoom = zoom;
   });
-  // Also scale rank display and bomb menu
-  ['rank-display','bomb-menu'].forEach(id => {
+  // v105: fullscreen-backdrop modals — zoom the INNER card, not the inset:0
+  // backdrop (zooming the backdrop overflows it and stops covering the viewport).
+  ['tutorial-box','daily-popup-card','stats-modal'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.zoom = zoom;
   });
+  // v105: flag labels live in #flag-overlay, whose children are transform-positioned
+  // in screen px — zooming the overlay would mis-place every flag. Scale just the
+  // label font via a CSS variable the label rule reads.
+  const fo = document.getElementById('flag-overlay');
+  if(fo) fo.style.setProperty('--pa-flag-label-size', (9*parseFloat(zoom)).toFixed(1)+'px');
   const lbl = document.getElementById('font-scale-label');
   if(lbl) lbl.textContent = s.label;
   const btn = document.getElementById('btn-font-scale');
@@ -8622,6 +8633,34 @@ if (document.readyState === 'loading') {
 } else {
   _applyFontScale();
 }
+
+// ── v105: HUD anti-overlap re-stacker ─────────────────────────────
+// The floating notifications cluster into two columns that could overlap:
+//   • top-CENTRE: endgame panel, conquest banner, encircle + fightback banners
+//   • top-RIGHT: conquest toast, bomb toast, activity-card stack
+// Stack each column's VISIBLE members in order below the fixed header rows.
+// `top` is divided by the element's own `zoom` so font-scaled elements land at the
+// right screen position. Runs on a light interval so it reacts as items appear.
+function _restackHud(){
+  function disp(el){ return el && getComputedStyle(el).display !== 'none'; }
+  function vis(el){ return disp(el) && el.getBoundingClientRect().height > 0; }
+  function botScreen(id){ const e=document.getElementById(id); return (e && disp(e)) ? e.getBoundingClientRect().bottom : 0; }
+  function place(ids, startY){
+    let y = startY;
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if(!vis(el)) return;
+      const z = parseFloat(getComputedStyle(el).zoom) || 1; // zoom scales `top`, compensate
+      el.style.top = (y / z) + 'px';
+      y += el.getBoundingClientRect().height + 8;
+    });
+  }
+  place(['endgame-panel','banner','encircle-banner','fightback-banner'],
+        Math.max(14, botScreen('login-hud'), botScreen('social-links')) + 8);
+  place(['conquest-toast','bomb-toast','activity-toast'],
+        Math.max(14, botScreen('toolbar')) + 8);
+}
+setInterval(_restackHud, 250);
 
 // ── Multiplayer client ────────────────────────────────────────────
 // Connects to WebSocket server if running. Falls back to single-player silently.

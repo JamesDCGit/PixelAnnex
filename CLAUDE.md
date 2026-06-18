@@ -41,7 +41,17 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v104`.** (v104 = Phase 2C art: all 33
+**Current production triad: `2026-06-16-v105`.** (v105 = UI/font/tweet polish:
+(1) HUD anti-overlap re-stacker [`_restackHud`, 250ms] for the top-centre +
+top-right notification columns, zoom-aware; (2) font-scale audit — `_applyFontScale`
+now also zooms login-hud/social-links/encircle+fightback banners + the runtime
+popups, zooms modal INNER cards [tutorial-box/daily-popup-card/stats-modal], and
+scales flag labels via `--pa-flag-label-size`; runtime popups apply `_uiZoom` on
+build; (3) flags forced `image-rendering:pixelated` in all notifications;
+(4) popup/card backgrounds ~65% alpha; (5) IMMEDIATE endgame tweets on world
+conquest + sudden death [`_fireEndgameTweet`/`_fireSuddenDeathTweet`] with a fresh
+`makeWorldShot` snapshot + last standing nations + top players, bypassing the
+manual queue.) (v104 = Phase 2C art: all 33
 notable-country 16x16 leader portraits authored [`PORTRAITS`], plus per-country
 region-appropriate skin tones [`PORTRAIT_SKIN` overrides the grids' `s`/`S` cells
 at render time, respectful: fair/East-Asian/olive/tan/deep, default light].)

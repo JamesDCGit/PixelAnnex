@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-16-v104';
+const SERVER_VERSION       = '2026-06-16-v105';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2819,7 +2819,44 @@ const SUDDEN_DEATH_STANDING = 5;
 const WIN_COUNTRIES_FRAC    = 0.65;
 const WIN_PIXELS_FRAC       = 0.65;
 let _suddenDeath   = false;   // mirrored to clients (regen x2) + drives the panel
+let _suddenDeathTweeted = false; // v105: fire the sudden-death tweet once per game
 let _endgamePayload = null;   // last _computeEndgame() result (served + broadcast)
+
+// v105: playable nations whose homeland still stands (not permanentlyConquered).
+function _standingNations() {
+  const out = [];
+  for (const id of Object.keys(countryNames || {})) {
+    if (!_isPlayableNation(id)) continue;
+    if (permanentlyConquered.has(String(id))) continue;
+    out.push(_countryName(id));
+  }
+  return out;
+}
+// v105: fire an IMMEDIATE tweet (bypass the manual-approve queue) with a fresh
+// full-world snapshot. Falls back to a queued draft if X is disabled or the post
+// fails. Used for the two endgame triggers (world conquest + sudden death).
+async function _fireEndgameTweet(text, dedupeKey) {
+  let imageUrl = null;
+  try { imageUrl = makeWorldShot(); } catch (e) {}
+  if (xposter.isXEnabled()) {
+    try {
+      const r = await xposter.postToX({ text, imageUrl });
+      console.log('[Tweet] endgame posted immediately:', (r && r.url) || '(posted)');
+      return;
+    } catch (e) { console.warn('[Tweet] endgame immediate post failed, queuing draft:', e.message); }
+  }
+  try { pushTweetDraft({ type: 'endgame', text, imageUrl, dedupeKey }); } catch (e) {}
+}
+function _fireSuddenDeathTweet() {
+  try {
+    const standing = _standingNations();
+    const topP = _sessionLeaderboard(3).map(s => s.username).filter(Boolean).join(', ');
+    const text = '⚔️ SUDDEN DEATH on PixelAnnex — only ' + standing.length + ' nations remain: ' +
+      standing.join(', ') + '. Regen is DOUBLED — the endgame is here.' +
+      (topP ? ' Top players: ' + topP : '') + ' ' + GAME_URL + ' #PixelAnnex';
+    _fireEndgameTweet(text, 'sudden_death:' + _warNumber);
+  } catch (e) { console.warn('[Tweet] sudden death tweet failed:', e.message); }
+}
 
 // Is a country a real playable nation? (matches the engine's _isPlayableCountry
 // gate). v101a: must clear MIN_PLAYABLE_PX_SRV — the old `> 0` check let micro
@@ -2901,6 +2938,8 @@ function _checkWorldConquest() {
   if (_worldConquestActive) return;
   const eg = _computeEndgame();
   _broadcastEndgame(eg); // keep clients' sudden-death + panel current
+  // v105: fire the sudden-death tweet ONCE, on the rising edge into sudden death.
+  if (eg.suddenDeath && !_suddenDeathTweeted) { _suddenDeathTweeted = true; _fireSuddenDeathTweet(); }
   // v100: win = a bloc holds >=65% of countries AND >=65% of land pixels.
   const winner = eg.contenders.find(c =>
     c.countriesFrac >= WIN_COUNTRIES_FRAC && c.pixelsFrac >= WIN_PIXELS_FRAC);
@@ -2941,14 +2980,19 @@ function _checkWorldConquest() {
     timestamp:   Date.now(),
     sassyText:   '🌍 THE WORLD HAS BEEN CONQUERED! ' + conquered + '/' + total + ' countries claimed. Top conqueror: ' + (topCountries[0] && topCountries[0].name || '??') + ' with ' + (topCountries[0] && topCountries[0].conquests || 0) + '. Resetting in 5 minutes.',
   });
+  // v105: world conquest fires an IMMEDIATE tweet (bypasses the manual queue) with
+  // a fresh world snapshot + the last nations standing + top players.
   try {
-    const winners = topCountries.slice(0, 3).map(c => c.name).join(', ');
-    pushTweetDraft({
-      type:      'world_conquest',
-      text:      '🌍 THE WORLD HAS BEEN CONQUERED! Top dogs: ' + winners + '. The map resets in 5 minutes — get ready for round 2. ' + GAME_URL + ' #PixelAnnex',
-      dedupeKey: 'world_conquest:' + Math.floor(_worldResetAt / 1000),
-    });
-  } catch(e) {}
+    const standing = _standingNations();
+    const finalNations = (standing.length ? standing.slice(0, 2) : [winner.name]).join(' & ');
+    const topP = (topContributors.length ? topContributors : topPlayers)
+      .slice(0, 3).map(p => p.username).filter(Boolean).join(', ');
+    const wc = Math.round(winner.countriesFrac * 100), wp = Math.round(winner.pixelsFrac * 100);
+    const text = '🌍 THE WORLD HAS BEEN CONQUERED! ' + winner.name + ' wins — ' + wc +
+      '% of countries & ' + wp + '% of the map. Last standing: ' + finalNations +
+      (topP ? '. Top players: ' + topP : '') + '. ' + GAME_URL + ' #PixelAnnex';
+    _fireEndgameTweet(text, 'world_conquest:' + Math.floor(_worldResetAt / 1000));
+  } catch(e) { console.warn('[Tweet] world conquest tweet failed:', e.message); }
   setTimeout(_resetWorld, WORLD_RESET_COUNTDOWN_MS);
 }
 
@@ -2965,6 +3009,7 @@ function _resetWorld() {
   _worldConquestActive = false;
   _worldResetAt = 0;
   _worldConquestPayload = null; // v61: clear so new sessions don't see stale overlay
+  _suddenDeath = false; _suddenDeathTweeted = false; // v105: re-arm endgame tweet for the new game
   // v97h: a finished game → next War. Bump the counter, wipe the session tally
   // (all-time profiles persist), persist immediately.
   _warNumber += 1;
