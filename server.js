@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-16-v105';
+const SERVER_VERSION       = '2026-06-16-v106';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -5922,6 +5922,34 @@ const httpServer = http.createServer(async (req, res) => {
     if (!fs.existsSync(f)) { res.writeHead(404); res.end('portrait not found'); return; }
     res.writeHead(200, {
       'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=86400',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
+
+  // ── v106: leader/monster/generic avatars at /Avatars/{name}.png ──
+  if (url.pathname.startsWith('/Avatars/') && url.pathname.endsWith('.png')) {
+    const m = url.pathname.match(/^\/Avatars\/([A-Za-z0-9_-]+\.png)$/);
+    if (!m) { res.writeHead(400); res.end('invalid avatar path'); return; }
+    const f = path.join(__dirname, 'public', 'Avatars', m[1]);
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end('avatar not found'); return; }
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=86400',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
+
+  // ── v106: hero banner for the welcome / FTUE screens ─────────────
+  if (url.pathname === '/PixelAnnexHero.jpg') {
+    const f = path.join(__dirname, 'public', 'PixelAnnexHero.jpg');
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end('hero not found'); return; }
+    res.writeHead(200, {
+      'Content-Type': 'image/jpeg',
       'Cache-Control': 'public, max-age=86400',
       'Access-Control-Allow-Origin': '*',
     });

@@ -41,7 +41,16 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v105`.** (v105 = UI/font/tweet polish:
+**Current production triad: `2026-06-16-v106`.** (v106 = operator-supplied art:
+128x128 pixel-art leader AVATARS in `public/Avatars/` [served at `/Avatars/{name}.png`]
+replace the hand-drawn 16x16 grids for the popup/cards/rank — `COUNTRY_AVATAR` map
+for the 33 notable, region-matched generics [GenericAsia/Africa/MiddleEast/West/West2]
+for the rest via `_AVATAR_REGION`, `_avatarURL`; `_portraitURL` now delegates to it,
+with onerror→flag fallback. Monster alert cards show UFO/Kraken/GiantLizard avatars.
+Hero banner `public/PixelAnnexHero.jpg` [served at `/PixelAnnexHero.jpg`] at the top
+of the welcome modal [`#tut-hero`]. Player's country avatar added to the rank panel.
+All avatar/hero imgs forced nearest-neighbour. NOTE: avatars + hero are committed
+binaries so the droplet gets them on `git pull`.) (v105 = UI/font/tweet polish:
 (1) HUD anti-overlap re-stacker [`_restackHud`, 250ms] for the top-centre +
 top-right notification columns, zoom-aware; (2) font-scale audit — `_applyFontScale`
 now also zooms login-hud/social-links/encircle+fightback banners + the runtime

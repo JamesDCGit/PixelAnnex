@@ -291,6 +291,9 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .act-card.inspect{background:rgba(10,18,26,0.65);}
 /* v105: notification flags/portraits are pixel art — never smooth-scale them */
 #activity-toast img,#conquest-toast img,#bomb-toast img,#fall-popup img,#flag-overlay img,#world-conquest-overlay img{image-rendering:pixelated;image-rendering:crisp-edges;}
+/* v106: avatar images + hero banner are pixel art — nearest-neighbour scaling */
+.pa-avatar,#rank-display img,#tut-hero{image-rendering:pixelated;image-rendering:crisp-edges;}
+#tut-hero{display:block;width:100%;border-radius:8px;margin-bottom:12px;}
 
 @keyframes act-slide-in{from{opacity:0;transform:translateX(30px);}to{opacity:1;transform:translateX(0);}}
 
@@ -1577,6 +1580,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
           <span data-i18n="lang.label">Language</span>
           <select id="lang-picker-tut" onchange="setLanguage(this.value)"></select>
         </div>
+        <img id="tut-hero" src="/PixelAnnexHero.jpg" alt="PixelAnnex — world leaders' war room">
         <h1>PixelAnnex</h1>
         <div style="text-align:center;color:#94a3b8;font-size:11px;font-style:italic;letter-spacing:.08em;margin:-4px 0 14px;">Global Domination, Pixel style.</div>
         <div class="tut-sub" id="tut-sub-label" data-i18n="tut.welcome_sub">Welcome — let's get you set up</div>
@@ -3520,7 +3524,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-16-v105';
+const CODE_VERSION = '2026-06-16-v106';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6518,32 +6522,63 @@ function _renderPortraitGrid(grid, skin){
   return c.toDataURL();
 }
 // 64x64 portrait dataURL for a country id (own grid or a shared archetype), else null.
-function _portraitURL(countryId){
-  const id = String(countryId);
-  if(id in _portraitCache) return _portraitCache[id];
-  const srcId = PORTRAIT_ARCHETYPE[id] || id;
-  const g = PORTRAITS[srcId] || null;
-  const url = g ? _renderPortraitGrid(g, PORTRAIT_SKIN[srcId]) : null; // v104: region skin tone
-  _portraitCache[id] = url;
-  return url;
+// v106: operator-supplied 128x128 pixel-art leader avatars (public/Avatars/),
+// served at /Avatars/{name}.png. Specific avatars for the notable countries;
+// every other country gets a region-matched generic. These SUPERSEDE the
+// hand-drawn 16x16 grids for the popup / cards / rank panel.
+const AVATAR_DIR = '/Avatars/';
+const COUNTRY_AVATAR = {
+  '840':'USA','156':'CHINA','643':'RUSSIA','826':'ENGLAND','276':'Germany','250':'France',
+  '392':'Japan','356':'India','76':'Brazil','36':'Australia','124':'Canada','380':'Italy',
+  '724':'Spain','484':'Mexico','410':'SouthKorea','364':'Iran','376':'Isreal','792':'Turkey',
+  '682':'SaudiArabia','360':'Indonesia','586':'Pakistan','408':'NorthKorea','804':'Ukraine',
+  '616':'Poland','710':'SouthAfrica','818':'Egypt','566':'Nigeria','32':'Argentina',
+  '170':'Columbia','764':'Thailand','704':'VN','275':'Palestine','158':'TW'
+};
+const AVATAR_GENERIC = { asia:'GenericAsia', africa:'GenericAfrica', me:'GenericMiddleEast' };
+// Region bucket for the (non-notable) countries that get a generic. Anything not
+// listed defaults to a Western generic (alternated for variety).
+const _AVATAR_REGION = {};
+(function(){
+  const asia=['050','064','096','104','116','144','344','398','417','418','446','458','462','496','524','608','626','702','762','795','860'];
+  const me  =['004','031','048','051','196','268','368','400','414','422','512','634','760','784','887'];
+  const africa=['012','024','072','108','120','132','140','148','174','178','180','204','226','231','232','262','266','270','288','324','384','404','426','430','434','450','454','466','478','480','504','508','516','562','646','686','694','706','728','729','748','768','788','800','834','854','894','716','624'];
+  asia.forEach(c=>_AVATAR_REGION[String(+c)]='asia');
+  me.forEach(c=>_AVATAR_REGION[String(+c)]='me');
+  africa.forEach(c=>_AVATAR_REGION[String(+c)]='africa');
+})();
+function _avatarURL(countryId){
+  const id = String(+countryId); // normalize (ids flow unpadded)
+  const f = COUNTRY_AVATAR[id];
+  if(f) return AVATAR_DIR + f + '.png';
+  const region = _AVATAR_REGION[id];
+  if(region && AVATAR_GENERIC[region]) return AVATAR_DIR + AVATAR_GENERIC[region] + '.png';
+  // Western / unknown → alternate the two western generics for variety.
+  return AVATAR_DIR + (((+id) % 2) ? 'GenericWest' : 'GenericWest2') + '.png';
 }
+// v106: portraits are now the avatar images. (Grid renderer kept above but unused.)
+function _portraitURL(countryId){ return _avatarURL(countryId); }
 function _flagURLFor(f){
   try { return (typeof getRealFlagURL==='function' && getRealFlagURL(f)) || (typeof _renderFlagToDataURL==='function' && _renderFlagToDataURL(f)) || ''; }
   catch(e){ return ''; }
 }
-// <img> for cards: portrait if one exists, else the flag.
+// <img> for cards: avatar (with flag fallback if the file 404s).
 function _leaderFaceImg(f, cls, style){
   if(!f) return '';
-  const url = _portraitURL(f.id) || _flagURLFor(f);
-  if(!url) return '';
-  return '<img' + (cls ? ' class="'+cls+'"' : '') + ' src="' + url + '"' + (style ? ' style="'+style+'"' : '') + '>';
+  const url = _portraitURL(f.id);
+  if(!url) { const fl=_flagURLFor(f); return fl ? '<img'+(cls?' class="'+cls+'"':'')+' src="'+fl+'"'+(style?' style="'+style+'"':'')+'>' : ''; }
+  const flag = _flagURLFor(f).replace(/'/g,'%27');
+  return '<img' + (cls ? ' class="'+cls+'"' : '') + ' src="' + url + '"' +
+    (flag ? ' onerror="this.onerror=null;this.src=\''+flag+'\';"' : '') +
+    (style ? ' style="'+style+'"' : '') + '>';
 }
-// One popup side: portrait on top, FLAG as a separate item below, then the name.
+// One popup side: avatar on top, FLAG as a separate item below, then the name.
 function _fpSideHTML(f, win){
   const port = _portraitURL(f.id);
   const flag = _flagURLFor(f);
+  const flagEsc = (flag||'').replace(/'/g,'%27');
   let h = '<div class="fp-side ' + (win ? 'fp-win' : 'fp-loser') + '">';
-  h += '<img class="fp-port" src="' + (port || flag) + '">';
+  h += '<img class="fp-port" src="' + (port || flag) + '"' + (flag ? ' onerror="this.onerror=null;this.src=\''+flagEsc+'\';"' : '') + '>';
   if(!win) h += '<div class="fp-cross">✕</div>';
   if(port && flag) h += '<img class="fp-flag" src="' + flag + '">';
   h += '<div class="fp-name">' + (win ? '👑 ' : '') + escapeHtml(f.name) + '</div></div>';
@@ -11939,16 +11974,27 @@ function refreshRankUI(){
   // Highlight (Select Target) is Admiral-only in v85
   if (ri >= 4) perks.push('🎯 Select Target unlocked');
 
+  // v106: show the player's country avatar next to their rank.
+  const _cf = (typeof currentIdx === 'number' && featList[currentIdx]) ? featList[currentIdx] : null;
+  const _av = (_cf && typeof _avatarURL === 'function') ? _avatarURL(_cf.id) : null;
+  const _avImg = _av
+    ? '<img class="pa-avatar" src="' + _av + '" alt="" style="width:44px;height:44px;border-radius:7px;flex-shrink:0;border:1px solid rgba(255,255,255,0.12);">'
+    : '';
   el.innerHTML = `
-    <div class="rank-name" style="color:${col}">&#9670; ${tRank(rank.name)}</div>
-    <div class="rank-bar-wrap">
-      <div class="rank-bar-fill" style="width:${progress}%;background:${col}"></div>
+    <div style="display:flex;align-items:center;gap:9px;">
+      ${_avImg}
+      <div style="flex:1;min-width:0;">
+        <div class="rank-name" style="color:${col}">&#9670; ${tRank(rank.name)}</div>
+        <div class="rank-bar-wrap">
+          <div class="rank-bar-fill" style="width:${progress}%;background:${col}"></div>
+        </div>
+        <div class="rank-meta">
+          ${t('rank.pixels_placed', { n: totalPixelsEverPlaced.toLocaleString() })}
+          ${next ? ' · ' + t('rank.next_rank_inline', { name: tRank(next.name), min: next.min }) : ' · <b>' + t('hud.max_rank') + '</b>'}
+        </div>
+        ${perks.length ? '<div class="rank-perks" style="font-size:10px;color:#94a3b8;margin-top:4px;line-height:1.5;">' + perks.join(' · ') + '</div>' : ''}
+      </div>
     </div>
-    <div class="rank-meta">
-      ${t('rank.pixels_placed', { n: totalPixelsEverPlaced.toLocaleString() })}
-      ${next ? ' · ' + t('rank.next_rank_inline', { name: tRank(next.name), min: next.min }) : ' · <b>' + t('hud.max_rank') + '</b>'}
-    </div>
-    ${perks.length ? '<div class="rank-perks" style="font-size:10px;color:#94a3b8;margin-top:4px;line-height:1.5;">' + perks.join(' · ') + '</div>' : ''}
   `;
   refreshBombMenu();
 }
@@ -13670,7 +13716,10 @@ function _onMonsterSpawn(msg) {
     godzilla: { icon: '🦖', title: 'Giant Radioactive Lizard!', text: 'Brace for stomping.' },
   };
   const _ma = _MALERT[type] || { icon: '👾', title: 'Monster!', text: '' };
-  actPushCard({ variant: 'alert', title: _ma.icon + ' ' + _ma.title, text: _ma.text });
+  // v106: monster avatar (public/Avatars/) on the alert card.
+  const _mav = { ufo: 'UFO', kraken: 'Kraken', godzilla: 'GiantLizard' }[type];
+  const _mimg = _mav ? '<img class="pa-avatar" src="/Avatars/' + _mav + '.png" alt="" style="width:34px;height:34px;border-radius:5px;margin-right:7px;flex-shrink:0;">' : '';
+  actPushCard({ variant: 'alert', title: _ma.icon + ' ' + _ma.title, html: _mimg + '<span>' + _ma.text + '</span>' });
 }
 
 function _onMonsterTick(msg) {
