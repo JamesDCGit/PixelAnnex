@@ -41,7 +41,10 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v107`.** (v107 = avatar/FTUE/rank polish:
+**Current production triad: `2026-06-16-v108`.** (v108 = hover-tooltip `#tip` now
+obeys the global font scale via `--pa-tip-scale` [can't `zoom` it — it's pinned to the
+cursor in px]; panel backgrounds ~20% more transparent [`.hud` .9→.7, `#rank-display`
+.92→.72, `#tip` .97→.77].) (v107 = avatar/FTUE/rank polish:
 welcome how-to-play split to 2 tips/page over 4 pages [`_TUT_PAGE_COUNT` now DOM-derived]
 to give the hero banner more room; rank-panel avatar now refreshes on country change
 [`selectCountry` + `_pickRepick` call `refreshRankUI`]; `RANKS` broadened to
