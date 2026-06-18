@@ -41,11 +41,12 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v109`.** (v109 = pastel country palette:
-`_pastelize(hex)` at map build keeps the hue but caps saturation [≤0.42] and lifts
-lightness [0.74–0.85] on every country colour [DB `c` + `seededColor` fallback], so
-the map reads soft with no strong RGB saturations. Flows to the server via the join
-`geoColors` so map screenshots match.) (v108 = hover-tooltip `#tip` now
+**Current production triad: `2026-06-16-v109a`.** (v109a = softened-palette dial-back:
+`_pastelize` now `s*0.82` + `l+0.06` [cap 0.72] — near the original DB colours, just
+not as punchy [v109's harder pastel s≤0.42 / l 0.74–0.85 was too washed out].) (v109 =
+pastel country palette: `_pastelize(hex)` at map build keeps the hue but adjusts
+saturation/lightness on every country colour [DB `c` + `seededColor` fallback]. Flows
+to the server via the join `geoColors` so map screenshots match.) (v108 = hover-tooltip `#tip` now
 obeys the global font scale via `--pa-tip-scale` [can't `zoom` it — it's pinned to the
 cursor in px]; panel backgrounds ~20% more transparent [`.hud` .9→.7, `#rank-display`
 .92→.72, `#tip` .97→.77].) (v107 = avatar/FTUE/rank polish:
