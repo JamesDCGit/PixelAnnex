@@ -299,32 +299,27 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 
 @keyframes act-slide-in{from{opacity:0;transform:translateX(30px);}to{opacity:1;transform:translateX(0);}}
 
-/* ── Fight-back indicator banner (under sign-in HUD, shares viewport positioning) ── */
+/* ── Fight-back banner — v110: top-right CARD (matches .act-card), sticky while
+   active, red + pulsing. Positioned by _restackHud in the right-hand column. ── */
 #fightback-banner{
-  /* v99a: top 60→100px — was overlapping the #social-links row (top:54px) */
-  position:absolute;top:100px;left:50%;transform:translateX(-50%);
-  background:linear-gradient(90deg,#dc2626,#ef4444,#dc2626);
-  color:#fff;font-family:'Courier New',monospace;
-  padding:10px 22px;border-radius:8px;
-  z-index:60;display:none;
-  font-size:13px;font-weight:700;letter-spacing:.1em;
-  box-shadow:0 4px 24px rgba(239,68,68,0.6), 0 0 0 1px rgba(255,255,255,0.18) inset;
+  position:absolute;right:14px;z-index:60;display:none;
+  background:rgba(26,8,8,0.65);border:1px solid rgba(239,68,68,0.7);border-radius:8px;
+  padding:8px 12px;min-width:200px;max-width:300px;
+  color:#fecaca;font-size:11px;font-weight:700;letter-spacing:.06em;
+  box-shadow:0 4px 12px rgba(0,0,0,0.4);
   animation:fb-pulse 1.4s ease-in-out infinite;
-  pointer-events:none;
-  text-transform:uppercase;
-  text-align:center;
-  min-width:200px;
+  pointer-events:none;text-transform:uppercase;
 }
 #fightback-banner.active{display:block;}
-#fightback-banner .fb-icon{margin-right:6px;font-size:15px;vertical-align:middle;}
+#fightback-banner .fb-icon{margin-right:6px;font-size:14px;vertical-align:middle;}
 #fightback-banner .fb-power{
   display:block;margin-top:4px;padding:2px 8px;
   background:rgba(0,0,0,0.3);border-radius:4px;
-  font-size:10px;letter-spacing:.08em;font-weight:600;
+  font-size:10px;letter-spacing:.06em;font-weight:600;color:#fca5a5;
 }
 @keyframes fb-pulse{
-  0%,100%{box-shadow:0 4px 24px rgba(239,68,68,0.5), 0 0 0 1px rgba(255,255,255,0.18) inset;}
-  50%  {box-shadow:0 6px 32px rgba(239,68,68,0.9), 0 0 0 2px rgba(255,255,255,0.3)  inset;}
+  0%,100%{box-shadow:0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(239,68,68,0.4);}
+  50%    {box-shadow:0 4px 18px rgba(239,68,68,0.5), 0 0 0 1px rgba(239,68,68,0.9);}
 }
 
 /* ── Highlight button ── */
@@ -673,31 +668,29 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   animation:encircle-ring-anim 1.1s cubic-bezier(.22,1,.36,1) forwards;
 }
 
+/* ── Encirclement banner — v110: top-right CARD (matches .act-card), sticky while
+   the bonus is active, orange + pulsing. Positioned by _restackHud (right column,
+   above the activity stack so new notifications appear beneath it). ── */
 #encircle-banner{
-  /* v99a: top 60→100px — was overlapping the #social-links row (top:54px) */
-  position:absolute;top:100px;left:50%;transform:translateX(-50%);
-  background:linear-gradient(135deg,#7c2d12,#f97316);
-  color:#fff;font-family:'Courier New',monospace;
-  padding:10px 18px;border-radius:8px;
-  z-index:140;display:none;
-  font-size:12px;font-weight:700;letter-spacing:.08em;
-  box-shadow:0 4px 20px rgba(249,115,22,0.6), 0 0 0 1px rgba(255,255,255,0.18) inset;
+  position:absolute;right:14px;z-index:140;display:none;
+  background:rgba(26,15,0,0.65);border:1px solid rgba(251,146,60,0.7);border-radius:8px;
+  padding:8px 12px;min-width:200px;max-width:300px;
+  color:#fed7aa;font-size:11px;font-weight:700;letter-spacing:.06em;
+  box-shadow:0 4px 12px rgba(0,0,0,0.4);
+  animation:enc-pulse 1.4s ease-in-out infinite;
   pointer-events:none;
-  text-align:center;
-  min-width:180px;
-  animation:enc-pop .4s cubic-bezier(.5,1.5,.3,1);
 }
 #encircle-banner.active{display:block;}
-#encircle-banner .enc-icon{margin-right:6px;font-size:15px;vertical-align:middle;}
-#encircle-banner .enc-mult{font-size:18px;color:#fff;font-weight:700;}
+#encircle-banner .enc-icon{margin-right:6px;font-size:14px;vertical-align:middle;}
+#encircle-banner .enc-mult{font-size:14px;color:#fb923c;font-weight:700;}
 #encircle-banner .enc-timer{
-  display:block;margin-top:6px;padding:2px 8px;
+  display:block;margin-top:4px;padding:2px 8px;
   background:rgba(0,0,0,0.3);border-radius:4px;
-  font-size:10px;letter-spacing:.06em;font-weight:500;
+  font-size:10px;letter-spacing:.04em;font-weight:500;color:#fdba74;
 }
-@keyframes enc-pop{
-  0%   {transform:translateX(-50%) scale(0.6);opacity:0;}
-  100% {transform:translateX(-50%) scale(1);opacity:1;}
+@keyframes enc-pulse{
+  0%,100%{box-shadow:0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(251,146,60,0.4);}
+  50%    {box-shadow:0 4px 18px rgba(249,115,22,0.55), 0 0 0 1px rgba(251,146,60,0.9);}
 }
 
 #stats-overlay{
@@ -813,7 +806,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   /* v99c: top 54→14 — it's positioned inside the viewport (below the toolbar),
      so 54px left a double gap; 14px matches the unified panel edge spacing. */
   position:absolute;top:14px;left:14px;
-  padding:8px 12px;background:rgba(10,15,26,0.72);border:1px solid #1e293b;border-radius:8px;/* v108: ~20% more transparent */
+  padding:9px 12px;background:rgba(7,13,26,0.7);border:1px solid rgba(255,255,255,0.07);border-radius:8px;/* v110: match .hud (legend/leaderboard) for consistent panels */
   font-size:10px;z-index:90;pointer-events:none;
   min-width:200px;max-width:320px;
   box-shadow:0 2px 10px rgba(0,0,0,0.5);
@@ -3529,7 +3522,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-16-v109a';
+const CODE_VERSION = '2026-06-16-v110';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8718,9 +8711,12 @@ function _restackHud(){
       y += el.getBoundingClientRect().height + 8;
     });
   }
-  place(['endgame-panel','banner','encircle-banner','fightback-banner'],
+  // v110: centre column = just the endgame dashboard + the conquest banner.
+  place(['endgame-panel','banner'],
         Math.max(14, botScreen('login-hud'), botScreen('social-links')) + 8);
-  place(['conquest-toast','bomb-toast','activity-toast'],
+  // v110: right column — sticky encircle/fightback CARDS on top, then the toasts,
+  // then the activity-card stack (so new notifications appear beneath the sticky ones).
+  place(['encircle-banner','fightback-banner','conquest-toast','bomb-toast','activity-toast'],
         Math.max(14, botScreen('toolbar')) + 8);
 }
 setInterval(_restackHud, 250);

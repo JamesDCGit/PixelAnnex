@@ -41,7 +41,14 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v109a`.** (v109a = softened-palette dial-back:
+**Current production triad: `2026-06-16-v110`.** (v110 = notification consolidation +
+panel consistency: encircle (orange) + fightback (red) banners are now STICKY top-right
+CARDS [`.act-card` look, kept colour + infinite pulse, shown while active] moved into
+the right-hand `_restackHud` column ABOVE the activity stack so new notifications appear
+beneath them [removed the centred popups]; `#rank-display` aligned to `.hud`
+[rgba(7,13,26,.7) + rgba(255,255,255,.07) border] so all corner panels match;
+confirmed `#zoom-hud`/`#audio-hud` are dead CSS [no elements, no overlap]. Day/night
+cycle = proposed only, not built.) (v109a = softened-palette dial-back:
 `_pastelize` now `s*0.82` + `l+0.06` [cap 0.72] — near the original DB colours, just
 not as punchy [v109's harder pastel s≤0.42 / l 0.74–0.85 was too washed out].) (v109 =
 pastel country palette: `_pastelize(hex)` at map build keeps the hue but adjusts
