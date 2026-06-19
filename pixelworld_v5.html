@@ -250,7 +250,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   pointer-events:none;max-width:300px;
 }
 .act-card{
-  background:rgba(26,15,0,0.65);border:1px solid rgba(251,146,60,0.7);border-radius:8px;/* v105: ~65% transparent */
+  background:rgba(26,15,0,0.5);border:1px solid rgba(251,146,60,0.7);border-radius:8px;/* v111: notifications ~50% (more transparent than panels) */
   padding:8px 12px;font-size:11px;color:#fed7aa;
   min-width:200px;
   box-shadow:0 4px 12px rgba(0,0,0,0.4);
@@ -270,27 +270,27 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .act-card .act-body.block .insp-legend{display:block;margin-top:5px;font-size:10px;opacity:.85;}
 .act-card .act-body.block .insp-sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:3px;vertical-align:middle;}
 
-/* Variant: fight-back (green) — v105 ~65% transparent */
-.act-card.fightback{background:rgba(0,26,15,0.65);border-color:rgba(34,197,94,0.7);color:#86efac;}
+/* Variant: fight-back (green) — v111 ~50% */
+.act-card.fightback{background:rgba(0,26,15,0.5);border-color:rgba(34,197,94,0.7);color:#86efac;}
 .act-card.fightback .act-title{color:#4ade80;}
 
 /* Variant: conquest event (red) */
-.act-card.conquest{background:rgba(26,10,13,0.65);border-color:rgba(239,68,68,0.7);color:#fecaca;}
+.act-card.conquest{background:rgba(26,10,13,0.5);border-color:rgba(239,68,68,0.7);color:#fecaca;}
 .act-card.conquest .act-title{color:#f87171;}
 
 /* Variant: self-conquest (green = win) */
-.act-card.win{background:rgba(10,26,18,0.65);border-color:rgba(34,197,94,0.7);color:#bbf7d0;}
+.act-card.win{background:rgba(10,26,18,0.5);border-color:rgba(34,197,94,0.7);color:#bbf7d0;}
 .act-card.win .act-title{color:#4ade80;}
 
 /* Variant: alert (orange — under attack) */
-.act-card.alert{background:rgba(26,15,0,0.65);border-color:rgba(251,146,60,0.7);color:#fed7aa;}
+.act-card.alert{background:rgba(26,15,0,0.5);border-color:rgba(251,146,60,0.7);color:#fed7aa;}
 .act-card.alert .act-title{color:#fb923c;}
 
 /* Variant: info (blue) */
-.act-card.info{background:rgba(10,18,26,0.65);border-color:rgba(99,102,241,0.6);color:#c7d2fe;}
+.act-card.info{background:rgba(10,18,26,0.5);border-color:rgba(99,102,241,0.6);color:#c7d2fe;}
 .act-card.info .act-title{color:#818cf8;}
 /* v100: pixel inspector — slightly transparent so the map shows through */
-.act-card.inspect{background:rgba(10,18,26,0.65);}
+.act-card.inspect{background:rgba(10,18,26,0.5);}
 /* v105: notification flags/portraits are pixel art — never smooth-scale them */
 #activity-toast img,#conquest-toast img,#bomb-toast img,#fall-popup img,#flag-overlay img,#world-conquest-overlay img{image-rendering:pixelated;image-rendering:crisp-edges;}
 /* v106: avatar images + hero banner are pixel art — nearest-neighbour scaling */
@@ -302,9 +302,11 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* ── Fight-back banner — v110: top-right CARD (matches .act-card), sticky while
    active, red + pulsing. Positioned by _restackHud in the right-hand column. ── */
 #fightback-banner{
-  position:absolute;right:14px;z-index:60;display:none;
-  background:rgba(26,8,8,0.65);border:1px solid rgba(239,68,68,0.7);border-radius:8px;
-  padding:8px 12px;min-width:200px;max-width:300px;
+  /* v111: flex child of #activity-toast (the single notification column); order:-1
+     pins it above normal cards, beneath the encircle card. */
+  order:-1;align-self:stretch;display:none;
+  background:rgba(26,8,8,0.6);border:1px solid rgba(239,68,68,0.7);border-radius:8px;
+  padding:8px 12px;
   color:#fecaca;font-size:11px;font-weight:700;letter-spacing:.06em;
   box-shadow:0 4px 12px rgba(0,0,0,0.4);
   animation:fb-pulse 1.4s ease-in-out infinite;
@@ -672,11 +674,14 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
    the bonus is active, orange + pulsing. Positioned by _restackHud (right column,
    above the activity stack so new notifications appear beneath it). ── */
 #encircle-banner{
-  position:absolute;right:14px;z-index:140;display:none;
-  background:rgba(26,15,0,0.65);border:1px solid rgba(251,146,60,0.7);border-radius:8px;
-  padding:8px 12px;min-width:200px;max-width:300px;
+  /* v111: flex child of #activity-toast, order:-2 pins it to the very top of the
+     notification column. The REGEN card is HIGHLIGHTED — kept more opaque (0.78)
+     than normal notifications (0.5) with a brighter border + a stronger orange glow. */
+  order:-2;align-self:stretch;display:none;
+  background:rgba(26,15,0,0.78);border:1px solid rgba(251,146,60,0.95);border-radius:8px;
+  padding:8px 12px;
   color:#fed7aa;font-size:11px;font-weight:700;letter-spacing:.06em;
-  box-shadow:0 4px 12px rgba(0,0,0,0.4);
+  box-shadow:0 0 14px rgba(249,115,22,0.35), 0 4px 12px rgba(0,0,0,0.4);
   animation:enc-pulse 1.4s ease-in-out infinite;
   pointer-events:none;
 }
@@ -689,8 +694,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   font-size:10px;letter-spacing:.04em;font-weight:500;color:#fdba74;
 }
 @keyframes enc-pulse{
-  0%,100%{box-shadow:0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(251,146,60,0.4);}
-  50%    {box-shadow:0 4px 18px rgba(249,115,22,0.55), 0 0 0 1px rgba(251,146,60,0.9);}
+  0%,100%{box-shadow:0 0 12px rgba(249,115,22,0.35), 0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(251,146,60,0.6);}
+  50%    {box-shadow:0 0 24px rgba(249,115,22,0.8), 0 4px 14px rgba(0,0,0,0.45), 0 0 0 1px rgba(251,146,60,1);}
 }
 
 #stats-overlay{
@@ -3522,7 +3527,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-16-v110';
+const CODE_VERSION = '2026-06-16-v111';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4590,12 +4595,10 @@ function checkConquest(geoIdx,claimerIdx){
   conqueredSet.add(key);
   if(claimerIdx===currentIdx) _conquerBoostUntil = Date.now() + CONQUER_BOOST_MS; // v100: instant surge on your own conquest
   sfxConquestFor(claimerIdx);
-  showConquestToast(geoIdx,claimerIdx);
+  showConquestToast(geoIdx,claimerIdx); // v111: no-op toast (kept for the confetti hook)
   refreshCsel();
-  const bn=$("banner");
-  bn.innerHTML="&#9873; <span style='color:"+featList[claimerIdx].color+"'>"
-    +featList[claimerIdx].name+"</span> conquered <b>"+featList[geoIdx].name+"</b>!";
-  bn.style.display="block";clearTimeout(bn._t);bn._t=setTimeout(()=>bn.style.display="none",4000);
+  // v111: removed the centred #banner "X conquered Y!" pill — the server 'conquest'
+  // broadcast already shows the single canonical act-card (Victory / Country Conquered).
   setTimeout(()=>finisherFill(geoIdx,claimerIdx),0);
   return true;
 }
@@ -6295,12 +6298,9 @@ function applyEncirclementBonus(enclosed, mult, durationMs, cx, cy) {
   };
   tick();
   _encircleTickId = setInterval(tick, 500);
-  // Show a quick activity card too
-  actPushCard({
-    variant: 'win',
-    title:   '🎯 ' + _encircleLabel(mult), // v97j: tiered (Nice!/Amazing!/Outstanding!/Legendary!)
-    html:    t('act.encircle_enclosed_html', { pixels: enclosed, mult: '×' + mult, seconds: durationMs/1000 }),
-  });
+  // v111: no separate "Amazing!" activity card — the sticky ENCIRCLEMENT regen card
+  // (top of the notification column) already shows the multiplier + px + countdown,
+  // so a second card was a duplicate notification for the same event.
   sfxConquest && sfxConquest(); // reuse the conquest sting (if available)
 }
 
@@ -8652,8 +8652,10 @@ function _applyFontScale(){
     'conquest-toast','bomb-toast','activity-toast',
     'banner','highlight-banner',
     'rank-display','bomb-menu',
-    'login-hud','social-links','encircle-banner','fightback-banner', // v105
+    'login-hud','social-links',                                      // v105
     'endgame-panel','fall-popup',                                    // v105 runtime popups
+    // v111: encircle/fightback banners removed — they're now children of
+    // #activity-toast (already zoomed), so listing them would double-zoom.
   ];
   targets.forEach(id => {
     const el = document.getElementById(id);
@@ -8711,15 +8713,24 @@ function _restackHud(){
       y += el.getBoundingClientRect().height + 8;
     });
   }
-  // v110: centre column = just the endgame dashboard + the conquest banner.
-  place(['endgame-panel','banner'],
+  // v111: centre column = just the endgame dashboard.
+  place(['endgame-panel'],
         Math.max(14, botScreen('login-hud'), botScreen('social-links')) + 8);
-  // v110: right column — sticky encircle/fightback CARDS on top, then the toasts,
-  // then the activity-card stack (so new notifications appear beneath the sticky ones).
-  place(['encircle-banner','fightback-banner','conquest-toast','bomb-toast','activity-toast'],
+  // v111: right column is now a SINGLE flex container (#activity-toast) holding every
+  // notification — sticky bonus cards (order:-2/-1) + the activity cards. Flexbox
+  // stacks them with a gap, so overlaps are structurally impossible; we only need to
+  // position the column below the toolbar.
+  place(['activity-toast'],
         Math.max(14, botScreen('toolbar')) + 8);
 }
 setInterval(_restackHud, 250);
+// v111: move the sticky bonus banners INTO the single notification column so they
+// stack with the activity cards via flexbox (no manual positioning → no overlap).
+(function(){
+  const at = document.getElementById('activity-toast');
+  if(!at) return;
+  ['encircle-banner','fightback-banner'].forEach(id=>{ const el=document.getElementById(id); if(el) at.appendChild(el); });
+})();
 
 // ── Multiplayer client ────────────────────────────────────────────
 // Connects to WebSocket server if running. Falls back to single-player silently.
@@ -11189,30 +11200,22 @@ function showBombToast(attackerIdx, mapX, mapY){
   let target = 'open ocean';
   if(geoIdx >= 0 && featList[geoIdx]) target = featList[geoIdx].name;
 
-  $("bomb-toast-body").innerHTML =
-    "<span style='color:"+attacker.color+";font-weight:600'>"+attacker.name+"</span>"
-    +" is bombing <b style='color:#fef2f2'>"+target+"</b>!";
-
-  const t=$("bomb-toast");
-  t.style.display="block";
-  t.style.animation="none";
-  requestAnimationFrame(()=>{ t.style.animation=""; });
-  clearTimeout(t._t);
-  t._t=setTimeout(()=>t.style.display="none", 3000);
+  // v111: bomb notice is now a normal act-card in the single notification column
+  // (was the separate #bomb-toast element, which could overlap the card stack).
+  actPushCard({
+    variant: 'alert',
+    title: '💥 Incoming bomb',
+    html: "<span style='color:"+attacker.color+";font-weight:600'>"+escapeHtml(attacker.name)+"</span>"
+        + " is bombing <b style='color:#fef2f2'>"+escapeHtml(target)+"</b>!",
+  });
 }
 
 function showConquestToast(geoIdx, claimerIdx){
-  const geo=featList[geoIdx], claimer=featList[claimerIdx];
-  if(!geo||!claimer) return;
-  $("toast-body").innerHTML=
-    "<span style='color:"+claimer.color+";font-weight:600'>"+claimer.name+"</span>"
-    +" has conquered <b style='color:#e2e8f0'>"+geo.name+"</b>";
-  const t=$("conquest-toast");
-  t.style.display="block";
-  t.style.animation="none";
-  requestAnimationFrame(()=>{t.style.animation="";});
-  clearTimeout(t._t);
-  t._t=setTimeout(()=>t.style.display="none", 3000);
+  // v111: legacy #conquest-toast removed. Conquests now surface as a SINGLE
+  // act-card — "Victory!" (local) for your own conquest, "Country Conquered"
+  // (global) for everyone else — handled in the 'conquest' message handler. This
+  // stays a no-op so the confetti wrapper (which calls it) keeps working.
+  return;
 }
 
 

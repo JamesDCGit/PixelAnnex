@@ -41,7 +41,17 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v110`.** (v110 = notification consolidation +
+**Current production triad: `2026-06-16-v111`.** (v111 = notification system rebuild:
+ALL notifications now live in ONE flex column `#activity-toast` (top-right) — the
+sticky encircle/fightback banners are reparented INTO it as flex children
+[`order:-2`/`-1` pin them on top; new cards stack beneath], so overlaps are
+structurally impossible [flexbox + gap]. Dedup — ONE notification per event: removed
+the duplicate `#conquest-toast` [showConquestToast is now a no-op kept for the confetti
+hook] + the centred `#banner` conquest pill + the "Amazing!" encircle card; your
+conquest = "Victory!" act-card [local], others = "Country Conquered" act-card [global].
+`showBombToast`→act-card. Notification cards dropped to ~0.5 opacity [panels unchanged
+at 0.7]; the encircle REGEN card highlighted [0.78 bg, brighter border, stronger orange
+glow]. `_restackHud` right column is just the one container now.) (v110 = notification consolidation +
 panel consistency: encircle (orange) + fightback (red) banners are now STICKY top-right
 CARDS [`.act-card` look, kept colour + infinite pulse, shown while active] moved into
 the right-hand `_restackHud` column ABOVE the activity stack so new notifications appear
