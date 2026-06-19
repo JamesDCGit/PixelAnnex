@@ -41,7 +41,9 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v111`.** (v111 = notification system rebuild:
+**Current production triad: `2026-06-16-v112`.** (v112 = notification cards bumped to
+80% opaque [0.5→0.8; encircle regen card 0.9, kept most opaque/highlighted]. Panels
+unchanged at 0.7.) (v111 = notification system rebuild:
 ALL notifications now live in ONE flex column `#activity-toast` (top-right) — the
 sticky encircle/fightback banners are reparented INTO it as flex children
 [`order:-2`/`-1` pin them on top; new cards stack beneath], so overlaps are
@@ -1019,22 +1021,22 @@ geos). Transfers via `_conquerGeo`; still ghost-clears a holder wiped to 0 px.
 - [ ] **Phase 3 — Pixi.js pros/cons analysis** (rendering port evaluation, no build
   until decided) + **mobile port** (game currently crashes on mobile — investigate
   the crash first).
-- [ ] **Notification overlap:** activity cards / popups can overlap each other —
-  clean up stacking/positioning so nothing collides.
-- [ ] **Font sizing audit — things NOT obeying the global font-size (`_applyFontScale`):**
-  - flag labels (text under on-map flags)
-  - encirclement popup (and likely other bonus/banner popups)
-  - Discord + Twitter/X login text
-  - sweep ALL text/windows and confirm each respects the global font setting.
-- [ ] **Flag image smoothing:** flags in notifications are being filtered/smoothed
-  when scaled — force NEAREST-NEIGHBOUR (`image-rendering:pixelated`) everywhere a
-  flag renders (cards, popup `.fp-flag`, etc.).
-- [ ] **Popup transparency:** make popups more transparent — try ~65% opacity
-  (i.e. background alpha ~0.65) across the popup/card backgrounds.
-- [ ] **Tweet on endgame triggers (xposter/server):** on WORLD CONQUEST and SUDDEN
-  DEATH, fire a tweet IMMEDIATELY (bypass the manual-approve queue for these two),
-  attach a fresh SNAPSHOT of the final world state (mapshot), and include the final
-  2 standing countries + the top players in the text.
+- [x] **Notification overlap** — done (v105 restacker, v111 single flex column).
+- [x] **Font sizing audit** — done (v105/v108: flag labels, banners, login, #tip via
+  `--pa-tip-scale`, modal inner cards).
+- [x] **Flag nearest-neighbour scaling** — done (v105).
+- [x] **Popup/notification transparency** — done (v105 65% → v112 80% opaque cards).
+- [x] **Immediate endgame tweets** — done (v105).
+
+### Backlog (2026-06-19) — day/night terminator (operator)
+- [ ] **Day/night terminator sweep** — overlay layer above the map canvases,
+  `pointer-events:none`, pre-baked "night strip" (curved/tilted terminator + warm
+  twilight band + city-light glints on painted land) that translates with wrap.
+  Cheap (no per-frame per-pixel; nudge position ~1/min for a 24h cycle). Working
+  mockup shown 2026-06-19. PENDING OPERATOR DECISIONS before building: (1) cycle =
+  real 24h UTC [recommended — lets players spot which longitudes are asleep] vs a
+  faster cosmetic loop; (2) intensity subtle vs dramatic (~45–55% darken); (3) city
+  lights yes/no; (4) optional UTC clock / "night over: <regions>" hint.
 
 ## FTUE — guided first paint (v95)
 
