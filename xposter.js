@@ -59,9 +59,17 @@ function _getClient() {
 function _resolveMediaPath(imageUrl) {
   if (!imageUrl) return null;
   const m = String(imageUrl).match(/^\/(shots|timelapse)\/([A-Za-z0-9._-]+\.(?:png|gif))$/);
-  if (!m) return null;
-  const p = path.join(__dirname, m[1], path.basename(m[2]));
-  return fs.existsSync(p) ? p : null;
+  if (m) {
+    const p = path.join(__dirname, m[1], path.basename(m[2]));
+    return fs.existsSync(p) ? p : null;
+  }
+  // v115e: leader portraits live in public/Avatars/ (served at /Avatars/x.png).
+  const a = String(imageUrl).match(/^\/Avatars\/([A-Za-z0-9._-]+\.png)$/);
+  if (a) {
+    const p = path.join(__dirname, 'public', 'Avatars', path.basename(a[1]));
+    return fs.existsSync(p) ? p : null;
+  }
+  return null;
 }
 
 // Turn a twitter-api-v2 ApiResponseError into a readable, actionable message.

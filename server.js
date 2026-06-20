@@ -545,6 +545,53 @@ function _gdpTag(id) {
   const g = _fmtGDPCompact(_countryGDP(id));
   return g ? (' — ' + g + ' GDP') : '';
 }
+
+// ── v115e: leader-portrait images for tweets ─────────────────────────────────
+// Mirrors the client _avatarURL mapping. Returns a /Avatars/{file}.png media URL
+// (served by the server, uploadable by xposter) for a country, or null. Notable
+// countries get a specific face; everyone else gets a region-matched generic.
+// Used to attach a leader portrait to country-tagged tweets (news, football,
+// fallen-spotlight) that otherwise had no image.
+const _AVATAR_NOTABLE = {
+  '840':'USA','156':'CHINA','643':'RUSSIA','826':'ENGLAND','276':'Germany','250':'France',
+  '392':'Japan','356':'India','76':'Brazil','36':'Australia','124':'Canada','380':'Italy',
+  '724':'Spain','484':'Mexico','410':'SouthKorea','364':'Iran','376':'Isreal','792':'Turkey',
+  '682':'SaudiArabia','360':'Indonesia','586':'Pakistan','408':'NorthKorea','804':'Ukraine',
+  '616':'Poland','710':'SouthAfrica','818':'Egypt','566':'Nigeria','32':'Argentina',
+  '170':'Columbia','764':'Thailand','704':'VN','275':'Palestine','158':'TW',
+};
+const _AVATAR_GENERIC = { asia:'GenericAsia', africa:'GenericAfrica', me:'GenericMiddleEast' };
+const _AVATAR_REGION = {};
+(function () {
+  const asia = ['050','064','096','104','116','144','344','398','417','418','446','458','462','496','524','608','626','702','762','795','860'];
+  const me   = ['004','031','048','051','196','268','368','400','414','422','512','634','760','784','887'];
+  const africa = ['012','024','072','108','120','132','140','148','174','178','180','204','226','231','232','262','266','270','288','324','384','404','426','430','434','450','454','466','478','480','504','508','516','562','646','686','694','706','728','729','748','768','788','800','834','854','894','716','624'];
+  asia.forEach(c => _AVATAR_REGION[String(+c)] = 'asia');
+  me.forEach(c => _AVATAR_REGION[String(+c)] = 'me');
+  africa.forEach(c => _AVATAR_REGION[String(+c)] = 'africa');
+})();
+const _AVATARS_DIR = path.join(__dirname, 'public', 'Avatars');
+function _avatarMediaUrl(id) {
+  const k = String(parseInt(id, 10));
+  // Try the specific face, then a regional generic, then a western generic —
+  // falling through to the first that actually exists on disk (so a missing
+  // notable file, e.g. VN, still yields a regional/western portrait).
+  const candidates = [];
+  if (_AVATAR_NOTABLE[k]) candidates.push(_AVATAR_NOTABLE[k]);
+  const r = _AVATAR_REGION[k];
+  if (r && _AVATAR_GENERIC[r]) candidates.push(_AVATAR_GENERIC[r]);
+  candidates.push((parseInt(id, 10) % 2) ? 'GenericWest' : 'GenericWest2');
+  for (const f of candidates) {
+    if (fs.existsSync(path.join(_AVATARS_DIR, f + '.png'))) return '/Avatars/' + f + '.png';
+  }
+  return null;
+}
+// When several countries are tagged, prefer a notable one for a recognisable face.
+function _portraitUrlFor(ids) {
+  if (!Array.isArray(ids) || !ids.length) return _avatarMediaUrl(ids);
+  const notable = ids.find(id => isNotableCountry(String(id)));
+  return _avatarMediaUrl(notable || ids[0]);
+}
 function _countryTag(id) {
   // ISO 3166-1 numeric → hashtag-safe name (alphanumeric only)
   const n = _countryName(id).replace(/[^A-Za-z0-9]/g, '');
@@ -1896,6 +1943,7 @@ async function _scrapeNewsAndQueue() {
         text:      tweetForNews(m.theme, m.aName, m.bName),
         dedupeKey: 'news:' + m.ids.slice().sort().join('-') + ':' + m.theme,
         countries: m.ids, // v84: notable gate — at least one must be notable
+        imageUrl:  _portraitUrlFor(m.ids) || undefined, // v115e: leader portrait
       });
     }
   } catch (e) {
@@ -1956,6 +2004,7 @@ function _queueFallenSpotlight() {
       text:      _pickSassy(SASS_FALLEN_SPOTLIGHT)({ d: _natHashtag(pick.geo), a: _natHashtag(pick.holder) }) + _gdpTag(pick.geo), // v114: fallen country's GDP
       dedupeKey: 'fallen_spotlight:' + slot,
       countries: [pick.geo, pick.holder],
+      imageUrl:  _avatarMediaUrl(pick.geo) || undefined, // v115e: the fallen nation's leader portrait
     });
     console.log('[Tweets] fallen-spotlight queued:', pick.geo, 'held by', pick.holder);
   } catch (e) { console.warn('[Tweets] fallen-spotlight failed:', e.message); }
@@ -2024,6 +2073,7 @@ async function _scrapeFootballAndQueue() {
       text,
       dedupeKey: 'football:' + pairKey + ':' + day,
       countries: [match.a, match.b],
+      imageUrl:  _portraitUrlFor([match.a, match.b]) || undefined, // v115e: leader portrait
     });
     emitBotEvent({
       type:      'football_matchup',
