@@ -1056,6 +1056,8 @@ const SASS_ADMIRAL = [
   v => `🎖️ ${v.user} has reached ADMIRAL${v.country ? ' (' + v.country + ')' : ''}! Nukes unlocked. ☢️ ` + _suffix(),
   v => `🌟 New Admiral: ${v.user}${v.country ? ' of ' + v.country : ''}. The nuke codes have been handed over. ` + _suffix(),
   v => `⭐ ${v.user} is now ADMIRAL${v.country ? ' (' + v.country + ')' : ''}. May they use the nukes responsibly. (They won't.) ` + _suffix(),
+  v => `🚢 Admiral ${v.user}${v.country ? ' of ' + v.country : ''} reporting for duty. The fleet — and the nukes — are theirs. ` + _suffix(),
+  v => `🎖️ ${v.user}${v.country ? ' (' + v.country + ')' : ''} just hit ADMIRAL. Salute, then run. ☢️ ` + _suffix(),
 ];
 
 // DAILY SUMMARY variants — {lines} {conquered}
@@ -1063,6 +1065,8 @@ const SASS_DAILY = [
   v => `🌍 World Snapshot · ${v.lines} · ${v.conquered} countries conquered. ` + _suffix(),
   v => `📊 Daily standings: ${v.lines}. ${v.conquered} countries currently under foreign rule. ` + _suffix(),
   v => `🌍 Today's top dogs: ${v.lines}. ${v.conquered} conquests on the board. ` + _suffix(),
+  v => `🗺️ Daily dispatch: ${v.lines}. ${v.conquered} nations have fallen so far. ` + _suffix(),
+  v => `📈 Where things stand: ${v.lines}. ${v.conquered} countries flying foreign colours. ` + _suffix(),
 ];
 
 // COMMUNITY tweet — periodic standalone
@@ -1071,6 +1075,7 @@ const SASS_COMMUNITY = [
   () => `🚨 Conquering the world, one pixel at a time. Join the Discord for war updates + alliance plays: ${DISCORD_INVITE} · ${GAME_URL} #PixelAnnex`,
   () => `🎖️ Climb the ranks. Drop nukes. Form alliances. PixelAnnex is live: ${GAME_URL} · Community: ${DISCORD_INVITE} #PixelAnnex`,
   () => `🗺️ Today on PixelAnnex: same map, fresh chaos. ${GAME_URL} · ${DISCORD_INVITE} #PixelAnnex`,
+  () => `⚔️ Pick a country. Paint the world. Drop a nuke or two. PixelAnnex is live: ${GAME_URL} · ${DISCORD_INVITE} #PixelAnnex`,
 ];
 
 // WORLD STATUS REPORT — {leader, leaderPx, conquered, allianceLine}
@@ -1078,6 +1083,8 @@ const SASS_STATUS_REPORT = [
   v => `📊 Standings: ${v.leader} leads with ${v.leaderPx.toLocaleString()} pixels · ${v.conquered} countries conquered · ${v.allianceLine}${GAME_URL} #PixelAnnex`,
   v => `🌍 World intel: ${v.leader} on top (${v.leaderPx.toLocaleString()} px). ${v.allianceLine}${v.conquered} nations under occupation. ${GAME_URL} #PixelAnnex`,
   v => `🗺️ Pixel report: ${v.leader} controls the board (${v.leaderPx.toLocaleString()} px). ${v.allianceLine}${v.conquered} countries conquered. ${GAME_URL} #PixelAnnex`,
+  v => `📡 Battlefield update: ${v.leader} dominates with ${v.leaderPx.toLocaleString()} px. ${v.allianceLine}${v.conquered} countries occupied. ${GAME_URL} #PixelAnnex`,
+  v => `🏴 State of the war: ${v.leader} out front (${v.leaderPx.toLocaleString()} px). ${v.allianceLine}${v.conquered} nations conquered. ${GAME_URL} #PixelAnnex`,
 ];
 
 // TOP PLAYERS 24H — {lines}
@@ -1085,6 +1092,8 @@ const SASS_TOP_PLAYERS = [
   v => `🏆 Most active players (24h): ${v.lines}. Top spot is up for grabs: ${GAME_URL} #PixelAnnex`,
   v => `🎖️ Pixel warriors (last 24h): ${v.lines}. ${GAME_URL} #PixelAnnex`,
   v => `🔥 24h leaderboard: ${v.lines}. Get in the game: ${GAME_URL} #PixelAnnex`,
+  v => `⚡ Top pixel pushers (24h): ${v.lines}. Think you can crack the list? ${GAME_URL} #PixelAnnex`,
+  v => `👑 24h MVPs: ${v.lines}. The throne is never safe: ${GAME_URL} #PixelAnnex`,
 ];
 
 // MOST ACTIVE COUNTRIES 24H — {lines}
@@ -1092,6 +1101,8 @@ const SASS_ACTIVE_COUNTRIES = [
   v => `⚔️ Most active countries (24h): ${v.lines}. Join the fight: ${GAME_URL} #PixelAnnex`,
   v => `🎨 Hottest territories today: ${v.lines}. Where does your country rank? ${GAME_URL} #PixelAnnex`,
   v => `🌍 Activity report: ${v.lines}. ${GAME_URL} #PixelAnnex`,
+  v => `🔥 Busiest nations (24h): ${v.lines}. Is yours on the move? ${GAME_URL} #PixelAnnex`,
+  v => `📊 Today's frontline movers: ${v.lines}. ${GAME_URL} #PixelAnnex`,
 ];
 
 // v92r: news is a SIGNAL ONLY. We never quote the raw headline (it carries
@@ -1116,48 +1127,103 @@ function _classifyNewsTheme(title) {
 }
 // Template pools per theme. {a}=primary country, {b}=second (two-country variants).
 const NEWS_TEMPLATES = {
+  // v115d: disaster theme CULLED — disaster headlines are detected (keywords kept)
+  // and SKIPPED entirely at queue time, so we never make a cheeky tweet about a
+  // tragedy. No disaster templates exist anymore. Every other pool has 5 variants.
   conflict: {
     two: [
       v => `${v.a} and ${v.b} are dominating the world's headlines today. Think you could settle it faster in pixels? ` + _suffix(),
       v => `Tensions between ${v.a} and ${v.b} are back in the news. On the map, you decide who blinks first. ` + _suffix(),
       v => `${v.a} vs ${v.b} is making headlines again — fancy redrawing that border in pixels? ` + _suffix(),
+      v => `${v.a} and ${v.b} are squaring up in the news. The map settles arguments faster. ` + _suffix(),
+      v => `${v.a} and ${v.b} dominate the front pages. Take the fight where it actually counts — the map. ` + _suffix(),
     ],
     one: [
       v => `${v.a} is making waves in the world news today. Can you do better on the map? ` + _suffix(),
       v => `${v.a} is in the headlines for all the tense reasons. Show us how it's done in pixels. ` + _suffix(),
+      v => `${v.a} is all over the news today. Put them all over the map instead. ` + _suffix(),
+      v => `${v.a} is the lead story for the wrong reasons. Rewrite it in pixels. ` + _suffix(),
+      v => `${v.a} can't stay out of the news. Can they hold their ground on the map? ` + _suffix(),
     ],
   },
   diplomacy: {
     two: [
       v => `${v.a} and ${v.b} are talking it out in the news. On the map, talk is cheap — claim the ground. ` + _suffix(),
       v => `${v.a} and ${v.b} are at the table today. Settle it in pixels instead? ` + _suffix(),
+      v => `${v.a} and ${v.b} are shaking hands in the news. No handshakes on the map — just pixels. ` + _suffix(),
+      v => `${v.a} and ${v.b} are negotiating in the headlines. The map doesn't negotiate. ` + _suffix(),
+      v => `${v.a} and ${v.b} signed something today. Sign the map in your colour. ` + _suffix(),
     ],
-    one: [ v => `${v.a} is working the diplomatic headlines. Pixels move faster than treaties — prove it. ` + _suffix() ],
+    one: [
+      v => `${v.a} is working the diplomatic headlines. Pixels move faster than treaties — prove it. ` + _suffix(),
+      v => `${v.a} is busy with diplomacy today. The map needs no envoy — just go. ` + _suffix(),
+      v => `${v.a} is all handshakes in the news. The map prefers action. ` + _suffix(),
+      v => `${v.a} is talking peace today. Make peace with the map — by taking it. ` + _suffix(),
+      v => `${v.a} is the diplomat of the day. Be the conqueror of the map. ` + _suffix(),
+    ],
   },
   economy: {
-    two: [ v => `${v.a} and ${v.b} are shaking up the economic headlines. Turn that energy into pixels. ` + _suffix() ],
-    one: [ v => `${v.a} is moving markets in the news today. Convert the momentum into territory. ` + _suffix() ],
+    two: [
+      v => `${v.a} and ${v.b} are shaking up the economic headlines. Turn that energy into pixels. ` + _suffix(),
+      v => `${v.a} and ${v.b} are battling over markets. The map is a market too — corner it. ` + _suffix(),
+      v => `${v.a} and ${v.b} move the markets today. Move the map instead. ` + _suffix(),
+      v => `${v.a} and ${v.b} are trading blows over trade. The map is the better exchange. ` + _suffix(),
+      v => `${v.a} and ${v.b} top the business pages. Top the leaderboard in pixels. ` + _suffix(),
+    ],
+    one: [
+      v => `${v.a} is moving markets in the news today. Convert the momentum into territory. ` + _suffix(),
+      v => `${v.a} is the headline of the trading floor. Trade it for pixels. ` + _suffix(),
+      v => `${v.a} is bullish in the news. Be bullish on the map. ` + _suffix(),
+      v => `${v.a} owns the business headlines. Go own some territory. ` + _suffix(),
+      v => `${v.a} is the economy story today. The map pays better. ` + _suffix(),
+    ],
   },
   politics: {
-    two: [ v => `${v.a} and ${v.b} are all over the political headlines. Cast your vote in pixels. ` + _suffix() ],
-    one: [ v => `${v.a} is in the political spotlight today. The only poll that matters here is painted in pixels. ` + _suffix() ],
-  },
-  disaster: { // respectful — solidarity, never a challenge
-    two: [ v => `${v.a} and ${v.b} are in the world's thoughts today. Fly their colours on the map. ` + _suffix() ],
+    two: [
+      v => `${v.a} and ${v.b} are all over the political headlines. Cast your vote in pixels. ` + _suffix(),
+      v => `${v.a} and ${v.b} are locked in a political standoff. The map breaks ties. ` + _suffix(),
+      v => `${v.a} and ${v.b} are campaigning in the news. Campaign on the map — votes are pixels. ` + _suffix(),
+      v => `${v.a} and ${v.b} are at a political deadlock. The map never deadlocks. ` + _suffix(),
+      v => `${v.a} and ${v.b} dominate the debate. Win the only debate that paints — the map. ` + _suffix(),
+    ],
     one: [
-      v => `${v.a} is in the world's thoughts today. Fly their colours on the map. ` + _suffix(),
-      v => `Spare a thought for ${v.a} in the news today — represent them in pixels. ` + _suffix(),
+      v => `${v.a} is in the political spotlight today. The only poll that matters here is painted in pixels. ` + _suffix(),
+      v => `${v.a} is dominating the political cycle. Dominate the map cycle too. ` + _suffix(),
+      v => `${v.a} is leading the polls in the news. Lead the map too. ` + _suffix(),
+      v => `${v.a} runs the political headlines. Run the map while you're at it. ` + _suffix(),
+      v => `${v.a} is the candidate of the day. The map elects whoever paints fastest. ` + _suffix(),
     ],
   },
   sport: {
-    two: [ v => `${v.a} vs ${v.b} is lighting up the sports headlines — bring that rivalry to the pixels! ` + _suffix() ],
-    one: [ v => `${v.a} is making sporting headlines today. Take the win in pixels too. ` + _suffix() ],
+    two: [
+      v => `${v.a} vs ${v.b} is lighting up the sports headlines — bring that rivalry to the pixels! ` + _suffix(),
+      v => `${v.a} and ${v.b} are battling it out in sport. The rematch is on the map. ` + _suffix(),
+      v => `Scoreboard says ${v.a} vs ${v.b}. The map keeps a different score. ` + _suffix(),
+      v => `${v.a} and ${v.b} go head to head in sport today. Settle the real one in pixels. ` + _suffix(),
+      v => `${v.a} vs ${v.b} sells out the stadium. The map seats unlimited — take a side: ` + _suffix(),
+    ],
+    one: [
+      v => `${v.a} is making sporting headlines today. Take the win in pixels too. ` + _suffix(),
+      v => `${v.a} is on a winning streak in sport. Extend it onto the map. ` + _suffix(),
+      v => `${v.a} is the talk of the sports world. Be the talk of the map. ` + _suffix(),
+      v => `${v.a} is on the podium in the news. Climb the map's podium too. ` + _suffix(),
+      v => `${v.a} is today's sporting hero. Be the map's hero. ` + _suffix(),
+    ],
   },
   general: {
-    two: [ v => `${v.a} and ${v.b} are both in the headlines today. Will that show up in the pixels? ` + _suffix() ],
+    two: [
+      v => `${v.a} and ${v.b} are both in the headlines today. Will that show up in the pixels? ` + _suffix(),
+      v => `${v.a} and ${v.b} are trending in the news. Only one can trend on the map — go claim it. ` + _suffix(),
+      v => `The world's watching ${v.a} and ${v.b} today. The map's watching you. ` + _suffix(),
+      v => `${v.a} and ${v.b} made the front page. Now make the front of the map. ` + _suffix(),
+      v => `Big day for ${v.a} and ${v.b} in the news. Bigger day for whoever paints faster. ` + _suffix(),
+    ],
     one: [
       v => `${v.a} is in the headlines today. Will that reflect in the pixels? ` + _suffix(),
       v => `${v.a} is making news today — time to make some pixels. ` + _suffix(),
+      v => `${v.a} is everywhere in the news. Make them everywhere on the map too. ` + _suffix(),
+      v => `${v.a} grabbed the headlines. Go grab some territory. ` + _suffix(),
+      v => `${v.a} is the story today. Write the next chapter in pixels. ` + _suffix(),
     ],
   },
 };
@@ -1812,6 +1878,7 @@ async function _scrapeNewsAndQueue() {
       }
       if (!ids.length) continue;
       const theme = _classifyNewsTheme(it.title);
+      if (theme === 'disaster') continue; // v115d: cull disaster — never tweet about tragedies
       // Dedupe on countries+theme (NOT the headline) so near-duplicate stories
       // about the same pairing don't double-post.
       const sig = ids.slice().sort().join('-') + ':' + theme;
@@ -1869,6 +1936,7 @@ const SASS_FALLEN_SPOTLIGHT = [
   v => `💔 ${v.d} has fallen to ${v.a} — and nobody's done a thing about it. Yet. ` + _suffix(),
   v => `🕯️ Day after day, the ${v.a} flag flies over ${v.d}. Revenge is one brush away. ` + _suffix(),
   v => `📜 History remembers liberators. ${v.d} waits under ${v.a}'s thumb. ` + _suffix(),
+  v => `⛓️ ${v.d} has been ${v.a} territory for too long. Who's brave enough to take it back? ` + _suffix(),
 ];
 function _queueFallenSpotlight() {
   try {
@@ -1912,6 +1980,11 @@ const SASS_FOOTBALL = [
   v => `⚽ ${v.a} vs ${v.b} on the grass. The REAL territory dispute is on the map. ` + _suffix(),
   v => `⚽ ${v.a} and ${v.b} play 90 minutes. Pixel wars have no final whistle. Pick a side: ` + _suffix(),
   v => `🏟️ Today's grudge match: ${v.a} v ${v.b}. We checked — annexing each other is allowed here. ` + _suffix(),
+  v => `⚽ ${v.a} vs ${v.b}: 11 players each on the pitch, unlimited pixels on the map. Bring backup. ` + _suffix(),
+  v => `🥅 ${v.a} and ${v.b} fight for goals tonight. Here, you fight for the whole country. ` + _suffix(),
+  v => `⚽ Full time won't decide ${v.a} vs ${v.b}. The map will. Kick off: ` + _suffix(),
+  v => `🏆 ${v.a} v ${v.b} on the scoreboard — but the league table that matters is painted in pixels. ` + _suffix(),
+  v => `⚽ ${v.a} and ${v.b} trade tackles tonight. Trade territory instead — it lasts longer. ` + _suffix(),
 ];
 function _footballMatchFromTitle(title) {
   if (!_newsCountryAliases) _newsCountryAliases = _buildNewsCountryAliases();
@@ -2017,25 +2090,74 @@ function _setAutopost(on) {
   try { fs.writeFileSync(AUTOPOST_STATE_FILE, JSON.stringify({ on: _autopostOn })); } catch (e) {}
   console.log('[X] auto-fire ' + (_autopostOn ? 'ENABLED' : 'DISABLED'));
 }
+// v115c: auto-dismiss pending drafts older than 24h. They're past the autopost
+// window (stale = manual-only) and otherwise lingered until they aged off the
+// 50-entry cap; now they're dismissed automatically so the queue stays clean.
+const DRAFT_STALE_MS = 24 * 60 * 60 * 1000;
+function _dismissStaleDrafts() {
+  const now = Date.now();
+  let n = 0;
+  for (const d of tweetQueue) {
+    if (d.status === 'pending' && now - d.ts > DRAFT_STALE_MS) {
+      d.status = 'dismissed';
+      d.autoDismissed = true;
+      n++;
+    }
+  }
+  if (n) { saveTweetQueue(); console.log('[Tweets] auto-dismissed', n, 'stale pending draft(s) (>24h old)'); }
+}
+setInterval(_dismissStaleDrafts, 60 * 60 * 1000); // hourly
+setTimeout(_dismissStaleDrafts, 60 * 1000);       // shortly after boot
+
+// v115c: football posts are capped at this many per UTC day (operator request).
+const X_FOOTBALL_PER_DAY = 3;
+function _sameUTCDay(a, b) {
+  const da = new Date(a), db = new Date(b);
+  return da.getUTCFullYear() === db.getUTCFullYear() &&
+         da.getUTCMonth()    === db.getUTCMonth()    &&
+         da.getUTCDate()     === db.getUTCDate();
+}
+function _isNotableDraft(t) {
+  return Array.isArray(t.countries) && t.countries.some(c => isNotableCountry(String(c)));
+}
 async function _autoPostTick() {
   try {
+    _dismissStaleDrafts(); // v115c: clear >24h pending before selecting
     if (!_autopostOn || !xposter.isXEnabled()) return;
     const now = Date.now();
     const recentPosted = tweetQueue.filter(d => d.status === 'posted' && d.postedAt &&
                                                 now - d.postedAt < X_AUTOPOST_COUNTRY_GAP_MS);
-    const pending = tweetQueue.filter(d => d.status === 'pending').sort((a, b) => a.ts - b.ts);
-    for (const t of pending) {
-      if (now - t.ts > 24 * 60 * 60 * 1000) continue; // stale — manual only
-      if (Array.isArray(t.countries) && t.countries.length &&
+    // Eligible = pending, fresh (<24h), and no country posted in the last 12h.
+    const eligible = tweetQueue.filter(d => {
+      if (d.status !== 'pending') return false;
+      if (now - d.ts > 24 * 60 * 60 * 1000) return false; // stale — manual only
+      if (Array.isArray(d.countries) && d.countries.length &&
           recentPosted.some(p => Array.isArray(p.countries) &&
-                                 p.countries.some(c => t.countries.includes(c)))) continue;
-      const result = await xposter.postToX({ text: t.text, imageUrl: t.imageUrl });
-      t.status = 'posted'; t.postedUrl = result.url || null; t.postedAt = Date.now();
-      t.autoPosted = true; // visible in the dashboard JSON for auditing
-      saveTweetQueue();
-      console.log('[X] auto-posted draft', t.id, '(' + t.type + ')');
-      return; // one post per tick — this is what spreads them out
-    }
+                                 p.countries.some(c => d.countries.includes(c)))) return false;
+      return true;
+    });
+    if (!eligible.length) return;
+    // v115c: FOOTBALL EMPHASIS — football drafts post first (until the daily cap),
+    // with notable-country matchups ahead of the rest. Then notable non-football,
+    // then oldest. Football is excluded once X_FOOTBALL_PER_DAY are already up today.
+    const footballToday = tweetQueue.filter(d => d.status === 'posted' && d.type === 'football' &&
+                                                 d.postedAt && _sameUTCDay(d.postedAt, now)).length;
+    const footballOpen = footballToday < X_FOOTBALL_PER_DAY;
+    const candidates = eligible.filter(t => !(t.type === 'football' && !footballOpen));
+    if (!candidates.length) return;
+    const rank = (t) => {
+      let r = 0;
+      if (t.type === 'football' && footballOpen) r -= 100; // emphasis: football first
+      if (_isNotableDraft(t)) r -= 10;                      // notable-country priority
+      return r;
+    };
+    candidates.sort((a, b) => (rank(a) - rank(b)) || (a.ts - b.ts)); // priority, then oldest
+    const t = candidates[0];
+    const result = await xposter.postToX({ text: t.text, imageUrl: t.imageUrl });
+    t.status = 'posted'; t.postedUrl = result.url || null; t.postedAt = Date.now();
+    t.autoPosted = true; // visible in the dashboard JSON for auditing
+    saveTweetQueue();
+    console.log('[X] auto-posted draft', t.id, '(' + t.type + (t.type === 'football' ? ', ' + (footballToday + 1) + '/' + X_FOOTBALL_PER_DAY + ' today' : '') + ')');
   } catch (e) { console.warn('[X] autopost failed:', e && e.message ? e.message : e); }
 }
 setInterval(_autoPostTick, X_AUTOPOST_INTERVAL_MS);
