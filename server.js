@@ -5439,6 +5439,7 @@ const BOT_GAP_FRENZY_MS    = 500;   // gap when almost none remain (late — int
 const BOT_DEFEND_RATE_FRAC = 0.08;  // homeland >= this foreign-held → "defending"
 const BOT_DEFEND_CHANCE    = 0.45;  // v115: defend only SPORADICALLY — otherwise keep pushing the offensive
 const BOT_STICKY_BONUS     = 6;     // v115: score bonus for the country a bot is already invading (commit, don't flip-flop)
+const BOT_STANDING_BONUS   = 12;    // v115a: score bonus for a STANDING (not fallen) neighbour — bots chase fresh conquests first, but fallen land stays a fallback so they never idle
 let   _botRosterPeak       = 0;     // captured at roster build; denominator for scarcity
 // Fraction of the original roster still standing: 1 (early/calm) .. ~0 (late/frenzy).
 function _botScarcityFrac() {
@@ -5618,15 +5619,21 @@ function getBotTargets(countryId, limit) {
         const ngeo = geoAtPixel[ni];
         if (ngeo === geoIdx) continue;
         if (claimByPixel[ni] === cidx) continue;
-        // v115: never attack a FALLEN nation (dead homeland) — bots always move on
-        // to a standing country rather than piling onto already-conquered land.
-        if (permanentlyConquered.has(String(geoToId(ngeo)))) continue;
+        // v115a: don't pointlessly re-hit land THIS bot already holds (its own
+        // outpost). Standing nations are strongly PREFERRED via the score bonus
+        // below, but fallen land is NOT excluded — excluding it stranded bots with
+        // no reachable target in a heavily-fallen map (the "no activity" regression).
+        if (conqueredSet.has(String(geoToId(ngeo)) + ':' + String(countryId))) continue;
 
         if (!geoScores.has(ngeo)) {
           let score = 1;
           const nTotal   = geoTotal[ngeo] || 1;
           const nHomeId  = geoToId(ngeo);
           const nClaims  = geoClaimCnt[ngeo] || {};
+          // v115a: strongly prefer STANDING nations (fresh conquests) — bots chase
+          // new countries first and only fall back to fallen land when nothing else
+          // is adjacent, so they stay active instead of idling.
+          if (!permanentlyConquered.has(String(nHomeId))) score += BOT_STANDING_BONUS;
 
           // Opportunistic: pile on contested territories
           // v80: bumped tiers + added lowest bracket — bots pounce on even
