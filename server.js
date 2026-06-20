@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-20-v114';
+const SERVER_VERSION       = '2026-06-20-v115';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -5431,11 +5431,28 @@ const DX4 = [-1,1,0,0], DY4 = [0,0,-1,1];
 const BOT_SCOUT_CHANCE      = 0;      // v114: NO random distant scouting — it was the main source of "scatter-shot" bots painting all over the map. Bots now only expand into their homeland + attack the single best adjacent target (focused conquering).
 const BOT_HOMESTABLE_THRESH = 0.25;   // was 0.40 — attack while home is still 25% secured (was 40%)
 const BOT_DEFEND_THRESHOLD  = 8;      // require at least this many sampled-invaded pixels before dropping attacks to defend (was: defend always wins)
-// v114: per-bot hard paint-rate caps (see botTickSingle). Normal = 1px/10s; while
-// genuinely defending the homeland (>= BOT_DEFEND_RATE_FRAC foreign-held) = 1px/3s.
-const BOT_PAINT_GAP_MS        = 10000;
-const BOT_PAINT_GAP_DEFEND_MS = 3000;
-const BOT_DEFEND_RATE_FRAC    = 0.08;
+// v114/v115: per-bot paint-rate cap that SCALES WITH SCARCITY — the fewer countries
+// remain, the more intense the surviving bots get (operator: "more intense activity
+// the less countries remain"). Early game (full roster) = calm gap; late game = frenzy.
+const BOT_GAP_CALM_MS      = 3000;  // gap when ~all countries stand (early — deliberate but visibly active)
+const BOT_GAP_FRENZY_MS    = 500;   // gap when almost none remain (late — intense)
+const BOT_DEFEND_RATE_FRAC = 0.08;  // homeland >= this foreign-held → "defending"
+const BOT_DEFEND_CHANCE    = 0.45;  // v115: defend only SPORADICALLY — otherwise keep pushing the offensive
+const BOT_STICKY_BONUS     = 6;     // v115: score bonus for the country a bot is already invading (commit, don't flip-flop)
+let   _botRosterPeak       = 0;     // captured at roster build; denominator for scarcity
+// Fraction of the original roster still standing: 1 (early/calm) .. ~0 (late/frenzy).
+function _botScarcityFrac() {
+  if (_botRosterPeak <= 0) return 1;
+  return Math.max(0, Math.min(1, 1 - permanentlyConquered.size / _botRosterPeak));
+}
+// Per-bot minimum gap between paints. Shrinks as the world consolidates; a defending
+// bot paints ~3x faster than its current gap.
+function _botPaintGap(defending) {
+  const frac = _botScarcityFrac();
+  let gap = BOT_GAP_FRENZY_MS + (BOT_GAP_CALM_MS - BOT_GAP_FRENZY_MS) * frac;
+  if (defending) gap = Math.max(400, gap / 3);
+  return gap;
+}
 
 // v86: Random rotating rivalries. Every ~3 days the server picks a fresh set
 // of country-vs-country rivalries from the notable-countries pool. Bots whose
@@ -5564,8 +5581,9 @@ function getBotTargets(countryId, limit) {
   }
 
   // v80: defend only when truly invaded (was: any defend.length > 0 wins).
-  // Now we tolerate small skirmishes and keep pressing the offensive.
-  if (defend.length >= BOT_DEFEND_THRESHOLD) {
+  // v115: and even then, defend only SPORADICALLY (BOT_DEFEND_CHANCE) — most of the
+  // time the bot ignores skirmishes and keeps pressing the offensive (expansionist).
+  if (defend.length >= BOT_DEFEND_THRESHOLD && Math.random() < BOT_DEFEND_CHANCE) {
     for (let i = defend.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [defend[i], defend[j]] = [defend[j], defend[i]];
@@ -5580,6 +5598,10 @@ function getBotTargets(countryId, limit) {
     const geoCandidates = new Map(); // targetGeoIdx → [{x,y}]
     const myShare      = getWorldShare(countryId);
     const ally         = getAllianceForCountry(String(countryId));
+    // v115: target stickiness — keep hammering the same country until it falls,
+    // then move on to a fresh one (focused/expansionist instead of flip-flopping).
+    const _bot = bots.get(String(countryId));
+    const _stickyGeo = (_bot && typeof _bot.attackGeo === 'number') ? _bot.attackGeo : -1;
 
     const owned      = [...ownerPixels[cidx]];
     const ownedSample = Math.min(150, owned.length);
@@ -5596,6 +5618,9 @@ function getBotTargets(countryId, limit) {
         const ngeo = geoAtPixel[ni];
         if (ngeo === geoIdx) continue;
         if (claimByPixel[ni] === cidx) continue;
+        // v115: never attack a FALLEN nation (dead homeland) — bots always move on
+        // to a standing country rather than piling onto already-conquered land.
+        if (permanentlyConquered.has(String(geoToId(ngeo)))) continue;
 
         if (!geoScores.has(ngeo)) {
           let score = 1;
@@ -5634,6 +5659,10 @@ function getBotTargets(countryId, limit) {
             if (allyPx > 0) score += 3;
           }
 
+          // v115: stickiness — strongly prefer the country we're already invading so
+          // the bot commits to a conquest instead of flip-flopping between targets.
+          if (ngeo === _stickyGeo) score += BOT_STICKY_BONUS;
+
           geoScores.set(ngeo, score);
           geoCandidates.set(ngeo, []);
         }
@@ -5650,6 +5679,7 @@ function getBotTargets(countryId, limit) {
         if (sc > bestScore) { bestScore = sc; bestGeo = g; }
       }
       if (bestGeo >= 0) {
+        if (_bot) _bot.attackGeo = bestGeo; // v115: remember target for stickiness
         const attack = geoCandidates.get(bestGeo);
         if (attack.length > 0) {
           for (let i = attack.length - 1; i > 0; i--) {
@@ -5847,12 +5877,12 @@ function botTickSingle(countryId) {
   if (!_isBotActive(countryId)) return;
   if (bot.bucket < BOT_PIXELS_PER_TICK) return;
 
-  // v114: HARD per-bot paint-rate cap to calm the map + make bots deliberate
-  // conquerors rather than scatter-shot painters. 1px every 10s normally; 1px every
-  // 3s while genuinely defending the homeland (>=8% foreign-held). Units no longer
-  // multiply the paint count (was the main source of late-game scatter).
+  // v114/v115: per-bot paint-rate cap that scales with scarcity (calm early, frenzy
+  // late) so activity intensifies as the world shrinks. Units no longer multiply the
+  // paint count (was the main source of scatter). A bot defends its homeland only
+  // SPORADICALLY (BOT_DEFEND_CHANCE) — otherwise it keeps pressing the offensive.
   const _defending = _homeTotal > 0 && (_foreignHome / _homeTotal) >= BOT_DEFEND_RATE_FRAC;
-  const _minGap = _defending ? BOT_PAINT_GAP_DEFEND_MS : BOT_PAINT_GAP_MS;
+  const _minGap = _botPaintGap(_defending);
   const _now = Date.now();
   if (_now - (bot.lastPaintAt || 0) < _minGap) return;
 
@@ -5951,6 +5981,7 @@ function checkMapReady() {
     }
   }
 
+  _botRosterPeak = Math.max(_botRosterPeak, bots.size); // v115: scarcity denominator (peak roster)
   console.log(`[Bot] Roster: ${bots.size} bots total (${added} added, ${removed} removed)`);
   broadcastPlayers();
 

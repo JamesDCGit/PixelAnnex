@@ -41,7 +41,20 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-20-v114`.** (v114 = regen overhaul + bots + emoji
+**Current production triad: `2026-06-20-v115`.** (v115 = David-word removal + bot
+activity overhaul. (1) The regen badge (`updateDavidHUD`) drops the "David"/"Goliath"
+WORDS — now icon-only: 🔥 +N/min when the small-nation underdog regen boost is active
+(share <2%), ⚡ +N/min otherwise; the tooltip still explains size-scaled regen. (2) BOT
+INTENSITY now SCALES WITH SCARCITY (operator: "more intense activity the less countries
+remain"). Replaced v114's flat 1px/10s cap with `_botPaintGap(defending)` — gap lerps
+from `BOT_GAP_CALM_MS` 3000 (full roster, calm) down to `BOT_GAP_FRENZY_MS` 500 (few
+standing, frenzy) via `_botScarcityFrac` = `1 - permanentlyConquered.size/_botRosterPeak`
+(`_botRosterPeak` captured at roster build); defending = gap/3 (min 400). (3) BOTS are
+focused/expansionist: target STICKINESS (`bot.attackGeo` + `BOT_STICKY_BONUS` 6 — keep
+hammering one country until it falls, then move on), they NEVER target FALLEN nations
+(`permanentlyConquered` geos skipped in attack scoring), and they DEFEND the homeland only
+SPORADICALLY (`BOT_DEFEND_CHANCE` 0.45 gating the defend path — otherwise keep attacking).)
+(v114 = regen overhaul + bots + emoji
 art + GDP-in-posts + polish. (1) REGEN is now an absolute RATE in px/SECOND (no more
 multipliers): baseline 0.5px/s (1px/2s) → hard cap 4px/s. `getRegenMult` (client) +
 `_serverRegen` (server, bots) both return px/s = `clamp(0.5,4, BASE + sizeAdd + encAdd +

@@ -3572,7 +3572,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-20-v114';
+const CODE_VERSION = '2026-06-20-v115';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6845,19 +6845,16 @@ function updateDavidHUD() {
   const rate  = getRegenMult();          // px/s
   const perMin = Math.round(rate * 60);  // px/min for display
   const share = getMyWorldShare();
-  let icon = '⚖️', label = '';
-  if (share > 0 && share < 0.02) {       // underdog → David
-    icon = '🪨'; label = 'David';        // (sling-stone) the giant-slayer bonus
-  } else if (share >= 0.04) {            // dominant → Goliath
-    icon = '🗿'; label = 'Goliath';
-  }
+  // v115: icon only (no "David"/"Goliath" wording). 🔥 = underdog regen boost
+  // (small nation), ⚡ = baseline. The icon conveys the bonus; the tooltip explains.
+  const boosted = share > 0 && share < 0.02;
+  const icon = boosted ? '🔥' : '⚡';
   el.style.display = 'inline-block';
-  el.innerHTML = icon + (label ? ' <b>' + label + '</b>' : '') + ' · +' + perMin + '/min';
-  el.title = (label === 'David'
-    ? 'David bonus: small nations regenerate faster (up to 4 px/s). '
-    : label === 'Goliath'
-      ? 'Goliath: large nations regenerate at the 0.5 px/s baseline. '
-      : '') + 'Regen ' + rate.toFixed(1) + ' px/s. World share ' + (share * 100).toFixed(2) + '%.';
+  el.innerHTML = icon + ' +' + perMin + '/min';
+  el.title = (boosted
+    ? 'Underdog regen boost: small nations regenerate faster (up to 4 px/s). '
+    : 'Regen scales with nation size — smaller nations regenerate faster. ')
+    + 'Regen ' + rate.toFixed(1) + ' px/s. World share ' + (share * 100).toFixed(2) + '%.';
 }
 
 // Track pixel losses per country in a rolling 10s window.
