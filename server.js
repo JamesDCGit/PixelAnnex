@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-20-v113';
+const SERVER_VERSION       = '2026-06-20-v114';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -481,6 +481,70 @@ function pushTweetDraft({ type, text, dedupeKey, throttleKey, countries, imageUr
 
 // Helpers to format country names with hashtags
 function _countryName(id) { return countryNames[id] || ('Country ' + id); }
+
+// ── v114: nominal GDP (USD) by country, for tweet/Discord colour ──────────────
+// Approx 2023 nominal GDP. Keyed by lowercased Natural Earth admin name (matches
+// the client COUNTRY_GDP table). Used to add "— $1.7T GDP" to conquest / siege /
+// fallen-spotlight posts where a single country is the clear subject.
+const COUNTRY_GDP = {
+  'united states of america':27360e9,'china':17790e9,'germany':4456e9,'japan':4213e9,
+  'india':3550e9,'united kingdom':3340e9,'france':3030e9,'italy':2255e9,'brazil':2174e9,
+  'canada':2140e9,'russia':2021e9,'mexico':1789e9,'australia':1724e9,'south korea':1713e9,
+  'spain':1580e9,'indonesia':1371e9,'netherlands':1118e9,'turkey':1108e9,'saudi arabia':1067e9,
+  'switzerland':905e9,'poland':811e9,'taiwan':790e9,'argentina':641e9,'belgium':627e9,
+  'sweden':593e9,'ireland':564e9,'norway':546e9,'austria':526e9,'thailand':515e9,
+  'israel':510e9,'united arab emirates':504e9,'singapore':501e9,'bangladesh':446e9,
+  'philippines':437e9,'vietnam':430e9,'malaysia':415e9,'denmark':404e9,'iran':388e9,
+  'hong kong':382e9,'south africa':378e9,'colombia':364e9,'nigeria':363e9,'romania':351e9,
+  'egypt':396e9,'pakistan':338e9,'chile':335e9,'czechia':330e9,'finland':300e9,
+  'portugal':287e9,'peru':268e9,'kazakhstan':261e9,'iraq':254e9,'new zealand':252e9,
+  'algeria':240e9,'greece':238e9,'qatar':235e9,'hungary':212e9,'ukraine':179e9,
+  'kuwait':161e9,'ethiopia':156e9,'morocco':147e9,'slovakia':133e9,'ecuador':121e9,
+  'dominican rep.':121e9,'cuba':107e9,'kenya':110e9,'oman':108e9,'guatemala':102e9,
+  'bulgaria':102e9,'angola':94e9,'venezuela':92e9,'uzbekistan':90e9,'luxembourg':89e9,
+  'costa rica':86e9,'panama':83e9,'croatia':81e9,'tanzania':79e9,"côte d'ivoire":79e9,
+  'azerbaijan':78e9,'lithuania':78e9,'uruguay':77e9,'ghana':76e9,'serbia':75e9,
+  'belarus':73e9,'slovenia':68e9,'dem. rep. congo':67e9,'myanmar':65e9,'tunisia':50e9,
+  'jordan':50e9,'cameroon':49e9,'uganda':49e9,'libya':45e9,'bolivia':45e9,
+  'bahrain':44e9,'paraguay':43e9,'latvia':47e9,'nepal':41e9,'estonia':41e9,
+  'el salvador':34e9,'honduras':34e9,'zimbabwe':35e9,'cyprus':32e9,'senegal':31e9,
+  'iceland':31e9,'cambodia':31e9,'georgia':30e9,'sudan':30e9,'zambia':28e9,
+  'north korea':28e9,'bosnia and herz.':27e9,'armenia':24e9,'albania':23e9,'guinea':21e9,
+  'mali':21e9,'gabon':21e9,'mozambique':21e9,'haiti':20e9,'yemen':21e9,
+  'burkina faso':20e9,'botswana':20e9,'malta':20e9,'benin':19e9,'mongolia':18e9,
+  'nicaragua':17e9,'niger':17e9,'madagascar':16e9,'moldova':16e9,'laos':15e9,
+  'afghanistan':14e9,'rwanda':14e9,'mauritius':14e9,'macedonia':14e9,'north macedonia':14e9,
+  'malawi':13e9,'chad':13e9,'kyrgyzstan':12e9,'tajikistan':12e9,'namibia':12e9,
+  'somalia':11e9,'mauritania':10e9,'syria':9e9,'togo':9e9,'montenegro':7e9,
+};
+const GDP_ALIASES = {
+  'united states':'united states of america','usa':'united states of america',
+  'great britain':'united kingdom','czech rep.':'czechia','viet nam':'vietnam',
+  'congo (kinshasa)':'dem. rep. congo','dr congo':'dem. rep. congo',
+  'ivory coast':"côte d'ivoire",'dominican republic':'dominican rep.',
+  'bosnia and herzegovina':'bosnia and herz.','uae':'united arab emirates',
+};
+function _countryGDP(id) {
+  const name = countryNames[id];
+  if (!name) return 0;
+  const k = name.toLowerCase().trim();
+  if (COUNTRY_GDP[k] != null) return COUNTRY_GDP[k];
+  if (GDP_ALIASES[k] && COUNTRY_GDP[GDP_ALIASES[k]] != null) return COUNTRY_GDP[GDP_ALIASES[k]];
+  return 0;
+}
+function _fmtGDPCompact(v) {
+  if (!v || v <= 0) return null;
+  if (v >= 1e12) return '$' + (v / 1e12).toFixed(1).replace(/\.0$/, '') + 'T';
+  if (v >= 1e9)  return '$' + Math.round(v / 1e9) + 'B';
+  if (v >= 1e6)  return '$' + Math.round(v / 1e6) + 'M';
+  return '$' + v;
+}
+// " — $1.7T GDP" suffix for a country, or '' if unknown. Append only where one
+// country is the clear subject (conquest, multi-attack, fallen spotlight).
+function _gdpTag(id) {
+  const g = _fmtGDPCompact(_countryGDP(id));
+  return g ? (' — ' + g + ' GDP') : '';
+}
 function _countryTag(id) {
   // ISO 3166-1 numeric → hashtag-safe name (alphanumeric only)
   const n = _countryName(id).replace(/[^A-Za-z0-9]/g, '');
@@ -1300,13 +1364,15 @@ function tweetForConquest(attackerId, defenderGeoId) {
   const a = _natHashtag(attackerId);
   const d = _natHashtag(defenderGeoId);
   const contextual = _geoContextSassy(attackerId, defenderGeoId);
-  if (contextual) return contextual;
+  // v114: append the conquered country's GDP ("— $1.7T GDP") when known.
+  const gdp = _gdpTag(defenderGeoId);
+  if (contextual) return contextual + gdp;
   let conquestsHeld = 0;
   for (const key of conqueredSet) {
     const parts = String(key).split(':');
     if (parts[1] === String(attackerId)) conquestsHeld++;
   }
-  return _pickSassy(SASS_CONQUEST)({ a, d, held: conquestsHeld });
+  return _pickSassy(SASS_CONQUEST)({ a, d, held: conquestsHeld }) + gdp;
 }
 
 function tweetForReversal(victimId, oppressorId) {
@@ -1819,7 +1885,7 @@ function _queueFallenSpotlight() {
     const slot = new Date().toISOString().slice(0, 10) + (new Date().getUTCHours() < 12 ? 'AM' : 'PM');
     pushTweetDraft({
       type:      'fallen_spotlight',
-      text:      _pickSassy(SASS_FALLEN_SPOTLIGHT)({ d: _natHashtag(pick.geo), a: _natHashtag(pick.holder) }),
+      text:      _pickSassy(SASS_FALLEN_SPOTLIGHT)({ d: _natHashtag(pick.geo), a: _natHashtag(pick.holder) }) + _gdpTag(pick.geo), // v114: fallen country's GDP
       dedupeKey: 'fallen_spotlight:' + slot,
       countries: [pick.geo, pick.holder],
     });
@@ -2709,7 +2775,8 @@ function trackAttackerOnDefender(attackerCountryId, defenderGeoIdx) {
         type:        'multi_attack',
         // Defender is already a hashtag inline now, so the old trailing
         // flag+hashtag tag is dropped to avoid duplication.
-        text:        sassyMulti.slice(0, 279),
+        // v114: append the defender's GDP when known (single clear subject).
+        text:        (sassyMulti + _gdpTag(defenderId)).slice(0, 279),
         dedupeKey:   'multi_attack:' + defenderId + ':' + Math.floor(now / 60000),
         throttleKey: 'multi_attack_def:' + defenderId,
         countries:   [defenderId, ...attackerIds], // v84: notable if defender OR any attacker is notable
@@ -3781,7 +3848,7 @@ const conqueredSet = new Set();
 // The server relays the emote and re-sends still-valid ones to late-joiners; an
 // emote is only re-sent while its setter still holds the geo (so a re-conquest
 // drops it). The client clears it live on the re-conquest broadcast.
-const EMOTE_SET = new Set(['😂','😎','🥳','😢','😭','😠','🤬','💀','❤️','💔','🔥','💯','☢️']);
+const EMOTE_SET = new Set(['Laugh','Cool','Clown','Kiss','Eyes','Cry','Angry','Death','XEyes','Cross','Tick','Fire']); // v114: pixel-art PNG names (public/emoji/)
 const EMOTE_TTL_MS = 5 * 60 * 1000;
 const _emoteByGeo = new Map(); // String(geoId) → { emoji, countryId, until }
 function _buildActiveEmotes() {
@@ -4271,28 +4338,21 @@ function _allianceRegenAdd(countryId) {
 // (getWorldShare uses current holdings), which is the same rubber-band without
 // a second knob fighting the first.
 
-const REGEN_CAP = 12; // v97e: raised 10→12 to give the new sources headroom
-
-// v97e: unified server-side regen multiplier for a country (used by bot regen).
-// exile = flat 0.5x; else (largest passive David) + encircle + alliance, leader-
-// taxed, clamped. Bots have no rank/highlight/alliance → David + encircle + tax.
+// v114: regen is an absolute RATE in pixels/SECOND (not a multiplier). Baseline
+// 0.5px/s, additive SIZE (David) + ENCIRCLE bonuses, hard cap 4px/s. Mirrors the
+// client getRegenMult. Used for bot bucket regen. Alliance/leader-tax dropped.
+const REGEN_BASE_PXS = 0.5;
+const REGEN_CAP_PXS  = 4;
 function _serverRegen(countryId) {
-  const enc   = getEncircleMultiplier(countryId);
-  const encAdd = enc > 1 ? enc : 0;
-  const allyAdd = _allianceRegenAdd(countryId);
-  const sd = _suddenDeath ? 2 : 1; // v100 (Phase 2B): sudden death doubles regen
-  // v99b: exile is no longer FLAT 0.5x — base 0.5 replaces the David passive,
-  // but earned bonuses (encircle, alliance) still add on top. Mirrors the
-  // client getRegenMult exactly.
+  const enc    = getEncircleMultiplier(countryId);
+  const encAdd = enc > 1 ? Math.min(2, (enc - 2) * 0.5) : 0; // +0.5 .. +2 px/s
+  const sdAdd  = _suddenDeath ? 1.5 : 0;
   if (exiledSet.has(String(countryId))) {
-    const exTotal = 0.5 + encAdd + allyAdd;
-    const base = exTotal < 1 ? 0.5 : Math.min(REGEN_CAP, Math.round(exTotal));
-    return base * sd;
+    return Math.max(REGEN_BASE_PXS, Math.min(REGEN_CAP_PXS, REGEN_BASE_PXS + encAdd + sdAdd));
   }
-  const david = Math.max(1, _davidMult(getWorldShare(countryId)));
-  let r = david + encAdd + allyAdd;
-  // v98: leader tax removed — David's share is dynamic now.
-  return Math.min(REGEN_CAP, Math.max(0.5, r)) * sd;
+  const david   = _davidMult(getWorldShare(countryId)); // 1 (Goliath) .. 7 (tiny David)
+  const sizeAdd = Math.max(0, david - 1) * ((REGEN_CAP_PXS - REGEN_BASE_PXS) / 6);
+  return Math.max(REGEN_BASE_PXS, Math.min(REGEN_CAP_PXS, REGEN_BASE_PXS + sizeAdd + encAdd + sdAdd));
 }
 
 // Build a snapshot of world shares + multipliers for the client to display.
@@ -4776,11 +4836,11 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
   // every country (state above is unconditional); only the *announcement* is
   // gated. ~90% volume cut → notable conquests now reliably get through.
   if (!isNotableCountry(conquerorId) && !isNotableCountry(geoId)) return;
-  const _sassyConq = _geoContextSassy(conquerorId, geoId) || _pickSassy(SASS_CONQUEST)({
+  const _sassyConq = (_geoContextSassy(conquerorId, geoId) || _pickSassy(SASS_CONQUEST)({
     a: _countryName(conquerorId),
     d: _countryName(geoId),
     held: Array.from(conqueredSet).filter(k => String(k).split(':')[1] === String(conquerorId)).length,
-  });
+  })) + _gdpTag(geoId); // v114: conquered country's GDP in the Discord war report too
   const _conqShot = makeCountryShot(geoId, conquerorId); // v88 screenshot, v92m conqueror flag
   emitBotEvent({
     type:        'war_conquest',
@@ -5368,9 +5428,14 @@ const DX4 = [-1,1,0,0], DY4 = [0,0,-1,1];
 
 // v80: bot personality tunables — bumped aggression vs random exploration.
 // All three knobs make bots conquer-focused instead of wandering home-builders.
-const BOT_SCOUT_CHANCE      = 0.005;  // was 0.01 — halve random distant scouting
+const BOT_SCOUT_CHANCE      = 0;      // v114: NO random distant scouting — it was the main source of "scatter-shot" bots painting all over the map. Bots now only expand into their homeland + attack the single best adjacent target (focused conquering).
 const BOT_HOMESTABLE_THRESH = 0.25;   // was 0.40 — attack while home is still 25% secured (was 40%)
 const BOT_DEFEND_THRESHOLD  = 8;      // require at least this many sampled-invaded pixels before dropping attacks to defend (was: defend always wins)
+// v114: per-bot hard paint-rate caps (see botTickSingle). Normal = 1px/10s; while
+// genuinely defending the homeland (>= BOT_DEFEND_RATE_FRAC foreign-held) = 1px/3s.
+const BOT_PAINT_GAP_MS        = 10000;
+const BOT_PAINT_GAP_DEFEND_MS = 3000;
+const BOT_DEFEND_RATE_FRAC    = 0.08;
 
 // v86: Random rotating rivalries. Every ~3 days the server picks a fresh set
 // of country-vs-country rivalries from the notable-countries pool. Bots whose
@@ -5763,11 +5828,16 @@ function botTickSingle(countryId) {
   // conquest threshold (60%) without constant reclaim interference.
   const _homeGeoIdx = getGeoForCountry(countryId);
   const _homeTotal  = geoTotal[_homeGeoIdx] || 0;
+  // v114: also measure how invaded the homeland is — drives the "defending" paint
+  // rate below (a bot under real attack paints faster to hold its ground).
+  let _foreignHome = 0;
   if (_homeTotal > 0) {
     const _claims = geoClaimCnt[_homeGeoIdx];
     if (_claims) {
       for (const [cId, cnt] of Object.entries(_claims)) {
-        if (cId !== countryId && cnt / _homeTotal >= BOT_SURRENDER_THRESHOLD) {
+        if (cId === countryId) continue;
+        _foreignHome += cnt;
+        if (cnt / _homeTotal >= BOT_SURRENDER_THRESHOLD) {
           return; // overwhelmed — stand down, let applyPixels fire formal conquest
         }
       }
@@ -5777,13 +5847,21 @@ function botTickSingle(countryId) {
   if (!_isBotActive(countryId)) return;
   if (bot.bucket < BOT_PIXELS_PER_TICK) return;
 
-  // v100 (Phase 2A): paint scales with effective units so concentrated late-game
-  // bots stay lively (a 5-unit survivor paints ~5x a fresh country's bot).
-  const budget = Math.min(BOT_PIXELS_PER_TICK * effUnits, Math.floor(bot.bucket));
+  // v114: HARD per-bot paint-rate cap to calm the map + make bots deliberate
+  // conquerors rather than scatter-shot painters. 1px every 10s normally; 1px every
+  // 3s while genuinely defending the homeland (>=8% foreign-held). Units no longer
+  // multiply the paint count (was the main source of late-game scatter).
+  const _defending = _homeTotal > 0 && (_foreignHome / _homeTotal) >= BOT_DEFEND_RATE_FRAC;
+  const _minGap = _defending ? BOT_PAINT_GAP_DEFEND_MS : BOT_PAINT_GAP_MS;
+  const _now = Date.now();
+  if (_now - (bot.lastPaintAt || 0) < _minGap) return;
+
+  const budget = Math.min(BOT_PIXELS_PER_TICK, Math.floor(bot.bucket)); // capped at 1px/paint
   const targets = getBotTargets(countryId, budget);
   if (targets.length === 0) return;
 
   bot.bucket -= Math.min(budget, targets.length);
+  bot.lastPaintAt = _now; // v114: stamp for the paint-rate throttle
   const { changed, conquests, reversals } = applyPixels(targets, countryId);
   if (changed.length) queueDelta(changed);
   conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest', ...c })));
@@ -5806,8 +5884,9 @@ setInterval(() => {
   for (const bot of bots.values()) {
     const cap = BOT_BUCKET_MAX * (bot.units || 1); // v100: capacity scales with units
     if (bot.bucket >= cap) continue;
-    const mult = _serverRegen(bot.countryId) * (bot.units || 1); // v100: rate scales too
-    bot.bucket = Math.min(cap, bot.bucket + mult);
+    // v114: _serverRegen now returns px/SECOND — credit rate * elapsed seconds.
+    const add = _serverRegen(bot.countryId) * (BOT_REGEN_MS / 1000) * (bot.units || 1);
+    bot.bucket = Math.min(cap, bot.bucket + add);
   }
 }, BOT_REGEN_MS);
 
@@ -5956,6 +6035,21 @@ const httpServer = http.createServer(async (req, res) => {
     if (!m) { res.writeHead(400); res.end('invalid avatar path'); return; }
     const f = path.join(__dirname, 'public', 'Avatars', m[1]);
     if (!fs.existsSync(f)) { res.writeHead(404); res.end('avatar not found'); return; }
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=86400',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
+
+  // ── v114: conquest emote PNGs at /emoji/{Name}.png ───────────────
+  if (url.pathname.startsWith('/emoji/') && url.pathname.endsWith('.png')) {
+    const m = url.pathname.match(/^\/emoji\/([A-Za-z0-9_-]+\.png)$/);
+    if (!m) { res.writeHead(400); res.end('invalid emoji path'); return; }
+    const f = path.join(__dirname, 'public', 'emoji', m[1]);
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end('emoji not found'); return; }
     res.writeHead(200, {
       'Content-Type': 'image/png',
       'Cache-Control': 'public, max-age=86400',

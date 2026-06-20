@@ -41,7 +41,31 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-20-v113`.** (v113 = regen/FTUE/GDP/fightback/
+**Current production triad: `2026-06-20-v114`.** (v114 = regen overhaul + bots + emoji
+art + GDP-in-posts + polish. (1) REGEN is now an absolute RATE in px/SECOND (no more
+multipliers): baseline 0.5px/s (1px/2s) → hard cap 4px/s. `getRegenMult` (client) +
+`_serverRegen` (server, bots) both return px/s = `clamp(0.5,4, BASE + sizeAdd + encAdd +
+sdAdd)` where sizeAdd maps the David curve mult 1..7 → 0..3.5 (tiny nations hit the cap on
+size alone; Goliaths sit at baseline), encAdd = `min(2,(encMult-2)*0.5)`, sdAdd = 1.5 in
+sudden death. Fight-back / conquer-boost → cap (4). Exile drops sizeAdd. Rank/alliance/
+rally no longer affect regen. `REGEN_INTERVAL` stays 1 so accrual = rate px/s. (2)
+DAVID/GOLIATH badge (`#david-badge`/`updateDavidHUD`): 🪨 David (share <2%, boosted) /
+🗿 Goliath (share ≥4%, baseline) / ⚖️ neutral, shows +N/min. (3) BUCKET scales with RANK
+(`BUCKET_MAX` now a `let`, `RANK_BUCKET_CAPS` [50,63,75,88,100], `_updateBucketMax` in
+refreshRankUI): Soldier 50px → Admiral 100px. (4) EMOTES now use operator PNGs in
+`public/emoji/` (12: Laugh/Cool/Clown/Kiss/Eyes/Cry/Angry/Death/XEyes/Cross/Tick/Fire),
+served at `/emoji/{Name}.png` (new server route); picker + flag emote render `<img>`
+pixelated; `EMOTE_SET` (client+server) is now the name list. (5) GDP IN POSTS: server
+`COUNTRY_GDP` table + `_gdpTag(id)` ("— $1.7T GDP") appended to conquest tweet+Discord,
+multi-attack, and fallen-spotlight (single-subject posts only). (6) VICTORY card stamps a
+red ✕ over the defeated leader portrait. (7) FIGHTBACK now requires an ACTIVE siege
+(`isUnderSiege`, geoLossLog recency) so stale/drifted geoClaimCnt no longer triggers
+"fight-back for no reason" (the Australia bug). (8) BOTS: scatter cut — `BOT_SCOUT_CHANCE`
+→ 0 (no random distant roaming; focus on adjacent best target); HARD paint-rate cap 1px/
+10s, 1px/3s when defending homeland (≥8% foreign-held), units no longer multiply paint
+count (`BOT_PAINT_GAP_MS`/`_DEFEND_MS`/`BOT_DEFEND_RATE_FRAC`, `bot.lastPaintAt`); bot
+regen credits px/s × elapsed. (9) Conquest-fall popup (`#fall-popup`) closes on click
+OUTSIDE via a full-screen backdrop.) (v113 = regen/FTUE/GDP/fightback/
 emotes bundle. (1) BASE REGEN now 1px/s — `REGEN_INTERVAL` 5→1; `_regenTick` interval
 1000→200ms so the NEW per-pixel loading bar (`#regen-bar`/`#regen-fill` in the bucket
 HUD, fractional progress to the next pixel) fills smoothly instead of jumping. (2) FTUE:

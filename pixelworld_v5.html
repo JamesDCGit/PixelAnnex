@@ -1309,14 +1309,14 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   display: none;
   will-change: transform;
 }
-/* v113: conqueror emote floating above the flag (5-min global reaction) */
+/* v113/v114: conqueror emote PNG floating above the flag (5-min global reaction) */
 #flag-overlay .pa-flag-emote {
   position: absolute;
   top: 0; left: 0;
-  font-size: 16px; line-height: 1;
+  width: 18px; height: 18px;
+  image-rendering: pixelated;
   filter: drop-shadow(0 0 2px #000) drop-shadow(0 1px 2px #000);
   pointer-events: none;
-  white-space: nowrap;
   will-change: transform;
   animation: emoteBob 2.4s ease-in-out infinite;
 }
@@ -1334,11 +1334,12 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 #emote-picker .ep-title { font-size: 11px; color: #cbd5e1; letter-spacing:.04em; margin-bottom: 7px; }
 #emote-picker .ep-grid { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; max-width: 320px; }
 #emote-picker .ep-btn {
-  font-size: 22px; line-height: 1; width: 38px; height: 38px; cursor: pointer;
+  width: 40px; height: 40px; cursor: pointer;
   background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
   border-radius: 8px; display: flex; align-items: center; justify-content: center;
   transition: transform .08s ease, background .12s ease;
 }
+#emote-picker .ep-btn img { width: 28px; height: 28px; image-rendering: pixelated; pointer-events: none; }
 #emote-picker .ep-btn:hover { background: rgba(255,255,255,0.12); transform: scale(1.18); }
 #emote-picker .ep-skip { margin-top: 7px; font-size: 10px; color: #64748b; cursor: pointer; }
 #emote-picker .ep-skip:hover { color: #94a3b8; }
@@ -3571,7 +3572,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-20-v113';
+const CODE_VERSION = '2026-06-20-v114';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3595,7 +3596,14 @@ let _autoFillOutside = null; // Uint8Array(MAP_PX), reused across runAutoFill ca
 let _autoFillOutsideB = null; // v98: second pass ("without the stroke") array
 let _autoFillQueue = null;    // v98: reusable BFS scratch queue (grown as needed)
 // ── Pixel inventory ──────────────────────────────────────────────
-const BUCKET_MAX       = 100;   // v87: max pixels a player can hold (was 1000)
+// v114: bucket capacity now scales with RANK — Soldier 50px → Admiral 100px (was a
+// flat 100). Recomputed by _updateBucketMax() on rank change / country select.
+let   BUCKET_MAX       = 50;
+const RANK_BUCKET_CAPS = [50, 63, 75, 88, 100]; // Soldier→Admiral (rank index 0..4)
+function _updateBucketMax() {
+  const ri = (typeof getRankIndex === 'function') ? getRankIndex() : 0;
+  BUCKET_MAX = RANK_BUCKET_CAPS[Math.max(0, Math.min(RANK_BUCKET_CAPS.length - 1, ri))] || 50;
+}
 const REGEN_INTERVAL   = 1;     // v113: seconds per +1 pixel at base mult — 1px/s base regen
 let   pixelBucket      = 10;    // starting inventory (v113: new players get 50 — see _grantFtueStartPixels)
 
@@ -4372,8 +4380,8 @@ function _makeFlagNode(claimerFi, overlay) {
   const shield = document.createElement('div');
   shield.className = 'pa-flag-shield';
   overlay.appendChild(shield);
-  // v113: conqueror emote floating ABOVE the flag (5-min global reaction).
-  const emote = document.createElement('div');
+  // v113/v114: conqueror emote (pixel-art PNG) floating ABOVE the flag.
+  const emote = document.createElement('img');
   emote.className = 'pa-flag-emote';
   emote.style.display = 'none';
   overlay.appendChild(emote);
@@ -4431,18 +4439,22 @@ function _eraseFlagDOM(geoIdx) {
 // globally, for 5 minutes. Cleared immediately if the country is re-conquered by
 // someone else (the flag — and its emote — is replaced/erased). Server relays the
 // emote and re-sends active ones to late-joiners on welcome.
-const EMOTE_SET = ['😂','😎','🥳','😢','😭','😠','🤬','💀','❤️','💔','🔥','💯','☢️'];
+// v114: operator-supplied pixel-art emoji PNGs in public/emoji/ (served at
+// /emoji/{Name}.png). The stored emote value is the NAME (e.g. "Laugh").
+const EMOTE_SET = ['Laugh','Cool','Clown','Kiss','Eyes','Cry','Angry','Death','XEyes','Cross','Tick','Fire'];
 const EMOTE_TTL_MS = 5 * 60 * 1000;
-const _emoteByGeo = {}; // geoIdx (featList index) → { emoji, until }
+const _emoteByGeo = {}; // geoIdx (featList index) → { emoji (name), until }
+function _emojiURL(name) { return '/emoji/' + encodeURIComponent(name) + '.png'; }
 
 function _applyEmoteToEntry(geoIdx, entry) {
   if (!entry || !entry.emote) return;
   const e = _emoteByGeo[geoIdx];
   if (e && e.emoji && Date.now() < e.until) {
-    entry.emote.textContent = e.emoji;
+    entry.emote.src = _emojiURL(e.emoji);
+    entry.emote.alt = e.emoji;
     entry.emote.style.display = 'block';
   } else {
-    entry.emote.textContent = '';
+    entry.emote.removeAttribute('src');
     entry.emote.style.display = 'none';
   }
 }
@@ -4486,7 +4498,7 @@ function _showEmotePicker(geoCountryId) {
     picker = document.createElement('div');
     picker.id = 'emote-picker';
     const grid = EMOTE_SET.map(e =>
-      '<div class="ep-btn" data-emote="' + e + '">' + e + '</div>').join('');
+      '<div class="ep-btn" data-emote="' + e + '" title="' + e + '"><img src="' + _emojiURL(e) + '" alt="' + e + '"></div>').join('');
     picker.innerHTML =
       '<div class="ep-title">🏴 Conquered! Send a reaction to the world</div>' +
       '<div class="ep-grid">' + grid + '</div>' +
@@ -6480,35 +6492,33 @@ const CONQUER_BOOST_MS = 60000;
 let _suddenDeathClient = false;
 let _endgameData = null;
 function getRegenMult() {
-  if (currentIdx < 0) return 1;
-  const sd = _suddenDeathClient ? 2 : 1; // v100 (Phase 2B): sudden death doubles regen
-  if (_conquerBoostUntil > Date.now()) return 12 * sd; // v100: post-conquest surge (cap)
-  // v113: fight-back now maxes regen to the cap +2 (=14) while your homeland is
-  // overrun — replaces the old per-stroke bonus pixels + explosive brush.
-  if (_fightbackActive) return 14 * sd;
+  if (currentIdx < 0) return REGEN_BASE_PXS; // v114: px/s baseline when no country
+  // v114: regen is now an absolute RATE in pixels/SECOND (REGEN_INTERVAL=1), NOT a
+  // multiplier. Baseline 0.5px/s (1px per 2s); additive bonuses push it toward a hard
+  // 4px/s cap. Drivers (per operator): SIZE (David — small countries regen faster;
+  // Goliaths sit at baseline) + ENCIRCLE + FIGHT-BACK. Rank no longer affects regen
+  // (rank governs bucket size instead); alliance/rally regen bonuses dropped.
+  if (_conquerBoostUntil > Date.now()) return REGEN_CAP_PXS; // post-conquest surge → cap
+  if (_fightbackActive) return REGEN_CAP_PXS;                // fight-back maxes regen → cap
   const f = featList[currentIdx];
   const cid = (f && f.id) ? String(f.id) : null;
   const d = cid ? davidByCountry[cid] : null;
-  const enc  = getEncircleMultiplierLocal();           // 1 if inactive, else 3-6
-  const encAdd = enc > 1 ? enc : 0;                     // encircle adds ON TOP
-  const allyAdd = (d && d.allyAdd) ? d.allyAdd : 0;     // v97e: underdog-scaled alliance bonus
-  // v99b: exile is no longer a FLAT 0.5x — the passive base (David/rank/rally)
-  // is replaced by 0.5, but EARNED bonuses (encirclement, alliance) still add
-  // on top. So an exiled player can fight back up the curve until the homeland
-  // is reclaimed. Sub-1 totals stay at the exact 0.5 (no rounding to 1).
+  const enc  = getEncircleMultiplierLocal();                // 1 if inactive, else 3-6
+  const encAdd = enc > 1 ? Math.min(2, (enc - 2) * 0.5) : 0; // +0.5 .. +2 px/s
+  const sdAdd = _suddenDeathClient ? 1.5 : 0;               // sudden-death endgame accelerator
   if (_isExiledLocal()) {
-    const exTotal = 0.5 + encAdd + allyAdd;
-    return (exTotal < 1 ? 0.5 : Math.min(12, Math.round(exTotal))) * sd;
+    // Exile: homeland lost → no size bonus, only earned (encircle) + endgame add.
+    return Math.max(REGEN_BASE_PXS, Math.min(REGEN_CAP_PXS, REGEN_BASE_PXS + encAdd + sdAdd));
   }
-  const davidBase = (d && d.mult) ? d.mult : 1;        // widened David curve (server)
-  const rank = getRankRegenMult();
-  const hl   = _highlightRegenMult || 1;
-  const baseBonus = Math.max(davidBase, rank, hl, 1);  // largest passive bonus
-  let total = baseBonus + encAdd + allyAdd;
-  // v98: leader tax removed (David share is dynamic server-side now); round to a
-  // whole multiplier — no decimals anywhere in regen display or accrual rate.
-  return Math.min(12, Math.max(1, Math.round(total))) * sd;
+  // David size add: davidBase (server curve) is 1 (Goliath) .. 7 (tiniest); map the
+  // 1..7 range onto 0 .. (cap-base) so a tiny nation reaches the 4px/s cap on size alone.
+  const davidBase = (d && d.mult) ? d.mult : 1;
+  const sizeAdd = Math.max(0, davidBase - 1) * ((REGEN_CAP_PXS - REGEN_BASE_PXS) / 6);
+  return Math.max(REGEN_BASE_PXS, Math.min(REGEN_CAP_PXS, REGEN_BASE_PXS + sizeAdd + encAdd + sdAdd));
 }
+// v114: regen rate bounds (pixels/second).
+const REGEN_BASE_PXS = 0.5;
+const REGEN_CAP_PXS  = 4;
 
 // v97e: exile state — set by the homeland_exiled/reclaimed messages, but the david
 // snapshot's per-country `exiled` flag is the robust source of truth (survives a
@@ -6786,6 +6796,11 @@ function _showConquestFallPopup(winnerFi, loserFi){
     document.head.appendChild(st);
   }
   const old = document.getElementById('fall-popup'); if(old) old.remove();
+  const oldBd = document.getElementById('fall-popup-backdrop'); if(oldBd) oldBd.remove();
+  // v114: full-screen backdrop so clicking OUTSIDE the popup also closes it.
+  const bd = document.createElement('div'); bd.id = 'fall-popup-backdrop';
+  bd.style.cssText = 'position:fixed;inset:0;z-index:8999;background:rgba(0,0,0,0.25);cursor:pointer;';
+  document.body.appendChild(bd);
   const el = document.createElement('div'); el.id = 'fall-popup';
   el.style.zoom = _uiZoom; // v105: obey global font scale
   el.innerHTML =
@@ -6795,10 +6810,17 @@ function _showConquestFallPopup(winnerFi, loserFi){
       '<div class="fp-vs">▶</div>' +
       _fpSideHTML(L, false) +
     '</div>' +
-    '<div class="fp-foot"><b style="color:#fca5a5">' + escapeHtml(W.name) + '</b> conquered <b>' + escapeHtml(L.name) + '</b></div>';
+    '<div class="fp-foot"><b style="color:#fca5a5">' + escapeHtml(W.name) + '</b> conquered <b>' + escapeHtml(L.name) + '</b> &nbsp;·&nbsp; <span style="opacity:.7">click anywhere to close</span></div>';
   document.body.appendChild(el);
-  el.onclick = () => { el.remove(); };
-  setTimeout(() => { if(!el.parentNode) return; el.classList.add('fall-out'); setTimeout(() => el.remove(), 380); }, 5200);
+  let _fpClosed = false;
+  const _close = () => {
+    if (_fpClosed) return; _fpClosed = true;
+    el.classList.add('fall-out');
+    setTimeout(() => { el.remove(); bd.remove(); }, 380);
+  };
+  el.onclick = _close;
+  bd.onclick = _close; // v114: outside-click closes
+  setTimeout(_close, 5200); // auto-dismiss
 }
 
 function getMyWorldShare() {
@@ -6817,15 +6839,25 @@ function getCountryMultiplier(countryId) {
 function updateDavidHUD() {
   const el = document.getElementById('david-badge');
   if (!el) return;
-  const mult = getRegenMult(); // v95h: show the actual (largest-bonus, capped) regen
+  if (currentIdx < 0) { el.style.display = 'none'; return; }
+  // v114: regen is px/s now (0.5..4). Badge shows your regen rate + a David (small
+  // nation, boosted) or Goliath (large nation, baseline) icon.
+  const rate  = getRegenMult();          // px/s
+  const perMin = Math.round(rate * 60);  // px/min for display
   const share = getMyWorldShare();
-  if (mult > 1) {
-    el.style.display = 'inline-block';
-    el.innerHTML = '🛡️ <b>' + mult + 'x</b> regen';
-    el.title = 'Your strongest active buff: ' + mult + '× regen (bonuses no longer stack; capped at 8×). World share ' + (share * 100).toFixed(2) + '%.';
-  } else {
-    el.style.display = 'none';
+  let icon = '⚖️', label = '';
+  if (share > 0 && share < 0.02) {       // underdog → David
+    icon = '🪨'; label = 'David';        // (sling-stone) the giant-slayer bonus
+  } else if (share >= 0.04) {            // dominant → Goliath
+    icon = '🗿'; label = 'Goliath';
   }
+  el.style.display = 'inline-block';
+  el.innerHTML = icon + (label ? ' <b>' + label + '</b>' : '') + ' · +' + perMin + '/min';
+  el.title = (label === 'David'
+    ? 'David bonus: small nations regenerate faster (up to 4 px/s). '
+    : label === 'Goliath'
+      ? 'Goliath: large nations regenerate at the 0.5 px/s baseline. '
+      : '') + 'Regen ' + rate.toFixed(1) + ' px/s. World share ' + (share * 100).toFixed(2) + '%.';
 }
 
 // Track pixel losses per country in a rolling 10s window.
@@ -7742,7 +7774,13 @@ function updateFightBackBanner() {
     if (+cid !== currentIdx) enemyPixels += cnt;
   }
   const frac = enemyPixels / total;
-  if (frac >= FIGHTBACK_THRESHOLD) {
+  // v114: fight-back must require an ACTIVE siege (recent, sustained pixel loss),
+  // not just a static >50% foreign count. Without this, stale/drifted geoClaimCnt
+  // entries (e.g. counts never decremented after churn) kept a country "in fight-
+  // back for no reason" (the Australia bug) with no attacker present. isUnderSiege
+  // gates on geoLossLog recency, which is independent of the count drift.
+  const _activeSiege = (typeof isUnderSiege === 'function') && isUnderSiege(currentIdx);
+  if (frac >= FIGHTBACK_THRESHOLD && _activeSiege) {
     _fightbackActive = true;
     banner.classList.add('active');
     const pct = Math.round(frac * 100);
@@ -9597,11 +9635,14 @@ function mpHandleMessage(msg) {
       // YOU conquered someone
       else if(fi === currentIdx){
         _conquerBoostUntil = Date.now() + CONQUER_BOOST_MS; // v100: 60s max-regen surge
-        const _dimg = _leaderFaceImg(featList[targetFi], '', 'width:60px;height:60px;object-fit:contain;border-radius:6px;margin-right:8px;flex-shrink:0;filter:grayscale(.5);'); // v102: defeated leader (flag fallback) — v107: 2x
+        const _dimg = _leaderFaceImg(featList[targetFi], '', 'width:60px;height:60px;object-fit:contain;border-radius:6px;flex-shrink:0;filter:grayscale(.6);display:block;'); // v102: defeated leader (flag fallback) — v107: 2x
+        // v114: stamp a red ✕ over the defeated leader's portrait.
+        const _crossed = '<span style="position:relative;display:inline-block;margin-right:8px;flex-shrink:0;">' + _dimg
+          + '<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#ef4444;font-size:54px;line-height:1;font-weight:900;text-shadow:0 0 3px #000,0 0 6px #000;pointer-events:none;">✕</span></span>';
         actPushCard({
           variant: 'win',
           title: t('act.victory_title'),
-          html: _dimg + '<span>' + t('act.victory_text', { defender: featList[targetFi].name })
+          html: _crossed + '<span>' + t('act.victory_text', { defender: featList[targetFi].name })
               + '<br><b>⚡ Conquest surge — max regen for 60s!</b></span>',
         });
         // v113: let the conqueror send a global reaction emote above the new flag.
@@ -12282,6 +12323,7 @@ setInterval(() => {
 
 // ── Rank UI ───────────────────────────────────────────────────────
 function refreshRankUI(){
+  _updateBucketMax(); // v114: keep bucket capacity in sync with rank (50→100)
   const rank = getCurrentRank();
   const ri   = getRankIndex();
   const next = RANKS[ri+1];
