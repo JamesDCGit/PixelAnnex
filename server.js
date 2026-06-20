@@ -4391,21 +4391,39 @@ const countryNames   = {}; // countryId → display name (v98b: loaded from Topo
 // public X account). Mirrors the client's v97k parse exactly: id = parsed
 // numeric id, no-id features get synthetic 9000+index, unnamed features fall
 // back to "Disputed Territory".
+// v115b: rough size proxy for a geometry = total number of arc references (a
+// mainland country's MultiPolygon has far more than a tiny island's single Polygon).
+function _arcRefCount(arcs) {
+  if (!Array.isArray(arcs)) return 0;
+  let c = 0;
+  for (const a of arcs) c += Array.isArray(a) ? _arcRefCount(a) : 1;
+  return c;
+}
 function loadCountryNamesFromDisk() {
   try {
     const topo = JSON.parse(fs.readFileSync(path.join(__dirname, 'countries-10m.json'), 'utf8'));
     const geoms = topo && topo.objects && topo.objects.countries && topo.objects.countries.geometries;
     if (!Array.isArray(geoms)) { console.warn('[Names] countries-10m.json: unexpected shape'); return; }
     let n = 0;
+    // v115b: multiple geometries can share an ISO id (e.g. id 036 = both "Australia"
+    // and the tiny "Ashmore and Cartier Is." territory). Last-write-wins used to let
+    // the tiny one overwrite the real country, so notifications said "Ashmore and
+    // Cartier Is." instead of "Australia". Keep the name of the LARGEST feature per id.
+    const _nameWeight = {};
     geoms.forEach((g, gi) => {
       const s = String(g.id ?? '');
       const parsed = parseInt(s, 10);
       let id = (parsed >= 0 && String(parsed)) ? String(parsed) : s;
       if (!id) id = String(9000 + gi); // v97k synthetic ids — keep in sync with the client
-      countryNames[id] = (g.properties && g.properties.name) || 'Disputed Territory';
-      n++;
+      const name = (g.properties && g.properties.name) || 'Disputed Territory';
+      const w = _arcRefCount(g.arcs);
+      if (countryNames[id] === undefined || w > (_nameWeight[id] || 0)) {
+        countryNames[id] = name;
+        _nameWeight[id] = w;
+        n++;
+      }
     });
-    console.log('[Names] loaded ' + n + ' country names from countries-10m.json');
+    console.log('[Names] loaded ' + n + ' country names from countries-10m.json (largest-feature-wins)');
   } catch (e) {
     console.warn('[Names] failed to load countries-10m.json:', e.message);
   }
