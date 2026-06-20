@@ -41,7 +41,33 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-16-v112`.** (v112 = notification cards bumped to
+**Current production triad: `2026-06-20-v113`.** (v113 = regen/FTUE/GDP/fightback/
+emotes bundle. (1) BASE REGEN now 1px/s — `REGEN_INTERVAL` 5→1; `_regenTick` interval
+1000→200ms so the NEW per-pixel loading bar (`#regen-bar`/`#regen-fill` in the bucket
+HUD, fractional progress to the next pixel) fills smoothly instead of jumping. (2) FTUE:
+new players start with 50px (`_grantFtueStartPixels`, gated `pa_ftue_start_px`); guided
+coach now suggests drawing a SMALL CIRCLE to encircle/capture; first successful encircle
+ever grants a one-off +50px + special card (gated `pa_first_encircle_done`, in
+`applyEncirclementBonus`). `dbgResetFtue` clears all three flags. (3) GDP COUNTER in the
+rank panel (`.rank-gdp`/`#gdp-value`): bold white, fixed 15-digit field
+`$999,999,999,999,999` (leading zeros dimmed), sums the FULL nominal GDP of every country
+you hold (home if not foreign-held + conquered outposts via `conqueredSet`) from a static
+`COUNTRY_GDP` table, ticking up in real time at annual/seconds-per-year (`_computeGdpAnnual`/
+`_renderGdpNow`, 2s recompute + 100ms accrue). (4) FIGHTBACK reworked: per-stroke bonus
+pixels + explosive (bigger) brush REMOVED; while your homeland is overrun regen is maxed
+to cap+2 (=14) via `_fightbackActive` (set in `updateFightBackBanner`, read by
+`getRegenMult`); banner shows "⚡ REGEN MAXED (+2)". (5) FLASH FIX: once out of fightback,
+reclaiming your OWN homeland no longer white-flashes (`claimPixel` gates `flashPixel` on
+`geo===currentIdx && !_fightbackActive`), and your own country drops a stale server-siege
+red flash once `isUnderSiege` is false again (`tickSiegeFlash` guard). (6) RANK: server
+`RANK_THRESHOLDS` aligned to the client pixel scale 0/250/750/1500/3000 (Admiral 3000).
+(7) CONQUEST EMOTES: the conqueror of a country picks 1 of 13 emoji (`EMOTE_SET`,
+`#emote-picker`) that floats above the flag GLOBALLY for 5min (`pa-flag-emote` node,
+`_emoteByGeo`/`_setGeoEmote`); cleared instantly on re-conquest by another country (the
+`conquest` handler clears + the new holder re-picks) and on flag erase. Server relays via
+`case 'emote'` (validates emoji set + that the sender holds the geo) and re-sends active
+emotes to late-joiners in `welcome.emotes` (`_buildActiveEmotes`, holder-filtered);
+cleared on world reset.) (v112 = notification cards bumped to
 80% opaque [0.5→0.8; encircle regen card 0.9, kept most opaque/highlighted]. Panels
 unchanged at 0.7.) (v111 = notification system rebuild:
 ALL notifications now live in ONE flex column `#activity-toast` (top-right) — the

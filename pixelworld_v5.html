@@ -103,6 +103,10 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #bucket-bar{width:42px;height:4px;background:#1e2e4a;border-radius:2px;overflow:hidden;}
 #bucket-fill{height:100%;background:#3b82f6;width:0%;transition:width .4s linear;}
 #bucket-timer{font-size:10px;color:#475569;min-width:28px;}
+/* v113: per-pixel regen loading bar — fills as the next pixel regenerates */
+#regen-bar{width:34px;height:6px;background:#13203a;border:1px solid rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;}
+#regen-fill{height:100%;width:0%;background:linear-gradient(90deg,#22d3ee,#38bdf8);transition:width .25s linear;box-shadow:0 0 6px rgba(56,189,248,0.5);}
+#regen-bar.full #regen-fill{background:#22c55e;box-shadow:none;}
 
 /* ── Bomb mode ── */
 #btn-bomb{background:#1a1020;border:1px solid rgba(239,68,68,0.3);color:#f87171;}
@@ -820,6 +824,11 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .rank-bar-wrap{height:4px;background:#1e293b;border-radius:2px;margin-bottom:3px;}
 .rank-bar-fill{height:4px;border-radius:2px;transition:width .4s;}
 .rank-meta{color:#475569;font-size:9px;}
+/* v113: combined-GDP odometer — bold white, fixed-width 15-digit field */
+.rank-gdp{display:flex;align-items:baseline;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.07);}
+.rank-gdp .gdp-label{font-size:8px;letter-spacing:.12em;color:#64748b;text-transform:uppercase;}
+.rank-gdp #gdp-value{font-family:'Courier New',monospace;font-weight:700;color:#ffffff;font-size:12px;letter-spacing:.02em;white-space:nowrap;}
+.rank-gdp #gdp-value .gdp-dim{color:#33415580;font-weight:700;}
 .rank-bomb{color:#f87171;font-size:9px;margin-top:2px;}
 .rank-bonus{color:#22c55e;font-size:9px;margin-top:1px;}
 
@@ -1300,6 +1309,39 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   display: none;
   will-change: transform;
 }
+/* v113: conqueror emote floating above the flag (5-min global reaction) */
+#flag-overlay .pa-flag-emote {
+  position: absolute;
+  top: 0; left: 0;
+  font-size: 16px; line-height: 1;
+  filter: drop-shadow(0 0 2px #000) drop-shadow(0 1px 2px #000);
+  pointer-events: none;
+  white-space: nowrap;
+  will-change: transform;
+  animation: emoteBob 2.4s ease-in-out infinite;
+}
+@keyframes emoteBob { 0%,100%{ margin-top:0; } 50%{ margin-top:-3px; } }
+/* v113: conquest emote picker (shown to the conqueror) */
+#emote-picker {
+  position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
+  z-index: 120; display: none;
+  background: rgba(10,18,26,0.92); border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+  text-align: center; max-width: calc(100vw - 24px);
+}
+#emote-picker.open { display: block; animation: epIn .25s ease; }
+@keyframes epIn { from{ opacity:0; transform:translate(-50%,8px);} to{ opacity:1; transform:translateX(-50%);} }
+#emote-picker .ep-title { font-size: 11px; color: #cbd5e1; letter-spacing:.04em; margin-bottom: 7px; }
+#emote-picker .ep-grid { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; max-width: 320px; }
+#emote-picker .ep-btn {
+  font-size: 22px; line-height: 1; width: 38px; height: 38px; cursor: pointer;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  transition: transform .08s ease, background .12s ease;
+}
+#emote-picker .ep-btn:hover { background: rgba(255,255,255,0.12); transform: scale(1.18); }
+#emote-picker .ep-skip { margin-top: 7px; font-size: 10px; color: #64748b; cursor: pointer; }
+#emote-picker .ep-skip:hover { color: #94a3b8; }
 
 
 /* v35: Persistent leaderboard panel — mirrors #legend layout */
@@ -1470,6 +1512,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
       <div id="bucket-bar"><div id="bucket-fill"></div></div>
       <span id="bucket-count">10</span>
       <span style="color:#334155">px</span>
+      <!-- v113: loading bar showing progress toward the NEXT regenerated pixel -->
+      <div id="regen-bar" title="Progress to next pixel"><div id="regen-fill"></div></div>
       <span id="bucket-timer">+1 in 60s</span>
       <span id="david-badge" style="display:none;margin-left:8px;padding:2px 7px;background:linear-gradient(90deg,rgba(99,102,241,.25),rgba(129,140,248,.18));border:1px solid rgba(129,140,248,.45);border-radius:4px;font-size:10px;color:#a5b4fc;letter-spacing:.04em;white-space:nowrap;"></span>
     </div>
@@ -3527,7 +3571,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-16-v112';
+const CODE_VERSION = '2026-06-20-v113';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3552,8 +3596,8 @@ let _autoFillOutsideB = null; // v98: second pass ("without the stroke") array
 let _autoFillQueue = null;    // v98: reusable BFS scratch queue (grown as needed)
 // ── Pixel inventory ──────────────────────────────────────────────
 const BUCKET_MAX       = 100;   // v87: max pixels a player can hold (was 1000)
-const REGEN_INTERVAL   = 5;     // seconds between +1 pixel — TEST MODE (production: 60)
-let   pixelBucket      = 10;    // starting inventory
+const REGEN_INTERVAL   = 1;     // v113: seconds per +1 pixel at base mult — 1px/s base regen
+let   pixelBucket      = 10;    // starting inventory (v113: new players get 50 — see _grantFtueStartPixels)
 
 // ── Tab title bucket count (visible in background tabs) ───────────
 let _baseTitle = document.title || 'PixelAnnex';
@@ -4328,7 +4372,12 @@ function _makeFlagNode(claimerFi, overlay) {
   const shield = document.createElement('div');
   shield.className = 'pa-flag-shield';
   overlay.appendChild(shield);
-  return { el: img, label: lbl, shield, cx: 0, cy: 0, isoId: claimerFi.id };
+  // v113: conqueror emote floating ABOVE the flag (5-min global reaction).
+  const emote = document.createElement('div');
+  emote.className = 'pa-flag-emote';
+  emote.style.display = 'none';
+  overlay.appendChild(emote);
+  return { el: img, label: lbl, shield, emote, cx: 0, cy: 0, isoId: claimerFi.id };
 }
 
 // v95e: place/update one flag PER landmass. `centers` = [{cx,cy}, …] (largest first).
@@ -4363,6 +4412,7 @@ function _placeFlagDOM(geoIdx, claimerFi, centers) {
     entry.el.src = src;
     if (entry.label) entry.label.textContent = _txt;
     entry.cx = centers[k].cx; entry.cy = centers[k].cy;
+    if (typeof _applyEmoteToEntry === 'function') _applyEmoteToEntry(geoIdx, entry); // v113
     _updateFlagDOMPosition(entry);
   }
 }
@@ -4370,9 +4420,94 @@ function _placeFlagDOM(geoIdx, claimerFi, centers) {
 function _eraseFlagDOM(geoIdx) {
   const arr = _flagDOMNodes[geoIdx];
   if (!arr) return;
-  for (const e of arr) { e.el.remove(); if (e.label) e.label.remove(); if (e.shield) e.shield.remove(); } // v94/v95e/v98
+  for (const e of arr) { e.el.remove(); if (e.label) e.label.remove(); if (e.shield) e.shield.remove(); if (e.emote) e.emote.remove(); } // v94/v95e/v98/v113
   delete _flagDOMNodes[geoIdx];
   delete _geoImmuneUntil[geoIdx]; // v98: drop any pending shield countdown
+  if (typeof _emoteByGeo !== 'undefined') delete _emoteByGeo[geoIdx]; // v113: drop the emote with the flag
+}
+
+// ── Conquest emotes (v113) ────────────────────────────────────────
+// The conqueror of a country may attach ONE emoji that floats above its flag,
+// globally, for 5 minutes. Cleared immediately if the country is re-conquered by
+// someone else (the flag — and its emote — is replaced/erased). Server relays the
+// emote and re-sends active ones to late-joiners on welcome.
+const EMOTE_SET = ['😂','😎','🥳','😢','😭','😠','🤬','💀','❤️','💔','🔥','💯','☢️'];
+const EMOTE_TTL_MS = 5 * 60 * 1000;
+const _emoteByGeo = {}; // geoIdx (featList index) → { emoji, until }
+
+function _applyEmoteToEntry(geoIdx, entry) {
+  if (!entry || !entry.emote) return;
+  const e = _emoteByGeo[geoIdx];
+  if (e && e.emoji && Date.now() < e.until) {
+    entry.emote.textContent = e.emoji;
+    entry.emote.style.display = 'block';
+  } else {
+    entry.emote.textContent = '';
+    entry.emote.style.display = 'none';
+  }
+}
+
+// Set/clear an emote for a geo (by featList index). emoji falsy or expired → clear.
+function _setGeoEmote(geoIdx, emoji, until) {
+  if (geoIdx === undefined || geoIdx < 0) return;
+  if (!emoji || !until || until <= Date.now()) delete _emoteByGeo[geoIdx];
+  else _emoteByGeo[geoIdx] = { emoji, until };
+  const arr = _flagDOMNodes[geoIdx];
+  if (arr) for (const e of arr) _applyEmoteToEntry(geoIdx, e);
+}
+
+// Sweep expired emotes once a second.
+setInterval(() => {
+  const now = Date.now();
+  for (const k in _emoteByGeo) {
+    if (_emoteByGeo[k].until <= now) {
+      const gi = +k;
+      delete _emoteByGeo[gi];
+      const arr = _flagDOMNodes[gi];
+      if (arr) for (const e of arr) _applyEmoteToEntry(gi, e);
+    }
+  }
+}, 1000);
+
+// Tell the server we want an emote on a geo we just conquered.
+function mpSendEmote(geoCountryId, emoji) {
+  if (!wsReady) return;
+  const myId = (currentIdx >= 0 && featList[currentIdx]) ? String(featList[currentIdx].id) : '';
+  if (!myId) return;
+  try { ws.send(JSON.stringify({ type: 'emote', countryId: myId, geoIdx: String(geoCountryId), emoji })); } catch (e) {}
+}
+
+// Build + show the emote picker to the conqueror. geoCountryId = the conquered
+// country's ID (string/number). Click an emoji → broadcast it globally.
+let _emotePickerGeo = null, _emotePickerTimer = null;
+function _showEmotePicker(geoCountryId) {
+  let picker = document.getElementById('emote-picker');
+  if (!picker) {
+    picker = document.createElement('div');
+    picker.id = 'emote-picker';
+    const grid = EMOTE_SET.map(e =>
+      '<div class="ep-btn" data-emote="' + e + '">' + e + '</div>').join('');
+    picker.innerHTML =
+      '<div class="ep-title">🏴 Conquered! Send a reaction to the world</div>' +
+      '<div class="ep-grid">' + grid + '</div>' +
+      '<div class="ep-skip">No thanks</div>';
+    document.body.appendChild(picker);
+    picker.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('.ep-btn');
+      if (btn) { mpSendEmote(_emotePickerGeo, btn.getAttribute('data-emote')); _hideEmotePicker(); return; }
+      if (ev.target.closest('.ep-skip')) _hideEmotePicker();
+    });
+  }
+  picker.style.zoom = (typeof _uiZoom !== 'undefined' ? _uiZoom : 1); // obey global font scale
+  _emotePickerGeo = geoCountryId;
+  picker.classList.add('open');
+  if (_emotePickerTimer) clearTimeout(_emotePickerTimer);
+  _emotePickerTimer = setTimeout(_hideEmotePicker, 15000); // auto-dismiss
+}
+function _hideEmotePicker() {
+  const picker = document.getElementById('emote-picker');
+  if (picker) picker.classList.remove('open');
+  if (_emotePickerTimer) { clearTimeout(_emotePickerTimer); _emotePickerTimer = null; }
 }
 
 function _updateFlagDOMPosition(entry) {
@@ -4383,6 +4518,8 @@ function _updateFlagDOMPosition(entry) {
   if (entry.label) entry.label.style.transform = 'translate(' + screenX + 'px, ' + (screenY + 10) + 'px) translateX(-50%)';
   // v98: shield countdown sits one line below the label.
   if (entry.shield) entry.shield.style.transform = 'translate(' + screenX + 'px, ' + (screenY + 21) + 'px) translateX(-50%)';
+  // v113: emote floats above the flag.
+  if (entry.emote) entry.emote.style.transform = 'translate(' + screenX + 'px, ' + (screenY - 22) + 'px) translateX(-50%)';
 }
 
 function _updateAllFlagPositions() {
@@ -5434,7 +5571,12 @@ function claimPixel(px,py){
   // (no allocation, GPU-accelerated). Alpha 215/255 ≈ 0.843.
   claimCtx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.843)';
   claimCtx.fillRect(px, py, 1, 1);
-  flashPixel(px, py);
+  // v113: don't white-flash when reclaiming pixels inside your OWN homeland while
+  // NOT in fight-back. Once you've pushed the enemy back below the fight-back line,
+  // painting your own land should be calm — no attention-grabbing pulse. Painting
+  // into other countries (expansion/attack), and own-land paints DURING fight-back,
+  // still flash.
+  if (!(geo === currentIdx && !_fightbackActive)) flashPixel(px, py);
   markOutlineDirty(px, py);
 }
 
@@ -5457,28 +5599,12 @@ function paintBrush(px,py){
   }
   // v95: FTUE guided first paint — count strokes that land in the target country.
   if(_ftueActive) _ftueOnPaint(px,py);
-  // ── Explosive brush expansion (fight-back mode) ────────────────
-  // When painting in your own country and you're heavily lost, brush footprint grows.
-  // This is added pixels for FREE (no extra bucket cost) — it's the bonus power-up.
-  const explosivePixels = getExplosiveBrushPixels(px, py, half);
-  if (explosivePixels) {
-    for (const p of explosivePixels) {
-      claimPixel(p.x, p.y);
-    }
-  }
+  // v113: fight-back no longer grants per-stroke bonus pixels OR an explosive
+  // (larger) brush — those bonuses are removed. Fight-back's only effect now is
+  // maxed regen (cap +2 = 14) while your homeland is overrun (see getRegenMult /
+  // _fightbackActive). The explosive-brush + bonus-pixel blocks were deleted here.
   // ── Highlight bonus (one-shot +10 per highlight session) ────────
   claimHighlightBonus(px, py);
-  // ── Fight-back bonus (adds to bucket when >70% overrun) ──────────
-  {
-    const _fi = py*MAP_W+px;
-    const _fgeo = featByPixel[_fi];
-    const fbBonus = getFightBackBonus(_fgeo, currentIdx);
-    if(fbBonus > 0){
-      pixelBucket = Math.min(BUCKET_MAX, pixelBucket + fbBonus);
-      updateBucketHUD();
-      showBonusPop(fbBonus, '⚔️', { encirclement: true }); // v36: anchor under login HUD
-    }
-  }
   scheduleLegend();
 }
 
@@ -5983,6 +6109,15 @@ function updateBucketHUD(){
   // Colour bucket bar: green when full-ish, amber mid, red low
   const pct = pixelBucket/BUCKET_MAX;
   $("bucket-fill").style.background = pct>0.5?"#22c55e":pct>0.2?"#f59e0b":"#ef4444";
+  // v113: per-pixel regen loading bar — fraction toward the next whole pixel.
+  const rb = document.getElementById('regen-bar');
+  const rf = document.getElementById('regen-fill');
+  if (rf) {
+    const atMax = pixelBucket >= BUCKET_MAX;
+    const frac = atMax ? 1 : (pixelBucket - Math.floor(pixelBucket));
+    rf.style.width = (frac * 100) + '%';
+    if (rb) rb.classList.toggle('full', atMax);
+  }
   // Dim cursor hint when empty (v98: <1 — a fractional bucket can't paint)
   vp.style.cursor = pixelBucket>=1 ? (bombMode?"crosshair":"crosshair") : "not-allowed";
 }
@@ -6009,7 +6144,10 @@ function _regenTick(){
     ? "FULL"
     : ('+' + Math.max(1, Math.round(mult * 60 / REGEN_INTERVAL)) + '/min');
 }
-setInterval(_regenTick, 1000);
+// v113: 200ms tick — timestamp-based accrual is rate-identical, but a faster
+// cadence makes the per-pixel loading bar fill smoothly (at 1px/s a 1000ms tick
+// would jump the bar full→empty each second instead of animating).
+setInterval(_regenTick, 200);
 
 
 // ── Bomb cooldown ─────────────────────────────────────────────────
@@ -6266,6 +6404,19 @@ function applyEncirclementBonus(enclosed, mult, durationMs, cx, cy) {
   // v93y (task 3): bonuses only ratchet UP. A smaller new encirclement must not
   // downgrade an active higher one — keep the higher multiplier and extend the
   // timer to the later expiry so the big bonus runs its full course.
+  // v113: one-time first-encircle reward — +50 pixels + a special notification.
+  try {
+    if (!localStorage.getItem('pa_first_encircle_done')) {
+      localStorage.setItem('pa_first_encircle_done', '1');
+      pixelBucket = Math.min(BUCKET_MAX * 5, pixelBucket + 50); // allow temporary overflow (matches perk grant)
+      if (typeof updateBucketHUD === 'function') updateBucketHUD();
+      if (typeof actPushCard === 'function') actPushCard({
+        variant: 'win',
+        title: '🎉 First Encirclement!',
+        html: 'You surrounded territory and captured everything inside — here are <b>+50 bonus pixels</b> to keep expanding. Encircle often to multiply your regen!',
+      });
+    }
+  } catch (e) {}
   const _now = Date.now();
   const _active = _encircleExpiresAt && _now < _encircleExpiresAt;
   const _effMult = _active ? Math.max(_encircleMult, mult) : mult;
@@ -6332,6 +6483,9 @@ function getRegenMult() {
   if (currentIdx < 0) return 1;
   const sd = _suddenDeathClient ? 2 : 1; // v100 (Phase 2B): sudden death doubles regen
   if (_conquerBoostUntil > Date.now()) return 12 * sd; // v100: post-conquest surge (cap)
+  // v113: fight-back now maxes regen to the cap +2 (=14) while your homeland is
+  // overrun — replaces the old per-stroke bonus pixels + explosive brush.
+  if (_fightbackActive) return 14 * sd;
   const f = featList[currentIdx];
   const cid = (f && f.id) ? String(f.id) : null;
   const d = cid ? davidByCountry[cid] : null;
@@ -7205,13 +7359,15 @@ function startGuidedPaint() {
   _ftueTarget = target;
   _ftuePainted = 0;
   _ftueActive = true;
+  _grantFtueStartPixels(); // v113: new players start with 50px so they can draw a circle
   _focusGuidedTarget(target.box, () => { _positionFtueHighlight(); });
 
   const hl = document.getElementById('ftue-highlight');
   if (hl) hl.style.display = 'block';
   const coach = document.getElementById('ftue-coach');
   const body = document.getElementById('ftue-coach-body');
-  if (body) body.innerHTML = 'Your homeland is set. Now expand! Drag inside the glowing zone to paint your first pixels in <b>' + escapeHtml(target.name) + '</b>.';
+  // v113: teach encirclement — suggest drawing a small circle to surround + capture land.
+  if (body) body.innerHTML = 'Your homeland is set. Now expand! Drag a <b>small circle</b> inside the glowing zone — surround territory in <b>' + escapeHtml(target.name) + '</b> to capture everything inside. You have <b>50 pixels</b> to start.';
   _updateFtueProgress();
   if (coach) { coach.classList.remove('success'); coach.style.display = 'block'; }
   _positionFtueHighlight();
@@ -7306,10 +7462,20 @@ function _endGuidedPaint() {
 }
 
 // Debug: replay the guided step (use with dbgResetTutorial for a full reset).
+// v113: one-time 50px starting grant for new players (so they have enough to
+// draw a circle in the FTUE). Gated by its own flag so a mid-FTUE refresh
+// doesn't keep topping the bucket up.
+const FTUE_START_PX_KEY = 'pa_ftue_start_px';
+function _grantFtueStartPixels() {
+  try { if (localStorage.getItem(FTUE_START_PX_KEY)) return; localStorage.setItem(FTUE_START_PX_KEY, '1'); } catch (e) {}
+  pixelBucket = Math.max(pixelBucket, 50);
+  if (typeof updateBucketHUD === 'function') updateBucketHUD();
+}
+
 function dbgResetFtue() {
-  try { localStorage.removeItem(FTUE_DONE_KEY); } catch (e) {}
+  try { localStorage.removeItem(FTUE_DONE_KEY); localStorage.removeItem(FTUE_START_PX_KEY); localStorage.removeItem('pa_first_encircle_done'); } catch (e) {}
   _ftueActive = false; _ftueTarget = null;
-  console.log('[FTUE] guided-paint flag cleared — reload or call startGuidedPaint()');
+  console.log('[FTUE] guided-paint + start-px + first-encircle flags cleared — reload or call startGuidedPaint()');
 }
 
 // Show tutorial AFTER the toolbar/HUD has painted, but on top of the map while it loads.
@@ -7558,13 +7724,18 @@ function _fightbackEligible(idx) {
   return !(typeof _isCountryConqueredClient === 'function' && _isCountryConqueredClient(f.id));
 }
 
+// v113: live fight-back state — read by getRegenMult (regen = cap+2 = 14 while
+// active) and claimPixel (suppresses the own-pixel white flash when NOT active).
+let _fightbackActive = false;
+
 function updateFightBackBanner() {
   const banner = document.getElementById('fightback-banner');
-  if (!banner) return;
-  if (currentIdx < 0) { banner.classList.remove('active'); return; }
-  if (!_fightbackEligible(currentIdx)) { banner.classList.remove('active'); return; } // v95l: homeland fell
+  const _setInactive = () => { _fightbackActive = false; if (banner) banner.classList.remove('active'); };
+  if (!banner) { _fightbackActive = false; return; }
+  if (currentIdx < 0) { _setInactive(); return; }
+  if (!_fightbackEligible(currentIdx)) { _setInactive(); return; } // v95l: homeland fell
   const total = geoTotal[currentIdx] || 0;
-  if (!total) { banner.classList.remove('active'); return; }
+  if (!total) { _setInactive(); return; }
   // Count enemy pixels in our country
   let enemyPixels = 0;
   for (const [cid, cnt] of Object.entries(geoClaimCnt[currentIdx] || {})) {
@@ -7572,21 +7743,17 @@ function updateFightBackBanner() {
   }
   const frac = enemyPixels / total;
   if (frac >= FIGHTBACK_THRESHOLD) {
+    _fightbackActive = true;
     banner.classList.add('active');
     const pct = Math.round(frac * 100);
     const fbText = document.getElementById('fb-text');
     const fbPower = document.getElementById('fb-power');
     if (fbText)  fbText.textContent  = t('fightback.banner_pct', { pct });
-    if (fbPower) {
-      // v85: show the ACTUAL progressive bonus (varies 1-5 based on loss %)
-      // alongside the explosive brush tier.
-      const bonus = Math.min(5, Math.max(1, Math.floor((frac - 0.40) * 10)));
-      const explosiveLevel = getExplosiveLevel(frac);
-      const brush = explosiveLevel >= 3 ? '5×5' : explosiveLevel === 2 ? '3×3' : '1×1';
-      fbPower.textContent = '+' + bonus + ' px/stroke · ' + brush + ' brush';
-    }
+    // v113: fight-back's reward is now MAXED regen (+2 over the cap), not bonus
+    // pixels / a bigger brush. Show that instead of the old "+N px/stroke · brush".
+    if (fbPower) fbPower.textContent = '⚡ REGEN MAXED (+2)';
   } else {
-    banner.classList.remove('active');
+    _setInactive();
   }
 }
 
@@ -7894,6 +8061,10 @@ function tickSiegeFlash(){
   for(let gi=0; gi<featList.length; gi++){
     // v92w: flash if the client heuristic says sieged OR the server told us so.
     if(isUnderSiege(gi) || _serverSieged.has(gi)){
+      // v113: your OWN homeland shouldn't keep red-flashing from a stale server
+      // siege flag once you've fought the enemy back below the siege line. The
+      // client knows its own country's real state — drop the stale flag + skip.
+      if(gi === currentIdx && !isUnderSiege(gi)){ _serverSieged.delete(gi); continue; }
       const _id = featList[gi] && featList[gi].id != null ? String(featList[gi].id) : ('#'+gi);
       if(_siegeSeenIds.has(_id)) continue;
       _siegeSeenIds.add(_id);
@@ -9294,6 +9465,18 @@ function mpHandleMessage(msg) {
           if (sfi !== undefined) _serverSieged.add(sfi);
         }
       }
+      // v113: seed active conquest emotes (late-joiner sync). Applied after the
+      // snapshot replay places flags via a short retry (flags may not exist yet).
+      if (msg.emotes && Array.isArray(msg.emotes) && msg.emotes.length) {
+        const _seed = () => {
+          for (const em of msg.emotes) {
+            const efi = idToFeatIdx.get(String(em.geoIdx));
+            if (efi !== undefined && em.emoji && em.until > Date.now()) _setGeoEmote(efi, em.emoji, em.until);
+          }
+        };
+        _seed();
+        setTimeout(_seed, 1500); // re-apply once flags from the snapshot have landed
+      }
       scheduleLegend();
       break;
     }
@@ -9421,9 +9604,15 @@ function mpHandleMessage(msg) {
           html: _dimg + '<span>' + t('act.victory_text', { defender: featList[targetFi].name })
               + '<br><b>⚡ Conquest surge — max regen for 60s!</b></span>',
         });
+        // v113: let the conqueror send a global reaction emote above the new flag.
+        if (typeof _showEmotePicker === 'function' && targetFi !== currentIdx) _showEmotePicker(geoCountryId);
       }
       showConquestToast(targetFi, fi);
       placeFlag(targetFi, fi);
+      // v113: a (re)conquest replaces the holder — clear any prior emote on this geo.
+      // The new conqueror can attach a fresh one via the picker; this guarantees an
+      // emote is removed the instant another country takes the territory.
+      if (typeof _setGeoEmote === 'function') _setGeoEmote(targetFi, null, 0);
       // v98: arm the invincibility countdown under the new flag.
       _geoImmuneUntil[targetFi] = Date.now() + (msg.immunityMs || 60000);
       // v99e: shockwave ring from the new flag's position.
@@ -9453,6 +9642,15 @@ function mpHandleMessage(msg) {
       }
       scheduleLegend();
       refreshConqueredCountLocal(); // v92b: instant Conquered-count update
+      break;
+    }
+
+    case 'emote': {
+      // v113: a conqueror attached (or the server cleared) an emote on a country.
+      const fi = idToFeatIdx.get(String(msg.geoIdx));
+      if (fi === undefined) break;
+      const until = msg.until || (msg.emoji ? Date.now() + EMOTE_TTL_MS : 0);
+      _setGeoEmote(fi, msg.emoji || null, until);
       break;
     }
 
@@ -11976,6 +12174,112 @@ function refreshBombMenu(){
     </button>`).join('');
 }
 
+// ── Combined GDP odometer (v113) ──────────────────────────────────
+// Sums the FULL nominal GDP (USD) of every country the player currently holds
+// (homeland if not foreign-held + every conquered outpost) and ticks it up in
+// real time at the rate that GDP would accrue (annual / seconds-per-year), giving
+// a live worldometer feel. Rendered into #gdp-value in the rank panel.
+const GDP_DEFAULT = 5e9; // unknown/unlisted territory fallback
+// Keyed by lowercased Natural Earth admin name. Approx 2023 nominal GDP (USD).
+const COUNTRY_GDP = {
+  'united states of america':27360e9,'china':17790e9,'germany':4456e9,'japan':4213e9,
+  'india':3550e9,'united kingdom':3340e9,'france':3030e9,'italy':2255e9,'brazil':2174e9,
+  'canada':2140e9,'russia':2021e9,'mexico':1789e9,'australia':1724e9,'south korea':1713e9,
+  'spain':1580e9,'indonesia':1371e9,'netherlands':1118e9,'turkey':1108e9,'saudi arabia':1067e9,
+  'switzerland':905e9,'poland':811e9,'taiwan':790e9,'argentina':641e9,'belgium':627e9,
+  'sweden':593e9,'ireland':564e9,'norway':546e9,'austria':526e9,'thailand':515e9,
+  'israel':510e9,'united arab emirates':504e9,'singapore':501e9,'bangladesh':446e9,
+  'philippines':437e9,'vietnam':430e9,'malaysia':415e9,'denmark':404e9,'iran':388e9,
+  'hong kong':382e9,'south africa':378e9,'colombia':364e9,'nigeria':363e9,'romania':351e9,
+  'egypt':396e9,'pakistan':338e9,'chile':335e9,'czechia':330e9,'finland':300e9,
+  'portugal':287e9,'peru':268e9,'kazakhstan':261e9,'iraq':254e9,'new zealand':252e9,
+  'algeria':240e9,'greece':238e9,'qatar':235e9,'hungary':212e9,'ukraine':179e9,
+  'kuwait':161e9,'ethiopia':156e9,'morocco':147e9,'slovakia':133e9,'ecuador':121e9,
+  'dominican rep.':121e9,'cuba':107e9,'kenya':110e9,'oman':108e9,'guatemala':102e9,
+  'bulgaria':102e9,'angola':94e9,'venezuela':92e9,'uzbekistan':90e9,'luxembourg':89e9,
+  'costa rica':86e9,'panama':83e9,'croatia':81e9,'tanzania':79e9,"côte d'ivoire":79e9,
+  'azerbaijan':78e9,'lithuania':78e9,'uruguay':77e9,'ghana':76e9,'serbia':75e9,
+  'belarus':73e9,'slovenia':68e9,'dem. rep. congo':67e9,'myanmar':65e9,'tunisia':50e9,
+  'jordan':50e9,'cameroon':49e9,'uganda':49e9,'libya':45e9,'bolivia':45e9,
+  'bahrain':44e9,'paraguay':43e9,'latvia':47e9,'nepal':41e9,'estonia':41e9,
+  'el salvador':34e9,'honduras':34e9,'zimbabwe':35e9,'cyprus':32e9,'senegal':31e9,
+  'iceland':31e9,'cambodia':31e9,'georgia':30e9,'sudan':30e9,'zambia':28e9,
+  'north korea':28e9,'bosnia and herz.':27e9,'armenia':24e9,'albania':23e9,'guinea':21e9,
+  'mali':21e9,'gabon':21e9,'mozambique':21e9,'haiti':20e9,'yemen':21e9,
+  'burkina faso':20e9,'botswana':20e9,'malta':20e9,'benin':19e9,'mongolia':18e9,
+  'nicaragua':17e9,'niger':17e9,'madagascar':16e9,'moldova':16e9,'laos':15e9,
+  'afghanistan':14e9,'rwanda':14e9,'mauritius':14e9,'macedonia':14e9,'north macedonia':14e9,
+  'malawi':13e9,'chad':13e9,'kyrgyzstan':12e9,'tajikistan':12e9,'namibia':12e9,
+  'somalia':11e9,'mauritania':10e9,'syria':9e9,'togo':9e9,'montenegro':7e9,
+};
+// Natural Earth name → COUNTRY_GDP key aliases (abbreviations / alt spellings).
+const GDP_ALIASES = {
+  'united states':'united states of america','usa':'united states of america',
+  'great britain':'united kingdom','britain':'united kingdom','england':'united kingdom',
+  'czech rep.':'czechia','czech republic':'czechia','viet nam':'vietnam',
+  'lao pdr':'laos','korea, south':'south korea','korea, north':'north korea',
+  'congo (kinshasa)':'dem. rep. congo','dr congo':'dem. rep. congo',
+  'ivory coast':"côte d'ivoire",'cote d\'ivoire':"côte d'ivoire",
+  'dominican republic':'dominican rep.','bosnia and herzegovina':'bosnia and herz.',
+  'united arab emirates':'united arab emirates','uae':'united arab emirates',
+};
+function _countryGDPByName(name){
+  if (!name) return GDP_DEFAULT;
+  let k = name.toLowerCase().trim();
+  if (COUNTRY_GDP[k] != null) return COUNTRY_GDP[k];
+  if (GDP_ALIASES[k] && COUNTRY_GDP[GDP_ALIASES[k]] != null) return COUNTRY_GDP[GDP_ALIASES[k]];
+  return GDP_DEFAULT;
+}
+function _countryGDPById(id){
+  const idx = idToFeatIdx.get(String(id));
+  if (idx === undefined) return GDP_DEFAULT;
+  const f = featList[idx];
+  return f ? _countryGDPByName(f.name) : GDP_DEFAULT;
+}
+// Sum the full GDP of every country the local player holds.
+function _computeGdpAnnual(){
+  if (currentIdx < 0 || !featList[currentIdx]) return 0;
+  const yourId = String(featList[currentIdx].id);
+  const homePrefix = yourId + ':';
+  let foreignHome = false;
+  const held = new Set();
+  for (const key of conqueredSet) {
+    const ci = key.indexOf(':');
+    if (ci < 0) continue;
+    const g = key.slice(0, ci), h = key.slice(ci + 1);
+    if (g === yourId && h !== yourId) foreignHome = true; // someone else holds our homeland
+    if (h === yourId) held.add(g);                        // our outposts (incl. a re-taken homeland)
+  }
+  if (!foreignHome) held.add(yourId); // homeland counts unless a foreign country holds it
+  let sum = 0;
+  for (const id of held) sum += _countryGDPById(id);
+  return sum;
+}
+const _GDP_SEC_PER_YEAR = 31557600;
+let _gdpAnnual = 0, _gdpAccrued = 0, _gdpLastTickMs = Date.now();
+function _formatGDP(v){
+  v = Math.max(0, Math.min(999999999999999, Math.floor(v)));
+  const padded = String(v).padStart(15, '0');
+  const grouped = padded.replace(/\B(?=(\d{3})+(?!\d))/g, ','); // "027,123,456,789,012"
+  const firstSig = grouped.search(/[1-9]/);
+  if (firstSig < 0) return '<span class="gdp-dim">' + grouped + '</span>';
+  if (firstSig === 0) return grouped;
+  return '<span class="gdp-dim">' + grouped.slice(0, firstSig) + '</span>' + grouped.slice(firstSig);
+}
+function _renderGdpNow(){
+  const el = document.getElementById('gdp-value');
+  if (el) el.innerHTML = '$' + _formatGDP(_gdpAnnual + _gdpAccrued);
+}
+// Recompute holdings ~every 2s (deltas change ownership); accrue + render at 100ms.
+setInterval(() => { _gdpAnnual = _computeGdpAnnual(); }, 2000);
+setInterval(() => {
+  const now = Date.now();
+  const dt = Math.min(5, (now - _gdpLastTickMs) / 1000);
+  _gdpLastTickMs = now;
+  _gdpAccrued += (_gdpAnnual / _GDP_SEC_PER_YEAR) * dt;
+  _renderGdpNow();
+}, 100);
+
 // ── Rank UI ───────────────────────────────────────────────────────
 function refreshRankUI(){
   const rank = getCurrentRank();
@@ -12021,9 +12325,15 @@ function refreshRankUI(){
           ${next ? ' · ' + t('rank.next_rank_inline', { name: tRank(next.name), min: next.min }) : ' · <b>' + t('hud.max_rank') + '</b>'}
         </div>
         ${perks.length ? '<div class="rank-perks" style="font-size:10px;color:#94a3b8;margin-top:4px;line-height:1.5;">' + perks.join(' · ') + '</div>' : ''}
+        <div class="rank-gdp" title="Combined GDP (USD) of every country you currently hold">
+          <span class="gdp-label">GDP</span>
+          <span id="gdp-value">$000,000,000,000,000</span>
+        </div>
       </div>
     </div>
   `;
+  // v113: recompute + paint GDP immediately into the freshly-built element
+  if (typeof _computeGdpAnnual === 'function') { _gdpAnnual = _computeGdpAnnual(); _renderGdpNow(); }
   refreshBombMenu();
 }
 

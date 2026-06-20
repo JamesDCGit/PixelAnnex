@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-16-v112';
+const SERVER_VERSION       = '2026-06-20-v113';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2484,12 +2484,13 @@ function processDailyLogin(discordId) {
 
 // ── Rank system (mirrors client RANKS array) ─────────────────────
 const RANK_THRESHOLDS = [
-  // v97: thresholds doubled (was 50/150/300/500) so ranks take ~2x longer to earn.
+  // v113: aligned to the client RANKS pixel scale (XP == pixels placed) so the
+  // Discord ranks match the in-game ranks. Admiral is 3000 (operator request).
   { name: 'Soldier',    min: 0    },
-  { name: 'Lieutenant', min: 100  },
-  { name: 'Captain',    min: 300  },
-  { name: 'General',    min: 600  },
-  { name: 'Admiral',    min: 1000 },
+  { name: 'Lieutenant', min: 250  },
+  { name: 'Captain',    min: 750  },
+  { name: 'General',    min: 1500 },
+  { name: 'Admiral',    min: 3000 },
 ];
 
 function rankFromXP(xp) {
@@ -3002,6 +3003,7 @@ function _resetWorld() {
   conqueredSet.clear();
   permanentlyConquered.clear();
   exiledSet.clear(); // v97e
+  _emoteByGeo.clear(); // v113: drop all conquest emotes on world reset
   for (const k of Object.keys(geoClaimCnt)) delete geoClaimCnt[k];
   for (const k of Object.keys(countryPxCount)) countryPxCount[k] = 0;
   for (const k of Object.keys(ownerPixels)) ownerPixels[k] = new Set();
@@ -3774,6 +3776,25 @@ function watchAssetsForChanges() {
 }
 
 const conqueredSet = new Set();
+// v113: conquest emotes — the conqueror of a country can float ONE emoji above its
+// flag globally for 5 minutes. Keyed by geo country id → { emoji, countryId, until }.
+// The server relays the emote and re-sends still-valid ones to late-joiners; an
+// emote is only re-sent while its setter still holds the geo (so a re-conquest
+// drops it). The client clears it live on the re-conquest broadcast.
+const EMOTE_SET = new Set(['😂','😎','🥳','😢','😭','😠','🤬','💀','❤️','💔','🔥','💯','☢️']);
+const EMOTE_TTL_MS = 5 * 60 * 1000;
+const _emoteByGeo = new Map(); // String(geoId) → { emoji, countryId, until }
+function _buildActiveEmotes() {
+  const now = Date.now();
+  const out = [];
+  for (const [geoId, e] of _emoteByGeo) {
+    if (e.until <= now) { _emoteByGeo.delete(geoId); continue; }
+    // Only surface an emote while its setter still holds the geo (drops on re-conquest).
+    if (!conqueredSet.has(geoId + ':' + e.countryId)) { _emoteByGeo.delete(geoId); continue; }
+    out.push({ geoIdx: geoId, emoji: e.emoji, until: e.until });
+  }
+  return out;
+}
 // Once a territory is conquered this game cycle it stays locked even after
 // pixel reversals (monsters / nukes can drop it below threshold). Cleared only
 // on world reset so the conquest is a lasting consequence.
@@ -7349,6 +7370,7 @@ wss.on('connection', (ws, req) => {
           serverVersion: SERVER_VERSION,
           nukeZones: (_pruneServerNukeZones(), _nukeZones.slice()),
           endgame: _endgamePayload || _computeEndgame(), // v100: sudden death + panel for late-joiners
+          emotes: _buildActiveEmotes(), // v113: active conquest emotes for late-joiners
         }));
         try { ws.send(encodeSnapshotRuns(_snap.runs)); } catch (e) {}
         // v98b: stale unplayable country (e.g. Vatican in localStorage) → open
@@ -7520,6 +7542,22 @@ wss.on('connection', (ws, req) => {
           timestamp:     nowR,
           sassyText:     '📣 ' + whoName + ' needs reinforcements on the front lines of ' + targetName + '! Deploy your pixels: ' + GAME_URL,
         });
+        break;
+      }
+      case 'emote': {
+        // v113: a conqueror attaches an emoji above a country they hold. Validate
+        // the emoji is in the allowed set and that this player actually holds the
+        // geo (its conqueror), then relay globally + remember for late-joiners.
+        const emGeo = msg.geoIdx != null ? String(msg.geoIdx) : null;
+        const emWho = msg.countryId != null ? String(msg.countryId) : null;
+        const emoji = typeof msg.emoji === 'string' ? msg.emoji : null;
+        if (!emGeo || !emWho || !emoji) break;
+        if (!EMOTE_SET.has(emoji)) break;                          // unknown emoji → ignore
+        if (emWho !== String(player.countryId || '')) break;       // must speak for your own country
+        if (!conqueredSet.has(emGeo + ':' + emWho)) break;         // must currently hold the geo
+        const until = Date.now() + EMOTE_TTL_MS;
+        _emoteByGeo.set(emGeo, { emoji, countryId: emWho, until });
+        broadcast(JSON.stringify({ type: 'emote', geoIdx: emGeo, emoji, until }));
         break;
       }
       case 'bomb': {
