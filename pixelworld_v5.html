@@ -1476,6 +1476,22 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     } else if (mobile && forced) {
       document.documentElement.classList.add('pa-mobile-forced');
     }
+    // v118a: crash-surviving boot diagnostic. Each boot milestone writes
+    // localStorage 'pa_boot_stage' (see _bootStage). If the PREVIOUS load never
+    // reached 'ready', it likely hard-crashed (OOM kills the tab + console, but
+    // localStorage survives) — surface where it stopped in a banner the user can
+    // just read off the screen. Cleared once a boot reaches 'ready'.
+    try {
+      var _ls = localStorage.getItem('pa_boot_stage');
+      if (_ls && _ls.indexOf('ready') !== 0) {
+        var _bd = document.createElement('div');
+        _bd.id = 'pa-bootdbg';
+        _bd.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#7f1d1d;color:#fff;font:12px/1.4 ui-monospace,monospace;padding:7px 10px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.6);';
+        _bd.textContent = '⚠ previous load stopped at: ' + _ls + ' — tap to dismiss';
+        _bd.onclick = function(){ try{ _bd.remove(); }catch(e){} };
+        (document.body || document.documentElement).appendChild(_bd);
+      }
+    } catch(e) {}
   } catch(e) { /* fall through — if gate fails, let the game try to load */ }
 })();
 </script>
@@ -3152,6 +3168,16 @@ function _idbBiomePut(key, val){ return _idbPut('biome', key, val); }
 function _idbGridGet(key){ return _idbGet('grid', key); }
 function _idbGridPut(key, val){ return _idbPut('grid', key, val); }
 
+// v118a: crash-surviving boot-stage marker. Writes the current milestone to
+// localStorage so that after a hard OOM crash (which kills the tab + console) the
+// NEXT load can surface where boot died (see the gate banner above). Cleared on
+// 'ready'. Also mirrored to console for connected debuggers.
+function _bootStage(name){
+  try { localStorage.setItem('pa_boot_stage', name + ' @' + Math.round(performance.now()) + 'ms'); } catch(e){}
+  try { console.log('[Boot]', name); } catch(e){}
+  if (name === 'ready') { try { var b=document.getElementById('pa-bootdbg'); if(b) b.remove(); } catch(e){} }
+}
+
 // ── Sound engine (Web Audio API — no external files) ─────────────
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
 let _actx = null;
@@ -3614,7 +3640,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-21-v118';
+const CODE_VERSION = '2026-06-21-v119';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4984,6 +5010,7 @@ self.onmessage = function(e) {
 }
 
 async function boot(){
+  _bootStage('boot-start');
   prog(5,"Fetching world map data (~2.3MB)…");
   const dlAnim=animateProgress(5,18,6000,"Downloading Natural Earth 10m countries…");
 
@@ -5016,6 +5043,7 @@ async function boot(){
   // v75: build O(1) id-lookup + RGB cache so delta handler doesn't burn
   // hundreds of findIndex+hexRgb calls per second.
   rebuildFeatIndex();
+  _bootStage('featlist-built');
 
   // Populate country selector (alphabetical)
   const usaIdx=featList.findIndex(f=>f.id==="840");
@@ -5074,6 +5102,7 @@ async function boot(){
         for (let i=0;i<MAP_PX;i++){ const v=featByPixel[i]; if(v>=0) geoTotal[v]=(geoTotal[v]||0)+1; }
         _gridFromCache = true;
         console.log('[Bake] grid RESTORED from cache in', Math.round(performance.now()-_gridT0), 'ms — skipped rasterization + cleanup');
+        _bootStage('grid-restored');
       }
     } catch(e){ console.warn('[Bake] grid cache read failed:', e && e.message); }
   }
@@ -5274,6 +5303,7 @@ async function boot(){
     console.log("Micro-exclaves: absorbed",absorbed,"px into neighbours, removed",oceaned,"px to ocean");
   }
   console.log('[Bake] grid COMPUTED in', Math.round(performance.now()-_gridT0), 'ms');
+  _bootStage('grid-computed');
   if (_BAKE_ENABLED) {
     try { await _idbGridPut(MAP_GRID_VERSION, { fbp: featByPixel.buffer.slice(0), lm: landMask.buffer.slice(0), featLen: featList.length });
           console.log('[Bake] grid cached for next load'); }
@@ -5306,6 +5336,7 @@ async function boot(){
           bctx.putImageData(new ImageData(new Uint8ClampedArray(cached.data), MAP_W, MAP_H), 0, 0);
           _biomeFromCache = true;
           console.log('[Bake] biome RESTORED from cache in', Math.round(performance.now()-_biomeT0), 'ms');
+          _bootStage('biome-restored');
         }
       } catch(e){ console.warn('[Bake] biome cache read failed:', e && e.message); }
     }
@@ -5427,6 +5458,7 @@ async function boot(){
     }
     bctx.putImageData(cleanImg,0,0);
     console.log('[Bake] biome COMPUTED in', Math.round(performance.now()-_biomeT0), 'ms');
+    _bootStage('biome-computed');
     if (_BAKE_ENABLED) {
       try { await _idbBiomePut(MAP_BAKE_VERSION, { w:MAP_W, h:MAP_H, data: cleanImg.data.buffer.slice(0) });
             console.log('[Bake] biome cached for next load'); }
@@ -5590,6 +5622,7 @@ if (typeof renderLandmarks === 'function') {
   stopLoadingTips();
   resetView();
   updateBucketHUD();
+  _bootStage('init-mp');
   mpInit();       // connect to multiplayer server (silent fallback if offline)
   initAuth();     // Discord OAuth status check
   refreshAlliances(); // load active alliances
@@ -5628,6 +5661,7 @@ if (typeof renderLandmarks === 'function') {
     tickSiegeFlash();
     drawGrid();  // pre-render grid overlay (only shown at high zoom)
     console.log("PixelAnnex ready!");
+    _bootStage('ready'); // v118a: boot completed cleanly — clears the crash diagnostic
     // v93 (Phase 3A): ?goto=<countryId> deep-link (from /strike) — pan/zoom to it.
     try {
       const _goto = new URLSearchParams(location.search).get('goto');
@@ -9189,6 +9223,7 @@ let _snapshotApplied = false;
 function applySnapshotRuns(ab) {
   const dv = new DataView(ab);
   if (dv.byteLength < 5 || dv.getUint8(0) !== 3) return;
+  _bootStage('snapshot-applying'); // v118a: heavy board replay — common post-welcome crash window
   const count = dv.getUint32(1, true);
   // Reset claimerCount + per-geo claim map (native baseline 0), rebuilt from runs.
   claimerCount = {};
@@ -9255,6 +9290,7 @@ function applySnapshotRuns(ab) {
   scheduleLegend();
   // v95a: snapshot (incl. conqueredSet) is now applied — unblock the fallen re-pick.
   _snapshotApplied = true;
+  _bootStage('ready'); // v118a: snapshot applied without crashing — clear the diagnostic
   // v94: fallen-country re-pick is now triggered AFTER the Welcome Back popup is
   // dismissed (closeDailyPopup → _tryShowFallenRepick), not here on snapshot load.
 }

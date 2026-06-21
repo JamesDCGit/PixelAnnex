@@ -41,7 +41,15 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-21-v118`.** (v118 = mobile-crash fix: skip the eager
+**Current production triad: `2026-06-21-v119`.** (v119 = crash-surviving boot DIAGNOSTIC
+(does not fix anything — instruments the mobile crash). `_bootStage(name)` writes each boot
+milestone to `localStorage pa_boot_stage` (survives an OOM tab-kill, which destroys the
+console). The early inline gate reads the PREVIOUS value on the next load and, if it isn't
+`ready`, shows a red fixed banner `#pa-bootdbg` ("previous load stopped at: <stage>") the
+user can read off the phone with no debugger. Milestones: boot-start → featlist-built →
+grid-restored/computed → biome-restored/computed → init-mp → ready, plus snapshot-applying
+→ ready (board replay). Cleared/banner-removed on `ready`. Use the reported stage to target
+the next real fix; then this can be removed.) (v118 = mobile-crash fix: skip the eager
 music pre-render on mobile. `prerenderAllTracks()` ran at boot (right as the welcome
 appears) and rendered 3 tracks to ~43MB of PCM (`_trackBuffers`; track 3 alone ~28MB) via
 OfflineAudioContext — a big memory + main-thread note-scheduling spike that froze the UI
