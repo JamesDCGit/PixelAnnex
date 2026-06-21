@@ -41,7 +41,18 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-21-v120`.** (v120 = mobile crash-loop breaker +
+**Current production triad: `2026-06-21-v121`.** (v121 = REAL mobile-crash fix: chunk the
+board snapshot replay. Diagnosed from the phone: welcome renders, buttons PULSE but are
+UNRESPONSIVE, then iOS "A problem repeatedly occurred" (OOM). Cause: `applySnapshotRuns`
+painted the whole board (War #4 ~197k px) in ONE synchronous loop — blocked the main thread
+(unresponsive taps) and piled up per-row `Uint8ClampedArray` buffers with no GC yield → OOM.
+Fix: `_paintChunk` time-slices the run-paint into ~10ms batches with `requestAnimationFrame`
+yields; when done it calls the new `_finishSnapshotReplay` (conquest-flag replay + finalize
++ `_snapshotApplied`). Verified: a 716k-px synthetic snapshot YIELDS (async) and paints
+correctly with no error. Also: boot-end marker changed `ready`→`boot-done` so a snapshot-
+replay crash keeps accumulating `pa_boot_fails` (the v120 breaker reset too early to ever
+catch this). The grid/biome bakes (v116/v117) + music skip (v118) + canvas cuts (v120) all
+still apply; this addresses the post-welcome spike they didn't.) (v120 = mobile crash-loop breaker +
 more memory cut. The mobile crash is an OOM: iOS kills + auto-reloads the tab right after
 `buildCselOptions` (during the biome/borders build or the post-welcome board replay), and
 because the crash happens BEFORE the grid/biome IDB caches are written, every reload redoes

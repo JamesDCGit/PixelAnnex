@@ -3672,7 +3672,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-21-v120';
+const CODE_VERSION = '2026-06-21-v121';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5695,7 +5695,7 @@ if (typeof renderLandmarks === 'function') {
     tickSiegeFlash();
     drawGrid();  // pre-render grid overlay (only shown at high zoom)
     console.log("PixelAnnex ready!");
-    _bootStage('ready'); // v118a: boot completed cleanly — clears the crash diagnostic
+    _bootStage('boot-done'); // v120a: NOT 'ready' — the snapshot replay still follows. Only snapshot-complete counts as a fully-stable boot, so a snapshot-replay crash keeps accumulating fails for the circuit breaker.
     // v93 (Phase 3A): ?goto=<countryId> deep-link (from /strike) — pan/zoom to it.
     try {
       const _goto = new URLSearchParams(location.search).get('goto');
@@ -9263,32 +9263,48 @@ function applySnapshotRuns(ab) {
   claimerCount = {};
   for (const geoFi of Object.keys(geoTotal)) geoClaimCnt[geoFi] = { [geoFi]: 0 };
   let off = 5;
-  for (let k = 0; k < count && off + 10 <= dv.byteLength; k++) {
-    const s = dv.getUint32(off, true); off += 4;
-    const l = dv.getUint32(off, true); off += 4;
-    const o = dv.getUint16(off, true); off += 2;
-    const fi = (o === 0xFFFF) ? undefined : idToFeatIdx.get(String(o));
-    if (fi === undefined) continue;
-    claimerCount[fi] = (claimerCount[fi] || 0) + l;
-    const [r, g, b] = _renderRgb(fi); // v97g
-    let pos = s;
-    const end = s + l;
-    while (pos < end && pos < MAP_PX) {
-      const x = pos % MAP_W, y = (pos / MAP_W) | 0;
-      const rowRem = Math.min(MAP_W - x, end - pos);
-      const slice = new Uint8ClampedArray(rowRem * 4);
-      for (let kk = 0; kk < rowRem; kk++) {
-        const p = kk * 4;
-        slice[p] = r; slice[p + 1] = g; slice[p + 2] = b; slice[p + 3] = 215;
-        const i = pos + kk;
-        claimByPixel[i] = fi;
-        const geo = featByPixel[i];
-        if (geo >= 0) { if (!geoClaimCnt[geo]) geoClaimCnt[geo] = {}; geoClaimCnt[geo][fi] = (geoClaimCnt[geo][fi] || 0) + 1; }
+  let k = 0;
+  // v120a: paint the runs in TIME-SLICED chunks with rAF yields. A big board
+  // (~200k px on War #4) painted in ONE synchronous loop blocked the main thread —
+  // the welcome buttons pulsed but were UNRESPONSIVE — and the per-row buffers piled
+  // up with no GC yield → OOM crash on mobile. Chunking frees the thread between
+  // ~10ms slices (taps work) and lets GC reclaim the transient buffers (no OOM).
+  const _paintChunk = () => {
+    const _t0 = performance.now();
+    while (k < count && off + 10 <= dv.byteLength) {
+      const s = dv.getUint32(off, true); off += 4;
+      const l = dv.getUint32(off, true); off += 4;
+      const o = dv.getUint16(off, true); off += 2;
+      k++;
+      const fi = (o === 0xFFFF) ? undefined : idToFeatIdx.get(String(o));
+      if (fi === undefined) continue;
+      claimerCount[fi] = (claimerCount[fi] || 0) + l;
+      const [r, g, b] = _renderRgb(fi); // v97g
+      let pos = s;
+      const end = s + l;
+      while (pos < end && pos < MAP_PX) {
+        const x = pos % MAP_W, y = (pos / MAP_W) | 0;
+        const rowRem = Math.min(MAP_W - x, end - pos);
+        const slice = new Uint8ClampedArray(rowRem * 4);
+        for (let kk = 0; kk < rowRem; kk++) {
+          const p = kk * 4;
+          slice[p] = r; slice[p + 1] = g; slice[p + 2] = b; slice[p + 3] = 215;
+          const i = pos + kk;
+          claimByPixel[i] = fi;
+          const geo = featByPixel[i];
+          if (geo >= 0) { if (!geoClaimCnt[geo]) geoClaimCnt[geo] = {}; geoClaimCnt[geo][fi] = (geoClaimCnt[geo][fi] || 0) + 1; }
+        }
+        claimCtx.putImageData(new ImageData(slice, rowRem, 1), x, y);
+        pos += rowRem;
       }
-      claimCtx.putImageData(new ImageData(slice, rowRem, 1), x, y);
-      pos += rowRem;
+      if (performance.now() - _t0 > 10) { requestAnimationFrame(_paintChunk); return; } // yield
     }
-  }
+    _finishSnapshotReplay(); // all runs painted → flags + finalize
+  };
+  _paintChunk();
+}
+// v120a: conquest-flag replay + finalize, run after the chunked run-paint completes.
+function _finishSnapshotReplay() {
   // Replay conquests AFTER runs so placeFlag sees final ownership.
   // v95b: do NOT re-run finisherFill here. The snapshot runs above already paint
   // the server's TRUE per-pixel ownership (incl. the conqueror's interior + any
