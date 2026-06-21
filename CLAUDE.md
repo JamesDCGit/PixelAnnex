@@ -41,7 +41,20 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-21-v119`.** (v119 = crash-surviving boot DIAGNOSTIC
+**Current production triad: `2026-06-21-v120`.** (v120 = mobile crash-loop breaker +
+more memory cut. The mobile crash is an OOM: iOS kills + auto-reloads the tab right after
+`buildCselOptions` (during the biome/borders build or the post-welcome board replay), and
+because the crash happens BEFORE the grid/biome IDB caches are written, every reload redoes
+the full heavy build and OOMs again — an endless reload/crash loop. (1) CIRCUIT BREAKER:
+the early inline gate counts consecutive boots that never reached `ready` (`pa_boot_fails`,
+survives the tab-kill). 1 fail → the v119 banner. 2+ fails → STOP attempting the heavy boot
+(reuse `__PA_MOBILE_BLOCKED__`) and show a full-screen `#pa-cb` overlay naming the failing
+stage + a "Try again" button — this halts the thrashing and surfaces the stage with no
+debugger. `_bootStage('ready')` resets the counter. (2) MEMORY: `c-flash` (paint pulse) +
+`c-outline` (already not drawn on mobile) added to `_DECORATIVE_CANVAS_IDS` → 1×1 on mobile,
+freeing ~16MB of resident canvas memory for headroom. NOTE: the SW is network-first + the
+server sends `sw.js` `no-cache`, so this is NOT a stale-client problem — it's genuine memory.
+Next fix is targeted by whatever stage the breaker reports.) (v119 = crash-surviving boot DIAGNOSTIC
 (does not fix anything — instruments the mobile crash). `_bootStage(name)` writes each boot
 milestone to `localStorage pa_boot_stage` (survives an OOM tab-kill, which destroys the
 console). The early inline gate reads the PREVIOUS value on the next load and, if it isn't

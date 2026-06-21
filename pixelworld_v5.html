@@ -1476,14 +1476,43 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     } else if (mobile && forced) {
       document.documentElement.classList.add('pa-mobile-forced');
     }
-    // v118a: crash-surviving boot diagnostic. Each boot milestone writes
-    // localStorage 'pa_boot_stage' (see _bootStage). If the PREVIOUS load never
-    // reached 'ready', it likely hard-crashed (OOM kills the tab + console, but
-    // localStorage survives) — surface where it stopped in a banner the user can
-    // just read off the screen. Cleared once a boot reaches 'ready'.
+    // v118a/v120: crash-surviving boot diagnostic + crash-loop CIRCUIT BREAKER.
+    // Each boot milestone writes localStorage 'pa_boot_stage' (see _bootStage);
+    // it survives an OOM tab-kill (which destroys the console). If the PREVIOUS
+    // load never reached 'ready' we count it as a failure. 1 failure → show a
+    // banner with the stage. 2+ consecutive failures → STOP attempting the heavy
+    // boot (which keeps OOM-crashing) and show a clear screen with the failing
+    // stage + a retry button. This breaks the endless reload/crash loop and tells
+    // us exactly where it dies.
     try {
       var _ls = localStorage.getItem('pa_boot_stage');
-      if (_ls && _ls.indexOf('ready') !== 0) {
+      var _prevFailed = _ls && _ls.indexOf('ready') !== 0;
+      var _fails = parseInt(localStorage.getItem('pa_boot_fails') || '0', 10) || 0;
+      _fails = _prevFailed ? (_fails + 1) : 0;
+      try { localStorage.setItem('pa_boot_fails', String(_fails)); } catch(e){}
+
+      if (_fails >= 2) {
+        // Crash loop — halt boot (reuse the proven block flag) + show diagnostic.
+        window.__PA_MOBILE_BLOCKED__ = true;
+        var _app = document.getElementById('app'); if (_app) _app.style.display = 'none';
+        var _sp = document.getElementById('mobile-splash'); if (_sp) _sp.classList.remove('show');
+        var _cb = document.createElement('div');
+        _cb.id = 'pa-cb';
+        _cb.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0b1220;color:#e2e8f0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font:14px/1.6 system-ui,-apple-system,sans-serif;';
+        _cb.innerHTML =
+          '<div style="font-size:42px">⚠️</div>' +
+          '<h2 style="margin:10px 0 4px">The game keeps crashing on this device</h2>' +
+          '<p style="max-width:380px;color:#94a3b8;margin:6px 0">It stopped at <b style="color:#fca5a5">' + (_ls || '?') + '</b> on ' + _fails + ' tries in a row — usually low memory in a mobile browser.</p>' +
+          '<button id="pa-cb-retry" style="margin-top:16px;padding:11px 24px;border:0;border-radius:10px;background:#3b82f6;color:#fff;font-size:15px;font-weight:600">Try again</button>' +
+          '<p style="margin-top:16px;color:#64748b;font-size:12px">PixelAnnex runs best on a desktop browser.</p>';
+        (document.body || document.documentElement).appendChild(_cb);
+        var _rb = document.getElementById('pa-cb-retry');
+        if (_rb) _rb.addEventListener('click', function(){
+          try { localStorage.setItem('pa_boot_fails','0'); localStorage.removeItem('pa_boot_stage'); } catch(e){}
+          location.reload();
+        });
+      } else if (_prevFailed) {
+        // First failure — non-blocking banner; let it try once more.
         var _bd = document.createElement('div');
         _bd.id = 'pa-bootdbg';
         _bd.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#7f1d1d;color:#fff;font:12px/1.4 ui-monospace,monospace;padding:7px 10px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.6);';
@@ -3175,7 +3204,10 @@ function _idbGridPut(key, val){ return _idbPut('grid', key, val); }
 function _bootStage(name){
   try { localStorage.setItem('pa_boot_stage', name + ' @' + Math.round(performance.now()) + 'ms'); } catch(e){}
   try { console.log('[Boot]', name); } catch(e){}
-  if (name === 'ready') { try { var b=document.getElementById('pa-bootdbg'); if(b) b.remove(); } catch(e){} }
+  if (name === 'ready') {
+    try { var b=document.getElementById('pa-bootdbg'); if(b) b.remove(); } catch(e){}
+    try { localStorage.setItem('pa_boot_fails','0'); } catch(e){} // v120: clean boot resets the crash-loop breaker
+  }
 }
 
 // ── Sound engine (Web Audio API — no external files) ─────────────
@@ -3640,7 +3672,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-21-v119';
+const CODE_VERSION = '2026-06-21-v120';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3712,7 +3744,9 @@ const _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platfo
 const _isMobileForMemory = matchMedia('(max-width: 768px)').matches || _isIOS || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
 // Canvases that are purely decorative — shrunk to 1×1 on mobile to free GPU memory.
 // Drawing routines for these silently no-op when the canvas is 1×1.
-const _DECORATIVE_CANVAS_IDS = ['c-grid','c-waves','c-sprites','c-landmarks','c-crater','c-siege'];
+// v120: also drop c-flash (the paint pulse) + c-outline (already not drawn on
+// mobile) to 1×1 — that's another ~16MB of resident canvas memory freed on phones.
+const _DECORATIVE_CANVAS_IDS = ['c-grid','c-waves','c-sprites','c-landmarks','c-crater','c-siege','c-flash','c-outline'];
 const cBase=document.getElementById("c-base");
 const cGrid=document.getElementById("c-grid");
 const gridCtx=cGrid.getContext("2d");
