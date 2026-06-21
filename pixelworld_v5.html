@@ -3119,27 +3119,38 @@ const MAP_W=2048, MAP_H=1024, MAP_PX=MAP_W*MAP_H;
 // Gated by `pa_bake` localStorage (default ON); any error falls through to the
 // full render. Stores the raw RGBA buffer (lossless, no PNG encode/decode).
 const MAP_BAKE_VERSION = 'biome-2048x1024-v116a';
+// v116b: gameplay-grid bake version — bump when the map data / cleanup logic /
+// featList index order changes (else cached featByPixel maps to the wrong country).
+const MAP_GRID_VERSION = 'grid-2048x1024-v116b';
 const _BAKE_ENABLED = (function(){ try { return localStorage.getItem('pa_bake') !== '0'; } catch(e){ return true; } })();
 function _idbOpen(){
   return new Promise((res, rej) => {
-    let r; try { r = indexedDB.open('pa_mapcache', 1); } catch(e){ return rej(e); }
-    r.onupgradeneeded = () => { try { r.result.createObjectStore('biome'); } catch(e){} };
+    let r; try { r = indexedDB.open('pa_mapcache', 2); } catch(e){ return rej(e); }
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains('biome')) db.createObjectStore('biome');
+      if (!db.objectStoreNames.contains('grid'))  db.createObjectStore('grid');
+    };
     r.onsuccess = () => res(r.result);
     r.onerror   = () => rej(r.error);
   });
 }
-function _idbBiomeGet(key){
+function _idbGet(store, key){
   return _idbOpen().then(db => new Promise((res, rej) => {
-    const g = db.transaction('biome','readonly').objectStore('biome').get(key);
+    const g = db.transaction(store,'readonly').objectStore(store).get(key);
     g.onsuccess = () => res(g.result); g.onerror = () => rej(g.error);
   }));
 }
-function _idbBiomePut(key, val){
+function _idbPut(store, key, val){
   return _idbOpen().then(db => new Promise((res, rej) => {
-    const p = db.transaction('biome','readwrite').objectStore('biome').put(val, key);
+    const p = db.transaction(store,'readwrite').objectStore(store).put(val, key);
     p.onsuccess = () => res(); p.onerror = () => rej(p.error);
   }));
 }
+function _idbBiomeGet(key){ return _idbGet('biome', key); }
+function _idbBiomePut(key, val){ return _idbPut('biome', key, val); }
+function _idbGridGet(key){ return _idbGet('grid', key); }
+function _idbGridPut(key, val){ return _idbPut('grid', key, val); }
 
 // ── Sound engine (Web Audio API — no external files) ─────────────
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -3603,7 +3614,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-20-v116';
+const CODE_VERSION = '2026-06-20-v117';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5042,7 +5053,32 @@ async function boot(){
 
   // ── Build pixel-country mask on offscreen canvas ──────────────
   // Encode feat index as: R=hi byte, G=lo byte, B=200 (land marker)
-  prog(54,"Building country mask…"); 
+  // v116b: gameplay-grid bake. featByPixel/landMask are deterministic from the map
+  // data, so cache them and skip BOTH the canvas rasterization AND the four cleanup
+  // passes (Antarctica / horizontal artifacts / micro-islands / micro-exclaves).
+  // This also avoids ~20MB of transient scratch buffers (the mask canvas + its
+  // getImageData readback + the per-pass `visited` arrays) — the prime mobile-crash
+  // suspect. geoTotal is re-derived from the restored featByPixel.
+  const _gridT0 = performance.now();
+  let _gridFromCache = false;
+  if (_BAKE_ENABLED) {
+    try {
+      const g = await _idbGridGet(MAP_GRID_VERSION);
+      // featLen guard: if the country list changed (json edited without a version
+      // bump), the cached indices would map to the wrong countries — discard + rebuild.
+      if (g && g.featLen === featList.length && g.fbp && g.fbp.byteLength === MAP_PX*2 && g.lm && g.lm.byteLength === MAP_PX) {
+        featByPixel  = new Int16Array(g.fbp);
+        landMask     = new Uint8Array(g.lm);
+        claimByPixel = new Int16Array(MAP_PX).fill(-1);
+        for (const k in geoTotal) delete geoTotal[k];
+        for (let i=0;i<MAP_PX;i++){ const v=featByPixel[i]; if(v>=0) geoTotal[v]=(geoTotal[v]||0)+1; }
+        _gridFromCache = true;
+        console.log('[Bake] grid RESTORED from cache in', Math.round(performance.now()-_gridT0), 'ms — skipped rasterization + cleanup');
+      }
+    } catch(e){ console.warn('[Bake] grid cache read failed:', e && e.message); }
+  }
+  if (!_gridFromCache) {
+  prog(54,"Building country mask…");
   const mc=document.createElement("canvas"); mc.width=MAP_W; mc.height=MAP_H;
   const mctx=mc.getContext("2d",{willReadFrequently:true});
   if(!mctx) throw new Error("Failed to get offscreen canvas context");
@@ -5237,6 +5273,13 @@ async function boot(){
     }
     console.log("Micro-exclaves: absorbed",absorbed,"px into neighbours, removed",oceaned,"px to ocean");
   }
+  console.log('[Bake] grid COMPUTED in', Math.round(performance.now()-_gridT0), 'ms');
+  if (_BAKE_ENABLED) {
+    try { await _idbGridPut(MAP_GRID_VERSION, { fbp: featByPixel.buffer.slice(0), lm: landMask.buffer.slice(0), featLen: featList.length });
+          console.log('[Bake] grid cached for next load'); }
+    catch(e){ console.warn('[Bake] grid cache write failed:', e && e.message); }
+  }
+  } // end if(!_gridFromCache) — rasterization + cleanup skipped on cache hit
 
   // v93k: rebuild the in-game country picker now that geoTotal is final.
   // The earlier buildCselOptions() at boot runs BEFORE rasterization populates

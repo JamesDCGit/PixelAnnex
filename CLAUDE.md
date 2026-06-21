@@ -41,7 +41,19 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-20-v116`.** (v116 = baked-biome cache (boot perf,
+**Current production triad: `2026-06-20-v117`.** (v117 = gameplay-grid bake (step 2 of
+the mobile bake). `featByPixel`/`landMask` are now CACHED in IndexedDB (`pa_mapcache`/
+`grid`, raw buffers keyed by `MAP_GRID_VERSION` + a `featLen` guard) and restored on later
+loads, SKIPPING the canvas mask rasterization AND the four cleanup passes (Antarctica /
+horizontal-artifact / micro-island / micro-exclave). Crucially this also skips ~20MB of
+TRANSIENT scratch buffers (the mask canvas + its 8MB getImageData readback + the per-pass
+`visited` Uint8Arrays) — the prime mobile-crash suspect. `geoTotal` is re-derived from the
+restored `featByPixel`; borders/geoPixelList still rebuild from it (cheap linear scans).
+Verified: restore yields byte-identical state (totalLandPx 466600, 173 geos, renders
+correctly). featLen guard discards the cache if the country list changed without a version
+bump (would mis-map indices). Same `pa_bake` flag + fail-safe fallback as v116. IDB bumped
+to v2 (adds the `grid` store alongside `biome`). BUMP `MAP_GRID_VERSION` on any map-data /
+cleanup-logic / featList-order change.) (v116 = baked-biome cache (boot perf,
 step 1 of the mobile bake). The pixel-perfect biome render (a 2.1M-pixel loop over a
 ~70-zone distance table + grain — the single heaviest buildMap phase) is now CACHED in
 IndexedDB (`pa_mapcache`/`biome`, raw RGBA buffer keyed by `MAP_BAKE_VERSION`) and
