@@ -3614,7 +3614,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-20-v117';
+const CODE_VERSION = '2026-06-21-v118';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5595,7 +5595,13 @@ if (typeof renderLandmarks === 'function') {
   refreshAlliances(); // load active alliances
   // If WebSocket already connected by the time map finished loading, send join now
   setTimeout(()=>{ if(wsReady) mpSendJoin(); }, 500);
-  prerenderAllTracks(); // pre-render music tracks to PCM in background
+  // v118: do NOT eagerly pre-render music on mobile. The 3 tracks render to ~43MB
+  // of PCM (track 3 alone is ~28MB) via OfflineAudioContext right as the welcome
+  // screen appears — a big memory + main-thread note-scheduling spike that froze the
+  // UI ("cannot progress") and then OOM-crashed phones. Music is OFF by default
+  // anyway; on mobile it now renders LAZILY only if the user turns it on (startMusic
+  // → prerenderAllTracks). Desktop keeps the eager pre-render for instant playback.
+  if (!_isMobileForMemory) prerenderAllTracks();
   // Apply default 110% zoom on boot without advancing the cycle index
   (function applyDefaultZoom(){
     const zoom = _fontScales[0].val;

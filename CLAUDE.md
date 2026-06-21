@@ -41,7 +41,18 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-20-v117`.** (v117 = gameplay-grid bake (step 2 of
+**Current production triad: `2026-06-21-v118`.** (v118 = mobile-crash fix: skip the eager
+music pre-render on mobile. `prerenderAllTracks()` ran at boot (right as the welcome
+appears) and rendered 3 tracks to ~43MB of PCM (`_trackBuffers`; track 3 alone ~28MB) via
+OfflineAudioContext — a big memory + main-thread note-scheduling spike that froze the UI
+("cannot progress") and OOM-crashed phones, ON TOP of the ~80MB of canvases + ~20MB typed
+arrays already resident. Music is OFF by default, so on mobile (`_isMobileForMemory`) we
+now SKIP the eager pre-render entirely; it renders LAZILY only if the user turns music on
+(`startMusic` → `prerenderAllTracks`). Desktop unchanged (eager pre-render for instant
+playback). Verified on the FORCED-mobile path (`pa_force_mobile=1`): build completes,
+welcome builds, `_trackBuffers` stays empty (was 3), no errors. NOTE: mobile boot is gated
+by a "Desktop Recommended / Try anyway" splash (v32, `#mobile-splash`); the heavy build
+only runs after the user opts in via `pa_force_mobile`.) (v117 = gameplay-grid bake (step 2 of
 the mobile bake). `featByPixel`/`landMask` are now CACHED in IndexedDB (`pa_mapcache`/
 `grid`, raw buffers keyed by `MAP_GRID_VERSION` + a `featLen` guard) and restored on later
 loads, SKIPPING the canvas mask rasterization AND the four cleanup passes (Antarctica /
