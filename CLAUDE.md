@@ -41,7 +41,18 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-21-v121`.** (v121 = REAL mobile-crash fix: chunk the
+**Current production triad: `2026-06-21-v122`.** (v122 = free the TopoJSON geometry
+post-build (mobile-crash headroom). The circuit breaker (v120) finally caught the crash:
+"stopped at boot-done" — i.e. the build FINISHES (10.8s on the phone = thrashing) but the
+device is already at its memory ceiling and OOMs on the next allocation, before the
+snapshot. Fix: `featList[i].geometry` (decoded coastline coords for 255 countries, ~15-30MB
+JS heap) is only used DURING the build (drawGeometry → base/mask); released right after
+`buildGeoPixelList()` via `f.geometry=null`. The two post-build readers (`renderCselList`,
+`jumpToCountry`) only gated on it / compute from featByPixel, so both were relaxed to not
+require it; `drawGeometry` already no-ops on null. Verified: picker still lists 166
+countries, map renders, geometry all null, no errors. Pairs with v120's canvas cut (~16MB)
++ v121's snapshot chunking. NOTE: pre-existing latent bug spotted — `jumpToCountry` calls
+undefined `panToMapPoint` (legend click-to-pan throws); unrelated to the crash.) (v121 = REAL mobile-crash fix: chunk the
 board snapshot replay. Diagnosed from the phone: welcome renders, buttons PULSE but are
 UNRESPONSIVE, then iOS "A problem repeatedly occurred" (OOM). Cause: `applySnapshotRuns`
 painted the whole board (War #4 ~197k px) in ONE synchronous loop — blocked the main thread

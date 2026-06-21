@@ -3672,7 +3672,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-21-v121';
+const CODE_VERSION = '2026-06-21-v122';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5647,6 +5647,13 @@ async function boot(){
   }
   // v70: build per-geo pixel index for runAutoFill (after all pixel removals are done)
   buildGeoPixelList();
+  // v121a: the decoded TopoJSON coastline coordinates (featList[i].geometry) are only
+  // used DURING the build (drawGeometry → base render + mask raster). Post-build the
+  // game uses featByPixel/geoPixelList, never the raw geometry — so release it here.
+  // For 255 detailed countries this frees ~15-30MB of resident JS heap, the headroom
+  // a memory-starved phone needs to survive the post-welcome snapshot. (renderCselList
+  // + jumpToCountry no longer gate on it; drawGeometry no-ops on null.)
+  try { for (const f of featList) { if (f) f.geometry = null; } } catch(e){}
   $("loading").style.display="none";
 // Render landmarks once the map is fully prepared
 if (typeof renderLandmarks === 'function') {
@@ -7262,7 +7269,7 @@ function tryPopulateTutCountries() {
   const byId = new Map();
   for (let i = 0; i < featList.length; i++) {
     const f = featList[i];
-    if (!f || !f.id || !f.name || !f.color || !f.geometry) continue;
+    if (!f || !f.id || !f.name || !f.color) continue; // v121a: geometry freed post-build, no longer a validity gate
     const px = geoTotal[i] || 0;
     // v40: skip culled countries (geoTotal===0 from Antarctica + artifact-removal)
     // The < 5 threshold also keeps barely-visible micro-states from cluttering the picker.
@@ -11035,7 +11042,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Jump-to-country (click country in legend) ─────────────────────
 function jumpToCountry(geoIdx){
   const f = featList[geoIdx];
-  if(!f || !f.geometry) return;
+  if(!f) return; // v121a: centroid is computed from featByPixel, not geometry (which is freed post-build)
   // Find centroid by averaging pixel positions in featByPixel
   let sumX = 0, sumY = 0, count = 0;
   // Sample every Nth pixel for speed
