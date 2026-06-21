@@ -41,7 +41,19 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-21-v122`.** (v122 = free the TopoJSON geometry
+**Current production triad: `2026-06-21-v123`.** (v123 = mobile canvas-cap EXPERIMENT.
+Key new data: the crashing device is an iPhone 14 (6GB RAM) — so the OOM at `boot-done` is
+NOT device-RAM exhaustion; it's almost certainly iOS Safari's per-tab CANVAS-memory cap (a
+WebKit policy limit independent of RAM). The game stacks ~8 full-size 2048×1024 GPU-backed
+canvases. This experiment strips mobile (`_isMobileForMemory`) to just 3 essential full-size
+canvases — `c-base`/`c-claim`/`c-border` — and 1×1's the other 13 (monsters/flags/highlight/
+overlay/nuke added to `_DECORATIVE_CANVAS_IDS` alongside the v120 set). Verified: builds,
+3 canvases full-size, map renders (totalLand 466600), no errors; lost on mobile = monster
+sprites + rally/nuke/overlay + paint flash (cosmetic/occasional). IF the iPhone loads with
+3 canvases → canvas-cap CONFIRMED → the real fix is a WebGL/Pixi map renderer (ONE GPU
+surface, claim grid as a texture) which sidesteps the cap entirely; a PWA/Capacitor wrapper
+will NOT help (same WebKit renderer/limit). If it STILL crashes at boot-done with 3 canvases
+→ it's a runaway, not the cap, and we look elsewhere.) (v122 = free the TopoJSON geometry
 post-build (mobile-crash headroom). The circuit breaker (v120) finally caught the crash:
 "stopped at boot-done" — i.e. the build FINISHES (10.8s on the phone = thrashing) but the
 device is already at its memory ceiling and OOMs on the next allocation, before the

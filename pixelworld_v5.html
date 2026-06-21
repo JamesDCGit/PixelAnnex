@@ -3672,7 +3672,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-21-v122';
+const CODE_VERSION = '2026-06-21-v123';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3744,9 +3744,15 @@ const _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platfo
 const _isMobileForMemory = matchMedia('(max-width: 768px)').matches || _isIOS || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
 // Canvases that are purely decorative — shrunk to 1×1 on mobile to free GPU memory.
 // Drawing routines for these silently no-op when the canvas is 1×1.
-// v120: also drop c-flash (the paint pulse) + c-outline (already not drawn on
-// mobile) to 1×1 — that's another ~16MB of resident canvas memory freed on phones.
-const _DECORATIVE_CANVAS_IDS = ['c-grid','c-waves','c-sprites','c-landmarks','c-crater','c-siege','c-flash','c-outline'];
+// v123 (mobile canvas-cap experiment): strip mobile to the 3 ESSENTIAL full-size
+// canvases — c-base (terrain), c-claim (ownership), c-border. EVERYTHING else is
+// 1×1 + hidden. Hypothesis: an iPhone 14 (6GB RAM) OOMs at boot-done because ~8
+// stacked 2048×1024 GPU-backed canvases blow past iOS Safari's per-tab canvas-memory
+// cap — a WebKit policy limit INDEPENDENT of device RAM. If 3 canvases loads cleanly,
+// the cap is confirmed → WebGL (one surface) is the real fix. Lost on mobile: monster
+// sprites, rally/nuke/overlay layers, the paint flash, the (DOM-rendered) flags
+// canvas — all cosmetic or occasional. Gameplay (terrain + ownership + borders) stays.
+const _DECORATIVE_CANVAS_IDS = ['c-grid','c-waves','c-sprites','c-landmarks','c-crater','c-siege','c-flash','c-outline','c-monsters','c-flags','c-highlight','c-overlay','c-nuke'];
 const cBase=document.getElementById("c-base");
 const cGrid=document.getElementById("c-grid");
 const gridCtx=cGrid.getContext("2d");
