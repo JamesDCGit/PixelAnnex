@@ -3110,6 +3110,37 @@ const DB={
 // ── Constants ─────────────────────────────────────────────────────
 const MAP_W=2048, MAP_H=1024, MAP_PX=MAP_W*MAP_H;
 
+// ── v116 (prototype): baked-biome cache ──────────────────────────────────────
+// The pixel-perfect biome render (a 2.1M-pixel loop over a ~70-zone distance
+// table + noise) is the single heaviest step of buildMap. It's PURELY cosmetic
+// and identical every load, so we cache the finished base-map ImageData in
+// IndexedDB and restore it on subsequent loads, skipping the loop entirely.
+// BUMP MAP_BAKE_VERSION whenever the biome palette / map data / MAP_W·H changes.
+// Gated by `pa_bake` localStorage (default ON); any error falls through to the
+// full render. Stores the raw RGBA buffer (lossless, no PNG encode/decode).
+const MAP_BAKE_VERSION = 'biome-2048x1024-v116a';
+const _BAKE_ENABLED = (function(){ try { return localStorage.getItem('pa_bake') !== '0'; } catch(e){ return true; } })();
+function _idbOpen(){
+  return new Promise((res, rej) => {
+    let r; try { r = indexedDB.open('pa_mapcache', 1); } catch(e){ return rej(e); }
+    r.onupgradeneeded = () => { try { r.result.createObjectStore('biome'); } catch(e){} };
+    r.onsuccess = () => res(r.result);
+    r.onerror   = () => rej(r.error);
+  });
+}
+function _idbBiomeGet(key){
+  return _idbOpen().then(db => new Promise((res, rej) => {
+    const g = db.transaction('biome','readonly').objectStore('biome').get(key);
+    g.onsuccess = () => res(g.result); g.onerror = () => rej(g.error);
+  }));
+}
+function _idbBiomePut(key, val){
+  return _idbOpen().then(db => new Promise((res, rej) => {
+    const p = db.transaction('biome','readwrite').objectStore('biome').put(val, key);
+    p.onsuccess = () => res(); p.onerror = () => rej(p.error);
+  }));
+}
+
 // ── Sound engine (Web Audio API — no external files) ─────────────
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
 let _actx = null;
@@ -3572,7 +3603,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-20-v115';
+const CODE_VERSION = '2026-06-20-v116';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5222,7 +5253,21 @@ async function boot(){
   // Canvas fill() always antialiases polygon edges; this step eliminates that.
   prog(87,"Culling antialiased edge pixels…"); 
   {
-    const cleanImg=bctx.createImageData(MAP_W,MAP_H);
+    const _biomeT0 = performance.now();
+    let _biomeFromCache = false;
+    let cleanImg = null;
+    if (_BAKE_ENABLED) {
+      try {
+        const cached = await _idbBiomeGet(MAP_BAKE_VERSION);
+        if (cached && cached.w === MAP_W && cached.h === MAP_H && cached.data && cached.data.byteLength === MAP_PX*4) {
+          bctx.putImageData(new ImageData(new Uint8ClampedArray(cached.data), MAP_W, MAP_H), 0, 0);
+          _biomeFromCache = true;
+          console.log('[Bake] biome RESTORED from cache in', Math.round(performance.now()-_biomeT0), 'ms');
+        }
+      } catch(e){ console.warn('[Bake] biome cache read failed:', e && e.message); }
+    }
+    if (!_biomeFromCache) {
+    cleanImg=bctx.createImageData(MAP_W,MAP_H);
     const cd=cleanImg.data;
     const BIOME_CHUNK = 65536; // ~30ms per chunk on the new 2048×1024 map
     for(let s=0; s<MAP_PX; s+=BIOME_CHUNK){
@@ -5338,6 +5383,13 @@ async function boot(){
     await sleep(1);
     }
     bctx.putImageData(cleanImg,0,0);
+    console.log('[Bake] biome COMPUTED in', Math.round(performance.now()-_biomeT0), 'ms');
+    if (_BAKE_ENABLED) {
+      try { await _idbBiomePut(MAP_BAKE_VERSION, { w:MAP_W, h:MAP_H, data: cleanImg.data.buffer.slice(0) });
+            console.log('[Bake] biome cached for next load'); }
+      catch(e){ console.warn('[Bake] biome cache write failed:', e && e.message); }
+    }
+    } // end if(!_biomeFromCache)
     totalLandPx = Object.values(geoTotal).reduce((a,b)=>a+b,0);
     console.log("Base map rebuilt pixel-perfect, totalLandPx="+totalLandPx);
   }

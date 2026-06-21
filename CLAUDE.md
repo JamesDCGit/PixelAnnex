@@ -41,7 +41,18 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-20-v115`.** (v115 = David-word removal + bot
+**Current production triad: `2026-06-20-v116`.** (v116 = baked-biome cache (boot perf,
+step 1 of the mobile bake). The pixel-perfect biome render (a 2.1M-pixel loop over a
+~70-zone distance table + grain — the single heaviest buildMap phase) is now CACHED in
+IndexedDB (`pa_mapcache`/`biome`, raw RGBA buffer keyed by `MAP_BAKE_VERSION`) and
+restored with one `putImageData` on later loads, skipping the loop. Measured: compute
+2357ms → restore 13ms (~180x) on desktop; bigger on mobile (slowest CPU step). Map is
+byte-identical (totalLandPx unchanged). Gated by `localStorage pa_bake` (default ON;
+`pa_bake=0` disables); fail-safe (any IDB error → full render). PER-DEVICE cache — first
+load unchanged, repeat loads fast. NOTE: bump `MAP_BAKE_VERSION` whenever the biome
+palette / map data / MAP_W·H changes or users get a stale terrain. Does NOT yet skip the
+rasterization scratch-memory spike (the mobile-crash cause) — that's the gameplay-grid
+bake, the next step.) (v115 = David-word removal + bot
 activity overhaul. (1) The regen badge (`updateDavidHUD`) drops the "David"/"Goliath"
 WORDS — now icon-only: 🔥 +N/min when the small-nation underdog regen boost is active
 (share <2%), ⚡ +N/min otherwise; the tooltip still explains size-scaled regen. (2) BOT
