@@ -1478,6 +1478,27 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   }
 }
 
+/* v128 (responsive): compact rank chip + toolbar slimming (compact tier). */
+#rank-chip { display: none; }
+@media (max-width: 820px) {
+  /* compact rank chip in the toolbar; hide the big corner rank panel */
+  #rank-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 9px 2px 2px; border-radius: 14px;
+    background: rgba(15,23,41,.85); border: 1px solid #1e293b;
+    font-size: 10px; color: #cbd5e1; white-space: nowrap; cursor: pointer;
+    max-width: 130px; overflow: hidden; flex-shrink: 0;
+  }
+  #rank-chip img { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; image-rendering: pixelated; }
+  #rank-chip .rc-name { overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  #rank-display { display: none !important; }
+  /* one-tap toolbar only (country-select, Nuke, zoom). The rest is in the drawer. */
+  #toolbar #btn-highlight,
+  #toolbar #btn-invert,
+  #toolbar #audio-hud-tb,
+  #toolbar #lang-select-tb { display: none !important; }
+}
+
 /* v39d: Monster banner fade-out */
 @keyframes monsterBannerFade {
   0%   { opacity: 0; transform: translateX(-50%) translateY(-8px); }
@@ -1621,6 +1642,9 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
         <div id="csel-list"></div>
       </div>
     </div>
+    <!-- v128 (responsive): compact rank chip — small portrait + rank name, shown
+         on compact screens in place of the big #rank-display panel. Tap = stats. -->
+    <span id="rank-chip" onclick="openStats()" title="Your rank — tap for full stats"></span>
     <div class="sep"></div>
     <button class="btn" id="btn-brd">Borders Dark</button>
     <button class="btn" id="btn-rst">Reset View</button>
@@ -12761,6 +12785,12 @@ function refreshRankUI(){
       </div>
     </div>
   `;
+  // v128 (responsive): mirror rank into the compact top-bar chip (portrait + name)
+  const chip = document.getElementById('rank-chip');
+  if (chip) {
+    chip.innerHTML = (_av ? '<img src="' + _av + '" alt="">' : '') +
+      '<span class="rc-name" style="color:' + col + '">' + tRank(rank.name) + '</span>';
+  }
   // v113: recompute + paint GDP immediately into the freshly-built element
   if (typeof _computeGdpAnnual === 'function') { _gdpAnnual = _computeGdpAnnual(); _renderGdpNow(); }
   refreshBombMenu();
