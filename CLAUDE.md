@@ -41,7 +41,30 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-21-v123`.** (v123 = mobile canvas-cap EXPERIMENT.
+**Current production triad: `2026-06-22-v124`.** (v124 = SHIP THE MAP PRE-BAKED AS
+STATIC FILES — the real mobile-boot fix + a big desktop speedup. Instead of the client
+downloading the 3.6MB TopoJSON, decoding geometry, rendering the base, rasterizing the
+country mask, running the four cleanup passes, computing the 2.1M-px biome, and caching
+the grid+biome in IndexedDB, the client now fetches three small pre-built files and draws:
+`public/map_grid.json` (RLE of `featByPixel`, 24,071 runs, ~139KB → ~50KB gzipped),
+`public/map_base.webp` (the finished biome, 120KB), `public/map_meta.json` (255 countries:
+id/name/final pastel colour, 13KB). New client fn `_loadBakedMap()` (gated by
+`localStorage pa_filebake`, default ON) rebuilds `featList` (geometry null) from the meta,
+inflates `featByPixel`/`landMask`/`geoTotal` from the grid RLE, draws the biome to `c-base`,
+and builds the picker — then `boot()` SKIPS the entire legacy build (now wrapped in
+`if(!_baked){…}`) and runs only the shared tail (borders -> prepopulate -> geoPixelList).
+ANY failure (404/parse/dim mismatch/featLen mismatch) falls back to the full build, so it's
+safe. Server route added for the 3 files (gzip for the JSON). Verified in preview: byte-
+IDENTICAL state (totalLandPx 466600, 173 geos, 255 featList, USA), biome renders, TopoJSON
+NEVER fetched, boot 7.7s->1.3s. Rollout = EVERYONE (mobile + desktop). REGEN PROCEDURE when
+map data / palette / cleanup logic / MAP_W.H changes: load a verified build in a browser,
+then re-extract all three from the live globals — `c-base.toDataURL('image/webp',0.92)` ->
+map_base.webp; RLE of `featByPixel` (`[value,len,...]` runs) -> map_grid.json
+`{w,h,n,runs}`; `featList.map(f=>({id,name,color}))` -> map_meta.json. The grid values index
+the SAME featList order map_meta defines, so the two MUST be re-extracted together. NOTE:
+v123's mobile canvas strip (`_DECORATIVE_CANVAS_IDS`) is KEPT for now as extra headroom
+until the iPhone confirms the bake loads; restore those canvases in a follow-up once
+confirmed.) (v123 = mobile canvas-cap EXPERIMENT.
 Key new data: the crashing device is an iPhone 14 (6GB RAM) — so the OOM at `boot-done` is
 NOT device-RAM exhaustion; it's almost certainly iOS Safari's per-tab CANVAS-memory cap (a
 WebKit policy limit independent of RAM). The game stacks ~8 full-size 2048×1024 GPU-backed

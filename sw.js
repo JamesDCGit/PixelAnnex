@@ -9,10 +9,15 @@
  * Version bumped per release so old caches get cleared automatically.
  */
 
-const CACHE_VERSION = 'pixelannex-v2026-06-21-v123';
+const CACHE_VERSION = 'pixelannex-v2026-06-22-v124';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
+  // v124: pre-baked map assets (the file-bake fast path). The legacy TopoJSON
+  // is still cached as a fallback for clients that fail the bake.
+  '/map_meta.json',
+  '/map_grid.json',
+  '/map_base.webp',
   '/countries-10m.json',
   '/favicon.ico',
 ];

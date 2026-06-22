@@ -3672,7 +3672,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-21-v123';
+const CODE_VERSION = '2026-06-22-v124';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5049,8 +5049,69 @@ self.onmessage = function(e) {
   return new Worker(URL.createObjectURL(blob));
 }
 
+// v124: FILE-bake fast path. Loads the pre-built grid + biome + metadata as
+// static files (public/map_grid.json, map_base.webp, map_meta.json), skipping
+// the 3.6MB TopoJSON download, geometry decode, base render, mask
+// rasterization, the four cleanup passes, the biome compute, AND IndexedDB —
+// i.e. the entire memory-heavy boot pipeline (the iOS mobile-crash fix). Returns
+// true on FULL success; ANY failure returns false and boot() runs the legacy
+// full build. The grid RLE values index into the SAME featList order that
+// map_meta.json defines, so the two files must always be re-extracted together
+// from a verified build whenever the map data / palette changes (see CLAUDE.md).
+const _BAKE_FILES_ENABLED = (()=>{ try { return localStorage.getItem('pa_filebake') !== '0'; } catch(e){ return true; } })();
+async function _loadBakedMap(){
+  if (!_BAKE_FILES_ENABLED) return false;
+  const t0 = performance.now();
+  prog(8,"Loading pre-baked map…");
+  // 1. metadata → featList (no geometry — the game uses featByPixel post-build)
+  const metaR = await fetch('/map_meta.json');
+  if (!metaR.ok) throw new Error('meta HTTP '+metaR.status);
+  const meta = await metaR.json();
+  if (!Array.isArray(meta) || !meta.length) throw new Error('meta empty');
+  featList = meta.map(m => ({ id:String(m.id), name:m.name, color:m.color, geometry:null }));
+  rebuildFeatIndex();
+  // 2. grid RLE → featByPixel / landMask / geoTotal (landMask ⟺ featByPixel>=0)
+  prog(16,"Loading territory grid…");
+  const gridR = await fetch('/map_grid.json');
+  if (!gridR.ok) throw new Error('grid HTTP '+gridR.status);
+  const grid = await gridR.json();
+  if (grid.w !== MAP_W || grid.h !== MAP_H) throw new Error('grid dim mismatch '+grid.w+'x'+grid.h);
+  if (grid.n !== featList.length) throw new Error('grid/meta featLen mismatch '+grid.n+'/'+featList.length);
+  const runs = grid.runs;
+  featByPixel = new Int16Array(MAP_PX);
+  let p = 0;
+  for (let r=0;r<runs.length;r+=2){ const v=runs[r], len=runs[r+1]; featByPixel.fill(v, p, p+len); p+=len; }
+  if (p !== MAP_PX) throw new Error('grid run-length '+p+' != '+MAP_PX);
+  landMask     = new Uint8Array(MAP_PX);
+  claimByPixel = new Int16Array(MAP_PX).fill(-1);
+  for (const k in geoTotal) delete geoTotal[k];
+  for (let i=0;i<MAP_PX;i++){ const v=featByPixel[i]; if(v>=0){ landMask[i]=1; geoTotal[v]=(geoTotal[v]||0)+1; } }
+  totalLandPx = Object.values(geoTotal).reduce((a,b)=>a+b,0);
+  // 3. biome image → c-base (replaces the base render + the per-pixel biome loop)
+  prog(24,"Loading terrain…");
+  const img = await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>rej(new Error('biome image load failed')); im.src='/map_base.webp'; });
+  bctx.imageSmoothingEnabled = false;
+  bctx.clearRect(0,0,MAP_W,MAP_H);
+  bctx.drawImage(img, 0, 0, MAP_W, MAP_H);
+  // 4. picker + initial country — mirror the full-build path (lines ~5089-5094)
+  const usaIdx = featList.findIndex(f=>f.id==="840");
+  currentIdx = usaIdx>=0 ? usaIdx : 0;
+  const sw=$("swatch"); if(sw) sw.style.background=featList[currentIdx].color;
+  buildCselOptions();
+  selectCountry(currentIdx);
+  prog(50,"Map ready…");
+  _bootStage('baked-loaded');
+  console.log('[Bake] FILE-bake loaded in', Math.round(performance.now()-t0), 'ms — skipped TopoJSON + rasterization + cleanup + biome + IDB. totalLandPx='+totalLandPx+', geos='+Object.keys(geoTotal).length);
+  return true;
+}
+
 async function boot(){
   _bootStage('boot-start');
+  // v124: try the file-bake fast path first; fall back to the full build on any error.
+  let _baked = false;
+  try { _baked = await _loadBakedMap(); }
+  catch(e){ console.warn('[Bake] file-bake failed — running full build:', e && e.message); _baked = false; }
+  if (!_baked) {
   prog(5,"Fetching world map data (~2.3MB)…");
   const dlAnim=animateProgress(5,18,6000,"Downloading Natural Earth 10m countries…");
 
@@ -5508,8 +5569,9 @@ async function boot(){
     totalLandPx = Object.values(geoTotal).reduce((a,b)=>a+b,0);
     console.log("Base map rebuilt pixel-perfect, totalLandPx="+totalLandPx);
   }
+  } // v124: end legacy full-build block (skipped entirely on the file-bake path)
 
-  prog(86,"Drawing country borders…"); 
+  prog(86,"Drawing country borders…");
 
   // Hard pixel borders: scan mask data, mark boundary pixels solid white.
   // No canvas stroke, no antialiasing. Writing both sides of each edge = 2px thick.

@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-21-v123';
+const SERVER_VERSION       = '2026-06-22-v124';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -6297,6 +6297,33 @@ const httpServer = http.createServer(async (req, res) => {
       'Access-Control-Allow-Origin': '*',
     });
     fs.createReadStream(f).pipe(res);
+    return;
+  }
+
+  // ── v124: pre-baked map assets (grid RLE + biome + metadata) ────
+  // Lets the client skip the 3.6MB TopoJSON download + rasterization +
+  // cleanup + biome compute + IndexedDB entirely (mobile-crash fix). The
+  // client falls back to the full build if any of these 404 / fail.
+  if (url.pathname === '/map_grid.json' || url.pathname === '/map_meta.json' || url.pathname === '/map_base.webp') {
+    const name = url.pathname.slice(1);
+    const f = path.join(__dirname, 'public', name);
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end('baked asset not found'); return; }
+    const isWebp = name.endsWith('.webp');
+    const headers = {
+      'Content-Type': isWebp ? 'image/webp' : 'application/json',
+      'Cache-Control': 'public, max-age=86400',
+      'Access-Control-Allow-Origin': '*',
+    };
+    const accept = req.headers['accept-encoding'] || '';
+    if (!isWebp && accept.includes('gzip')) {
+      const zlib = require('zlib');
+      headers['Content-Encoding'] = 'gzip';
+      res.writeHead(200, headers);
+      fs.createReadStream(f).pipe(zlib.createGzip({ level: 9 })).pipe(res);
+    } else {
+      res.writeHead(200, headers);
+      fs.createReadStream(f).pipe(res);
+    }
     return;
   }
 
