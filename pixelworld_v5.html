@@ -1497,6 +1497,15 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   #toolbar #btn-invert,
   #toolbar #audio-hud-tb,
   #toolbar #lang-select-tb { display: none !important; }
+  /* the david-badge duplicates the bucket timer's "+N/min" and overflows the
+     narrow row — drop it on compact (the bucket timer already shows the rate). */
+  #bucket-hud #david-badge { display: none !important; }
+  /* keep the login prompt docked under the toolbar, not floating mid-screen */
+  #login-hud { position: fixed !important; top: auto !important; bottom: calc(58px + env(safe-area-inset-bottom, 0px)) !important;
+    left: 50% !important; transform: translateX(-50%) !important; z-index: 59; }
+  /* social links carry an inline display:flex, so the plain hide rule can't beat
+     it — float over the map on mobile. Force-hide (they're in the welcome/About). */
+  #social-links { display: none !important; }
 }
 
 /* v39d: Monster banner fade-out */
