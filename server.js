@@ -5984,18 +5984,32 @@ setInterval(() => {
 
 // Stagger bot ticks so they don't all fire simultaneously.
 // Tickers are self-terminating: if the bot disappears from the map, the ticker stops.
+// v128: HARDENED against the recurring "no bot activity" stall. The previous
+// ticker called botTickSingle() bare, then reschedule. If botTickSingle THREW,
+// (a) the reschedule line never ran → that bot's loop died permanently, and
+// (b) with no uncaughtException handler the throw could crash the whole process.
+// Now the call is wrapped in try/catch and the reschedule is GUARANTEED, plus a
+// watchdog (below) restarts every ticker if the loop is ever found dead.
 let _tickersStarted = false;
+let _botTicksSinceWatch = 0;   // liveness counter — bumped on every tick attempt
+let _botTickErrLogged = false; // throttle error spam to a single line per window
+function _botTickLoop(countryId) {
+  if (!bots.has(countryId)) return; // bot was removed — stop this ticker
+  _botTicksSinceWatch++;
+  try {
+    botTickSingle(countryId);
+  } catch (e) {
+    if (!_botTickErrLogged) { console.error('[Bot] tick error for', countryId, (e && e.stack) || e); _botTickErrLogged = true; }
+  }
+  setTimeout(() => _botTickLoop(countryId), BOT_TICK_MS); // ALWAYS reschedule
+}
 function startBotTickers() {
   if (_tickersStarted) return; // already running — no need to start more
   _tickersStarted = true;
   let i = 0;
   for (const [countryId] of bots) {
     const delay = (i % 20) * (BOT_TICK_MS / 20); // spread across tick window
-    setTimeout(function tick() {
-      if (!bots.has(countryId)) return; // bot was removed — stop this ticker
-      botTickSingle(countryId);
-      setTimeout(tick, BOT_TICK_MS);
-    }, delay);
+    setTimeout(() => _botTickLoop(countryId), delay);
     i++;
   }
   console.log(`[Bot] ${bots.size} bot tickers started (staggered)`);
@@ -6003,12 +6017,23 @@ function startBotTickers() {
 
 // When new bots are added later, start their tickers individually
 function startTickerFor(countryId) {
-  setTimeout(function tick() {
-    if (!bots.has(countryId)) return;
-    botTickSingle(countryId);
-    setTimeout(tick, BOT_TICK_MS);
-  }, Math.random() * BOT_TICK_MS);
+  setTimeout(() => _botTickLoop(countryId), Math.random() * BOT_TICK_MS);
 }
+
+// v128: bot-activity watchdog. If the tickers ever stop (zero tick ATTEMPTS in a
+// 20s window while bots exist and the map is ready), restart them all — self-heals
+// the recurring "no bot activity" with no manual pm2 restart. Only fires when the
+// counter is 0 (loop confirmed dead) so it can never double-up live tickers.
+setInterval(() => {
+  if (_BOTS_DISABLED || !mapReady) { _botTicksSinceWatch = 0; return; }
+  if (bots.size > 0 && _botTicksSinceWatch === 0) {
+    console.warn('[Bot] WATCHDOG: 0 tick attempts in 20s — restarting all tickers');
+    _tickersStarted = false;
+    startBotTickers();
+  }
+  _botTickErrLogged = false; // allow one fresh error line next window
+  _botTicksSinceWatch = 0;
+}, 20000);
 
 // v39c: returns true if any other country has conquered the given country.
 // conqueredSet keys are 'geoId:attackerId'. We match on geoId regardless of attacker.
@@ -6304,18 +6329,19 @@ const httpServer = http.createServer(async (req, res) => {
   // Lets the client skip the 3.6MB TopoJSON download + rasterization +
   // cleanup + biome compute + IndexedDB entirely (mobile-crash fix). The
   // client falls back to the full build if any of these 404 / fail.
-  if (url.pathname === '/map_grid.json' || url.pathname === '/map_meta.json' || url.pathname === '/map_base.webp') {
+  if (url.pathname === '/map_grid.json' || url.pathname === '/map_meta.json' || url.pathname === '/map_base.webp' || url.pathname === '/map_base.gif') {
     const name = url.pathname.slice(1);
     const f = path.join(__dirname, 'public', name);
     if (!fs.existsSync(f)) { res.writeHead(404); res.end('baked asset not found'); return; }
-    const isWebp = name.endsWith('.webp');
+    const isImage = name.endsWith('.webp') || name.endsWith('.gif'); // v128: gif support
+    const ctype = name.endsWith('.webp') ? 'image/webp' : (name.endsWith('.gif') ? 'image/gif' : 'application/json');
     const headers = {
-      'Content-Type': isWebp ? 'image/webp' : 'application/json',
+      'Content-Type': ctype,
       'Cache-Control': 'public, max-age=86400',
       'Access-Control-Allow-Origin': '*',
     };
     const accept = req.headers['accept-encoding'] || '';
-    if (!isWebp && accept.includes('gzip')) {
+    if (!isImage && accept.includes('gzip')) {
       const zlib = require('zlib');
       headers['Content-Encoding'] = 'gzip';
       res.writeHead(200, headers);
