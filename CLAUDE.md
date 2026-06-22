@@ -41,7 +41,21 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-22-v125`.** (v125 = iOS dead-button fix. With v124's
+**Current production triad: `2026-06-22-v126`.** (v126 = two more mobile blockers.
+(1) WELCOME COUNTRY-SELECT BUTTON OFF-SCREEN: the mobile `@media` gave `#tutorial-box`
+`height:100vh`, which on iOS Safari extends UNDER the toolbar so the bottom "Pick a
+country" / "Sign in" buttons were hidden → couldn't proceed. Fix: `100dvh` (dynamic
+viewport, `100vh` kept as fallback) + the `.tut-btn-row` is now `position:sticky;bottom:0`
+with `env(safe-area-inset-bottom)` padding, so the action buttons are always reachable on
+any screen height. (2) HOVER READ-THROUGH: the `#viewport` `mousemove` tooltip fired even
+when the cursor was over an in-viewport overlay (welcome modal / popups / HUD), so it
+"read through" and showed the ocean/country underneath. Fix: reuse `_touchOnMap(e)` — when
+the cursor is over a non-canvas/non-viewport target and no paint stroke is active, hide
+`#tip` + clear the bomb preview and bail. Verified in preview at 390x680: country-select
+button visible + sticky, tooltip forced hidden over the modal, shown over the map. KNOWN
+REMAINING (folded into the broader mobile-UI pass, NOT yet done): the game toolbar (outside
+`#viewport`) overlaps the top of the full-screen welcome modal on mobile; panels/HUD aren't
+laid out for narrow screens.) (v125 = iOS dead-button fix. With v124's
 bake the iPhone finally boots to `ready`, but the welcome modal (and login button / daily
 popup / social links) appeared dead — visual `:active` on tap, no action. Cause: those
 overlays are all children of `#viewport`, whose `touchstart`/`touchmove`/`touchend` handlers

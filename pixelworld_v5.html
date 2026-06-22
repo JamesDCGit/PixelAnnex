@@ -998,12 +998,25 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   /* Tutorial modal — go full-screen */
   #tutorial-box {
     max-width: 100vw !important;
-    max-height: 100vh !important;
     width: 100vw !important;
+    /* v125: 100vh on iOS extends UNDER the Safari toolbar, hiding the bottom
+       action button. 100dvh tracks the visible viewport. vh kept as fallback. */
+    max-height: 100vh !important;
     height: 100vh !important;
+    max-height: 100dvh !important;
+    height: 100dvh !important;
     border-radius: 0 !important;
     overflow-y: auto;
     padding: 14px !important;
+  }
+  /* v125: pin each step's action buttons to the bottom of the scroll area so the
+     "Pick a country" / "Sign in" buttons are always reachable on short screens. */
+  #tutorial-box .tut-btn-row {
+    position: sticky; bottom: 0; z-index: 2;
+    background: #0c1526;
+    margin: 12px -14px -14px; padding: 12px 14px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid #1e293b;
   }
   #tutorial-box h1 { font-size: 16px !important; }
   .tut-sub { font-size: 11px !important; }
@@ -3672,7 +3685,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-22-v125';
+const CODE_VERSION = '2026-06-22-v126';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -12978,6 +12991,16 @@ vp.addEventListener("mousedown",e=>{
 vp.addEventListener("mousemove",e=>{
   _mouseScreenX=e.clientX; _mouseScreenY=e.clientY;
   if(isDragging){ox=e.clientX-dragBase.x;oy=e.clientY-dragBase.y;clamp();applyT();return;}
+  // v125: the welcome modal, popups and HUD panels are children of #viewport, so
+  // hovering them used to "read through" to the map and show the ocean/country
+  // tooltip underneath. Suppress the tooltip + bomb preview when the cursor is
+  // over a UI overlay (a non-canvas, non-viewport target). An in-progress paint
+  // stroke is unaffected.
+  if(!_touchOnMap(e) && !isPainting){
+    const _tip=$("tip"); if(_tip) _tip.style.display="none";
+    if(typeof ovCtx!=='undefined' && ovCtx) ovCtx.clearRect(0,0,MAP_W,MAP_H);
+    return;
+  }
   // Bomb preview circle
   if(bombMode){
     const p2=screenToMap(e.clientX,e.clientY);
