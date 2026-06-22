@@ -41,7 +41,19 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-22-v124`.** (v124 = SHIP THE MAP PRE-BAKED AS
+**Current production triad: `2026-06-22-v125`.** (v125 = iOS dead-button fix. With v124's
+bake the iPhone finally boots to `ready`, but the welcome modal (and login button / daily
+popup / social links) appeared dead — visual `:active` on tap, no action. Cause: those
+overlays are all children of `#viewport`, whose `touchstart`/`touchmove`/`touchend` handlers
+`preventDefault()` on EVERY touch (`passive:false`, for map paint/pan) — on iOS that cancels
+the synthesized `click`, so the buttons never fire (country-picker works because it lives
+OUTSIDE `#viewport`). Fix: `_touchOnMap(e)` gate at the top of all three handlers — only
+treat a touch as paint/pan (and preventDefault) when its target is the map itself (a
+`<canvas>` or `#viewport`). `pointer-events:none` overlays (flags/FTUE-highlight/banners)
+pass the touch through to a canvas so painting is unaffected; `pointer-events:auto` UI
+overlays keep their target and now receive a real click. Verified in preview: a dispatched
+touchstart on the Next button is NOT defaultPrevented (click survives) while one on a canvas
+IS (paint/no-scroll). Client-only change but the triad bumps together per the rule.) (v124 = SHIP THE MAP PRE-BAKED AS
 STATIC FILES — the real mobile-boot fix + a big desktop speedup. Instead of the client
 downloading the 3.6MB TopoJSON, decoding geometry, rendering the base, rasterizing the
 country mask, running the four cleanup passes, computing the 2.1M-px biome, and caching

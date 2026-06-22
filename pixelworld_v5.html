@@ -3672,7 +3672,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-22-v124';
+const CODE_VERSION = '2026-06-22-v125';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -13540,7 +13540,17 @@ let _touchMode      = 'idle'; // 'idle' | 'paint' | 'panzoom'
 function _tdist(e){return Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}
 function _tmid(e){return {x:(e.touches[0].clientX+e.touches[1].clientX)/2, y:(e.touches[0].clientY+e.touches[1].clientY)/2};}
 
+// v125: iOS click-suppression fix. The handlers below preventDefault() on every
+// touch — but the welcome modal, login button, daily popup and social links are
+// all children of #viewport, so on iOS that preventDefault cancels the synthesized
+// click and those buttons appear dead (visual :active only, no action). Only treat
+// a touch as paint/pan when it lands on the MAP itself (a canvas, or the viewport).
+// pointer-events:none overlays (flags / FTUE highlight / banners) pass the touch
+// through to a canvas, so painting is unaffected; pointer-events:auto UI overlays
+// keep their touch target and now receive a real click.
+function _touchOnMap(e){ return e.target === vp || (e.target instanceof HTMLCanvasElement); }
 vp.addEventListener('touchstart', e => {
+  if (!_touchOnMap(e)) return;
   if (e.touches.length === 1 && _touchMode === 'idle') {
     _touchMode = 'paint';
     isPainting = true;
@@ -13564,6 +13574,7 @@ vp.addEventListener('touchstart', e => {
 }, { passive: false });
 
 vp.addEventListener('touchmove', e => {
+  if (!_touchOnMap(e)) return;
   if (_touchMode === 'paint' && e.touches.length === 1) {
     const t = e.touches[0];
     const p = screenToMap(t.clientX, t.clientY);
@@ -13593,6 +13604,7 @@ vp.addEventListener('touchmove', e => {
 }, { passive: false });
 
 vp.addEventListener('touchend', e => {
+  if (!_touchOnMap(e)) return;
   // touchend fires when ANY finger leaves; e.touches has the remaining ones.
   if (_touchMode === 'paint' && isPainting) {
     // v63: build interpolated stroke wall before clearing buffer (runAutoFill is async)
