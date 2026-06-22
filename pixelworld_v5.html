@@ -3032,11 +3032,16 @@ if (isMobile) document.documentElement.classList.add('is-mobile');
     close();
     // Defer to allow drawer animation to finish before the action runs
     setTimeout(() => {
-      if (act === 'stats')        { const b = document.getElementById('btn-stats');     if (b) b.click(); }
+      // v128: proxy each drawer item to its real toolbar control / function.
+      const clickById = (id) => { const b = document.getElementById(id); if (b) b.click(); };
+      if (act === 'stats')            clickById('btn-stats');
+      else if (act === 'highlight')   clickById('btn-highlight');
+      else if (act === 'invert')      clickById('btn-invert');
+      else if (act === 'borders')     clickById('btn-brd');
+      else if (act === 'reset-view')  clickById('btn-rst');
+      else if (act === 'music')       clickById('btn-music');
+      else if (act === 'sfx')         clickById('btn-sfx');
       else if (act === 'font-scale')  { if (typeof cycleFontScale === 'function') cycleFontScale(); }
-      else if (act === 'borders')     { const b = document.getElementById('btn-brd');     if (b) b.click(); }
-      else if (act === 'reset-view')  { const b = document.getElementById('btn-rst');     if (b) b.click(); }
-      // v82: removed ownstroke / clear / debug actions — buttons deleted from toolbar
     }, 200);
   });
 })();
@@ -14558,13 +14563,16 @@ function _showMonsterBanner(type) {
     <span>Menu</span>
     <button id="mobile-drawer-close" aria-label="Close">&times;</button>
   </div>
-  <button class="btn" data-mobile-action="stats">📊 Stats</button>
-  <button class="btn" data-mobile-action="font-scale">Aa Font scale</button>
-  <button class="btn" data-mobile-action="ownstroke">✏️ My pixels</button>
-  <button class="btn" data-mobile-action="borders">Borders</button>
-  <button class="btn" data-mobile-action="reset-view">Reset View</button>
-  <button class="btn" data-mobile-action="clear">Clear All</button>
-  <button class="btn" data-mobile-action="debug">+100 px (debug)</button>
+  <!-- v128: complete secondary-control set. One-tap actions (country-select,
+       Nuke, zoom) stay in the toolbar/HUD; everything else lives here. -->
+  <button class="btn" data-mobile-action="stats">📊 Stats &amp; Leaderboard</button>
+  <button class="btn" data-mobile-action="highlight">🎯 Select Target</button>
+  <button class="btn" data-mobile-action="invert">🔄 Invert My Pixels</button>
+  <button class="btn" data-mobile-action="borders">🗺️ Toggle Borders</button>
+  <button class="btn" data-mobile-action="reset-view">⟲ Reset View</button>
+  <button class="btn" data-mobile-action="music">♪ Toggle Music</button>
+  <button class="btn" data-mobile-action="sfx">🔊 Toggle Sound FX</button>
+  <button class="btn" data-mobile-action="font-scale">Aa Font Scale</button>
 </div>
 <div id="mobile-drawer-backdrop"></div>
 </body>
