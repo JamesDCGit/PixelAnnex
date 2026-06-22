@@ -3763,6 +3763,13 @@ document.addEventListener('visibilitychange', updateTabTitle);
 let   bombMode         = false;
 let bordPixel=null;   // Uint8Array MAP_PX — GAMEPLAY: land pixels on a geo edge (BFS seeds; NOT drawn since v99g)
 let bordVisPixel=null;// v99g: VISUAL: ocean halo pixels actually drawn on the border canvas
+// v128: master switch for the PROCEDURAL coastline visuals — both the 1px
+// ocean-halo outline (bordVisPixel on c-border) AND the lighter shallow-water
+// "shelf" rim (buildWaveBase on c-waves). The operator bakes the coastline
+// (edge + shelf) directly into the basemap art now, so both are disabled here
+// (flip to true to restore the procedural versions). bordPixel (gameplay
+// encirclement seeds) is unaffected — it was never drawn.
+const _COAST_OUTLINE = false;
 // Stroke tracking for auto-fill (geo countries touched this stroke)
 // strokeGeos is declared inside runAutoFill's outer scope above
 let totalClaimed=0,totalLandPx=0,showBorders=true,borderDark=true,brushSize=1,currentIdx=0;
@@ -5123,8 +5130,13 @@ async function _loadBakedMap(){
   for (let i=0;i<MAP_PX;i++){ const v=featByPixel[i]; if(v>=0){ landMask[i]=1; geoTotal[v]=(geoTotal[v]||0)+1; } }
   totalLandPx = Object.values(geoTotal).reduce((a,b)=>a+b,0);
   // 3. biome image → c-base (replaces the base render + the per-pixel biome loop)
+  // v128: prefer a lossless GIF (crisper pixel art — no WebP blending) and fall
+  // back to the WebP if the GIF isn't present. Drop in public/map_base.gif to use it.
   prog(24,"Loading terrain…");
-  const img = await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>rej(new Error('biome image load failed')); im.src='/map_base.webp'; });
+  const _loadImg = (src)=>new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>(im.naturalWidth?res(im):rej(new Error('empty image'))); im.onerror=()=>rej(new Error('load failed: '+src)); im.src=src; });
+  let img;
+  try { img = await _loadImg('/map_base.gif'); }
+  catch(e){ img = await _loadImg('/map_base.webp'); }
   bctx.imageSmoothingEnabled = false;
   bctx.clearRect(0,0,MAP_W,MAP_H);
   bctx.drawImage(img, 0, 0, MAP_W, MAP_H);
@@ -5640,7 +5652,7 @@ async function boot(){
            (x<MAP_W-1  &&featByPixel[i+1]    !==ci)||
            (y>0        &&featByPixel[i-MAP_W]!==ci)||
            (y<MAP_H-1  &&featByPixel[i+MAP_W]!==ci)) bordPixel[i]=1; // seed only — not drawn
-      } else {
+      } else if(_COAST_OUTLINE){ // v128: skip the ocean-halo outline when disabled
         let touch=false;
         for(let dy=-1;dy<=1&&!touch;dy++)for(let dx=-1;dx<=1;dx++){
           if(!dx&&!dy)continue;
@@ -11614,7 +11626,7 @@ function buildWaveBase(){
   // coast (rim 1 = ocean touching land, rim 2 = ocean touching rim 1). Pre-
   // baked into the static base, zero runtime cost; the wave animation
   // restores from this image so sparkles inherit it automatically.
-  {
+  if(_COAST_OUTLINE){ // v128: shelf gated off — operator bakes the coast into the basemap art
     const rim = new Uint8Array(MAP_PX);
     const isLand = (x,y)=> x>=0&&x<MAP_W&&y>=0&&y<MAP_H&&landMask[y*MAP_W+x]===1;
     for(let i=0;i<MAP_PX;i++){
@@ -11755,6 +11767,7 @@ function showConquestToast(geoIdx, claimerIdx){
 // ── Redraw border canvas in the currently selected colour ────────
 // Called by the colour toggle; reads bordPixel[] and repaints.
 function reborderCanvas(){
+  if(!_COAST_OUTLINE) return; // v128: water-edge outline disabled — nothing to repaint
   // v99g: repaint from the VISUAL halo set — bordPixel is gameplay-only now.
   if(!bordVisPixel) return;
   const [br,bg,bb] = borderDark ? [63,50,30] : [182,157,107];
