@@ -41,7 +41,23 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-22-v126`.** (v126 = two more mobile blockers.
+**Current production triad: `2026-06-22-v127`.** (v127 = THE actual welcome-button-
+offscreen fix (v125/v126 sticky was necessary but not sufficient). Root cause: `#tutorial-box`
+carries an inline `zoom:1.2` (the global UI font-scale, applied to modal inner cards), so a
+`height:100dvh` box renders ~1.2x = ~120dvh TALL — it overflows the viewport (hiding the top
+AND the bottom action buttons), and a `zoom`-inflated box does NOT produce a scrollbar, so
+the buttons were simply unreachable on a real (shorter) phone. Fix (mobile `@media` only):
+(1) `#tutorial-box { zoom:1 !important }` — neutralise the zoom so the box fits the viewport
+exactly (the @media already sizes the text for phones); (2) make `#tutorial-box` a flex
+column with the active `.tut-section` flexing, `.tut-content` the scroll region, and
+`.tut-btn-row` pinned (`flex:0 0 auto`) — the action buttons are now ALWAYS at the visible
+bottom; (3) `body:has(#tutorial-overlay.open) #toolbar, #mobile-back-link { display:none }`
+— the toolbar + desktop-notice pill live OUTSIDE `#viewport`'s stacking context so they
+rendered ON TOP of the in-viewport modal (toolbar across the top, pill over the bottom
+button); hide them while the welcome is open. Verified in preview at 390x600 (cramped): all
+3 steps' buttons visible + fully hit-testable, toolbar/pill hidden, welcome clean. Comment
+tags say `v126a`. KNOWN REMAINING (broader mobile-UI pass, not yet done): in-game toolbar/
+panels/HUD not laid out for narrow screens; restore v123's stripped mobile canvases.) (v126 = two more mobile blockers.
 (1) WELCOME COUNTRY-SELECT BUTTON OFF-SCREEN: the mobile `@media` gave `#tutorial-box`
 `height:100vh`, which on iOS Safari extends UNDER the toolbar so the bottom "Pick a
 country" / "Sign in" buttons were hidden → couldn't proceed. Fix: `100dvh` (dynamic

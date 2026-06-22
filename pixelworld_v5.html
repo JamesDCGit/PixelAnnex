@@ -997,6 +997,11 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 
   /* Tutorial modal — go full-screen */
   #tutorial-box {
+    /* v126a: the global 1.2x UI zoom inflates a 100dvh box to ~120dvh, so it
+       overflows the viewport (hiding the top + the bottom buttons) AND a zoomed
+       box can't scroll. Neutralise the zoom on mobile — the @media font sizes
+       below already size the text for phones. */
+    zoom: 1 !important;
     max-width: 100vw !important;
     width: 100vw !important;
     /* v125: 100vh on iOS extends UNDER the Safari toolbar, hiding the bottom
@@ -1006,18 +1011,35 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
     max-height: 100dvh !important;
     height: 100dvh !important;
     border-radius: 0 !important;
-    overflow-y: auto;
     padding: 14px !important;
+    /* v126a: flex column so the action row is always pinned to the visible
+       bottom and the content area (not the buttons) is what scrolls. */
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
   }
-  /* v125: pin each step's action buttons to the bottom of the scroll area so the
-     "Pick a country" / "Sign in" buttons are always reachable on short screens. */
+  /* the active step fills the box; its content scrolls, its buttons stay put */
+  #tutorial-box .tut-section.active {
+    display: flex !important; flex-direction: column !important;
+    flex: 1 1 auto; min-height: 0;
+  }
+  #tutorial-box .tut-section.active .tut-content {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  }
   #tutorial-box .tut-btn-row {
-    position: sticky; bottom: 0; z-index: 2;
+    flex: 0 0 auto; z-index: 2;
     background: #0c1526;
     margin: 12px -14px -14px; padding: 12px 14px;
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid #1e293b;
   }
+  /* v126a: the game toolbar + the desktop-notice pill live OUTSIDE #viewport's
+     stacking context, so they render ON TOP of the in-viewport welcome modal and
+     overlap it (the toolbar across the top, the pill over the bottom button).
+     Hide them while the full-screen welcome is open. (:has is iOS 15.4+ / safe on
+     any device that runs this; degrades to the prior overlap if unsupported.) */
+  body:has(#tutorial-overlay.open) #toolbar,
+  body:has(#tutorial-overlay.open) #mobile-back-link { display: none !important; }
   #tutorial-box h1 { font-size: 16px !important; }
   .tut-sub { font-size: 11px !important; }
   .tut-stats { gap: 6px !important; }
@@ -3685,7 +3707,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-22-v126';
+const CODE_VERSION = '2026-06-22-v127';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
