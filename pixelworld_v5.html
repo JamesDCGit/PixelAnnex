@@ -1506,6 +1506,28 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   /* social links carry an inline display:flex, so the plain hide rule can't beat
      it — float over the map on mobile. Force-hide (they're in the welcome/About). */
   #social-links { display: none !important; }
+
+  /* The top + bottom menus are ALWAYS visible, above every modal/sheet. */
+  #toolbar { z-index: 210 !important; }
+  #m-actionbar { z-index: 210; }
+
+  /* Stats modal: zoom-neutral + pinned BETWEEN the bars so its close button is
+     always reachable and it never covers the menus (it was a zoom-inflated
+     full-screen z:200 overlay with the close pushed off-screen). */
+  #stats-overlay {
+    z-index: 70 !important; align-items: stretch !important; justify-content: center !important;
+    box-sizing: border-box !important;
+    padding: calc(var(--pa-topbar-h, 56px) + 8px) 8px calc(var(--pa-bottombar-h, 58px) + 8px) 8px !important;
+  }
+  #stats-modal {
+    zoom: 1 !important; position: static !important; margin: 0 auto !important;
+    width: 100% !important; max-width: 560px !important;
+    height: 100% !important; max-height: 100% !important;
+    display: flex !important; flex-direction: column !important; padding: 14px !important;
+  }
+  #stats-modal h2 { flex: 0 0 auto; margin: 0 0 12px !important; }
+  #stats-modal .stats-tabs { flex: 0 0 auto; }
+  #stats-modal .stats-panel.active { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 }
 
 /* v39d: Monster banner fade-out */
@@ -3126,6 +3148,25 @@ document.addEventListener('DOMContentLoaded', function setupMobileDrawer() {
 // open as centred sheets; Stats proxies the toolbar Stats button.
 // v128: deferred to DOMContentLoaded — #m-actionbar lives at the END of <body>,
 // after this script, so it does not exist yet at parse time.
+// v128 (responsive): publish the always-visible top/bottom menu heights as CSS
+// vars (--pa-topbar-h / --pa-bottombar-h) so modals + sheets sit BETWEEN the bars
+// instead of covering them. The bars themselves stay above everything (z 210).
+function _updateBarVars() {
+  try {
+    const root = document.documentElement;
+    const tb = document.getElementById('toolbar');
+    const ab = document.getElementById('m-actionbar');
+    // use getBoundingClientRect height — it includes the toolbar's 1.2x zoom
+    // (offsetHeight is the un-zoomed layout height and under-reports it).
+    if (tb) root.style.setProperty('--pa-topbar-h', Math.ceil(tb.getBoundingClientRect().height) + 'px');
+    const abShown = ab && getComputedStyle(ab).display !== 'none';
+    root.style.setProperty('--pa-bottombar-h', Math.ceil(abShown ? ab.getBoundingClientRect().height : 0) + 'px');
+  } catch (e) {}
+}
+document.addEventListener('DOMContentLoaded', function () { _updateBarVars(); setTimeout(_updateBarVars, 600); });
+window.addEventListener('resize', _updateBarVars);
+window.addEventListener('orientationchange', function () { setTimeout(_updateBarVars, 250); });
+
 document.addEventListener('DOMContentLoaded', function setupMobileSheets() {
   const bar = document.getElementById('m-actionbar');
   const backdrop = document.getElementById('m-sheet-backdrop');
@@ -11158,6 +11199,7 @@ function getAlliancePixelTotals(){
 
 // ── Stats modal ───────────────────────────────────────────────────
 async function openStats() {
+  if (typeof _updateBarVars === 'function') _updateBarVars(); // v128: size the modal between the bars
   document.getElementById('stats-overlay').classList.add('open');
   loadStatsMe();
   loadStatsLeaderboard();
