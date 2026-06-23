@@ -12678,7 +12678,11 @@ function refreshBombMenu(){
   if(!menu) return;
   const types = getBombTypes();
   if(types.length === 0){
-    menu.innerHTML = '<span style="color:#334155;font-size:10px">' + t('hud.unlock_captain') + '</span>';
+    // v128: the unlock hint flex-wraps to a full-width banner on compact — show
+    // it only on wider screens (the Nuke button itself still indicates the lock).
+    menu.innerHTML = matchMedia('(max-width:820px)').matches
+      ? ''
+      : '<span style="color:#334155;font-size:10px">' + t('hud.unlock_captain') + '</span>';
     return;
   }
   // Renamed callback param from t→bt to avoid shadowing the global t() i18n fn
