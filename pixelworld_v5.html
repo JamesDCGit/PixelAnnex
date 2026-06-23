@@ -13569,7 +13569,12 @@ function inspectCountryHighlight(ownerFi){
 }
 vp.addEventListener("contextmenu", e => {
   e.preventDefault();
-  const p = screenToMap(e.clientX, e.clientY);
+  _inspectAtScreen(e.clientX, e.clientY);
+});
+// v128: extracted so a mobile LONG-PRESS can trigger the same inspect as
+// desktop right-click (touch devices have no contextmenu).
+function _inspectAtScreen(clientX, clientY) {
+  const p = screenToMap(clientX, clientY);
   if (!p) return;
   if (p.x < 0 || p.x >= MAP_W || p.y < 0 || p.y >= MAP_H) return;
   const i = p.y * MAP_W + p.x;
@@ -13619,7 +13624,7 @@ vp.addEventListener("contextmenu", e => {
         '</div>',
     });
   }
-});
+}
 
 // Renderer — two passes:
 //   Pass 1: faint gold wash over home country (shows origin)
@@ -13781,6 +13786,17 @@ function _tmid(e){return {x:(e.touches[0].clientX+e.touches[1].clientX)/2, y:(e.
 // through to a canvas, so painting is unaffected; pointer-events:auto UI overlays
 // keep their touch target and now receive a real click.
 function _touchOnMap(e){ return e.target === vp || (e.target instanceof HTMLCanvasElement); }
+// v128: mobile long-press → inspect (touch equivalent of desktop right-click).
+// Arm a timer on a stationary single-finger press; a drag or second finger
+// cancels it. When it fires it stops the paint stroke (so the press pixel isn't
+// committed) and runs the shared _inspectAtScreen.
+let _lpTimer = null, _lpX = 0, _lpY = 0;
+function _fireLongPressInspect() {
+  _lpTimer = null;
+  isPainting = false; strokePixelBuffer = []; _touchMode = 'idle';
+  if (typeof _inspectAtScreen === 'function') _inspectAtScreen(_lpX, _lpY);
+  if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+}
 vp.addEventListener('touchstart', e => {
   if (!_touchOnMap(e)) return;
   if (e.touches.length === 1 && _touchMode === 'idle') {
@@ -13789,6 +13805,9 @@ vp.addEventListener('touchstart', e => {
     const t = e.touches[0];
     const p = screenToMap(t.clientX, t.clientY);
     paintBrush(p.x, p.y);
+    _lpX = t.clientX; _lpY = t.clientY;
+    clearTimeout(_lpTimer);
+    _lpTimer = setTimeout(_fireLongPressInspect, 500);
   } else if (e.touches.length >= 2) {
     // Second finger landed — switch to pan+zoom. Abort any in-flight paint
     // without sending stroke-end (the partial stroke is discarded).
@@ -13796,6 +13815,7 @@ vp.addEventListener('touchstart', e => {
       isPainting = false;
       strokePixelBuffer = [];
     }
+    clearTimeout(_lpTimer); _lpTimer = null; // v128: cancel long-press on pinch
     _touchMode = 'panzoom';
     _touchLastDist = _tdist(e);
     const mid = _tmid(e);
@@ -13809,6 +13829,8 @@ vp.addEventListener('touchmove', e => {
   if (!_touchOnMap(e)) return;
   if (_touchMode === 'paint' && e.touches.length === 1) {
     const t = e.touches[0];
+    // v128: a real drag (>10px) is a paint stroke, not a long-press — cancel it.
+    if (_lpTimer && (Math.abs(t.clientX - _lpX) > 10 || Math.abs(t.clientY - _lpY) > 10)) { clearTimeout(_lpTimer); _lpTimer = null; }
     const p = screenToMap(t.clientX, t.clientY);
     paintBrush(p.x, p.y);
   } else if (_touchMode === 'panzoom' && e.touches.length >= 2) {
@@ -13837,6 +13859,7 @@ vp.addEventListener('touchmove', e => {
 
 vp.addEventListener('touchend', e => {
   if (!_touchOnMap(e)) return;
+  clearTimeout(_lpTimer); _lpTimer = null; // v128: lift cancels a pending long-press
   // touchend fires when ANY finger leaves; e.touches has the remaining ones.
   if (_touchMode === 'paint' && isPainting) {
     // v63: build interpolated stroke wall before clearing buffer (runAutoFill is async)
