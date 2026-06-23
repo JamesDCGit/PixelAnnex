@@ -41,7 +41,28 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-22-v127`.** (v127 = THE actual welcome-button-
+**Current production triad: `2026-06-23-v128`.** (v128 = MOBILE-RESPONSIVE IN-GAME UI
+pass (built on the `mobile-responsive` branch, then merged) + the bot-ticker hardening
+(already live) + the file-bake GIF loader. Responsive model: 3 width tiers — compact
+(<=820px: phones + iPad portrait), desktop (>820px: iPad landscape + desktop, unchanged) —
+with the menus always visible and all content between them. New: completed mobile drawer
+(secondary controls; fixed a latent parse-order bug where the drawer never opened because
+setup ran before the end-of-body element existed — both drawer + sheet setups now run on
+DOMContentLoaded); `#m-actionbar` bottom bar (Territory/Ranks/Stats open `#legend` +
+`#leaderboard-panel` as centred sheets); compact toolbar (one-tap = country/Nuke/zoom, rest
+in the drawer) + `#rank-chip` (portrait+name; big `#rank-display` hidden on compact);
+HUD polish (bucket fits, login docked bottom, `#social-links` force-hidden); `#toolbar` +
+`#m-actionbar` raised to z-index 210 so they sit above modals; `_updateBarVars()` publishes
+`--pa-topbar-h`/`--pa-bottombar-h` (getBoundingClientRect so the 1.2x toolbar zoom is
+included) so Stats + daily modals are zoom-neutralised and laid out BETWEEN the bars with a
+reachable close; long-press inspect (`_inspectAtScreen` extracted from the contextmenu
+handler; 500ms stationary press, cancelled by drag/pinch); bomb-unlock hint suppressed on
+compact. Verified in preview at 390/768/1024. COAST OUTLINE: the v124-line `_COAST_OUTLINE`
+flag (procedural ocean-halo + shelf) is KEPT ON (`true`) for now — flip to `false` when the
+operator's baked GIF basemap (`public/map_base.gif`, the gif-preferred `_loadBakedMap`
+loader is already in) lands, and bundle the 5 pending gameplay/copy fixes then. KNOWN-MINOR
+remaining: fall-popup zoom/fit, `pointer:coarse` sizing + short-landscape guard, dead
+`#zoom-hud`/`#audio-hud` rule cleanup, world-state-bar sliver behind the action bar.) (v127 = THE actual welcome-button-
 offscreen fix (v125/v126 sticky was necessary but not sufficient). Root cause: `#tutorial-box`
 carries an inline `zoom:1.2` (the global UI font-scale, applied to modal inner cards), so a
 `height:100dvh` box renders ~1.2x = ~120dvh TALL — it overflows the viewport (hiding the top

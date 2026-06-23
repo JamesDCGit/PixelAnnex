@@ -3874,7 +3874,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-22-v127';
+const CODE_VERSION = '2026-06-23-v128';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3936,7 +3936,7 @@ let bordVisPixel=null;// v99g: VISUAL: ocean halo pixels actually drawn on the b
 // (edge + shelf) directly into the basemap art now, so both are disabled here
 // (flip to true to restore the procedural versions). bordPixel (gameplay
 // encirclement seeds) is unaffected — it was never drawn.
-const _COAST_OUTLINE = false;
+const _COAST_OUTLINE = true; // v128: outline KEPT on for now — flip to false when the baked GIF basemap lands
 // Stroke tracking for auto-fill (geo countries touched this stroke)
 // strokeGeos is declared inside runAutoFill's outer scope above
 let totalClaimed=0,totalLandPx=0,showBorders=true,borderDark=true,brushSize=1,currentIdx=0;

@@ -9,7 +9,7 @@
  * Version bumped per release so old caches get cleared automatically.
  */
 
-const CACHE_VERSION = 'pixelannex-v2026-06-22-v127';
+const CACHE_VERSION = 'pixelannex-v2026-06-23-v128';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
