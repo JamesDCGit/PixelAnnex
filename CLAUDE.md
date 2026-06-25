@@ -41,7 +41,27 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-23-v128`.** (v128 = MOBILE-RESPONSIVE IN-GAME UI
+**Current production triad: `2026-06-25-v129`.** (v129 = 5 GAMEPLAY/COPY FIXES + the
+OPERATOR'S BAKED GIF BASEMAP. (1) Conquest danger-flash is size-aware: LARGE countries
+(>= CONTEST_LARGE_MIN 8000px) fall via the contested path to the COMBINED foreign hold, so
+they now warn on the AGGREGATE foreign share with an earlier window (the Russia "fell at
+~55% with no flash" case); small/medium keep the single-largest champion metric. (2) Encircle
+bonus countdown enlarged (10->16px bold). (3) COPY: ranks no longer give pixel regen (absolute
+px/s since v114) — rank panel now shows BUCKET CAPACITY (RANK_BUCKET_CAPS) not the phantom
+"+200% regen"; same dead "× regen" claim removed from the rally banner + tooltip (only the
+initial-pixel bonus is real). (4) ENCIRCLE FRIENDLY BORDERS: allied countries' pixels now seal
+an encirclement (client isWallFill/isWallFillPre via _encircleAllyFi + server detectEncirclement
+via _alliedIdxSet) — you can close a ring against a teammate's border (was own-pixels-only, part
+of why it felt "random"). (5) FALLEN ZONES: dead-native, no-holder land (`_isFallenZoneClient`)
+is now DARKENED (dark veil over its unclaimed pixels via per-polygon bbox ImageData on the claim
+layer) + a white 🏳️ flag at the centroid (DOM node in #flag-overlay, map-projected like conquest
+flags); `_renderFallenZones`/`scheduleFallenZones` hooked into reversal/conquest/snapshot/claim-
+rebuild. BASEMAP: the operator's baked art shipped — `public/map_base.gif` (GIF89a 2048x1024,
+862KB, gif-preferred loader) + updated `public/map_base.webp` (560KB fallback); the coast is
+baked into the art so `_COAST_OUTLINE` is now FALSE (procedural c-border halo + c-waves shelf
+off). map_grid.json/map_meta.json unchanged (same geometry). Verified in preview: new GIF loads
+via the bake (status 200, totalLand 466600, new colours, no TopoJSON, border canvas empty);
+fallen-zone darken+flag works; encircle ally-walls + all copy compile clean.) (v128 = MOBILE-RESPONSIVE IN-GAME UI
 pass (built on the `mobile-responsive` branch, then merged) + the bot-ticker hardening
 (already live) + the file-bake GIF loader. Responsive model: 3 width tiers — compact
 (<=820px: phones + iPad portrait), desktop (>820px: iPad landscape + desktop, unchanged) —
