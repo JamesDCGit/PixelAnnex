@@ -769,6 +769,12 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   padding:6px 12px;font-size:11px;z-index:50;
 }
 #login-hud.logged-in{border-color:rgba(99,102,241,.5);}
+/* v132a: sign-in + social links relocated into the top toolbar. Neutralise the
+   absolute/centred positioning (and the mobile bottom-dock @media rules) so they flow
+   inline at the right end of the toolbar. Two-ID specificity beats the #login-hud rules. */
+#toolbar-account{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+#toolbar #login-hud{ position:static!important; transform:none!important; top:auto!important; left:auto!important; bottom:auto!important; right:auto!important; z-index:auto; }
+#toolbar #social-links{ position:static!important; transform:none!important; top:auto!important; left:auto!important; }
 #login-avatar{width:20px;height:20px;border-radius:50%;}
 #login-name{color:#cbd5e1;font-weight:600;}
 #login-rank{color:#818cf8;font-size:10px;}
@@ -1743,6 +1749,24 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
         <option value="de">🇩🇪 DE</option>
       </select>
     </div>
+    <!-- v132a: sign-in + social links live in the top toolbar (moved from #viewport) -->
+    <div id="toolbar-account">
+      <div id="social-links" style="display:flex;gap:6px;">
+        <a href="https://x.com/PixelAnnexGame" target="_blank" rel="noopener" title="Follow @PixelAnnexGame on X"
+           style="display:flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(15,23,41,.9);border:1px solid #1e293b;border-radius:6px;font-size:10px;color:#94a3b8;text-decoration:none;transition:color .15s,border-color .15s;">
+          <span style="font-weight:700;font-size:11px;">𝕏</span>
+          <span>Follow</span>
+        </a>
+        <a href="https://discord.gg/UHQRqXDpBE" target="_blank" rel="noopener" title="Join the PixelAnnex Discord"
+           style="display:flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(15,23,41,.9);border:1px solid #1e293b;border-radius:6px;font-size:10px;color:#94a3b8;text-decoration:none;transition:color .15s,border-color .15s;">
+          <span style="font-size:11px;">💬</span>
+          <span>Discord</span>
+        </a>
+      </div>
+      <div id="login-hud">
+        <span id="login-status" data-i18n="stats.loading">Loading…</span>
+      </div>
+    </div>
     <!-- v30: Mobile-only hamburger -->
     <button id="btn-mobile-menu" aria-label="Menu" title="Menu">&#9776;</button>
   </div>
@@ -1980,22 +2004,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <canvas id="c-crater" style="pointer-events:none;"></canvas>
     <canvas id="c-monsters" style="pointer-events:none;"></canvas><!-- v42: moved last so monsters render above all other canvases -->
     <div id="rank-display"></div>
-    <div id="login-hud">
-      <span id="login-status" data-i18n="stats.loading">Loading…</span>
-    </div>
-    <!-- v37: Social cross-links — X (Twitter) + Discord -->
-    <div id="social-links" style="position:absolute;top:54px;left:50%;transform:translateX(-50%);z-index:48;display:flex;gap:6px;">
-      <a href="https://x.com/PixelAnnexGame" target="_blank" rel="noopener" title="Follow @PixelAnnexGame on X"
-         style="display:flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(15,23,41,.9);border:1px solid #1e293b;border-radius:6px;font-size:10px;color:#94a3b8;text-decoration:none;transition:color .15s,border-color .15s;">
-        <span style="font-weight:700;font-size:11px;">𝕏</span>
-        <span>Follow</span>
-      </a>
-      <a href="https://discord.gg/UHQRqXDpBE" target="_blank" rel="noopener" title="Join the PixelAnnex Discord"
-         style="display:flex;align-items:center;gap:4px;padding:3px 8px;background:rgba(15,23,41,.9);border:1px solid #1e293b;border-radius:6px;font-size:10px;color:#94a3b8;text-decoration:none;transition:color .15s,border-color .15s;">
-        <span style="font-size:11px;">💬</span>
-        <span>Discord</span>
-      </a>
-    </div>
+    <!-- v132a: #login-hud + #social-links moved into the top toolbar (see #toolbar above) -->
     <div id="highlight-banner"></div>
     <div id="banner"></div>
     
@@ -3880,7 +3889,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v132';
+const CODE_VERSION = '2026-06-26-v133';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4921,7 +4930,7 @@ function _renderFallenZones() {
       if (cb !== -1 && cb !== featByPixel[i]) continue;
       const x = i % MAP_W, y = (i / MAP_W) | 0;
       const p = ((y - y0) * w + (x - x0)) * 4;
-      dd[p] = 6; dd[p+1] = 10; dd[p+2] = 18; dd[p+3] = 100; // v131a: lighter veil (was 150) — more of the base biome shows through
+      dd[p] = 6; dd[p+1] = 10; dd[p+2] = 18; dd[p+3] = 70; // v132a: lighter still (was 150 -> 100 -> 70) — more base biome shows through
       c.sx += x; c.sy += y; c.n++;
       if (c.repX < 0) { c.repX = x; c.repY = y; }
     }
@@ -7197,7 +7206,9 @@ function _renderEndgamePanel() {
     html = '<h4>🏆 ENDGAME RACE</h4>';
     html += '<div class="eg-req">First bloc to <b>' + winC + '% of countries</b> AND <b>' + winP + '% of the map</b> wins.</div>';
   }
-  for (const c of (d.contenders || []).slice(0, 6)) {
+  // v132a: only list blocs holding >=10% of the countries or the map (hide the long tail).
+  const _shown = (d.contenders || []).filter(c => c.countriesFrac >= 0.10 || c.pixelsFrac >= 0.10).slice(0, 6);
+  for (const c of _shown) {
     const cf = Math.round(c.countriesFrac * 100), pf = Math.round(c.pixelsFrac * 100);
     const won = c.countriesFrac >= (d.winCountriesFrac || 0.65) && c.pixelsFrac >= (d.winPixelsFrac || 0.65);
     html += '<div class="eg-row' + (won ? ' eg-lead' : '') + '">' +
