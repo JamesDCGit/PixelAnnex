@@ -5258,6 +5258,20 @@ function _bresenhamLine(x0, y0, x1, y1) {
 //      inside the ring are collected in one pass.
 // changedSet: Set of pixel indices this stroke actually flipped to own
 // (accumulated in the 'stroke' handler, cleared at stroke-end).
+// v128: feat-index Set of the countries allied to `countryId` (same alliance),
+// used as encircle walls so a ring can be closed against a teammate's border.
+// Returns null when the country has no alliance.
+function _alliedIdxSet(countryId){
+  const cid = String(countryId);
+  for (const [, a] of alliances){
+    if (a.countries && a.countries.map(String).includes(cid)){
+      const s = new Set();
+      for (const c of a.countries){ if (String(c) !== cid){ const ai = getIdx(c); if (ai >= 0) s.add(ai); } }
+      return s.size ? s : null;
+    }
+  }
+  return null;
+}
 function detectEncirclement(strokePixels, countryId, changedSet) {
   if (!strokePixels || strokePixels.length < 1) return null;
   const cidx = getIdx(countryId);
@@ -5297,13 +5311,19 @@ function detectEncirclement(strokePixels, countryId, changedSet) {
     pad = ENCIRCLE_BBOX_PAD_MIN;
   }
 
+  // v128: allied (friendly) countries' pixels also seal the encirclement, so a
+  // player can close a ring against a teammate's border. Mirrors the client's
+  // _encircleAllyFi. Built once per call (the BFS calls the predicate per-cell).
+  const _allyIdx = _alliedIdxSet(countryId);
+  const _isAlly = _allyIdx ? (gi) => _allyIdx.has(claimByPixel[gi]) : () => false;
+
   // 3. Two wall predicates.
-  //    A (with stroke):   own pixels + stroke/Bresenham pixels — current state.
-  //    B (without stroke): own pixels MINUS the ones this stroke just flipped —
+  //    A (with stroke):   own + allied pixels + stroke/Bresenham pixels — current state.
+  //    B (without stroke): own + allied pixels MINUS the ones this stroke just flipped —
   //    the pre-stroke state. Regions enclosed in A but reachable in B were
   //    closed by THIS stroke.
-  const isWallA = (gi) => strokeWallMap.has(gi) || claimByPixel[gi] === cidx;
-  const isWallB = (gi) => claimByPixel[gi] === cidx && !(changedSet && changedSet.has(gi));
+  const isWallA = (gi) => strokeWallMap.has(gi) || claimByPixel[gi] === cidx || _isAlly(gi);
+  const isWallB = (gi) => (claimByPixel[gi] === cidx && !(changedSet && changedSet.has(gi))) || _isAlly(gi);
 
   const cells = bw * bh;
   const visitedA = new Uint8Array(cells);

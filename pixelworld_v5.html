@@ -6365,12 +6365,29 @@ function _getAllyOwned(geoIdx, claimerIdx) {
   return sum;
 }
 
+// v128: allied (friendly) countries' pixels also seal an encirclement, so a ring
+// can be closed against a teammate's border. Rebuilt once per stroke (the BFS calls
+// the wall fns per-pixel, so an O(1) Set membership test is used).
+let _encircleAllyFi = null;
+function _rebuildEncircleAllies(){
+  _encircleAllyFi = null;
+  if(currentIdx < 0 || !featList[currentIdx]) return;
+  const myAlly = _allianceByCountry[String(featList[currentIdx].id)];
+  if(!myAlly || !myAlly.countries) return;
+  const s = new Set();
+  for(const cid of myAlly.countries){
+    const fi = idToFeatIdx.get(String(cid));
+    if(fi !== undefined && fi !== currentIdx) s.add(fi);
+  }
+  _encircleAllyFi = s.size ? s : null;
+}
 function isWallFill(i){
   if(!landMask[i]) return true;                          // ocean: wall
   if(_strokeWall && _strokeWall[i]) return true;         // current-stroke Bresenham gaps
   // v68: ALL own pixels (from every prior stroke) act as walls so a ring built
   // pixel-by-pixel over multiple clicks is detected the moment it closes.
   if(claimByPixel[i] === currentIdx) return true;
+  if(_encircleAllyFi && _encircleAllyFi.has(claimByPixel[i])) return true; // v128: allied border
   return false;
 }
 
@@ -6452,11 +6469,13 @@ function buildGeoPixelList() {
 // were never own, so they're open here too).
 function isWallFillPre(i){
   if(!landMask[i]) return true; // ocean: wall
+  if(_encircleAllyFi && _encircleAllyFi.has(claimByPixel[i])) return true; // v128: allied border (pre-stroke too)
   return claimByPixel[i] === currentIdx && !(_strokeChangedSet && _strokeChangedSet.has(i));
 }
 
 function runAutoFill(){
   if(!bordPixel||strokeGeos.size===0)return;
+  _rebuildEncircleAllies(); // v128: refresh the allied-wall set for this stroke
   const geosToCheck = new Set(strokeGeos);
   strokeGeos = new Set(); // reset for next stroke
 
