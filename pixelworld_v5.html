@@ -3880,7 +3880,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v131';
+const CODE_VERSION = '2026-06-26-v132';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4891,12 +4891,12 @@ function _renderFallenZones() {
     const f = featList[fi]; if (!f) continue;
     const id = String(f.id);
     if (seen.has(id)) continue; seen.add(id);
-    // v130: darken the unclaimed land of EVERY dead-native country (was no-holder
-    // "fallen zones" only — in the transfer model nearly all dead natives have a
-    // holder, so the old gate matched almost nothing and nothing ever darkened).
-    // Only their UNCLAIMED (-1) pixels get the veil below, so a holder's painted
-    // pixels keep their colour; the white surrender flag stays no-holder-only.
-    if (_isCountryFallenClient(id)) fallen.add(id);
+    // v131a: darken + white-flag NEUTRAL fallen zones only (dead native with NO current
+    // holder). A HELD dead country (e.g. USA conquered Romania) shows the holder's colour
+    // + the holder's conquest flag — it must NOT also get the death veil or a white flag.
+    // (v130 broadened this to every dead native, which left held countries with BOTH a
+    // holder flag AND a stale white flag once the holder painted them to 100%.)
+    if (_isFallenZoneClient(id)) fallen.add(id);
   }
   const cent = {}; // id → { sx, sy, n, repX, repY }
   for (let fi = 0; fi < featList.length; fi++) {
@@ -4921,7 +4921,7 @@ function _renderFallenZones() {
       if (cb !== -1 && cb !== featByPixel[i]) continue;
       const x = i % MAP_W, y = (i / MAP_W) | 0;
       const p = ((y - y0) * w + (x - x0)) * 4;
-      dd[p] = 6; dd[p+1] = 10; dd[p+2] = 18; dd[p+3] = 150; // dark veil over the base biome
+      dd[p] = 6; dd[p+1] = 10; dd[p+2] = 18; dd[p+3] = 100; // v131a: lighter veil (was 150) — more of the base biome shows through
       c.sx += x; c.sy += y; c.n++;
       if (c.repX < 0) { c.repX = x; c.repY = y; }
     }
@@ -4929,10 +4929,13 @@ function _renderFallenZones() {
   }
   const ov = document.getElementById('flag-overlay');
   for (const id in cent) {
-    const c = cent[id]; if (c.n <= 0 || !ov) continue;
-    // v130: white surrender flag only for NEUTRAL (no-holder) fallen zones — a
-    // held conquest already shows the holder's flag, so skip (and drop a stale one).
-    if (typeof _holderOfGeo === 'function' && _holderOfGeo(id)) {
+    const c = cent[id];
+    // v131a: a white flag belongs ONLY to a neutral fallen zone with darkened land.
+    // If nothing darkened (c.n=0, fully held/painted) or it now has a holder, drop any
+    // stale white flag — fixes a held country (e.g. Romania under USA) showing the
+    // holder's conquest flag AND a leftover white flag.
+    const held = (typeof _holderOfGeo === 'function') && _holderOfGeo(id);
+    if (c.n <= 0 || held || !ov) {
       if (_fallenFlagNodes[id]) { _fallenFlagNodes[id].el.remove(); delete _fallenFlagNodes[id]; }
       continue;
     }
@@ -7176,11 +7179,24 @@ function _renderEndgamePanel() {
   let panel = document.getElementById('endgame-panel');
   if (!panel) { panel = document.createElement('div'); panel.id = 'endgame-panel'; document.body.appendChild(panel); }
   const d = _endgameData;
-  if (!d || !d.suddenDeath) { panel.classList.remove('show'); return; }
+  if (!d) { panel.classList.remove('show'); return; }
+  const sd = !!d.suddenDeath;
+  // v131a: also show the panel BEFORE sudden death once a bloc is clearly leading
+  // (controls >=50% of the countries OR the map), so players can see the endgame race
+  // — e.g. a superpower dominating the map long before only <=5 countries remain.
+  const _top = (d.contenders && d.contenders[0]) || null;
+  const near = !!_top && (_top.countriesFrac >= 0.5 || _top.pixelsFrac >= 0.5);
+  if (!sd && !near) { panel.classList.remove('show'); return; }
   const winC = Math.round((d.winCountriesFrac || 0.65) * 100);
   const winP = Math.round((d.winPixelsFrac || 0.65) * 100);
-  let html = '<h4>⚔️ SUDDEN DEATH — ' + d.standing + ' countr' + (d.standing === 1 ? 'y' : 'ies') + ' left</h4>';
-  html += '<div class="eg-req">Regen ×2 active. First bloc to <b>' + winC + '% of countries</b> AND <b>' + winP + '% of the map</b> wins.</div>';
+  let html;
+  if (sd) {
+    html = '<h4>⚔️ SUDDEN DEATH — ' + d.standing + ' countr' + (d.standing === 1 ? 'y' : 'ies') + ' left</h4>';
+    html += '<div class="eg-req">Regen ×2 active. First bloc to <b>' + winC + '% of countries</b> AND <b>' + winP + '% of the map</b> wins.</div>';
+  } else {
+    html = '<h4>🏆 ENDGAME RACE</h4>';
+    html += '<div class="eg-req">First bloc to <b>' + winC + '% of countries</b> AND <b>' + winP + '% of the map</b> wins.</div>';
+  }
   for (const c of (d.contenders || []).slice(0, 6)) {
     const cf = Math.round(c.countriesFrac * 100), pf = Math.round(c.pixelsFrac * 100);
     const won = c.countriesFrac >= (d.winCountriesFrac || 0.65) && c.pixelsFrac >= (d.winPixelsFrac || 0.65);
