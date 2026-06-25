@@ -4858,6 +4858,82 @@ function _updateAllFlagPositions() {
     const arr = _flagDOMNodes[id];
     for (const e of arr) _updateFlagDOMPosition(e); // v95e: array of nodes per geo
   }
+  for (const id in _fallenFlagNodes) _updateFallenFlagPos(_fallenFlagNodes[id]); // v128
+}
+
+// ── v128: neutral "Fallen" zones ─────────────────────────────────────────────
+// A Fallen zone = dead native (permanentlyConquered) with NO current holder — its
+// land was cleared, so it's blank biome anyone can retake. Render it DARKENED with
+// a white surrender flag so up-for-grabs territory is obvious. Rebuilt (debounced)
+// on fall/reversal/conquest/snapshot + after a claim-canvas rebuild.
+const _fallenFlagNodes = {}; // countryId → { el, cx, cy }
+function _updateFallenFlagPos(node) {
+  const sx = node.cx * scale + ox, sy = node.cy * scale + oy;
+  node.el.style.transform = 'translate(' + (sx - 7) + 'px, ' + (sy - 7) + 'px)';
+}
+let _fallenZonesTimer = null;
+function scheduleFallenZones() {
+  if (_fallenZonesTimer) return;
+  _fallenZonesTimer = setTimeout(() => {
+    _fallenZonesTimer = null;
+    try { _renderFallenZones(); } catch (e) { console.warn('[Fallen] render failed', e); }
+  }, 400);
+}
+function _renderFallenZones() {
+  if (!geoPixelList || !claimCtx || typeof _isFallenZoneClient !== 'function') return;
+  // current fallen-unclaimed country ids
+  const fallen = new Set(), seen = new Set();
+  for (let fi = 0; fi < featList.length; fi++) {
+    const f = featList[fi]; if (!f) continue;
+    const id = String(f.id);
+    if (seen.has(id)) continue; seen.add(id);
+    if (_isFallenZoneClient(id)) fallen.add(id);
+  }
+  const cent = {}; // id → { sx, sy, n, repX, repY }
+  for (let fi = 0; fi < featList.length; fi++) {
+    const f = featList[fi]; if (!f) continue;
+    const id = String(f.id);
+    if (!fallen.has(id)) continue;
+    const src = geoPixelList[fi]; if (!src || !src.length) continue;
+    let x0 = MAP_W, y0 = MAP_H, x1 = 0, y1 = 0;
+    for (let k = 0; k < src.length; k++) { const i = src[k]; const x = i % MAP_W, y = (i / MAP_W) | 0; if (x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+    const w = x1 - x0 + 1, h = y1 - y0 + 1; if (w <= 0 || h <= 0) continue;
+    const im = claimCtx.getImageData(x0, y0, w, h); const dd = im.data;
+    const c = cent[id] || (cent[id] = { sx: 0, sy: 0, n: 0, repX: -1, repY: -1 });
+    for (let k = 0; k < src.length; k++) {
+      const i = src[k];
+      if (claimByPixel[i] !== -1) continue; // only the still-unclaimed (fallen) pixels
+      const x = i % MAP_W, y = (i / MAP_W) | 0;
+      const p = ((y - y0) * w + (x - x0)) * 4;
+      dd[p] = 6; dd[p+1] = 10; dd[p+2] = 18; dd[p+3] = 150; // dark veil over the base biome
+      c.sx += x; c.sy += y; c.n++;
+      if (c.repX < 0) { c.repX = x; c.repY = y; }
+    }
+    claimCtx.putImageData(im, x0, y0);
+  }
+  const ov = document.getElementById('flag-overlay');
+  for (const id in cent) {
+    const c = cent[id]; if (c.n <= 0 || !ov) continue;
+    let cx = Math.round(c.sx / c.n), cy = Math.round(c.sy / c.n);
+    // if the average landed off the geo (ocean / between landmasses), use a real pixel
+    const ci = cy * MAP_W + cx;
+    if (!(featByPixel[ci] >= 0 && featList[featByPixel[ci]] && String(featList[featByPixel[ci]].id) === id)) { cx = c.repX; cy = c.repY; }
+    let node = _fallenFlagNodes[id];
+    if (!node) {
+      const el = document.createElement('div');
+      el.className = 'pa-fallen-flag';
+      el.textContent = '\u{1F3F3}️'; // 🏳️ white surrender flag
+      el.style.cssText = 'position:absolute;top:0;left:0;font-size:15px;line-height:1;pointer-events:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.85));will-change:transform;z-index:1;';
+      ov.appendChild(el);
+      node = _fallenFlagNodes[id] = { el, cx, cy };
+    }
+    node.cx = cx; node.cy = cy;
+    _updateFallenFlagPos(node);
+  }
+  // drop flags for ids that are no longer fallen
+  for (const id in _fallenFlagNodes) {
+    if (!cent[id]) { _fallenFlagNodes[id].el.remove(); delete _fallenFlagNodes[id]; }
+  }
 }
 
 function _updateFlagOpacity() {
@@ -9648,6 +9724,7 @@ function _finishSnapshotReplay() {
     requestAnimationFrame(replayStep);
   }
   scheduleLegend();
+  if (typeof scheduleFallenZones === 'function') scheduleFallenZones(); // v128: darken + flag fallen zones on load
   // v95a: snapshot (incl. conqueredSet) is now applied — unblock the fallen re-pick.
   _snapshotApplied = true;
   _bootStage('ready'); // v118a: snapshot applied without crashing — clear the diagnostic
@@ -10156,6 +10233,7 @@ function mpHandleMessage(msg) {
       finisherFill(targetFi, fi);
       scheduleLegend();
       refreshConqueredCountLocal(); // v92b: instant Conquered-count update
+      if (typeof scheduleFallenZones === 'function') scheduleFallenZones(); // v128: clear a fallen flag if this geo was retaken
       break;
     }
 
@@ -10177,6 +10255,7 @@ function mpHandleMessage(msg) {
       }
       scheduleLegend();
       refreshConqueredCountLocal(); // v92b: instant Conquered-count update
+      if (typeof scheduleFallenZones === 'function') scheduleFallenZones(); // v128: darken + flag the newly-fallen zone
       break;
     }
 
@@ -10978,6 +11057,7 @@ function mpRebuildClaimCanvas() {
     d[p]=rgb[0]; d[p+1]=rgb[1]; d[p+2]=rgb[2]; d[p+3]=alpha;
   }
   claimCtx.putImageData(img, 0, 0);
+  if (typeof scheduleFallenZones === 'function') scheduleFallenZones(); // v128: re-darken fallen zones
 }
 
 // Send stroke to server
