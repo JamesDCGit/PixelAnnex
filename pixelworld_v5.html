@@ -693,9 +693,11 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #encircle-banner .enc-icon{margin-right:6px;font-size:14px;vertical-align:middle;}
 #encircle-banner .enc-mult{font-size:14px;color:#fb923c;font-weight:700;}
 #encircle-banner .enc-timer{
-  display:block;margin-top:4px;padding:2px 8px;
-  background:rgba(0,0,0,0.3);border-radius:4px;
-  font-size:10px;letter-spacing:.04em;font-weight:500;color:#fdba74;
+  /* v128: enlarged the bonus countdown so it's readable at a glance */
+  display:block;margin-top:6px;padding:4px 10px;
+  background:rgba(0,0,0,0.35);border-radius:5px;
+  font-size:16px;letter-spacing:.06em;font-weight:700;color:#fdba74;
+  font-variant-numeric:tabular-nums;
 }
 @keyframes enc-pulse{
   0%,100%{box-shadow:0 0 12px rgba(249,115,22,0.35), 0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(251,146,60,0.6);}
@@ -12634,7 +12636,10 @@ function updateHighlightBanner(){
   const bonusLabel = bonus > 0
     ? (_highlightBonusClaimed ? '+' + bonus + ' claimed' : '+' + bonus + ' first pixel')
     : 'rally only';
-  const regenLabel = (perk && perk.regenMult > 1) ? (' · ' + perk.regenMult + '× regen') : '';
+  // v128: the rally regen multiplier is dead (getRegenMult never reads it since the
+  // v114 absolute-px/s overhaul) — only the initial-pixel bonus is real, so drop the
+  // misleading "× regen" label.
+  const regenLabel = '';
   el.style.display = 'block';
   el.innerHTML = `<span style="color:#fbbf24">&#9733; RALLY</span> ·
     <span style="color:${country?.color||'#fff'}">${country?.name||'?'}</span> ·
@@ -12817,12 +12822,13 @@ function refreshRankUI(){
   const rankColours = ['#64748b','#3b82f6','#f59e0b','#22c55e','#a855f7'];
   const col = rankColours[ri];
 
-  // v85: build rank perk summary — was misleading (showed nothing for
-  // Lieutenant/Captain/General; only showed Admiral's Nuke). Now reflects
-  // the actual RANKS[] fields: regenMult and bombType.
-  const regenPct = Math.round(((rank.regenMult || 1) - 1) * 100);
+  // v128: rank perks. Ranks NO LONGER give pixel regen (regen is the absolute
+  // px/s David-size system since v114 — see getRegenMult). Rank governs BUCKET
+  // CAPACITY (RANK_BUCKET_CAPS 50→100) + bomb / Select-Target unlocks, so the old
+  // "+200% pixel regen" line was flat wrong. Show the real benefits instead.
+  const bucketCap = RANK_BUCKET_CAPS[Math.max(0, Math.min(RANK_BUCKET_CAPS.length - 1, ri))] || 50;
   const perks = [];
-  if (regenPct > 0) perks.push('⚡ +' + regenPct + '% pixel regen');
+  perks.push('🪣 ' + bucketCap + 'px pixel bucket');
   if (rank.bombType) perks.push('☢️ ' + rank.bombType + ' unlocked');
   // Highlight (Select Target) is Admiral-only in v85
   if (ri >= 4) perks.push('🎯 Select Target unlocked');
@@ -12929,7 +12935,7 @@ function _refreshHighlightBtnLockState(){
       btn.textContent = btn.dataset.baseLabel;
       const perk = HIGHLIGHT_PERKS[ri];
       const extra = perk && perk.initialBonus > 0
-        ? ' (' + perk.regenMult + '× regen + ' + perk.initialBonus + 'px first pixel while active)'
+        ? ' (+' + perk.initialBonus + 'px on your first pixel there)' // v128: regen mult is dead — drop it
         : ' (rally call only)';
       btn.title = 'Click, then click a country to rally your forces there' + extra;
       btn.style.opacity = '';
@@ -13395,8 +13401,22 @@ vp.addEventListener("mousemove",e=>{
           if(_holderFeat && featList[+fi] && String(featList[+fi].id)===String(_holderFeat.id)) continue; // skip the owner
           if(cnt > _threatCnt) _threatCnt = cnt;
         }
-        const _threatPct  = total ? _threatCnt / total : 0;
-        const _dangerLo   = Math.max(0.30, _effThresh - 0.25);
+        // v128: size-aware danger metric. LARGE countries (>= the server's
+        // CONTEST_LARGE_MIN) fall via the CONTESTED path — the COMBINED foreign
+        // hold (vs the painted area), well below the champion bar — so a country
+        // chipped by several attackers (none individually near the threshold) used
+        // to fall with NO flash (the Russia case). Warn on the aggregate foreign
+        // share for large countries, with a wider/earlier window; small/medium
+        // countries keep the single-largest-attacker (champion) metric.
+        const _CONTEST_LARGE_MIN = 8000;
+        let _threatPct, _dangerLo;
+        if (total >= _CONTEST_LARGE_MIN) {
+          _threatPct = total ? _foreignSum / total : 0;
+          _dangerLo  = Math.max(0.30, _effThresh - 0.35);
+        } else {
+          _threatPct = total ? _threatCnt / total : 0;
+          _dangerLo  = Math.max(0.40, _effThresh - 0.25);
+        }
         const _threatened = _threatPct >= _dangerLo;
         // Opening <span> for an owner % — flashes (variable speed) when threatened.
         const _dangerOpen = () => {
