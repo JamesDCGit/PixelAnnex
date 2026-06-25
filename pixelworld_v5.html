@@ -1692,11 +1692,13 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
          on compact screens in place of the big #rank-display panel. Tap = stats. -->
     <span id="rank-chip" onclick="openStats()" title="Your rank — tap for full stats"></span>
     <div class="sep"></div>
-    <button class="btn" id="btn-brd">Borders Dark</button>
+    <!-- v130: country borders are baked into the basemap art; the Borders Dark/Light/Off toggle removed -->
     <button class="btn" id="btn-rst">Reset View</button>
     <div class="sep"></div>
-    <button class="btn" id="btn-bomb" title="Captain+ rank: click to arm your selected weapon (Mortar / MOAB / Nuke), then click the map to drop it. Higher ranks unlock bigger blasts.">&#128165; Nuke</button>
-    <div id="bomb-menu"></div>
+    <!-- v130: Nuke / bomb system removed for now. Button + menu hidden (kept in DOM so
+         existing $("btn-bomb")/bomb-menu references stay valid); detonation is neutered below. -->
+    <button class="btn" id="btn-bomb" style="display:none !important;">&#128165; Nuke</button>
+    <div id="bomb-menu" style="display:none !important;"></div>
     <button class="btn" id="btn-highlight" title="Admiral: click to enter target-select mode, then click a country to designate as your attack target">&#127919; Select Target</button>
     <button class="btn" id="btn-invert" onclick="toggleInvertOwn()" title="Invert MY pixels: shows your own pixels in a contrasting colour so you can see them when painting onto a same-coloured country">&#128260; My Pixels</button>
     <div class="sep"></div>
@@ -1957,6 +1959,9 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <svg id="attack-arrow" viewBox="0 0 60 60">
       <path d="M 30 5 L 50 35 L 35 35 L 35 55 L 25 55 L 25 35 L 10 35 Z" fill="#ef4444" stroke="#fff" stroke-width="2" opacity="0.85"/>
     </svg>
+    <!-- v130: twinkling starfield in the void around the map (shown when zoomed out / panned).
+         Screen-space (NOT transformed by applyT), drawn first so it sits behind c-base. -->
+    <canvas id="c-stars" style="pointer-events:none;"></canvas>
     <canvas id="c-base"></canvas>
     <canvas id="c-grid" style="pointer-events:none;opacity:0;"></canvas>
     <canvas id="c-waves" style="pointer-events:none"></canvas>
@@ -3150,7 +3155,6 @@ document.addEventListener('DOMContentLoaded', function setupMobileDrawer() {
       if (act === 'stats')            clickById('btn-stats');
       else if (act === 'highlight')   clickById('btn-highlight');
       else if (act === 'invert')      clickById('btn-invert');
-      else if (act === 'borders')     clickById('btn-brd');
       else if (act === 'reset-view')  clickById('btn-rst');
       else if (act === 'music')       clickById('btn-music');
       else if (act === 'sfx')         clickById('btn-sfx');
@@ -3876,7 +3880,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-25-v129';
+const CODE_VERSION = '2026-06-26-v130';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4887,7 +4891,12 @@ function _renderFallenZones() {
     const f = featList[fi]; if (!f) continue;
     const id = String(f.id);
     if (seen.has(id)) continue; seen.add(id);
-    if (_isFallenZoneClient(id)) fallen.add(id);
+    // v130: darken the unclaimed land of EVERY dead-native country (was no-holder
+    // "fallen zones" only — in the transfer model nearly all dead natives have a
+    // holder, so the old gate matched almost nothing and nothing ever darkened).
+    // Only their UNCLAIMED (-1) pixels get the veil below, so a holder's painted
+    // pixels keep their colour; the white surrender flag stays no-holder-only.
+    if (_isCountryFallenClient(id)) fallen.add(id);
   }
   const cent = {}; // id → { sx, sy, n, repX, repY }
   for (let fi = 0; fi < featList.length; fi++) {
@@ -4914,6 +4923,12 @@ function _renderFallenZones() {
   const ov = document.getElementById('flag-overlay');
   for (const id in cent) {
     const c = cent[id]; if (c.n <= 0 || !ov) continue;
+    // v130: white surrender flag only for NEUTRAL (no-holder) fallen zones — a
+    // held conquest already shows the holder's flag, so skip (and drop a stale one).
+    if (typeof _holderOfGeo === 'function' && _holderOfGeo(id)) {
+      if (_fallenFlagNodes[id]) { _fallenFlagNodes[id].el.remove(); delete _fallenFlagNodes[id]; }
+      continue;
+    }
     let cx = Math.round(c.sx / c.n), cy = Math.round(c.sy / c.n);
     // if the average landed off the geo (ocean / between landmasses), use a real pixel
     const ci = cy * MAP_W + cx;
@@ -5041,6 +5056,27 @@ function _clearHolderInGeo(geoCountryId, holderCountryId){
       if (claimCtx) claimCtx.clearRect(i % MAP_W, (i / MAP_W) | 0, 1, 1);
     }
   }
+}
+
+// v130: clear a dead country's pixels EVERYWHERE on this client (every foreign geo),
+// regardless of viewport. On a no-heir death the server clears the dead country's
+// stray foreign pixels, but those per-pixel clears are viewport-filtered — an
+// off-screen client would keep showing them until it panned there. The server's
+// `country_liquidated` broadcast triggers this full local wipe so the map matches
+// for everyone immediately. Native homeland pixels are left to the conquest re-flood.
+function _clearHolderEverywhere(holderCountryId){
+  const holderFi = idToFeatIdx.get(String(holderCountryId));
+  if (holderFi === undefined || !claimByPixel) return;
+  for (let i = 0; i < MAP_PX; i++){
+    if (claimByPixel[i] !== holderFi) continue;
+    if (featByPixel[i] === holderFi) continue; // keep its own native homeland pixels
+    claimByPixel[i] = -1;
+    const gfi = featByPixel[i];
+    if (gfi >= 0 && geoClaimCnt[gfi] && geoClaimCnt[gfi][holderFi] > 0) geoClaimCnt[gfi][holderFi]--;
+    if ((claimerCount[holderFi] || 0) > 0) claimerCount[holderFi]--;
+    if (claimCtx) claimCtx.clearRect(i % MAP_W, (i / MAP_W) | 0, 1, 1);
+  }
+  if (typeof scheduleFallenZones === 'function') scheduleFallenZones();
 }
 
 // Erase a flag for a geo country (when recaptured)
@@ -6116,8 +6152,8 @@ function claimPixel(px,py){
   }
   const [r,g,b]=_renderRgb(currentIdx); // v97g: inverted if "invert my pixels" is on
   // v73: fillRect is far cheaper than createImageData(1,1)+putImageData
-  // (no allocation, GPU-accelerated). Alpha 215/255 ≈ 0.843.
-  claimCtx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.843)';
+  // (no allocation, GPU-accelerated). v130: painted-pixel opacity dropped to 65% (was 0.843).
+  claimCtx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.65)';
   claimCtx.fillRect(px, py, 1, 1);
   // v113: don't white-flash when reclaiming pixels inside your OWN homeland while
   // NOT in fight-back. Once you've pushed the enemy back below the fight-back line,
@@ -6654,7 +6690,7 @@ function runAutoFill(){
       for(const gi of enclosed){
         const fx=(gi%MAP_W)-fillX0, fy=((gi/MAP_W)|0)-fillY0;
         const fp=(fy*fw+fx)*4;
-        fd[fp]=r;fd[fp+1]=g;fd[fp+2]=b;fd[fp+3]=215;
+        fd[fp]=r;fd[fp+1]=g;fd[fp+2]=b;fd[fp+3]=166;// v130: 65% paint opacity
       }
       claimCtx.putImageData(fillImg,fillX0,fillY0);
     }
@@ -6758,6 +6794,8 @@ function tickBombCooldownUI() {
 // Clears (unclaims) every pixel within the circle on the map canvas
 
 function detonateBomb(mapX, mapY){
+  return; // v130: nuke/bomb system removed for now — detonation disabled
+  // eslint-disable-next-line no-unreachable
   if(!landMask||!landMask[mapY*MAP_W+mapX]) return; // no bombing ocean
   const types = getBombTypes();
   if(types.length === 0) return; // rank too low
@@ -6854,7 +6892,7 @@ function detonateBomb(mapX, mapY){
     for(const i of claimed){
       const x=(i%MAP_W)-bx0,y=((i/MAP_W)|0)-by0;
       const p=(y*bw+x)*4;
-      d[p]=cr;d[p+1]=cg;d[p+2]=cb;d[p+3]=215;
+      d[p]=cr;d[p+1]=cg;d[p+2]=cb;d[p+3]=166;// v130: 65% paint opacity
     }
     claimCtx.putImageData(img,bx0,by0);
   }
@@ -9562,7 +9600,18 @@ function mpConnect() {
       if (_tag === 2) { applyRegionSnapshot(e.data); return; }
       if (_tag === 3) { applySnapshotRuns(e.data); return; } // v92s: initial snapshot
       const decoded = decodeBinaryDelta(e.data);
-      if (decoded) mpHandleMessage(decoded);
+      if (decoded) {
+        // v130 (sync B): seq-gap detection. The server stamps every broadcast frame
+        // with a contiguous global seq (windowed clients get keepalives), so a jump
+        // means we dropped a frame — force a region re-snapshot to heal the view.
+        if (decoded.seq !== undefined) {
+          if (_lastDeltaSeq !== null && decoded.seq !== ((_lastDeltaSeq + 1) >>> 0)) {
+            try { _sendViewport(true); } catch (err) {}
+          }
+          _lastDeltaSeq = decoded.seq;
+        }
+        if (decoded.pixels.length) mpHandleMessage(decoded);
+      }
       return;
     }
     let msg;
@@ -9575,14 +9624,17 @@ function mpConnect() {
 // Layout: [uint8 tag][ x u16le, y u16le, owner u16le ]*  — owner 0xFFFF = clear.
 // Returns { type:'delta', pixels:[{x,y,owner}] } or null if tag/length invalid.
 const _DELTA_CLEAR_OWNER = 0xFFFF;
+let _lastDeltaSeq = null; // v130 (sync B): last seen delta seq; null = baseline not set
 function decodeBinaryDelta(ab) {
   const dv = new DataView(ab);
-  if (dv.byteLength < 1 || dv.getUint8(0) !== 1) return null; // not a binary delta
-  const recBytes = dv.byteLength - 1;
+  // v130: frame now carries a u32 seq header after the tag → [u8 tag=1][u32 seq][records].
+  if (dv.byteLength < 5 || dv.getUint8(0) !== 1) return null; // not a binary delta
+  const seq = dv.getUint32(1, true);
+  const recBytes = dv.byteLength - 5;
   if (recBytes % 6 !== 0) return null;
   const n = recBytes / 6;
   const pixels = new Array(n);
-  let off = 1;
+  let off = 5;
   for (let i = 0; i < n; i++) {
     const x = dv.getUint16(off, true); off += 2;
     const y = dv.getUint16(off, true); off += 2;
@@ -9591,7 +9643,7 @@ function decodeBinaryDelta(ab) {
     // idToFeatIdx.get(String(owner)) so a numeric owner is fine.
     pixels[i] = { x, y, owner: (o === _DELTA_CLEAR_OWNER) ? null : o };
   }
-  return { type: 'delta', pixels };
+  return { type: 'delta', pixels, seq };
 }
 
 // v92p: apply a region snapshot (binary tag=2). The server sends the current
@@ -9674,7 +9726,7 @@ function applySnapshotRuns(ab) {
         const slice = new Uint8ClampedArray(rowRem * 4);
         for (let kk = 0; kk < rowRem; kk++) {
           const p = kk * 4;
-          slice[p] = r; slice[p + 1] = g; slice[p + 2] = b; slice[p + 3] = 215;
+          slice[p] = r; slice[p + 1] = g; slice[p + 2] = b; slice[p + 3] = 166;// v130: 65% paint opacity
           const i = pos + kk;
           claimByPixel[i] = fi;
           const geo = featByPixel[i];
@@ -9770,8 +9822,15 @@ function scheduleViewportUpdate() {
 // v93w: periodically re-assert the viewport (forced) so the server re-sends a
 // region snapshot and resyncs the visible area. Self-heals stale owners that
 // drifted while off-rect (the viewport delta filter only streams in-rect deltas)
-// without requiring the player to pan. ~10s max staleness for a small bandwidth cost.
-setInterval(() => { try { _sendViewport(true); } catch (e) {} }, 10000);
+// without requiring the player to pan.
+// v130 (sync D): tightened 10s → 4s so the visible area heals faster (region
+// snapshots are small and per-client, so the extra bandwidth is minimal).
+setInterval(() => { try { _sendViewport(true); } catch (e) {} }, 4000);
+// v130 (sync A): resync the instant the tab regains focus/visibility. A backgrounded
+// tab throttles timers/RAF and can drift; reassert immediately on return instead of
+// waiting up to 4s for the periodic tick.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { try { _sendViewport(true); } catch (e) {} } });
+window.addEventListener('focus', () => { try { _sendViewport(true); } catch (e) {} });
 
 let _joinSent = false;
 function mpSendJoin() {
@@ -9917,7 +9976,7 @@ function enqueuePaintsSweep(pixelArr, fi, staggerMs) {
   if (pixelArr.length > SWEEP_INSTANT_MIN && claimCtx) {
     const rgb = _renderRgb(fi); // v97g
     if (rgb) {
-      claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.843)';
+      claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.65)';// v130: 65% paint opacity
       for (let k = 0; k < pixelArr.length; k++) {
         const pi = pixelArr[k];
         if (claimByPixel[pi] !== fi) continue; // stale guard — only paint still-owned pixels
@@ -9993,7 +10052,7 @@ function flushPaintQueue() {
   for (const [fi, arr] of readyByFi) {
     const rgb = _renderRgb(fi); // v97g
     if (!rgb) continue;
-    claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.843)';
+    claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.65)';// v130: 65% paint opacity
     for (let k = 0; k < arr.length; k++) {
       const pi = arr[k];
       const x = pi % MAP_W, y = (pi / MAP_W) | 0;
@@ -10019,6 +10078,7 @@ function mpHandleMessage(msg) {
 
     case 'welcome': {
       _localPlayerId = msg.playerId;
+      _lastDeltaSeq = null; // v130 (sync B): reset baseline on (re)connect so the first delta doesn't false-trip a gap
       window.SERVER_VERSION = msg.serverVersion || 'unknown';
       // Replay any active nuke zones
       if (Array.isArray(msg.nukeZones)) {
@@ -10256,6 +10316,16 @@ function mpHandleMessage(msg) {
       scheduleLegend();
       refreshConqueredCountLocal(); // v92b: instant Conquered-count update
       if (typeof scheduleFallenZones === 'function') scheduleFallenZones(); // v128: darken + flag the newly-fallen zone
+      break;
+    }
+
+    case 'country_liquidated': {
+      // v130: a country died with no heir — wipe its stray foreign pixels everywhere
+      // on this client (viewport-independent), so its painted-elsewhere pixels vanish
+      // for everyone immediately rather than lingering off-screen until panned to.
+      _clearHolderEverywhere(msg.countryId);
+      scheduleLegend();
+      refreshConqueredCountLocal();
       break;
     }
 
@@ -11052,7 +11122,7 @@ function mpRebuildClaimCanvas() {
     // rebuild doesn't blast the whole map to full opacity. A pixel still owned by its
     // OWN native country (claimByPixel === featByPixel) is base fill; anything else
     // was painted by a non-native and shows full.
-    const alpha = (fi === featByPixel[i]) ? 26 : 215;
+    const alpha = (fi === featByPixel[i]) ? 26 : 166;// v130: painted 65% opacity (native base stays 26)
     const p = i*4;
     d[p]=rgb[0]; d[p+1]=rgb[1]; d[p+2]=rgb[2]; d[p+3]=alpha;
   }
@@ -11877,24 +11947,15 @@ let waveWorkImg = null;    // working copy we modify each frame
 let prevWavePixels = [];   // pixels drawn last frame (to restore)
 
 function buildWaveBase(){
-  // Build the static ocean base image once after map loads
-  waveBaseImg = wctx.createImageData(MAP_W, MAP_H);
+  // v130: the ocean WATER is now baked into the base map (c-base). c-waves no longer
+  // paints a solid ocean fill — it holds ONLY the animated wave crests on a fully
+  // TRANSPARENT canvas, so the baked ocean (and coastline shelf) show through. Ships
+  // are a separate sprite system (c-sprites) and are unaffected.
+  waveBaseImg = wctx.createImageData(MAP_W, MAP_H); // all-zero = transparent
   const d = waveBaseImg.data;
-  for(let i=0;i<MAP_PX;i++){
-    if(landMask[i]===0){
-      const p=i*4;
-      const bx=i%MAP_W, by=(i/MAP_W)|0;
-      const blon=(bx/MAP_W)*360-180;
-      const blat=90-(by/MAP_H)*180;
-      const [or2,og2,ob2]=oceanColour(blat,blon);
-      d[p]=or2; d[p+1]=og2; d[p+2]=ob2; d[p+3]=255;
-    }
-    // Land stays transparent (bctx base canvas shows through)
-  }
-  // ── v99e: coastline shelf — a lighter 2px shallow-water rim hugging every
-  // coast (rim 1 = ocean touching land, rim 2 = ocean touching rim 1). Pre-
-  // baked into the static base, zero runtime cost; the wave animation
-  // restores from this image so sparkles inherit it automatically.
+  // (no ocean fill — base stays transparent)
+  // ── legacy coastline shelf (only ran when _COAST_OUTLINE was true; the operator
+  // bakes the coast into the basemap art now, so this is dead but kept gated). ──
   if(_COAST_OUTLINE){ // v128: shelf gated off — operator bakes the coast into the basemap art
     const rim = new Uint8Array(MAP_PX);
     const isLand = (x,y)=> x>=0&&x<MAP_W&&y>=0&&y<MAP_H&&landMask[y*MAP_W+x]===1;
@@ -11974,10 +12035,12 @@ function tickWaves(){
       if(px<0||px>=MAP_W||py<0||py>=MAP_H) continue;
       if(landMask[py*MAP_W+px]!==0) continue;
       const p=(py*MAP_W+px)*4;
-      d[p]  =Math.round(_bd[p]*(1-t)   + wr*t);
-      d[p+1]=Math.round(_bd[p+1]*(1-t) + wg*t);
-      d[p+2]=Math.round(_bd[p+2]*(1-t) + wb*t);
-      d[p+3]=255;
+      // v130: crest drawn as a semi-transparent highlight over the baked ocean
+      // (c-waves is transparent now); alpha = crest intensity so the base shows through.
+      d[p]  =wr;
+      d[p+1]=wg;
+      d[p+2]=wb;
+      d[p+3]=Math.round(t*255);
       prevWavePixels.push(p);
     }
   }
@@ -11986,6 +12049,62 @@ function tickWaves(){
   waveAnimId = requestAnimationFrame(tickWaves);
 }
 
+
+// ── v130: twinkling starfield — void backdrop around the map ───────
+// Screen-space canvas (NOT transformed by applyT) drawn behind c-base. The opaque
+// baked basemap (c-base) covers it over the map; in the void (zoomed out / panned)
+// the starfield shows instead of flat dark-blue. ~12fps twinkle, skipped entirely
+// when the map fills the whole viewport (no void visible).
+const cStars   = document.getElementById('c-stars');
+const starCtx  = cStars ? cStars.getContext('2d') : null;
+let _stars     = [];
+let _starsW = 0, _starsH = 0, _starAnimId = null, _lastStarTick = 0;
+function _initStars(){
+  if(!cStars || !starCtx || !vp) return;
+  const vw = vp.clientWidth || 1, vh = vp.clientHeight || 1;
+  cStars.width = vw; cStars.height = vh; _starsW = vw; _starsH = vh;
+  const count = Math.min(900, Math.max(120, Math.round(vw*vh/1600)));
+  _stars = [];
+  for(let i=0;i<count;i++){
+    const big = Math.random()>=0.85;
+    _stars.push({
+      x: Math.random()*vw, y: Math.random()*vh,
+      r: big ? 1.2+Math.random()*0.9 : 0.6+Math.random()*0.7,
+      base: 0.35+Math.random()*0.5,
+      amp:  0.25+Math.random()*0.45,
+      phase: Math.random()*Math.PI*2,
+      speed: 0.6+Math.random()*1.8,
+      hue: Math.random()<0.15 ? (Math.random()<0.5 ? '#bcd4ff' : '#ffe9c4') : '#ffffff',
+    });
+  }
+}
+function _starsFullyCovered(){
+  // true when the opaque map rectangle covers the whole viewport → no void to fill
+  return ox<=0 && oy<=0 && (ox+MAP_W*scale)>=_starsW && (oy+MAP_H*scale)>=_starsH;
+}
+function _tickStars(){
+  _starAnimId = requestAnimationFrame(_tickStars);
+  if(!starCtx) return;
+  const now = performance.now();
+  if(now - _lastStarTick < 80) return; // ~12fps
+  _lastStarTick = now;
+  if(vp.clientWidth!==_starsW || vp.clientHeight!==_starsH) _initStars();
+  if(_starsFullyCovered()){ starCtx.clearRect(0,0,_starsW,_starsH); return; }
+  const d = starCtx;
+  d.clearRect(0,0,_starsW,_starsH);
+  d.fillStyle = '#070d1a'; d.fillRect(0,0,_starsW,_starsH); // void backdrop (matches body bg)
+  const tsec = now/1000;
+  for(const s of _stars){
+    const tw = s.base + s.amp*Math.sin(tsec*s.speed + s.phase);
+    d.globalAlpha = tw<0?0:(tw>1?1:tw);
+    d.fillStyle = s.hue;
+    if(s.r<=1){ d.fillRect(s.x|0, s.y|0, 1, 1); }
+    else { d.beginPath(); d.arc(s.x, s.y, s.r, 0, 6.283); d.fill(); }
+  }
+  d.globalAlpha = 1;
+}
+if(cStars && starCtx){ _initStars(); _starAnimId = requestAnimationFrame(_tickStars); }
+window.addEventListener('resize', ()=>{ try{ _initStars(); }catch(e){} });
 
 // ── Rebuild country selector — disable conquered countries ────────
 function refreshCsel(){
@@ -13826,6 +13945,8 @@ $("btn-rst").addEventListener("click",resetView);
 // v82: removed btn-debug (+100 pixel debug button) and its handler
 
 $("btn-bomb").addEventListener("click",function(){
+  return; // v130: nuke/bomb system removed for now — clicking the (hidden) button is a no-op
+  // eslint-disable-next-line no-unreachable
   sfxUIClick();
   if (isBombOnCooldown()) {
     const btn = this;
@@ -13858,28 +13979,8 @@ $("btn-bomb").addEventListener("click",function(){
   this.classList.toggle("active",bombMode);
   vp.style.cursor=bombMode?"crosshair":"crosshair";
 });
-$("btn-brd").addEventListener("click",function(){
-  sfxUIClick();
-  // v33: Dark is default. Cycle: Dark → Light → Off → Dark.
-  if(showBorders && borderDark){
-    // Dark → Light
-    borderDark=false;
-    reborderCanvas();
-    this.textContent="Borders Light";
-  } else if(showBorders && !borderDark){
-    // Light → Off
-    showBorders=false;
-    cBorder.style.opacity="0";
-    this.textContent="Borders OFF";
-  } else {
-    // Off → Dark
-    showBorders=true;
-    borderDark=true;
-    reborderCanvas();
-    cBorder.style.opacity="1";
-    this.textContent="Borders Dark";
-  }
-});
+// v130: Borders Dark/Light/Off toggle removed — country borders are baked into the
+// basemap art (_COAST_OUTLINE has been false since v129, so c-border is empty).
 // v82: removed btn-clr (Clear All button) and its handler — was a debug feature that
 // wiped local state but didn't notify the server; created desync between client/server.
 // brush slider removed in v27; brushSize is fixed at 3
@@ -14891,7 +14992,6 @@ function _showMonsterBanner(type) {
   <button class="btn" data-mobile-action="stats">📊 Stats &amp; Leaderboard</button>
   <button class="btn" data-mobile-action="highlight">🎯 Select Target</button>
   <button class="btn" data-mobile-action="invert">🔄 Invert My Pixels</button>
-  <button class="btn" data-mobile-action="borders">🗺️ Toggle Borders</button>
   <button class="btn" data-mobile-action="reset-view">⟲ Reset View</button>
   <button class="btn" data-mobile-action="music">♪ Toggle Music</button>
   <button class="btn" data-mobile-action="sfx">🔊 Toggle Sound FX</button>

@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-25-v129';
+const SERVER_VERSION       = '2026-06-26-v130';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -4179,6 +4179,11 @@ function _onCountryConquered(conqueredGeoId) {
       conqueredSet.delete(Y + ':' + conqueredGeoId);
       broadcast(JSON.stringify({ type: 'reversal', geoIdx: parseInt(Y, 10), countryId: conqueredGeoId, reason: 'fallen' }));
     }
+    // v130: tell EVERY client to wipe this dead country's foreign pixels locally.
+    // The per-pixel clears above are viewport-filtered, so an off-screen client would
+    // keep showing the dead country's stray pixels until it panned there. This global
+    // broadcast guarantees the wipe everywhere immediately.
+    broadcast(JSON.stringify({ type: 'country_liquidated', countryId: conqueredGeoId }));
     console.log(`[Conquest] ${conqueredGeoId} died with no heir — ${changed.length}px cleared, ${outposts.length} outposts now Fallen`);
   }
 
@@ -4634,15 +4639,20 @@ function queueDelta(pixels) {
 }
 
 // ── v92: binary delta encoder ─────────────────────────────────────
-// Layout: [uint8 tag=1][ repeating 6-byte records: x u16le, y u16le, owner u16le ]
+// Layout: [uint8 tag=1][u32le seq][ repeating 6-byte records: x u16le, y u16le, owner u16le ]
 // owner sentinel 0xFFFF = cleared pixel (JSON had owner:null). Country IDs fit
 // u16 (max ISO numeric 894); x<=2047, y<=1023 also fit. ~6 bytes/pixel vs ~30
 // in JSON, and the client skips JSON.parse entirely on the hot path.
+// v130 (sync B): each frame carries a GLOBAL monotonic seq. Every client receives
+// exactly one frame per broadcast tick (windowed clients with no in-view change get
+// a 0-record keepalive), so the per-client seq stream is contiguous — a jump means a
+// genuinely dropped frame and the client requests a region re-snapshot.
 const DELTA_CLEAR_OWNER = 0xFFFF;
-function encodeDelta(pixels) {
-  const buf = Buffer.allocUnsafe(1 + pixels.length * 6);
+function encodeDelta(pixels, seq) {
+  const buf = Buffer.allocUnsafe(5 + pixels.length * 6);
   buf.writeUInt8(1, 0); // message-type tag: 1 = binary delta
-  let off = 1;
+  buf.writeUInt32LE((seq >>> 0), 1); // v130: global broadcast sequence number
+  let off = 5;
   for (let i = 0; i < pixels.length; i++) {
     const p = pixels[i];
     buf.writeUInt16LE(p.x & 0xFFFF, off); off += 2;
@@ -4714,23 +4724,28 @@ function encodeSnapshotRuns(runs) {
 }
 
 let _deltaStatLast = 0, _deltaStatBytes = 0, _deltaStatPx = 0, _deltaStatCount = 0;
+let _deltaSeq = 0; // v130 (sync B): global monotonic broadcast sequence number
 function flushDelta() {
   deltaTimer = null;
   const pending = pendingDelta;
   if (!pending.length) return;
   pendingDelta = [];
   const pxCount = pending.length;
+  // v130 (sync B): bump the global broadcast seq once per flushed tick.
+  const seq = (_deltaSeq = (_deltaSeq + 1) >>> 0);
   // v92: binary delta. Buffer.send sets the WS frame opcode to binary; the
   // client branches on ArrayBuffer vs string to route here vs the JSON path.
-  const fullBuf = encodeDelta(pending);
+  const fullBuf = encodeDelta(pending, seq);
 
   // v92p: per-client viewport filtering. "Full" clients (or all clients when the
   // filter is disabled) get the shared buffer; windowed clients get only the
-  // deltas inside their rect (skip the send entirely if nothing changed in view).
+  // deltas inside their rect. v130: windowed clients with NO in-view change still
+  // get a 0-record keepalive so their seq stream stays contiguous (no false gaps).
   let nFull = 0, nWindowed = 0;
   if (!VIEWPORT_FILTER_ENABLED) {
     broadcast(fullBuf);
   } else {
+    let emptyBuf = null; // lazily-built shared keepalive (tag+seq, no records)
     for (const [, p] of players) {
       if (p.isBot || !p.ws || p.ws.readyState !== WebSocket.OPEN) continue;
       const vp = p.viewport;
@@ -4743,7 +4758,8 @@ function flushDelta() {
           (sub || (sub = [])).push(px);
         }
       }
-      if (sub) p.ws.send(encodeDelta(sub));
+      if (sub) p.ws.send(encodeDelta(sub, seq));
+      else { if (!emptyBuf) emptyBuf = encodeDelta([], seq); p.ws.send(emptyBuf); }
     }
   }
   // v78-debug: summary every 10s to confirm deltas are flowing
@@ -6013,6 +6029,8 @@ setInterval(() => {
 let _tickersStarted = false;
 let _botTicksSinceWatch = 0;   // liveness counter — bumped on every tick attempt
 let _botTickErrLogged = false; // throttle error spam to a single line per window
+let _botPaintsSinceWatch = 0;  // v130: actual bot paints this window (catches "ticking but not painting")
+let _botZeroPaintWindows = 0;  // v130: consecutive 20s windows with zero bot paints
 function _botTickLoop(countryId) {
   if (!bots.has(countryId)) return; // bot was removed — stop this ticker
   _botTicksSinceWatch++;
@@ -6045,14 +6063,30 @@ function startTickerFor(countryId) {
 // the recurring "no bot activity" with no manual pm2 restart. Only fires when the
 // counter is 0 (loop confirmed dead) so it can never double-up live tickers.
 setInterval(() => {
-  if (_BOTS_DISABLED || !mapReady) { _botTicksSinceWatch = 0; return; }
+  if (_BOTS_DISABLED || !mapReady) { _botTicksSinceWatch = 0; _botPaintsSinceWatch = 0; _botZeroPaintWindows = 0; return; }
   if (bots.size > 0 && _botTicksSinceWatch === 0) {
     console.warn('[Bot] WATCHDOG: 0 tick attempts in 20s — restarting all tickers');
     _tickersStarted = false;
     startBotTickers();
   }
+  // v130: paint-liveness diagnostic. Tickers can be ALIVE (attempts > 0) yet paint
+  // nothing (all gated/surrendered/bucket-starved). Restarting LIVE loops would DOUBLE
+  // them (the chains reschedule themselves), so this is LOG-ONLY — it surfaces a real
+  // "bots inactive" condition for the operator to act on (DISABLE_BOTS env, regen, etc.).
+  if (bots.size > 0 && _botTicksSinceWatch > 0) {
+    if (_botPaintsSinceWatch === 0) {
+      _botZeroPaintWindows++;
+      if (_botZeroPaintWindows >= 3) {
+        console.warn('[Bot] WATCHDOG: 0 bot paints in ' + (_botZeroPaintWindows * 20) +
+          's despite ' + bots.size + ' bots (tickers alive) — check DISABLE_BOTS env / bucket regen / all-surrendered');
+      }
+    } else {
+      _botZeroPaintWindows = 0;
+    }
+  }
   _botTickErrLogged = false; // allow one fresh error line next window
   _botTicksSinceWatch = 0;
+  _botPaintsSinceWatch = 0;
 }, 20000);
 
 // v39c: returns true if any other country has conquered the given country.
@@ -6135,7 +6169,7 @@ function botTickSingle(countryId) {
   bot.bucket -= Math.min(budget, targets.length);
   bot.lastPaintAt = _now; // v114: stamp for the paint-rate throttle
   const { changed, conquests, reversals } = applyPixels(targets, countryId);
-  if (changed.length) queueDelta(changed);
+  if (changed.length) { queueDelta(changed); _botPaintsSinceWatch += changed.length; } // v130: paint-liveness
   conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest', ...c })));
   reversals.forEach(r => broadcast(JSON.stringify({ type:'reversal', ...r })));
 }
