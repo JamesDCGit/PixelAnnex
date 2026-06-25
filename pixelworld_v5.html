@@ -3880,7 +3880,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v130';
+const CODE_VERSION = '2026-06-26-v131';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4911,7 +4911,14 @@ function _renderFallenZones() {
     const c = cent[id] || (cent[id] = { sx: 0, sy: 0, n: 0, repX: -1, repY: -1 });
     for (let k = 0; k < src.length; k++) {
       const i = src[k];
-      if (claimByPixel[i] !== -1) continue; // only the still-unclaimed (fallen) pixels
+      // v130a: darken the fallen country's OWN land — both cleared pixels (-1) AND its
+      // unpainted native base (claimByPixel === featByPixel, the faint 10% tint the
+      // prepopulate worker assigns to every land pixel). The previous `=== -1` check
+      // NEVER matched a fallen country's un-conquered homeland (the client marks native
+      // land as self-owned, not -1 like the server), so nothing ever darkened. A living
+      // FOREIGN holder's pixels are left visible (their colour shows through).
+      const cb = claimByPixel[i];
+      if (cb !== -1 && cb !== featByPixel[i]) continue;
       const x = i % MAP_W, y = (i / MAP_W) | 0;
       const p = ((y - y0) * w + (x - x0)) * 4;
       dd[p] = 6; dd[p+1] = 10; dd[p+2] = 18; dd[p+3] = 150; // dark veil over the base biome
@@ -9831,6 +9838,17 @@ setInterval(() => { try { _sendViewport(true); } catch (e) {} }, 4000);
 // waiting up to 4s for the periodic tick.
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { try { _sendViewport(true); } catch (e) {} } });
 window.addEventListener('focus', () => { try { _sendViewport(true); } catch (e) {} });
+
+// v130a: fallen-zone re-render safety net. The darken+white-flag is normally applied on
+// snapshot/conquest/reversal/claim-rebuild — but in the file-bake boot path the WS
+// snapshot can fire _finishSnapshotReplay -> _renderFallenZones BEFORE the async boot
+// tail finishes building geoPixelList. When that race loses, a STATIC fallen country
+// (e.g. Angola, with no live events to re-trigger it) never gets darkened/flagged and
+// stays that way until a manual refresh. A light periodic re-render guarantees fallen
+// zones appear within a few seconds and self-heal any missed trigger or wiped veil.
+// Cheap: scheduleFallenZones debounces (400ms) and _renderFallenZones only touches the
+// fallen geos' bboxes; it no-ops entirely when there are none.
+setInterval(() => { try { if (typeof scheduleFallenZones === 'function') scheduleFallenZones(); } catch (e) {} }, 6000);
 
 let _joinSent = false;
 function mpSendJoin() {
