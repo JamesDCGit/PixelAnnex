@@ -1987,7 +1987,6 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
          Screen-space (NOT transformed by applyT), drawn first so it sits behind c-base. -->
     <canvas id="c-stars" style="pointer-events:none;"></canvas>
     <canvas id="c-base"></canvas>
-    <canvas id="c-grid" style="pointer-events:none;opacity:0;"></canvas>
     <canvas id="c-waves" style="pointer-events:none"></canvas>
     <canvas id="c-sprites" style="pointer-events:none"></canvas>
     <canvas id="c-landmarks" style="pointer-events:none"></canvas>
@@ -2002,6 +2001,9 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <canvas id="c-overlay" style="pointer-events:none;"></canvas>
     <canvas id="c-nuke" style="pointer-events:none;"></canvas>
     <canvas id="c-crater" style="pointer-events:none;"></canvas>
+    <!-- v133a: pixel grid is screen-space (not map-transformed) and sits ON TOP of the
+         claim/border layers so it separates EVERY pixel (Photoshop-style), not just ocean. -->
+    <canvas id="c-grid" style="pointer-events:none;opacity:0;"></canvas>
     <canvas id="c-monsters" style="pointer-events:none;"></canvas><!-- v42: moved last so monsters render above all other canvases -->
     <div id="rank-display"></div>
     <!-- v132a: #login-hud + #social-links moved into the top toolbar (see #toolbar above) -->
@@ -3889,7 +3891,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v133';
+const CODE_VERSION = '2026-06-26-v134';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3952,6 +3954,7 @@ let bordVisPixel=null;// v99g: VISUAL: ocean halo pixels actually drawn on the b
 // (flip to true to restore the procedural versions). bordPixel (gameplay
 // encirclement seeds) is unaffected — it was never drawn.
 const _COAST_OUTLINE = false; // v129: baked GIF/WebP basemap now carries the coast — procedural outline + shelf off
+const _BORDER_VISUAL = true;  // v133a: re-enable the coast/border outline on c-border, faded in ONLY at high zoom (separate from the wave shelf, which stays off via _COAST_OUTLINE)
 // Stroke tracking for auto-fill (geo countries touched this stroke)
 // strokeGeos is declared inside runAutoFill's outer scope above
 let totalClaimed=0,totalLandPx=0,showBorders=true,borderDark=true,brushSize=1,currentIdx=0;
@@ -4892,6 +4895,29 @@ function scheduleFallenZones() {
     try { _renderFallenZones(); } catch (e) { console.warn('[Fallen] render failed', e); }
   }, 400);
 }
+// v133a: track which geos currently carry the dark veil, so when a fallen zone gets
+// CONQUERED (gains a holder) we can restore its true claim pixels — otherwise the veil,
+// which is baked destructively into c-claim, lingers under the new holder's flag (the
+// "Kenya shows a USA flag AND darkened pixels" bug).
+let _veiledIds = new Set();
+function _restoreClaimGeo(id) {
+  if (!claimCtx || !geoPixelList) return;
+  for (let fi = 0; fi < featList.length; fi++) {
+    if (!featList[fi] || String(featList[fi].id) !== String(id)) continue;
+    const src = geoPixelList[fi]; if (!src) continue;
+    for (let k = 0; k < src.length; k++) {
+      const i = src[k]; const x = i % MAP_W, y = (i / MAP_W) | 0;
+      const owner = claimByPixel[i];
+      claimCtx.clearRect(x, y, 1, 1); // wipe the veil (and any old paint) first
+      if (owner >= 0 && featList[owner]) {
+        const rgb = _renderRgb(owner) || colorCache[owner] || hexRgb(featList[owner].color);
+        const a = (owner === featByPixel[i]) ? (26 / 255) : 0.65; // native base tint vs painted
+        claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + a + ')';
+        claimCtx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+}
 function _renderFallenZones() {
   if (!geoPixelList || !claimCtx || typeof _isFallenZoneClient !== 'function') return;
   // current fallen-unclaimed country ids
@@ -4907,6 +4933,10 @@ function _renderFallenZones() {
     // holder flag AND a stale white flag once the holder painted them to 100%.)
     if (_isFallenZoneClient(id)) fallen.add(id);
   }
+  // v133a: restore claim pixels for geos that WERE veiled but are no longer fallen
+  // (e.g. a neutral fallen zone that just got conquered), clearing the stale dark veil.
+  for (const id of _veiledIds) { if (!fallen.has(id)) _restoreClaimGeo(id); }
+  const _nowVeiled = new Set();
   const cent = {}; // id → { sx, sy, n, repX, repY }
   for (let fi = 0; fi < featList.length; fi++) {
     const f = featList[fi]; if (!f) continue;
@@ -4935,7 +4965,9 @@ function _renderFallenZones() {
       if (c.repX < 0) { c.repX = x; c.repY = y; }
     }
     claimCtx.putImageData(im, x0, y0);
+    if (c.n > 0) _nowVeiled.add(id); // v133a: remember veiled geos for next-render restore
   }
+  _veiledIds = _nowVeiled; // v133a
   const ov = document.getElementById('flag-overlay');
   for (const id in cent) {
     const c = cent[id];
@@ -4956,8 +4988,9 @@ function _renderFallenZones() {
     if (!node) {
       const el = document.createElement('div');
       el.className = 'pa-fallen-flag';
-      el.textContent = '\u{1F3F3}️'; // 🏳️ white surrender flag
-      el.style.cssText = 'position:absolute;top:0;left:0;font-size:15px;line-height:1;pointer-events:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.85));will-change:transform;z-index:1;';
+      // v133a: operator-supplied Fallen.png marker (replaces the 🏳️ emoji).
+      el.innerHTML = '<img src="/flags/Fallen.png" alt="Fallen" style="width:18px;height:auto;image-rendering:pixelated;display:block;">';
+      el.style.cssText = 'position:absolute;top:0;left:0;line-height:0;pointer-events:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.85));will-change:transform;z-index:1;';
       ov.appendChild(el);
       node = _fallenFlagNodes[id] = { el, cx, cy };
     }
@@ -5952,7 +5985,7 @@ async function boot(){
            (x<MAP_W-1  &&featByPixel[i+1]    !==ci)||
            (y>0        &&featByPixel[i-MAP_W]!==ci)||
            (y<MAP_H-1  &&featByPixel[i+MAP_W]!==ci)) bordPixel[i]=1; // seed only — not drawn
-      } else if(_COAST_OUTLINE){ // v128: skip the ocean-halo outline when disabled
+      } else if(_BORDER_VISUAL){ // v133a: ocean-halo border outline (drawn on c-border, faded in at high zoom)
         let touch=false;
         for(let dy=-1;dy<=1&&!touch;dy++)for(let dx=-1;dx<=1;dx++){
           if(!dx&&!dy)continue;
@@ -6398,7 +6431,8 @@ function _hideLegendOccTip() {
 // ── View ─────────────────────────────────────────────────────────
 function applyT(){
   const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";
-  [cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege].forEach(c=>{if(c)c.style.transform=t;});
+  // v133a: cGrid removed — the pixel grid is now screen-space (drawn by drawGrid), not transformed with the map.
+  [cBase,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege].forEach(c=>{if(c)c.style.transform=t;});
   // translateZ(0.01px) promotes c-monsters to its own GPU compositing layer,
   // guaranteeing it renders above all sibling canvases regardless of z-index quirks.
   if(cMonsters) cMonsters.style.transform=t+' translateZ(0.01px)';
@@ -11686,33 +11720,39 @@ setInterval(() => {
 
 // ── Grid overlay at high zoom ─────────────────────────────────────
 // Drawn once at MAP_W×MAP_H resolution. CSS opacity controls visibility based on scale.
+// ── v133a: Photoshop-style pixel grid (screen-space) ──────────────
+// A light 1px line at every map-pixel boundary, drawn in SCREEN space so the lines
+// stay exactly 1px thick at any zoom (the old map-space checkerboard scaled up into
+// thick blocks). Fades in only at high zoom — below ~5px/pixel the lines would be
+// denser than the pixels themselves. The fade is shared with the border outline.
+const HIZOOM_FADE_START = 5;  // scale where the grid + border begin to appear
+const HIZOOM_FADE_RANGE = 5;  // scale span to reach full strength
+function _hiZoomFade() { return (typeof scale === 'undefined') ? 0 : Math.min(1, Math.max(0, (scale - HIZOOM_FADE_START) / HIZOOM_FADE_RANGE)); }
 function drawGrid() {
-  if (_isMobileForMemory) return; // v31: grid canvas is 1×1 on mobile, skip rendering
-  if (!cGrid || !gridCtx) return;
-  // Use ImageData for ~50x speed vs millions of fillRect calls
-  const img = gridCtx.createImageData(MAP_W, MAP_H);
-  const d = img.data;
-  // Dot every 2 pixels in a checkerboard pattern (alternating)
-  for (let y = 0; y < MAP_H; y += 2) {
-    const offset = y % 4 === 0 ? 0 : 1; // alternate offset per row for checkerboard
-    for (let x = offset; x < MAP_W; x += 2) {
-      const p = (y * MAP_W + x) * 4;
-      d[p] = 255; d[p+1] = 255; d[p+2] = 255; d[p+3] = 128; // alpha 128/255 ≈ 0.5
-    }
-  }
-  gridCtx.putImageData(img, 0, 0);
+  if (_isMobileForMemory) return; // grid canvas is 1×1 on mobile
+  if (!cGrid || !gridCtx || !vp) return;
+  const vw = vp.clientWidth, vh = vp.clientHeight;
+  if (cGrid.width !== vw || cGrid.height !== vh) { cGrid.width = vw; cGrid.height = vh; }
+  if (cGrid.style.transform !== 'none') { cGrid.style.transform = 'none'; cGrid.style.opacity = '1'; } // screen-space
+  gridCtx.clearRect(0, 0, vw, vh);
+  const fade = _hiZoomFade();
+  if (fade <= 0 || typeof scale === 'undefined') return;
+  gridCtx.strokeStyle = 'rgba(210,220,235,' + (fade * 0.16).toFixed(3) + ')';
+  gridCtx.lineWidth = 1;
+  gridCtx.beginPath();
+  // vertical lines at each visible map-pixel boundary (screen x = ox + i*scale)
+  const i0 = Math.max(0, Math.floor((0 - ox) / scale)), i1 = Math.min(MAP_W, Math.ceil((vw - ox) / scale));
+  for (let i = i0; i <= i1; i++) { const sx = Math.round(ox + i * scale) + 0.5; gridCtx.moveTo(sx, 0); gridCtx.lineTo(sx, vh); }
+  const j0 = Math.max(0, Math.floor((0 - oy) / scale)), j1 = Math.min(MAP_H, Math.ceil((vh - oy) / scale));
+  for (let j = j0; j <= j1; j++) { const sy = Math.round(oy + j * scale) + 0.5; gridCtx.moveTo(0, sy); gridCtx.lineTo(vw, sy); }
+  gridCtx.stroke();
 }
-let _gridDrawn = false;
 function updateGridVisibility() {
-  if (!cGrid) return;
-  if (typeof scale === 'undefined') return;
-  // Show grid only at scale > 6 (high zoom). Grid is pre-rendered at boot.
-  if (scale > 6) {
-    cGrid.style.opacity = Math.min(1, (scale - 6) / 4) * 0.5;
-  } else {
-    cGrid.style.opacity = '0';
-  }
+  drawGrid(); // v133a: screen-space grid — redraw on every pan/zoom
+  // v133a: fade the border outline in at high zoom, aligned with the grid.
+  if (cBorder) cBorder.style.opacity = String(_hiZoomFade());
 }
+window.addEventListener('resize', () => { try { drawGrid(); } catch (e) {} });
 
 // ── Flag scaling with zoom ────────────────────────────────────────
 // Flags currently render at fixed 17x11 pixels at MAP_W resolution.
@@ -12200,7 +12240,7 @@ function showConquestToast(geoIdx, claimerIdx){
 // ── Redraw border canvas in the currently selected colour ────────
 // Called by the colour toggle; reads bordPixel[] and repaints.
 function reborderCanvas(){
-  if(!_COAST_OUTLINE) return; // v128: water-edge outline disabled — nothing to repaint
+  if(!_BORDER_VISUAL) return; // v133a: border outline re-enabled (high-zoom only)
   // v99g: repaint from the VISUAL halo set — bordPixel is gameplay-only now.
   if(!bordVisPixel) return;
   const [br,bg,bb] = borderDark ? [63,50,30] : [182,157,107];
