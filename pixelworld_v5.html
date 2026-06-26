@@ -3891,7 +3891,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v134';
+const CODE_VERSION = '2026-06-26-v135';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10025,6 +10025,30 @@ function enqueuePaints(pixels, getFi, staggerMs) {
   // pixels: caller-provided iterable yielding { pi, fi } (or [pi, fi] tuples)
   // getFi:  optional fn(p) → fi when pixels is a different shape
   // staggerMs: width of the random delay window
+  // v134b: MOBILE — paint incoming deltas DIRECTLY (synchronous, no stagger, no RAF).
+  // The normal path stages paints and renders them on a requestAnimationFrame loop, but
+  // mobile has no continuous animation driving RAF (waves/stars are skipped/idle on
+  // mobile), so iOS throttles the flushPaintQueue RAF hard when the page is static —
+  // queued paints (live deltas AND the periodic region-snapshot heal) would stall for
+  // 15-30s until something woke RAF (e.g. a manual refresh). Direct paint avoids that.
+  if (_isMobileForMemory && claimCtx) {
+    let lastFi = -2, styled = false;
+    for (let k = 0; k < pixels.length; k++) {
+      const pi = pixels[k][0], fi = pixels[k][1];
+      if (claimByPixel[pi] !== fi) continue; // stale guard — only paint still-owned pixels
+      const x = pi % MAP_W, y = (pi / MAP_W) | 0;
+      if (fi === -1) { claimCtx.clearRect(x, y, 1, 1); lastFi = -2; continue; }
+      if (fi !== lastFi) {
+        const rgb = _renderRgb(fi);
+        if (!rgb) { styled = false; lastFi = -2; continue; }
+        claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.65)';
+        lastFi = fi; styled = true;
+      }
+      if (styled) claimCtx.fillRect(x, y, 1, 1);
+    }
+    window._paintStats.painted += pixels.length;
+    return;
+  }
   const now = performance.now();
   const span = staggerMs || PAINT_STAGGER_MS;
   for (let k = 0; k < pixels.length; k++) {
@@ -10052,7 +10076,10 @@ function enqueuePaints(pixels, getFi, staggerMs) {
 const SWEEP_INSTANT_MIN = 8000; // px — above this, paint at once instead of queuing
 function enqueuePaintsSweep(pixelArr, fi, staggerMs) {
   if (!pixelArr || !pixelArr.length) return;
-  if (pixelArr.length > SWEEP_INSTANT_MIN && claimCtx) {
+  // v134b: on mobile, paint instantly (no staggered RAF sweep — RAF is throttled on
+  // static mobile pages, so the cinematic sweep would stall). Same direct path as a
+  // large flood below.
+  if ((_isMobileForMemory || pixelArr.length > SWEEP_INSTANT_MIN) && claimCtx) {
     const rgb = _renderRgb(fi); // v97g
     if (rgb) {
       claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.65)';// v130: 65% paint opacity
