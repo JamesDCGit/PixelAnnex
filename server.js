@@ -36,7 +36,7 @@ const fs        = require('fs');
 const crypto    = require('crypto'); // v98b: timing-safe admin auth
 const os        = require('os');
 const { execFile } = require('child_process');
-const { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage } = require('./mapshot'); // v88/v92e/v92m: tweet screenshots + flags
+const { renderCountryPNG, renderWorldPNG, preloadFlags, preloadBaseMap, getFlagImage } = require('./mapshot'); // v88/v92e/v92m: tweet screenshots + flags; v136: baked basemap
 const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitter) poster
 
 // ── Config ────────────────────────────────────────────────────────
@@ -717,6 +717,10 @@ function _isoNumericToA2(numId) {
 // Preload flag images once at startup so makeCountryShot can draw them synchronously.
 preloadFlags(path.join(__dirname, 'public', 'flags')).catch(e =>
   console.warn('[Mapshot] flag preload failed:', e.message));
+// v136: preload the baked basemap art so world-snapshot frames (the daily GIF) draw on
+// the real terrain instead of the procedural grey-land/blue-ocean fill.
+preloadBaseMap(path.join(__dirname, 'public')).catch(e =>
+  console.warn('[Mapshot] basemap preload failed:', e.message));
 
 // v92g: outlier-robust bbox for SCREENSHOTS only. geoBbox is the true min/max
 // over every pixel (needed by detectEncirclement), but map-data artifacts give

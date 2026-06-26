@@ -51,6 +51,26 @@ function getFlagImage(a2) {
   return a2 ? _flagCache.get(String(a2).toLowerCase()) : undefined;
 }
 
+// v136: baked basemap art (biome + coast) for world-snapshot frames (the daily GIF).
+// Decoded once at boot so renderWorldPNG can draw it synchronously. Prefer the WebP
+// (@napi-rs/canvas decodes it reliably; GIF support is patchier) with PNG/GIF fallbacks.
+let _baseMapImg = null;
+async function preloadBaseMap(publicDir) {
+  const C = _loadCanvas();
+  if (!C || !C.loadImage) { console.warn('[Mapshot] canvas/loadImage unavailable — basemap disabled'); return; }
+  const path = require('path'), fs = require('fs');
+  for (const f of ['map_base.webp', 'map_base.png', 'map_base.gif']) {
+    const fp = path.join(publicDir, f);
+    if (!fs.existsSync(fp)) continue;
+    try {
+      _baseMapImg = await C.loadImage(fp);
+      console.log('[Mapshot] basemap loaded: ' + f + ' (' + _baseMapImg.width + 'x' + _baseMapImg.height + ')');
+      return;
+    } catch (e) { console.warn('[Mapshot] basemap load failed for ' + f + ':', e.message); }
+  }
+  console.warn('[Mapshot] no basemap image loaded — world snapshots use the procedural base');
+}
+
 function hexToRgb(hex) {
   if (!hex || hex[0] !== '#' || hex.length < 7) return [128, 128, 128];
   return [
@@ -177,26 +197,46 @@ function renderWorldPNG(opts) {
     return c;
   }
 
-  for (let oy = 0; oy < OUT_H; oy++) {
-    const sy = Math.min(MAP_H - 1, Math.floor((oy / OUT_H) * MAP_H));
-    for (let ox = 0; ox < OUT_W; ox++) {
-      const sx = Math.min(MAP_W - 1, Math.floor((ox / OUT_W) * MAP_W));
-      const p = (oy * OUT_W + ox) * 4;
-      const si = sy * MAP_W + sx;
-      let r, g, b;
-      const owner = claimByPixel[si];
-      if (owner >= 0) {
+  if (_baseMapImg) {
+    // v136: draw the baked basemap art (biome + coast), scaled to the output, then
+    // overlay ONLY claimed pixels in their owner colour at 65% (matching the in-game
+    // paint alpha) so unclaimed land/ocean shows the real terrain, not flat grey/blue.
+    ctx.drawImage(_baseMapImg, 0, 0, OUT_W, OUT_H);
+    const base = ctx.getImageData(0, 0, OUT_W, OUT_H);
+    const bd = base.data;
+    for (let oy = 0; oy < OUT_H; oy++) {
+      const sy = Math.min(MAP_H - 1, Math.floor((oy / OUT_H) * MAP_H));
+      for (let ox = 0; ox < OUT_W; ox++) {
+        const sx = Math.min(MAP_W - 1, Math.floor((ox / OUT_W) * MAP_W));
+        const owner = claimByPixel[sy * MAP_W + sx];
+        if (owner < 0) continue; // unclaimed → the baked basemap shows through
         const rgb = ownerColor(idxToId[owner]);
-        r = rgb[0]; g = rgb[1]; b = rgb[2];
-      } else if (landMask[si]) {
-        r = LAND[0]; g = LAND[1]; b = LAND[2];
-      } else {
-        r = OCEAN[0]; g = OCEAN[1]; b = OCEAN[2];
+        const p = (oy * OUT_W + ox) * 4;
+        bd[p]     = (rgb[0] * 0.65 + bd[p]     * 0.35) | 0;
+        bd[p + 1] = (rgb[1] * 0.65 + bd[p + 1] * 0.35) | 0;
+        bd[p + 2] = (rgb[2] * 0.65 + bd[p + 2] * 0.35) | 0;
+        bd[p + 3] = 255;
       }
-      d[p] = r; d[p + 1] = g; d[p + 2] = b; d[p + 3] = 255;
     }
+    ctx.putImageData(base, 0, 0);
+  } else {
+    // Fallback (basemap failed to load): procedural grey-land / blue-ocean base.
+    for (let oy = 0; oy < OUT_H; oy++) {
+      const sy = Math.min(MAP_H - 1, Math.floor((oy / OUT_H) * MAP_H));
+      for (let ox = 0; ox < OUT_W; ox++) {
+        const sx = Math.min(MAP_W - 1, Math.floor((ox / OUT_W) * MAP_W));
+        const p = (oy * OUT_W + ox) * 4;
+        const si = sy * MAP_W + sx;
+        let r, g, b;
+        const owner = claimByPixel[si];
+        if (owner >= 0) { const rgb = ownerColor(idxToId[owner]); r = rgb[0]; g = rgb[1]; b = rgb[2]; }
+        else if (landMask[si]) { r = LAND[0]; g = LAND[1]; b = LAND[2]; }
+        else { r = OCEAN[0]; g = OCEAN[1]; b = OCEAN[2]; }
+        d[p] = r; d[p + 1] = g; d[p + 2] = b; d[p + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
   }
-  ctx.putImageData(img, 0, 0);
 
   // v95y: optional timestamp burned into the frame (bottom-left). Used by the
   // timelapse so the assembled GIF visibly ticks through its 12h window.
@@ -217,4 +257,4 @@ function renderWorldPNG(opts) {
   return canvas.toBuffer('image/png');
 }
 
-module.exports = { renderCountryPNG, renderWorldPNG, preloadFlags, getFlagImage };
+module.exports = { renderCountryPNG, renderWorldPNG, preloadFlags, preloadBaseMap, getFlagImage };
