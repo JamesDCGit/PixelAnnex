@@ -6295,18 +6295,18 @@ const httpServer = http.createServer(async (req, res) => {
   // DaFluffyPotato CC0 pack — 252 flags in public/flags/ as 15×10 PNGs.
   // Cached aggressively since flags are immutable.
   if (url.pathname.startsWith('/flags/') && url.pathname.endsWith('.png')) {
-    // Whitelist: only allow [a-z]{2}.png to prevent path-traversal/scan
-    const m = url.pathname.match(/^\/flags\/([a-z]{2})\.png$/);
+    // Whitelist: [a-z]{2}.png country flags + the special Fallen.png marker (v134).
+    const m = url.pathname.match(/^\/flags\/([a-z]{2}|Fallen)\.png$/);
     if (!m) {
       res.writeHead(400);
       res.end('invalid flag path');
       return;
     }
-    const iso2 = m[1];
-    const f = path.join(__dirname, 'public', 'flags', iso2 + '.png');
+    const name = m[1];
+    const f = path.join(__dirname, 'public', 'flags', name + '.png');
     if (!fs.existsSync(f)) {
       res.writeHead(404);
-      res.end('flag not found: ' + iso2);
+      res.end('flag not found: ' + name);
       return;
     }
     res.writeHead(200, {
