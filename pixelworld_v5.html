@@ -554,6 +554,13 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .qs-btn .qs-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .qs-btn.disabled{opacity:.4;cursor:not-allowed;pointer-events:none;}
 .qs-btn.disabled .qs-name{text-decoration:line-through;}
+#qs-fast{display:flex;flex-direction:column;gap:8px;margin-bottom:10px;}
+.qs-fast-btn{width:100%;background:#10231a;border-color:#1f7a4d;}
+.qs-fast-btn:hover{background:#143524;border-color:#22c55e;}
+.qs-fast-btn .qs-name{font-size:16px;color:#dcfce7;}
+.qs-quick{background:linear-gradient(90deg,#3730a3,#4f46e5);border-color:#6366f1;}
+.qs-quick:hover{background:linear-gradient(90deg,#4338ca,#6366f1);border-color:#818cf8;}
+.qs-quick .qs-name{color:#eef2ff;}
 .qs-more-toggle{display:block;width:100%;margin:12px 0 0;padding:10px;background:transparent;border:1px dashed #2b3a55;border-radius:8px;color:#94a3b8;font-size:13px;font-family:inherit;cursor:pointer;}
 .qs-more-toggle:hover{color:#cbd5e1;border-color:#6366f1;}
 .qs-more{margin-top:10px;}
@@ -1894,6 +1901,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
         <!-- v137: frictionless one-screen country picker (replaces the 3-step welcome).
              Top curated nations as big buttons; everything else behind "More countries". -->
         <div class="qs-head" data-i18n="qs.title">Pick a country &amp; play</div>
+        <div id="qs-fast"></div><!-- v138a: Resume + Quick Play fast paths -->
         <div id="qs-top" class="qs-top-grid"></div>
         <button class="qs-more-toggle" id="qs-more-toggle" onclick="qsToggleMore()">More countries ▾</button>
         <div id="qs-more" class="qs-more" style="display:none;">
@@ -1904,6 +1912,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
           <button class="qs-link" onclick="openHowTo()">❔ How to play</button>
           <button class="qs-link" onclick="window.location.href='/auth/login'">💬 Sign in (optional)</button>
         </div>
+        <!-- v138a: AdSense banner slot (inert until ADSENSE_CLIENT/ADSENSE_SLOT are set in JS) -->
+        <div id="welcome-ad" style="margin-top:14px;min-height:0;text-align:center;"></div>
 
         <!-- Legacy 3-step welcome content kept hidden (no longer shown) -->
         <div class="tut-section" id="tut-step-0">
@@ -3956,7 +3966,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v138';
+const CODE_VERSION = '2026-06-26-v139';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7790,9 +7800,11 @@ let _tutCountryListBuilt = false;
 
 function showTutorial() {
   document.getElementById('tutorial-overlay').classList.add('open');
-  _renderQsTop();                                      // curated buttons render instantly (no map dependency)
+  _renderQsTop();                                      // curated + Resume/Quick Play render instantly
+  _fetchPlayable();                                    // v138a: pull the cached list so the full picker is instant
+  if (typeof _initAdSense === 'function') _initAdSense(); // v138a: welcome banner (inert until configured)
   const idle = window.requestIdleCallback || (cb => setTimeout(cb, 100));
-  idle(() => { _renderQsList(); }, { timeout: 800 });  // full list once the map is ready
+  idle(() => { _renderQsList(); }, { timeout: 800 });  // map fallback if the API list isn't in yet
   idle(() => { fetchTutWorldStats(); }, { timeout: 1000 });
 }
 
@@ -7807,24 +7819,55 @@ const QS_CURATED = [
   {id:'124',name:'Canada',a2:'ca'},         {id:'36', name:'Australia',a2:'au'},
   {id:'356',name:'India',a2:'in'},          {id:'380',name:'Italy',a2:'it'},
 ];
+function _qsLast() { try { return JSON.parse(localStorage.getItem('pa_last') || 'null'); } catch (e) { return null; } }
+function _qsFlagHTML(a2) {
+  return a2 ? '<img class="qs-flag" src="/flags/' + a2 + '.png" alt="" onerror="this.style.visibility=\'hidden\'">'
+            : '<span class="qs-flag" style="display:flex;align-items:center;justify-content:center;">🏳️</span>';
+}
 function _renderQsTop() {
-  const el = document.getElementById('qs-top'); if (!el || el.dataset.built) return;
-  el.dataset.built = '1'; el.innerHTML = '';
-  for (const c of QS_CURATED) {
-    const b = document.createElement('button');
-    b.className = 'qs-btn'; b.dataset.id = c.id;
-    b.innerHTML = '<img class="qs-flag" src="/flags/' + c.a2 + '.png" alt="" onerror="this.style.visibility=\'hidden\'"><span class="qs-name">' + escapeHtml(c.name) + '</span>';
-    b.onclick = () => qsStart(c.id, b);
-    el.appendChild(b);
+  // v138a: Resume (last played) + Quick Play fast paths, rebuilt each show.
+  const fast = document.getElementById('qs-fast');
+  if (fast) {
+    fast.innerHTML = '';
+    const last = _qsLast();
+    if (last && last.id && !(typeof _isCountryFallenClient === 'function' && _isCountryFallenClient(last.id))) {
+      const r = document.createElement('button');
+      r.className = 'qs-btn qs-fast-btn'; r.dataset.id = last.id;
+      r.innerHTML = _qsFlagHTML(last.a2) + '<span class="qs-name">↩ Resume as ' + escapeHtml(last.name || ('#' + last.id)) + '</span>';
+      r.onclick = () => qsStart(last.id, last);
+      fast.appendChild(r);
+    }
+    const q = document.createElement('button');
+    q.className = 'qs-btn qs-fast-btn qs-quick';
+    q.innerHTML = '<span class="qs-flag" style="display:flex;align-items:center;justify-content:center;font-size:18px;">⚡</span><span class="qs-name">Quick Play</span>';
+    q.onclick = () => qsQuickPlay();
+    fast.appendChild(q);
+  }
+  const el = document.getElementById('qs-top'); if (!el) return;
+  if (!el.dataset.built) {
+    el.dataset.built = '1'; el.innerHTML = '';
+    for (const c of QS_CURATED) {
+      const b = document.createElement('button');
+      b.className = 'qs-btn'; b.dataset.id = c.id;
+      b.innerHTML = _qsFlagHTML(c.a2) + '<span class="qs-name">' + escapeHtml(c.name) + '</span>';
+      b.onclick = () => qsStart(c.id, c);
+      el.appendChild(b);
+    }
   }
   _applyQsFallen();
+}
+function qsQuickPlay() {
+  const fallen = (id) => (typeof _isCountryFallenClient === 'function') && _isCountryFallenClient(id);
+  let pool = QS_CURATED.filter(c => !fallen(c.id));
+  if (!pool.length && _qsApiList) pool = _qsApiList.filter(c => !c.fallen);
+  if (pool.length) { const p = pool[Math.floor(Math.random() * pool.length)]; qsStart(p.id, p); }
 }
 function _applyQsFallen() {
   if (typeof _isCountryFallenClient !== 'function') return;
   document.querySelectorAll('#qs-top .qs-btn').forEach(b => b.classList.toggle('disabled', _isCountryFallenClient(b.dataset.id)));
 }
 let _qsPending = null, _qsTries = 0;
-function qsStart(id) {
+function qsStart(id, meta) {
   id = String(id);
   if (typeof _isCountryFallenClient === 'function' && _isCountryFallenClient(id)) return; // can't start as a dead nation
   const ready = (typeof idToFeatIdx !== 'undefined' && idToFeatIdx && typeof featList !== 'undefined' && featList && featList.length >= 50);
@@ -7833,11 +7876,16 @@ function qsStart(id) {
     _qsPending = id;
     const h = document.querySelector('.qs-head'); if (h) h.textContent = 'Starting…';
     if ((_qsTries = _qsTries + 1) > 75) { if (h) h.textContent = 'Pick a country & play'; _qsPending = null; _qsTries = 0; return; }
-    setTimeout(() => { if (_qsPending === id) qsStart(id); }, 300);
+    setTimeout(() => { if (_qsPending === id) qsStart(id, meta); }, 300);
     return;
   }
   _qsPending = null; _qsTries = 0;
   if (typeof selectCountry === 'function') selectCountry(idx);
+  // v138a: remember the country for the "Resume as …" fast path next visit.
+  try {
+    const nm = (meta && meta.name) || (featList[idx] && featList[idx].name) || ('#' + id);
+    localStorage.setItem('pa_last', JSON.stringify({ id: id, name: nm, a2: (meta && meta.a2) || null }));
+  } catch (e) {}
   try { if (typeof paTrack === 'function') { paTrack('country_selected'); paTrack('ftue_complete'); } } catch (e) {}
   _qsClose();
 }
@@ -7852,36 +7900,70 @@ function qsToggleMore() {
   if (t) t.textContent = open ? 'More countries ▴' : 'More countries ▾';
   if (open) _renderQsList();
 }
-let _qsListBuilt = false;
+// v138a: fetch the cached playable list so the FULL picker can render instantly,
+// before the heavy map mounts. Falls back to building from the loaded map.
+let _qsApiList = null, _qsApiFetched = false, _qsListBuilt = false;
+function _fetchPlayable() {
+  if (_qsApiFetched) return; _qsApiFetched = true;
+  fetch('/api/playable').then(r => r.ok ? r.json() : null).then(list => {
+    if (Array.isArray(list) && list.length) { _qsApiList = list; _qsListBuilt = false; _renderQsList(); }
+  }).catch(() => {});
+}
 function _renderQsList() {
   const list = document.getElementById('qs-list'); if (!list || _qsListBuilt) return;
-  const mapDone = (typeof featList !== 'undefined' && featList && featList.length >= 50) && (typeof geoTotal !== 'undefined');
-  if (!mapDone) { setTimeout(_renderQsList, 400); return; }
   const curated = new Set(QS_CURATED.map(c => c.id));
-  const byId = new Map();
-  for (let i = 0; i < featList.length; i++) {
-    const f = featList[i]; if (!f || !f.id || !f.name) continue;
-    if (curated.has(String(f.id))) continue; // already a top button
-    const px = (geoTotal[i]) || 0;
-    if (px < 5 || (typeof isPlayableCountry === 'function' && !isPlayableCountry(i))) continue;
-    const ex = byId.get(f.id);
-    if (!ex || px > ex.px) byId.set(f.id, { id: f.id, name: f.name, color: f.color, idx: i, px });
+  let rows = null;
+  if (_qsApiList && _qsApiList.length) {                       // instant: server list (no map needed)
+    rows = _qsApiList.filter(c => !curated.has(String(c.id)))
+                     .map(c => ({ id: String(c.id), name: c.name, a2: c.a2, fallen: !!c.fallen }));
+  } else {                                                     // fallback: build from the loaded map
+    const mapDone = (typeof featList !== 'undefined' && featList && featList.length >= 50) && (typeof geoTotal !== 'undefined');
+    if (!mapDone) { setTimeout(_renderQsList, 400); return; }
+    const byId = new Map();
+    for (let i = 0; i < featList.length; i++) {
+      const f = featList[i]; if (!f || !f.id || !f.name) continue;
+      if (curated.has(String(f.id))) continue;
+      const px = (geoTotal[i]) || 0;
+      if (px < 5 || (typeof isPlayableCountry === 'function' && !isPlayableCountry(i))) continue;
+      const ex = byId.get(f.id);
+      if (!ex || px > ex.px) byId.set(f.id, { id: String(f.id), name: f.name, a2: null, px, fallen: (typeof _isCountryFallenClient === 'function') && _isCountryFallenClient(f.id) });
+    }
+    rows = [...byId.values()];
   }
-  const rows = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  rows.sort((a, b) => a.name.localeCompare(b.name));
   _qsListBuilt = true;
   const frag = document.createDocumentFragment();
   for (const c of rows) {
     const row = document.createElement('div');
-    row.className = 'tut-country-row'; row.dataset.id = c.id; row.dataset.name = c.name.toLowerCase();
-    const fallen = (typeof _isCountryFallenClient === 'function') && _isCountryFallenClient(c.id);
+    row.className = 'tut-country-row'; row.dataset.id = c.id; row.dataset.name = (c.name || '').toLowerCase();
+    const fallen = c.fallen || ((typeof _isCountryFallenClient === 'function') && _isCountryFallenClient(c.id));
     if (fallen) row.classList.add('disabled');
-    row.innerHTML = '<div class="tut-country-color" style="background:' + (c.color || '#888') + '"></div>' +
-                    '<div class="tut-country-name">' + escapeHtml(c.name) + '</div>' +
-                    '<div class="tut-country-meta">' + c.px.toLocaleString() + ' px</div>';
-    if (!fallen) row.onclick = () => qsStart(c.id);
+    const flag = c.a2 ? '<img class="qs-flag" style="width:22px;height:15px;margin-right:6px;" src="/flags/' + c.a2 + '.png" alt="" onerror="this.style.visibility=\'hidden\'">'
+                      : '<div class="tut-country-color" style="background:#888"></div>';
+    row.innerHTML = flag + '<div class="tut-country-name">' + escapeHtml(c.name) + '</div>';
+    if (!fallen) row.onclick = () => qsStart(c.id, c);
     frag.appendChild(row);
   }
   list.innerHTML = ''; list.appendChild(frag);
+}
+// v138a: AdSense banner on the welcome screen (allowed display ad — NOT the rewarded
+// button). Inert until you set ADSENSE_CLIENT (+ ADSENSE_SLOT) to your real IDs.
+const ADSENSE_CLIENT = '';   // e.g. 'ca-pub-XXXXXXXXXXXXXXXX'
+const ADSENSE_SLOT   = '';   // e.g. '1234567890'
+let _adSenseInit = false;
+function _initAdSense() {
+  if (_adSenseInit || !ADSENSE_CLIENT || !ADSENSE_SLOT) return;
+  _adSenseInit = true;
+  const s = document.createElement('script');
+  s.async = true; s.crossOrigin = 'anonymous';
+  s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + ADSENSE_CLIENT;
+  document.head.appendChild(s);
+  const slot = document.getElementById('welcome-ad');
+  if (slot) {
+    slot.innerHTML = '<ins class="adsbygoogle" style="display:block" data-ad-client="' + ADSENSE_CLIENT +
+      '" data-ad-slot="' + ADSENSE_SLOT + '" data-ad-format="auto" data-full-width-responsive="true"></ins>';
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) {}
+  }
 }
 function filterQs() {
   const q = (document.getElementById('qs-search').value || '').toLowerCase().trim();
@@ -8396,7 +8478,8 @@ function dbgResetFtue() {
 // Uses requestAnimationFrame to wait for the first browser paint cycle so initial UI renders
 // smoothly without competing with the heavy modal mount on the same frame.
 (function bootTutorial() {
-  if (localStorage.getItem('pa_tutorial_seen')) return;
+  // v138a: show the quick-start picker on EVERY visit (Poki-style) — the Resume + Quick
+  // Play fast paths make re-entry one tap. (Was gated to first visit via pa_tutorial_seen.)
   const launch = () => {
     if (!document.getElementById('tutorial-overlay')) {
       setTimeout(launch, 80);

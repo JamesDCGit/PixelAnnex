@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-26-v138';
+const SERVER_VERSION       = '2026-06-26-v139';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3054,6 +3054,9 @@ function _playableCountryStats() {
   return { total, fallen, standing: Math.max(0, total - fallen) };
 }
 function _isPaintLocked() { return _worldConquestActive; }
+
+// v138a: cached playable-nation list for the instant welcome picker (/api/playable).
+let _playableListCache = null, _playableListAt = 0;
 
 // ── v100 (Phase 2B): endgame — sudden death + new win condition ──────────────
 // Win = a BLOC (an alliance counts as one, else a solo country) controls
@@ -6743,6 +6746,32 @@ const httpServer = http.createServer(async (req, res) => {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'unknown route' }));
     return;
+  }
+
+  // ── v138a: /api/playable — cached list of playable nations for the INSTANT welcome
+  // picker. {id, name, a2 flag code, fallen}. Lets the client render the full country
+  // list before the heavy map finishes mounting. Refreshed every 20s; gzipped.
+  if (url.pathname === '/api/playable') {
+    const now = Date.now();
+    if (!_playableListCache || now - _playableListAt > 20000) {
+      const list = [];
+      for (const id of Object.keys(countryNames || {})) {
+        if (!_isPlayableNation(id)) continue;
+        list.push({ id: String(id), name: countryNames[id], a2: _isoNumericToA2(id), fallen: permanentlyConquered.has(String(id)) });
+      }
+      list.sort((a, b) => a.name.localeCompare(b.name));
+      _playableListCache = list; _playableListAt = now;
+    }
+    const body = JSON.stringify(_playableListCache);
+    if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+      try {
+        const gz = require('zlib').gzipSync(body);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', 'Cache-Control': 'public, max-age=20', 'Access-Control-Allow-Origin': '*' });
+        res.end(gz); return;
+      } catch (e) { /* fall through to plain */ }
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=20', 'Access-Control-Allow-Origin': '*' });
+    res.end(body); return;
   }
 
   // ── /api/world-state — public summary for the welcome popup ──
