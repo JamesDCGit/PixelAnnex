@@ -544,6 +544,37 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .tut-country-row.disabled{opacity:0.4;cursor:not-allowed;pointer-events:none;}
 .tut-country-row.disabled .tut-country-name{text-decoration:line-through;}
 .tut-country-row.disabled .tut-country-meta::after{content:' · fallen';color:#ef4444;}
+/* v137: frictionless quick-start picker */
+.qs-head{font-size:20px;font-weight:800;color:#fff;text-align:center;margin:6px 0 14px;}
+.qs-top-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+.qs-btn{display:flex;align-items:center;gap:10px;padding:12px 14px;background:#0f1729;border:1px solid #24304a;border-radius:10px;color:#e2e8f0;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;text-align:left;transition:background .12s,border-color .12s,transform .06s;}
+.qs-btn:hover{background:#16213a;border-color:#6366f1;}
+.qs-btn:active{transform:scale(.98);}
+.qs-btn .qs-flag{width:32px;height:22px;object-fit:cover;border-radius:3px;image-rendering:pixelated;flex-shrink:0;box-shadow:0 0 0 1px rgba(255,255,255,.12);}
+.qs-btn .qs-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.qs-btn.disabled{opacity:.4;cursor:not-allowed;pointer-events:none;}
+.qs-btn.disabled .qs-name{text-decoration:line-through;}
+.qs-more-toggle{display:block;width:100%;margin:12px 0 0;padding:10px;background:transparent;border:1px dashed #2b3a55;border-radius:8px;color:#94a3b8;font-size:13px;font-family:inherit;cursor:pointer;}
+.qs-more-toggle:hover{color:#cbd5e1;border-color:#6366f1;}
+.qs-more{margin-top:10px;}
+.qs-foot{display:flex;justify-content:center;gap:18px;margin-top:16px;flex-wrap:wrap;}
+.qs-link{background:none;border:none;color:#818cf8;font-size:13px;font-family:inherit;cursor:pointer;padding:6px;}
+.qs-link:hover{color:#a5b4fc;text-decoration:underline;}
+@media (max-width:560px){ .qs-top-grid{grid-template-columns:1fr;} .qs-head{font-size:18px;} }
+/* v137: How-to-play modal */
+#howto-overlay{display:none;position:fixed;inset:0;z-index:300;background:rgba(3,7,18,.82);align-items:center;justify-content:center;padding:20px;}
+#howto-overlay.open{display:flex;}
+#howto-box{position:relative;max-width:680px;width:100%;max-height:88vh;overflow:auto;background:#0b1120;border:1px solid #1e293b;border-radius:14px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.6);}
+#howto-box h2{margin:0 0 16px;color:#fff;font-size:22px;text-align:center;}
+#howto-close{position:absolute;top:12px;right:14px;background:none;border:none;color:#64748b;font-size:26px;line-height:1;cursor:pointer;}
+#howto-close:hover{color:#e2e8f0;}
+.howto-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.howto-tile{background:#0f1729;border:1px solid #1e293b;border-radius:10px;padding:14px;}
+.howto-tile .ht-i{font-size:22px;margin-bottom:6px;}
+.howto-tile .ht-t{font-weight:700;color:#fff;font-size:14px;margin-bottom:4px;}
+.howto-tile .ht-d{font-size:12px;color:#94a3b8;line-height:1.55;}
+.howto-keys{text-align:center;font-size:12px;color:#64748b;margin-top:16px;}
+@media (max-width:560px){ .howto-grid{grid-template-columns:1fr;} }
 .tut-country-color{width:14px;height:14px;border-radius:2px;flex-shrink:0;}
 .tut-country-name{flex:1;color:#e2e8f0;font-weight:600;}
 .tut-country-meta{font-size:11px;color:#64748b;} /* v99a: 9→11 */
@@ -1679,6 +1710,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <!-- v99b: pulsing exile notice — shown while the player's homeland is held -->
     <span id="exile-badge" title="Your homeland has fallen. Regen is limited to a 0.5× base (bonuses still apply) until you reconquer it.">⚠️ REGEN LIMITED — RECLAIM YOUR HOMELAND</span>
     <button class="z-btn" id="btn-stats" onclick="openStats()" title="Stats &amp; Leaderboard" style="margin-left:6px;font-size:9px;padding:2px 6px;">📊</button>
+    <button class="z-btn" id="btn-howto" onclick="openHowTo()" title="How to play" style="margin-left:6px;font-size:9px;padding:2px 6px;">❔</button>
     <button class="z-btn" id="btn-font-scale" onclick="cycleFontScale()" title="Font Scale: Normal / Mid / Large" style="margin-left:6px;font-size:9px;padding:2px 6px;">Aa</button>
     <span id="font-scale-label" style="font-size:9px;color:#475569;margin-left:2px;margin-right:2px">Normal</span>
     <div class="sep"></div>
@@ -1851,14 +1883,22 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
           <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-conquered">—</div><div class="tut-stat-lbl" data-i18n="tut.stat_conquered">Conquered</div></div>
           <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-alliances">—</div><div class="tut-stat-lbl" data-i18n="tut.stat_alliances">Alliances</div></div>
         </div>
-        <div class="tut-dots">
-          <div class="tut-dot active" data-step="0"></div>
-          <div class="tut-dot" data-step="1"></div>
-          <div class="tut-dot" data-step="2"></div>
+        <!-- v137: frictionless one-screen country picker (replaces the 3-step welcome).
+             Top curated nations as big buttons; everything else behind "More countries". -->
+        <div class="qs-head" data-i18n="qs.title">Pick a country &amp; play</div>
+        <div id="qs-top" class="qs-top-grid"></div>
+        <button class="qs-more-toggle" id="qs-more-toggle" onclick="qsToggleMore()">More countries ▾</button>
+        <div id="qs-more" class="qs-more" style="display:none;">
+          <input type="text" class="tut-country-search" id="qs-search" placeholder="Search countries…" oninput="filterQs()" autocomplete="off" />
+          <div class="tut-country-list" id="qs-list"><div class="tut-country-row loading">Loading…</div></div>
+        </div>
+        <div class="qs-foot">
+          <button class="qs-link" onclick="openHowTo()">❔ How to play</button>
+          <button class="qs-link" onclick="window.location.href='/auth/login'">💬 Sign in (optional)</button>
         </div>
 
-        <!-- Step 1: How to play (multi-page) -->
-        <div class="tut-section active" id="tut-step-0">
+        <!-- Legacy 3-step welcome content kept hidden (no longer shown) -->
+        <div class="tut-section" id="tut-step-0">
           <div class="tut-content">
             <!-- v107: 2 tips per page (4 pages) — leaves more room for the hero -->
             <div class="tut-grid tut-page" data-tut-page="1">
@@ -1961,6 +2001,23 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
             <button class="tut-btn primary" id="tut-start-btn" onclick="closeTutorial()" disabled data-i18n="tut.start_btn_loading">Loading…</button>
           </div>
         </div>
+      </div>
+    </div>
+    <!-- v137: How to play modal (opened from the welcome + toolbar) -->
+    <div id="howto-overlay" onclick="if(event.target===this)closeHowTo()">
+      <div id="howto-box">
+        <button id="howto-close" onclick="closeHowTo()" aria-label="Close">&times;</button>
+        <h2>How to play</h2>
+        <div class="howto-grid">
+          <div class="howto-tile"><div class="ht-i">🎨</div><div class="ht-t">Paint pixels</div><div class="ht-d">Click &amp; drag on the map to paint. Each pixel costs 1 from your bucket, which refills over time.</div></div>
+          <div class="howto-tile"><div class="ht-i">⚔️</div><div class="ht-t">Conquer countries</div><div class="ht-d">Hold ~70–75% of a country's pixels to claim it. Smaller countries need a higher share.</div></div>
+          <div class="howto-tile"><div class="ht-i">🛡️</div><div class="ht-t">Fight back</div><div class="ht-d">When your homeland is over half lost, painting your own land grants bonus pixels — the more you've lost, the bigger the boost.</div></div>
+          <div class="howto-tile"><div class="ht-i">🎯</div><div class="ht-t">Encircle</div><div class="ht-d">Close a loop around enemy land to capture everything inside it at once, and earn a regen bonus.</div></div>
+          <div class="howto-tile"><div class="ht-i">🤝</div><div class="ht-t">Alliances</div><div class="ht-d">Team up via Discord — allied pixels count together toward conquest, and you can rally on shared targets.</div></div>
+          <div class="howto-tile"><div class="ht-i">👹</div><div class="ht-t">Monsters</div><div class="ht-d">UFOs, Krakens &amp; Giant Lizards roam the map and wipe pixels in their path. Stay clear — or strike while they rampage.</div></div>
+        </div>
+        <div class="howto-keys"><span class="tut-keypress">Drag</span> to pan · <span class="tut-keypress">Scroll</span> to zoom · <span class="tut-keypress">Click</span> to paint</div>
+        <button class="tut-btn primary" onclick="closeHowTo()" style="width:100%;margin-top:14px;">Got it</button>
       </div>
     </div>
     <div id="daily-bonus-toast"></div>
@@ -3891,7 +3948,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v135';
+const CODE_VERSION = '2026-06-26-v137';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7660,14 +7717,109 @@ let _tutCountryPicked = null;     // {id, name, color}
 let _tutCountryListBuilt = false;
 
 function showTutorial() {
-  _tutStep = 0;
   document.getElementById('tutorial-overlay').classList.add('open');
-  updateTutStep();
-  // Defer heavier work (country list + stats) until idle
+  _renderQsTop();                                      // curated buttons render instantly (no map dependency)
   const idle = window.requestIdleCallback || (cb => setTimeout(cb, 100));
-  idle(() => { tryPopulateTutCountries(); }, { timeout: 800 });
+  idle(() => { _renderQsList(); }, { timeout: 800 });  // full list once the map is ready
   idle(() => { fetchTutWorldStats(); }, { timeout: 1000 });
 }
+
+// ── v137: frictionless quick-start picker ─────────────────────────────────────
+// Curated recognizable nations as big buttons (render instantly, no map needed);
+// everything else behind "More countries". Selecting one drops you straight into the
+// game — no steps, no guided-paint gate.
+const QS_CURATED = [
+  {id:'840',name:'USA',a2:'us'},            {id:'826',name:'United Kingdom',a2:'gb'},
+  {id:'250',name:'France',a2:'fr'},         {id:'276',name:'Germany',a2:'de'},
+  {id:'392',name:'Japan',a2:'jp'},          {id:'76', name:'Brazil',a2:'br'},
+  {id:'124',name:'Canada',a2:'ca'},         {id:'36', name:'Australia',a2:'au'},
+  {id:'356',name:'India',a2:'in'},          {id:'380',name:'Italy',a2:'it'},
+];
+function _renderQsTop() {
+  const el = document.getElementById('qs-top'); if (!el || el.dataset.built) return;
+  el.dataset.built = '1'; el.innerHTML = '';
+  for (const c of QS_CURATED) {
+    const b = document.createElement('button');
+    b.className = 'qs-btn'; b.dataset.id = c.id;
+    b.innerHTML = '<img class="qs-flag" src="/flags/' + c.a2 + '.png" alt="" onerror="this.style.visibility=\'hidden\'"><span class="qs-name">' + escapeHtml(c.name) + '</span>';
+    b.onclick = () => qsStart(c.id, b);
+    el.appendChild(b);
+  }
+  _applyQsFallen();
+}
+function _applyQsFallen() {
+  if (typeof _isCountryFallenClient !== 'function') return;
+  document.querySelectorAll('#qs-top .qs-btn').forEach(b => b.classList.toggle('disabled', _isCountryFallenClient(b.dataset.id)));
+}
+let _qsPending = null, _qsTries = 0;
+function qsStart(id) {
+  id = String(id);
+  if (typeof _isCountryFallenClient === 'function' && _isCountryFallenClient(id)) return; // can't start as a dead nation
+  const ready = (typeof idToFeatIdx !== 'undefined' && idToFeatIdx && typeof featList !== 'undefined' && featList && featList.length >= 50);
+  const idx = ready ? idToFeatIdx.get(id) : undefined;
+  if (idx === undefined) {                              // map not mounted yet — wait, then start
+    _qsPending = id;
+    const h = document.querySelector('.qs-head'); if (h) h.textContent = 'Starting…';
+    if ((_qsTries = _qsTries + 1) > 75) { if (h) h.textContent = 'Pick a country & play'; _qsPending = null; _qsTries = 0; return; }
+    setTimeout(() => { if (_qsPending === id) qsStart(id); }, 300);
+    return;
+  }
+  _qsPending = null; _qsTries = 0;
+  if (typeof selectCountry === 'function') selectCountry(idx);
+  try { if (typeof paTrack === 'function') { paTrack('country_selected'); paTrack('ftue_complete'); } } catch (e) {}
+  _qsClose();
+}
+function _qsClose() {
+  const ov = document.getElementById('tutorial-overlay'); if (ov) ov.classList.remove('open');
+  try { localStorage.setItem('pa_tutorial_seen', '1'); } catch (e) {}
+}
+function qsToggleMore() {
+  const m = document.getElementById('qs-more'), t = document.getElementById('qs-more-toggle'); if (!m) return;
+  const open = m.style.display === 'none';
+  m.style.display = open ? 'block' : 'none';
+  if (t) t.textContent = open ? 'More countries ▴' : 'More countries ▾';
+  if (open) _renderQsList();
+}
+let _qsListBuilt = false;
+function _renderQsList() {
+  const list = document.getElementById('qs-list'); if (!list || _qsListBuilt) return;
+  const mapDone = (typeof featList !== 'undefined' && featList && featList.length >= 50) && (typeof geoTotal !== 'undefined');
+  if (!mapDone) { setTimeout(_renderQsList, 400); return; }
+  const curated = new Set(QS_CURATED.map(c => c.id));
+  const byId = new Map();
+  for (let i = 0; i < featList.length; i++) {
+    const f = featList[i]; if (!f || !f.id || !f.name) continue;
+    if (curated.has(String(f.id))) continue; // already a top button
+    const px = (geoTotal[i]) || 0;
+    if (px < 5 || (typeof isPlayableCountry === 'function' && !isPlayableCountry(i))) continue;
+    const ex = byId.get(f.id);
+    if (!ex || px > ex.px) byId.set(f.id, { id: f.id, name: f.name, color: f.color, idx: i, px });
+  }
+  const rows = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  _qsListBuilt = true;
+  const frag = document.createDocumentFragment();
+  for (const c of rows) {
+    const row = document.createElement('div');
+    row.className = 'tut-country-row'; row.dataset.id = c.id; row.dataset.name = c.name.toLowerCase();
+    const fallen = (typeof _isCountryFallenClient === 'function') && _isCountryFallenClient(c.id);
+    if (fallen) row.classList.add('disabled');
+    row.innerHTML = '<div class="tut-country-color" style="background:' + (c.color || '#888') + '"></div>' +
+                    '<div class="tut-country-name">' + escapeHtml(c.name) + '</div>' +
+                    '<div class="tut-country-meta">' + c.px.toLocaleString() + ' px</div>';
+    if (!fallen) row.onclick = () => qsStart(c.id);
+    frag.appendChild(row);
+  }
+  list.innerHTML = ''; list.appendChild(frag);
+}
+function filterQs() {
+  const q = (document.getElementById('qs-search').value || '').toLowerCase().trim();
+  document.querySelectorAll('#qs-list .tut-country-row').forEach(r => {
+    if (!r.dataset.name) return;
+    r.style.display = (!q || r.dataset.name.includes(q)) ? '' : 'none';
+  });
+}
+function openHowTo() { const o = document.getElementById('howto-overlay'); if (o) o.classList.add('open'); }
+function closeHowTo() { const o = document.getElementById('howto-overlay'); if (o) o.classList.remove('open'); }
 
 function closeTutorial() {
   document.getElementById('tutorial-overlay').classList.remove('open');
@@ -10230,6 +10382,7 @@ function mpHandleMessage(msg) {
       }
       // v95o: re-grey the welcome + in-game pickers now that we know the dead natives.
       if (typeof _applyTutFallenRows === 'function') _applyTutFallenRows();
+      if (typeof _applyQsFallen === 'function') _applyQsFallen(); // v137: grey out fallen curated quick-start buttons
       if (typeof _cselOptions !== 'undefined' && _cselOptions.length && typeof renderCselList === 'function') renderCselList('');
       // v92w: seed server-authoritative siege set so a mid-siege reconnect/late-join
       // flashes immediately (the 'siege' event only fires on state transitions).
