@@ -560,6 +560,12 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .qs-foot{display:flex;justify-content:center;gap:18px;margin-top:16px;flex-wrap:wrap;}
 .qs-link{background:none;border:none;color:#818cf8;font-size:13px;font-family:inherit;cursor:pointer;padding:6px;}
 .qs-link:hover{color:#a5b4fc;text-decoration:underline;}
+/* v138: rewarded-ad button (bucket HUD + conquer window) */
+.ad-regen-btn{margin-left:8px;padding:3px 9px;background:linear-gradient(90deg,#15803d,#22c55e);border:1px solid #4ade80;border-radius:5px;color:#f0fdf4;font-size:10px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;letter-spacing:.02em;transition:filter .12s;}
+.ad-regen-btn:hover{filter:brightness(1.12);}
+.ad-regen-btn:disabled{cursor:default;}
+.ad-regen-btn.active{background:linear-gradient(90deg,#b45309,#f59e0b);border-color:#fbbf24;color:#fffbeb;}
+.fp-ad-btn{display:block;width:100%;margin-top:12px;padding:11px;font-size:14px;border-radius:8px;}
 @media (max-width:560px){ .qs-top-grid{grid-template-columns:1fr;} .qs-head{font-size:18px;} }
 /* v137: How-to-play modal */
 #howto-overlay{display:none;position:fixed;inset:0;z-index:300;background:rgba(3,7,18,.82);align-items:center;justify-content:center;padding:20px;}
@@ -1748,6 +1754,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
       <div id="regen-bar" title="Progress to next pixel"><div id="regen-fill"></div></div>
       <span id="bucket-timer">+1 in 60s</span>
       <span id="david-badge" style="display:none;margin-left:8px;padding:2px 7px;background:linear-gradient(90deg,rgba(99,102,241,.25),rgba(129,140,248,.18));border:1px solid rgba(129,140,248,.45);border-radius:4px;font-size:10px;color:#a5b4fc;letter-spacing:.04em;white-space:nowrap;"></span>
+      <!-- v138: rewarded-ad button — +50 bucket cap & max regen for 3 min -->
+      <button class="ad-regen-btn" data-label="📺 +50 &amp; Max Regen" onclick="watchAdForRegen()" title="Watch a short ad: +50 pixel bucket and maxed regen for 3 minutes">📺 +50 &amp; Max Regen</button>
     </div>
     <div id="stats">4096×2048 · Claimed: <b id="px-count">0</b> px</div>
 
@@ -3948,7 +3956,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v137';
+const CODE_VERSION = '2026-06-26-v138';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -3978,7 +3986,8 @@ let   BUCKET_MAX       = 50;
 const RANK_BUCKET_CAPS = [50, 63, 75, 88, 100]; // Soldier→Admiral (rank index 0..4)
 function _updateBucketMax() {
   const ri = (typeof getRankIndex === 'function') ? getRankIndex() : 0;
-  BUCKET_MAX = RANK_BUCKET_CAPS[Math.max(0, Math.min(RANK_BUCKET_CAPS.length - 1, ri))] || 50;
+  BUCKET_MAX = (RANK_BUCKET_CAPS[Math.max(0, Math.min(RANK_BUCKET_CAPS.length - 1, ri))] || 50)
+    + ((typeof _adRewardActive === 'function' && _adRewardActive()) ? AD_BUCKET_BONUS : 0); // v138: rewarded-ad +50 cap
 }
 const REGEN_INTERVAL   = 1;     // v113: seconds per +1 pixel at base mult — 1px/s base regen
 let   pixelBucket      = 10;    // starting inventory (v113: new players get 50 — see _grantFtueStartPixels)
@@ -7190,6 +7199,64 @@ function getMyMultiplier() {
 // (incl. exile) while active so a conqueror can immediately press the advantage.
 let _conquerBoostUntil = 0;
 const CONQUER_BOOST_MS = 60000;
+
+// ── v138: rewarded-ad reward (+50 bucket cap & MAX regen for 3 min) ───────────
+// IMPORTANT: Google AdSense PROHIBITS rewarded/incentivized ads and offers no rewarded
+// format for arbitrary sites — rewarded video must come from the HOST PLATFORM's SDK.
+// showRewardedAd() is an abstraction: it uses Poki / CrazyGames / Google H5 rewarded
+// APIs when present, else a dev stub that grants instantly. Wiring a real provider later
+// needs no gameplay change. The reward is client-side QoL (regen is client-driven; paints
+// are still server rate-limited), acceptable for a casual game.
+const AD_REWARD_MS = 180000; // 3 minutes
+const AD_BUCKET_BONUS = 50;
+let _adRewardUntil = 0, _adInProgress = false, _adTicker = null;
+function _adRewardActive() { return _adRewardUntil > Date.now(); }
+function _adSecsLeft() { return Math.max(0, Math.ceil((_adRewardUntil - Date.now()) / 1000)); }
+function _fmtMSS(s) { const m = (s / 60) | 0, ss = s % 60; return m + ':' + String(ss).padStart(2, '0'); }
+function showRewardedAd() {
+  try {
+    if (window.PokiSDK && typeof window.PokiSDK.rewardedBreak === 'function') {
+      return Promise.resolve(window.PokiSDK.rewardedBreak()).then(ok => ok !== false);
+    }
+    if (window.CrazyGames && window.CrazyGames.SDK && window.CrazyGames.SDK.ad && typeof window.CrazyGames.SDK.ad.requestAd === 'function') {
+      return new Promise(res => window.CrazyGames.SDK.ad.requestAd('rewarded', { adFinished: () => res(true), adError: () => res(false) }));
+    }
+    if (typeof window.adBreak === 'function') { // Google H5 Games Ads
+      return new Promise(res => { let g = false; window.adBreak({ type: 'reward', name: 'pa-regen', beforeReward: show => show(), adViewed: () => { g = true; }, adBreakDone: () => res(g) }); });
+    }
+  } catch (e) { console.warn('[Ad] provider error', e); }
+  // Dev stub — no SDK present: simulate a short ad then grant.
+  return new Promise(res => setTimeout(() => res(true), 600));
+}
+function watchAdForRegen() {
+  if (_adInProgress || currentIdx < 0) return;
+  _adInProgress = true; _setAdButtonsState();
+  Promise.resolve(showRewardedAd())
+    .then(ok => { _adInProgress = false; if (ok) grantAdReward(); _setAdButtonsState(); })
+    .catch(() => { _adInProgress = false; _setAdButtonsState(); });
+}
+function grantAdReward() {
+  _adRewardUntil = Date.now() + AD_REWARD_MS;
+  if (typeof _updateBucketMax === 'function') _updateBucketMax();          // bump cap +50 while active
+  pixelBucket = Math.min(BUCKET_MAX, pixelBucket + AD_BUCKET_BONUS);       // make the +50 usable now
+  if (typeof actPushCard === 'function') actPushCard({ variant: 'good', title: '⚡ MAX REGEN + 50 PX', html: 'Ad reward active for 3:00 — bucket +50 and regen maxed out.' });
+  _startAdRewardTicker();
+}
+function _startAdRewardTicker() {
+  if (_adTicker) return;
+  _adTicker = setInterval(() => {
+    if (!_adRewardActive()) { clearInterval(_adTicker); _adTicker = null; if (typeof _updateBucketMax === 'function') _updateBucketMax(); }
+    _setAdButtonsState();
+  }, 1000);
+}
+function _setAdButtonsState() {
+  const active = _adRewardActive();
+  document.querySelectorAll('.ad-regen-btn').forEach(b => {
+    if (_adInProgress) { b.textContent = '📺 …'; b.disabled = true; b.classList.remove('active'); }
+    else if (active) { b.textContent = '⚡ ' + _fmtMSS(_adSecsLeft()); b.disabled = true; b.classList.add('active'); }
+    else { b.innerHTML = b.dataset.label || '📺 +50 &amp; Max Regen'; b.disabled = false; b.classList.remove('active'); }
+  });
+}
 // v100 (Phase 2B): sudden death — when <=5 countries stand, regen doubles.
 // Mirrors the server's _serverRegen sd*2. Set from the 'endgame'/welcome payload.
 let _suddenDeathClient = false;
@@ -7202,6 +7269,7 @@ function getRegenMult() {
   // Goliaths sit at baseline) + ENCIRCLE + FIGHT-BACK. Rank no longer affects regen
   // (rank governs bucket size instead); alliance/rally regen bonuses dropped.
   if (_conquerBoostUntil > Date.now()) return REGEN_CAP_PXS; // post-conquest surge → cap
+  if (typeof _adRewardActive === 'function' && _adRewardActive()) return REGEN_CAP_PXS; // v138: rewarded-ad → max regen
   if (_fightbackActive) return REGEN_CAP_PXS;                // fight-back maxes regen → cap
   const f = featList[currentIdx];
   const cid = (f && f.id) ? String(f.id) : null;
@@ -7528,8 +7596,12 @@ function _showConquestFallPopup(winnerFi, loserFi){
       '<div class="fp-vs">▶</div>' +
       _fpSideHTML(L, false) +
     '</div>' +
-    '<div class="fp-foot"><b style="color:#fca5a5">' + escapeHtml(W.name) + '</b> conquered <b>' + escapeHtml(L.name) + '</b> &nbsp;·&nbsp; <span style="opacity:.7">click anywhere to close</span></div>';
+    '<div class="fp-foot"><b style="color:#fca5a5">' + escapeHtml(W.name) + '</b> conquered <b>' + escapeHtml(L.name) + '</b></div>' +
+    // v138: rewarded-ad button — extend max regen to 3 min. stopPropagation so it doesn't close the popup.
+    '<button class="ad-regen-btn fp-ad-btn" data-label="📺 Watch ad → Max Regen 3:00" onclick="event.stopPropagation(); watchAdForRegen();" title="Watch a short ad for +50 bucket and maxed regen for 3 minutes">📺 Watch ad → Max Regen 3:00</button>' +
+    '<div class="fp-foot" style="margin-top:8px;opacity:.6;">click anywhere else to close</div>';
   document.body.appendChild(el);
+  if (typeof _setAdButtonsState === 'function') _setAdButtonsState();
   let _fpClosed = false;
   const _close = () => {
     if (_fpClosed) return; _fpClosed = true;
