@@ -123,30 +123,58 @@ function renderCountryPNG(opts) {
     return c;
   }
 
-  for (let oy = 0; oy < OUT; oy++) {
-    const sy = y0 + Math.floor((oy / OUT) * crop);
-    for (let ox = 0; ox < OUT; ox++) {
-      const sx = x0 + Math.floor((ox / OUT) * crop);
-      const p = (oy * OUT + ox) * 4;
-      let r, g, b;
-      if (sx < 0 || sx >= MAP_W || sy < 0 || sy >= MAP_H) {
-        r = OCEAN[0]; g = OCEAN[1]; b = OCEAN[2];
-      } else {
-        const si = sy * MAP_W + sx;
-        const owner = claimByPixel[si];
-        if (owner >= 0) {
-          const rgb = ownerColor(idxToId[owner]);
-          r = rgb[0]; g = rgb[1]; b = rgb[2];
-        } else if (landMask[si]) {
-          r = LAND[0]; g = LAND[1]; b = LAND[2];
-        } else {
-          r = OCEAN[0]; g = OCEAN[1]; b = OCEAN[2];
-        }
+  if (_baseMapImg) {
+    // v136a: crop the baked basemap art (biome + coast) to the same region and draw it
+    // nearest-neighbour (crisp pixels, aligned with the overlay below), then overlay only
+    // CLAIMED pixels in their owner colour at 65% — unclaimed land/ocean shows the real
+    // terrain instead of flat grey/blue. The crop rect is always within map bounds.
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(_baseMapImg, x0, y0, crop, crop, 0, 0, OUT, OUT);
+    const base = ctx.getImageData(0, 0, OUT, OUT);
+    const bd = base.data;
+    for (let oy = 0; oy < OUT; oy++) {
+      const sy = y0 + Math.floor((oy / OUT) * crop);
+      for (let ox = 0; ox < OUT; ox++) {
+        const sx = x0 + Math.floor((ox / OUT) * crop);
+        if (sx < 0 || sx >= MAP_W || sy < 0 || sy >= MAP_H) continue;
+        const owner = claimByPixel[sy * MAP_W + sx];
+        if (owner < 0) continue; // unclaimed → baked basemap shows through
+        const rgb = ownerColor(idxToId[owner]);
+        const p = (oy * OUT + ox) * 4;
+        bd[p]     = (rgb[0] * 0.65 + bd[p]     * 0.35) | 0;
+        bd[p + 1] = (rgb[1] * 0.65 + bd[p + 1] * 0.35) | 0;
+        bd[p + 2] = (rgb[2] * 0.65 + bd[p + 2] * 0.35) | 0;
+        bd[p + 3] = 255;
       }
-      d[p] = r; d[p + 1] = g; d[p + 2] = b; d[p + 3] = 255;
     }
+    ctx.putImageData(base, 0, 0);
+  } else {
+    // Fallback (basemap failed to load): procedural grey-land / blue-ocean base.
+    for (let oy = 0; oy < OUT; oy++) {
+      const sy = y0 + Math.floor((oy / OUT) * crop);
+      for (let ox = 0; ox < OUT; ox++) {
+        const sx = x0 + Math.floor((ox / OUT) * crop);
+        const p = (oy * OUT + ox) * 4;
+        let r, g, b;
+        if (sx < 0 || sx >= MAP_W || sy < 0 || sy >= MAP_H) {
+          r = OCEAN[0]; g = OCEAN[1]; b = OCEAN[2];
+        } else {
+          const si = sy * MAP_W + sx;
+          const owner = claimByPixel[si];
+          if (owner >= 0) {
+            const rgb = ownerColor(idxToId[owner]);
+            r = rgb[0]; g = rgb[1]; b = rgb[2];
+          } else if (landMask[si]) {
+            r = LAND[0]; g = LAND[1]; b = LAND[2];
+          } else {
+            r = OCEAN[0]; g = OCEAN[1]; b = OCEAN[2];
+          }
+        }
+        d[p] = r; d[p + 1] = g; d[p + 2] = b; d[p + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
   }
-  ctx.putImageData(img, 0, 0);
 
   // v92m: draw the country flag at the flag spot (same density-center the crop is
   // built around). flag = { img, cx, cy } in map-pixel coords; transform to output
