@@ -1679,43 +1679,9 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     // boot (which keeps OOM-crashing) and show a clear screen with the failing
     // stage + a retry button. This breaks the endless reload/crash loop and tells
     // us exactly where it dies.
-    try {
-      var _ls = localStorage.getItem('pa_boot_stage');
-      var _prevFailed = _ls && _ls.indexOf('ready') !== 0;
-      var _fails = parseInt(localStorage.getItem('pa_boot_fails') || '0', 10) || 0;
-      _fails = _prevFailed ? (_fails + 1) : 0;
-      try { localStorage.setItem('pa_boot_fails', String(_fails)); } catch(e){}
-
-      if (_fails >= 2) {
-        // Crash loop — halt boot (reuse the proven block flag) + show diagnostic.
-        window.__PA_MOBILE_BLOCKED__ = true;
-        var _app = document.getElementById('app'); if (_app) _app.style.display = 'none';
-        var _sp = document.getElementById('mobile-splash'); if (_sp) _sp.classList.remove('show');
-        var _cb = document.createElement('div');
-        _cb.id = 'pa-cb';
-        _cb.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0b1220;color:#e2e8f0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;font:14px/1.6 system-ui,-apple-system,sans-serif;';
-        _cb.innerHTML =
-          '<div style="font-size:42px">⚠️</div>' +
-          '<h2 style="margin:10px 0 4px">The game keeps crashing on this device</h2>' +
-          '<p style="max-width:380px;color:#94a3b8;margin:6px 0">It stopped at <b style="color:#fca5a5">' + (_ls || '?') + '</b> on ' + _fails + ' tries in a row — usually low memory in a mobile browser.</p>' +
-          '<button id="pa-cb-retry" style="margin-top:16px;padding:11px 24px;border:0;border-radius:10px;background:#3b82f6;color:#fff;font-size:15px;font-weight:600">Try again</button>' +
-          '<p style="margin-top:16px;color:#64748b;font-size:12px">PixelAnnex runs best on a desktop browser.</p>';
-        (document.body || document.documentElement).appendChild(_cb);
-        var _rb = document.getElementById('pa-cb-retry');
-        if (_rb) _rb.addEventListener('click', function(){
-          try { localStorage.setItem('pa_boot_fails','0'); localStorage.removeItem('pa_boot_stage'); } catch(e){}
-          location.reload();
-        });
-      } else if (_prevFailed) {
-        // First failure — non-blocking banner; let it try once more.
-        var _bd = document.createElement('div');
-        _bd.id = 'pa-bootdbg';
-        _bd.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#7f1d1d;color:#fff;font:12px/1.4 ui-monospace,monospace;padding:7px 10px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.6);';
-        _bd.textContent = '⚠ previous load stopped at: ' + _ls + ' — tap to dismiss';
-        _bd.onclick = function(){ try{ _bd.remove(); }catch(e){} };
-        (document.body || document.documentElement).appendChild(_bd);
-      }
-    } catch(e) {}
+    // v142: boot diagnostic + crash-loop circuit breaker REMOVED — it false-positived on
+    // desktop (two interrupted loads tripped the "keeps crashing" overlay / red banner).
+    try { localStorage.removeItem('pa_boot_fails'); localStorage.removeItem('pa_boot_stage'); } catch(e){}
   } catch(e) { /* fall through — if gate fails, let the game try to load */ }
 })();
 </script>
@@ -3964,7 +3930,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v141';
+const CODE_VERSION = '2026-06-26-v142';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8534,27 +8500,11 @@ function dbgResetFtue() {
 //   - Weekly streak bonus (150px on every 7th day)
 //   - Current world state (top countries, conquered count, top players)
 async function checkDailyBonus() {
-  if (!localStorage.getItem('pa_tutorial_seen')) {
-    // Tutorial not yet completed — skip the popup entirely. The user will see
-    // the bonus next time they visit (after going through the tutorial).
-    return;
-  }
-  // Don't show twice in the same session
-  if (sessionStorage.getItem('pa_daily_popup_shown')) {
-    // v94: Welcome Back won't re-show, but the country may still have fallen —
-    // run the re-pick check after the snapshot's conquered set has loaded.
-    setTimeout(_tryShowFallenRepick, 1000);
-    return;
-  }
-  try {
-    const [bonusRes, worldRes] = await Promise.all([
-      fetch('/api/daily-login', { credentials: 'include' }).then(r => r.json()).catch(() => null),
-      fetch('/api/world-state').then(r => r.json()).catch(() => null),
-    ]);
-    // Even if Discord auth failed, still show world state.
-    showDailyPopup(bonusRes, worldRes);
-    sessionStorage.setItem('pa_daily_popup_shown', '1');
-  } catch (e) { console.warn('[DailyPopup]', e); }
+  // v142: the "Welcome Back" daily popup is REMOVED (frictionless flow — it popped up
+  // right after the player picked a country). Still ping /api/daily-login so the server
+  // credits the login bonus silently, then run the fallen-country re-pick check.
+  try { fetch('/api/daily-login', { credentials: 'include' }).catch(() => {}); } catch (e) {}
+  setTimeout(_tryShowFallenRepick, 1000);
 }
 
 function showDailyPopup(bonus, world) {
