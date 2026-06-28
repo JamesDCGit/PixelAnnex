@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-28-v147';
+const SERVER_VERSION       = '2026-06-29-v148';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -5076,6 +5076,42 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
   } catch (e) { console.warn('[Tweets] conquest draft failed:', e.message); }
 }
 
+// v147a: NATIVE HOMELAND RECLAIM. The v95i "dead native never reclaims" rule made
+// the EXILE loop a dead end — an exiled country (or one whose homeland became a
+// neutral Fallen zone) could repaint its OWN homeland to 100% and nothing happened:
+// the foreign conquest flag lingered, the country never re-filled, and the 0.5x regen
+// debuff never lifted (every conqueror-evaluator skips the native). This liberates a
+// homeland back to its native once the native holds a dominant share: drop any foreign
+// holder(s) (+ erase their flags), clear the Fallen/permanent + exile state, flood-fill
+// it back to native, and tell the player the debuff has lifted. Does NOT add a
+// self ("geo:geo") conqueredSet entry or push a 'conquest' (which would place a SECOND,
+// native-coloured flag on top of the native map flag — the reported "two flags" bug).
+function _reclaimHomeland(geo, conquests, changed, reversals) {
+  const geoId = geoToId(geo);
+  // Drop every foreign holder of this geo and erase their conquest flags everywhere.
+  for (const k of [...conqueredSet]) {
+    const p = String(k).split(':');
+    if (p[0] === String(geo) && p[1] !== geoId) {
+      conqueredSet.delete(k);
+      reversals.push({ geoIdx: geo, countryId: p[1], reason: 'liberated' });
+      broadcast(JSON.stringify({ type: 'reversal', geoIdx: geo, countryId: p[1], reason: 'liberated' }));
+    }
+  }
+  conqueredSet.delete(geo + ':' + geoId); // defensive: clear any stray self-entry
+  const wasPerm   = permanentlyConquered.delete(geoId); // no longer a Fallen zone
+  const wasExiled = exiledSet.delete(geoId);            // lift the exile debuff
+  _conquestImmunity.set(geoId, Date.now() + CONQUEST_IMMUNITY_MS); // let it settle
+  // The visible "country fill" — flood the homeland back to native.
+  changed.push(...finisherFill(geo, geoId));
+  if (wasPerm || wasExiled) {
+    for (const [, pp] of players) {
+      if (pp.isBot || !pp.ws || String(pp.countryId) !== String(geoId)) continue;
+      try { pp.ws.send(JSON.stringify({ type: 'homeland_reclaimed', countryId: String(geoId) })); } catch (e) {}
+    }
+  }
+  console.log('[Reclaim]', geoId, 'reclaimed its homeland', wasPerm ? '(was Fallen)' : '', wasExiled ? '(exile lifted)' : '');
+}
+
 function applyPixels(pixels, countryId) {
   // v38: paint locked during world-conquest fanfare countdown
   if (typeof _isPaintLocked === 'function' && _isPaintLocked()) {
@@ -5146,6 +5182,16 @@ function applyPixels(pixels, countryId) {
     // it skips the virgin paths + native reversal below. Replaces the old v92q
     // permanent lock (which froze ownership forever).
     const _curHolder = _foreignHolderOf(geo);
+    // v147a: NATIVE RECLAIM — if this geo's OWN country has repainted a dominant share
+    // of its homeland (>= reversalThreshold), it liberates it (held or Fallen), lifting
+    // the conquest + exile and flood-filling back to native. Checked BEFORE the foreign
+    // transfer below so a reclaiming native wins over a competing invader.
+    const _natCnt = (geoClaimCnt[geo] || {})[_geoId] || 0;
+    if ((_curHolder !== null || permanentlyConquered.has(_geoId)) && total > 0
+        && _natCnt / total >= reversalThreshold(total)) {
+      _reclaimHomeland(geo, conquests, changed, reversals);
+      continue;
+    }
     if (_curHolder !== null) {
       const _newOwner = _evaluateConqueror(geo, total, true, _curHolder, true); // v98: championOnly
       if (_newOwner && String(_newOwner) !== String(_curHolder)) {
