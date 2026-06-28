@@ -3905,6 +3905,17 @@ function _renderRgb(fi){
   if (_invertOwn && fi === currentIdx) return [255 - c[0], 255 - c[1], 255 - c[2]];
   return c;
 }
+// v144b: the LOCAL player's pixels (home country + conquered outposts) render with
+// a subtle diagonal STRIPE — 2px bands alternating the alpha of the SAME country
+// colour — so "your" territory is instantly identifiable and looks identical whether
+// it's your homeland or a conquest. _mineAlpha returns the per-pixel alpha for a
+// striped own-pixel; the HI band is near-opaque, the LO band lets more biome show.
+const _MINE_A_HI = 0.92, _MINE_A_LO = 0.6;
+function _mineAlpha(x, y){ return (((x + y) >> 1) & 1) ? _MINE_A_HI : _MINE_A_LO; }
+function _mineStyle(fi, x, y){
+  const c = _renderRgb(fi);
+  return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + _mineAlpha(x, y) + ')';
+}
 function toggleInvertOwn(){
   _invertOwn = !_invertOwn;
   try { localStorage.setItem('pa_invert_own', _invertOwn ? '1' : '0'); } catch(e){}
@@ -3946,7 +3957,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-28-v144';
+const CODE_VERSION = '2026-06-28-v145';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6266,10 +6277,11 @@ function claimPixel(px,py){
     geoClaimCnt[geo][currentIdx]=(geoClaimCnt[geo][currentIdx]||0)+1;
        checkConquest(geo,currentIdx);
   }
-  const [r,g,b]=_renderRgb(currentIdx); // v97g: inverted if "invert my pixels" is on
-  // v73: fillRect is far cheaper than createImageData(1,1)+putImageData
-  // (no allocation, GPU-accelerated). v130: painted-pixel opacity dropped to 65% (was 0.843).
-  claimCtx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.65)';
+  // v144b: your pixels render with the diagonal stripe (see _mineAlpha). clearRect
+  // first so the striped alpha composites against the biome, not over a prior owner's
+  // colour (the LO band would otherwise stack into a muddy blend on a reclaim).
+  claimCtx.clearRect(px, py, 1, 1);
+  claimCtx.fillStyle = _mineStyle(currentIdx, px, py); // v97g invert + v144b stripe
   claimCtx.fillRect(px, py, 1, 1);
   // v113: don't white-flash when reclaiming pixels inside your OWN homeland while
   // NOT in fight-back. Once you've pushed the enemy back below the fight-back line,
@@ -10476,6 +10488,22 @@ function flushPaintQueue() {
   for (const [fi, arr] of readyByFi) {
     const rgb = _renderRgb(fi); // v97g
     if (!rgb) continue;
+    if (fi === currentIdx) {
+      // v144b: the local player's pixels (own deltas + finisherFill of your conquests)
+      // render with the diagonal stripe. Two prebuilt fill styles (HI/LO band); clear
+      // first so the striped alpha sits on the biome, not over a prior owner.
+      const hi = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + _MINE_A_HI + ')';
+      const lo = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + _MINE_A_LO + ')';
+      for (let k = 0; k < arr.length; k++) {
+        const pi = arr[k];
+        const x = pi % MAP_W, y = (pi / MAP_W) | 0;
+        claimCtx.clearRect(x, y, 1, 1);
+        claimCtx.fillStyle = (((x + y) >> 1) & 1) ? hi : lo;
+        claimCtx.fillRect(x, y, 1, 1);
+        if (flashCtx) { flashCtx.fillRect(x, y, 1, 1); anyFlash = true; }
+      }
+      continue;
+    }
     claimCtx.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.65)';// v130: 65% paint opacity
     for (let k = 0; k < arr.length; k++) {
       const pi = arr[k];
@@ -11545,11 +11573,19 @@ function mpRebuildClaimCanvas() {
     const fi = claimByPixel[i];
     if (fi < 0 || !featList[fi]) continue;
     const rgb = (ownInv && fi === currentIdx) ? ownInv : (colorCache[fi] || hexRgb(featList[fi].color));
-    // v97g: preserve the faint native base (alpha 26) vs actively-painted (215) so a
-    // rebuild doesn't blast the whole map to full opacity. A pixel still owned by its
-    // OWN native country (claimByPixel === featByPixel) is base fill; anything else
-    // was painted by a non-native and shows full.
-    const alpha = (fi === featByPixel[i]) ? 26 : 166;// v130: painted 65% opacity (native base stays 26)
+    let alpha;
+    if (fi === currentIdx) {
+      // v144b: the local player's pixels (home country INCLUDED, not just conquests)
+      // render striped + clearly visible — instant "this is mine" identification,
+      // consistent whether it's homeland or an outpost.
+      const x = i % MAP_W, y = (i / MAP_W) | 0;
+      alpha = ((((x + y) >> 1) & 1) ? _MINE_A_HI : _MINE_A_LO) * 255 | 0;
+    } else {
+      // v97g: preserve the faint native base (alpha 26) vs actively-painted (166/65%)
+      // for everyone else. A pixel still owned by its OWN native country
+      // (claimByPixel === featByPixel) is base fill; anything else was painted.
+      alpha = (fi === featByPixel[i]) ? 26 : 166;// v130
+    }
     const p = i*4;
     d[p]=rgb[0]; d[p+1]=rgb[1]; d[p+2]=rgb[2]; d[p+3]=alpha;
   }
@@ -13773,9 +13809,11 @@ function selectCountry(idx){
   if(!f) return;
   if(_countryChanged) _resetBonusesForCountryChange();
   if(_countryChanged) paTrack('country_selected', { country: f.name }); // v95w
-  // v97g: if "invert my pixels" is on, repaint so the OLD country's pixels revert
-  // to normal and the NEW country's pixels render inverted.
-  if(_countryChanged && _invertOwn && typeof mpRebuildClaimCanvas === 'function') mpRebuildClaimCanvas();
+  // v97g/v144b: repaint the claim layer on a country change so the OLD country's
+  // pixels revert to normal (faint native base / 65% paint) and the NEW country's
+  // pixels pick up the diagonal stripe + visible homeland (and inversion, if on).
+  // Guarded on a real change — never runs on the boot-time self-select.
+  if(_countryChanged && typeof mpRebuildClaimCanvas === 'function') mpRebuildClaimCanvas();
   const sw = document.getElementById('swatch');
   if(sw) sw.style.background = f.color;
   document.getElementById('csel-label').textContent = f.name;
