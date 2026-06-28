@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-26-v140';
+const SERVER_VERSION       = '2026-06-26-v141';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -5829,8 +5829,11 @@ function _botEncircleManeuver(countryId) {
   const cidx = getIdx(countryId);
   const bot  = bots.get(String(countryId));
   if (!bot || bot.campaignGeo == null) return false;
-  const bb = geoBbox[bot.campaignGeo]; if (!bb) return false;
-  const cx = ((bb.minX + bb.maxX) / 2) | 0, cy = ((bb.minY + bb.maxY) / 2) | 0;
+  // v140a: centre on a RANDOM land pixel of the target (not the fixed bbox centre) so bots
+  // don't keep re-drawing the same circle in the exact same spot.
+  const gpx = geoPixels[bot.campaignGeo]; if (!gpx || !gpx.length) return false;
+  const ctr = gpx[Math.floor(Math.random() * gpx.length)];
+  const cx = ctr % MAP_W, cy = (ctr / MAP_W) | 0;
   if (!landMask[cy * MAP_W + cx]) return false;
   const R = 5 + Math.floor(Math.random() * 3);                        // 5..7
   const steps = Math.max(28, Math.round(2 * Math.PI * R));
