@@ -299,7 +299,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #activity-toast img,#conquest-toast img,#bomb-toast img,#fall-popup img,#flag-overlay img,#world-conquest-overlay img{image-rendering:pixelated;image-rendering:crisp-edges;}
 /* v106: avatar images + hero banner are pixel art — nearest-neighbour scaling */
 .pa-avatar,#rank-display img,#tut-hero{image-rendering:pixelated;image-rendering:crisp-edges;}
-#tut-hero{display:block;width:100%;border-radius:8px;margin-bottom:12px;}
+#tut-hero{display:block;width:70%;margin:0 auto 10px;border-radius:8px;}/* v140: 30% smaller, centred */
+#tut-header-stats{display:none!important;}/* v140: stats removed from the welcome */
 
 @keyframes act-slide-in{from{opacity:0;transform:translateX(30px);}to{opacity:1;transform:translateX(0);}}
 
@@ -546,6 +547,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .tut-country-row.disabled .tut-country-meta::after{content:' · fallen';color:#ef4444;}
 /* v137: frictionless quick-start picker */
 .qs-head{font-size:20px;font-weight:800;color:#fff;text-align:center;margin:6px 0 14px;}
+.qs-head:empty{margin:0;}
 .qs-top-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
 .qs-btn{display:flex;align-items:center;gap:10px;padding:12px 14px;background:#0f1729;border:1px solid #24304a;border-radius:10px;color:#e2e8f0;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;text-align:left;transition:background .12s,border-color .12s,transform .06s;}
 .qs-btn:hover{background:#16213a;border-color:#6366f1;}
@@ -1900,11 +1902,11 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
         </div>
         <!-- v137: frictionless one-screen country picker (replaces the 3-step welcome).
              Top curated nations as big buttons; everything else behind "More countries". -->
-        <div class="qs-head" data-i18n="qs.title">Pick a country &amp; play</div>
+        <div class="qs-head" id="qs-head"></div><!-- v140: title text removed; used only for transient "Starting…" -->
         <div id="qs-fast"></div><!-- v138a: Resume + Quick Play fast paths -->
         <div id="qs-top" class="qs-top-grid"></div>
-        <button class="qs-more-toggle" id="qs-more-toggle" onclick="qsToggleMore()">More countries ▾</button>
-        <div id="qs-more" class="qs-more" style="display:none;">
+        <button class="qs-more-toggle" id="qs-more-toggle" onclick="qsToggleMore()">More countries ▴</button>
+        <div id="qs-more" class="qs-more" style="display:block;"><!-- v140: auto-expanded -->
           <input type="text" class="tut-country-search" id="qs-search" placeholder="Search countries…" oninput="filterQs()" autocomplete="off" />
           <div class="tut-country-list" id="qs-list"><div class="tut-country-row loading">Loading…</div></div>
         </div>
@@ -3966,7 +3968,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v139';
+const CODE_VERSION = '2026-06-26-v140';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7800,6 +7802,7 @@ let _tutCountryListBuilt = false;
 
 function showTutorial() {
   document.getElementById('tutorial-overlay').classList.add('open');
+  _syncToolbarVisibility();                            // v140: hide toolbar so the welcome isn't clipped behind it
   _renderQsTop();                                      // curated + Resume/Quick Play render instantly
   _fetchPlayable();                                    // v138a: pull the cached list so the full picker is instant
   if (typeof _initAdSense === 'function') _initAdSense(); // v138a: welcome banner (inert until configured)
@@ -7839,7 +7842,7 @@ function _renderQsTop() {
     }
     const q = document.createElement('button');
     q.className = 'qs-btn qs-fast-btn qs-quick';
-    q.innerHTML = '<span class="qs-flag" style="display:flex;align-items:center;justify-content:center;font-size:18px;">⚡</span><span class="qs-name">Quick Play</span>';
+    q.innerHTML = '<span class="qs-flag" style="display:flex;align-items:center;justify-content:center;font-size:18px;">⚡</span><span class="qs-name">Quick Play as Random Country</span>';
     q.onclick = () => qsQuickPlay();
     fast.appendChild(q);
   }
@@ -7892,6 +7895,7 @@ function qsStart(id, meta) {
 function _qsClose() {
   const ov = document.getElementById('tutorial-overlay'); if (ov) ov.classList.remove('open');
   try { localStorage.setItem('pa_tutorial_seen', '1'); } catch (e) {}
+  _syncToolbarVisibility(); // v140: restore the toolbar
 }
 function qsToggleMore() {
   const m = document.getElementById('qs-more'), t = document.getElementById('qs-more-toggle'); if (!m) return;
@@ -7972,8 +7976,34 @@ function filterQs() {
     r.style.display = (!q || r.dataset.name.includes(q)) ? '' : 'none';
   });
 }
-function openHowTo() { const o = document.getElementById('howto-overlay'); if (o) o.classList.add('open'); }
-function closeHowTo() { const o = document.getElementById('howto-overlay'); if (o) o.classList.remove('open'); }
+function openHowTo() { const o = document.getElementById('howto-overlay'); if (o) o.classList.add('open'); _syncToolbarVisibility(); }
+function closeHowTo() { const o = document.getElementById('howto-overlay'); if (o) o.classList.remove('open'); _syncToolbarVisibility(); }
+// v140: the modals live inside #viewport (an `isolation:isolate` stacking context), so the
+// toolbar (z-index 210, in #app) paints OVER them and clips the welcome's top. Hide the
+// toolbar whenever a full-screen modal is open. visibility keeps layout; the overlay covers it.
+function _syncToolbarVisibility() {
+  const tb = document.getElementById('toolbar'); if (!tb) return;
+  const open = (document.getElementById('tutorial-overlay') || {}).classList && document.getElementById('tutorial-overlay').classList.contains('open')
+            || (document.getElementById('howto-overlay') || {}).classList && document.getElementById('howto-overlay').classList.contains('open');
+  tb.style.visibility = open ? 'hidden' : '';
+}
+// v140: the overlays are inside #viewport, so wheel/touch over them bubbles to the map's
+// zoom/pan handlers ("scroll zooms the map behind"). Stop propagation so the modal box
+// scrolls natively (touchpad + mouse + touch) instead of zooming the map.
+(function _guardModalScroll() {
+  const stop = e => e.stopPropagation();
+  const attach = () => {
+    ['tutorial-overlay', 'howto-overlay'].forEach(id => {
+      const el = document.getElementById(id); if (!el || el._scrollGuarded) return;
+      el._scrollGuarded = true;
+      el.addEventListener('wheel', stop, { passive: true });
+      el.addEventListener('touchstart', stop, { passive: true });
+      el.addEventListener('touchmove', stop, { passive: true });
+    });
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', attach, { once: true });
+  else attach();
+})();
 
 function closeTutorial() {
   document.getElementById('tutorial-overlay').classList.remove('open');

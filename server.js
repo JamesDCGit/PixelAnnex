@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-26-v139';
+const SERVER_VERSION       = '2026-06-26-v140';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -5673,6 +5673,15 @@ const BOT_DEFEND_RATE_FRAC = 0.08;  // homeland >= this foreign-held → "defend
 const BOT_DEFEND_CHANCE    = 0.45;  // v115: defend only SPORADICALLY — otherwise keep pushing the offensive
 const BOT_STICKY_BONUS     = 6;     // v115: score bonus for the country a bot is already invading (commit, don't flip-flop)
 const BOT_STANDING_BONUS   = 12;    // v115a: score bonus for a STANDING (not fallen) neighbour — bots chase fresh conquests first, but fallen land stays a fallback so they never idle
+// v140: COMMITTED RANDOM-COUNTRY CAMPAIGNS — bots periodically pick a random country
+// ANYWHERE on the map (not just a neighbour) and push to take it over, so fighting spreads
+// across the whole world (lots of visible back-and-forth) instead of only along borders.
+const BOT_CAMPAIGN_CHANCE  = 0.5;    // chance to START a new campaign when none active/expired
+const BOT_CAMPAIGN_MS      = 40000;  // how long a bot commits to one random-country campaign
+const BOT_CAMPAIGN_PURSUE  = 0.55;   // per-tick chance to push the campaign vs. do local defend/attack
+// v140: bots occasionally draw a RING around a pocket of land and capture the interior
+// (encirclement), like a player drawing a circle.
+const BOT_ENCIRCLE_CHANCE  = 0.03;   // per-eligible-tick chance to attempt an encircle maneuver
 let   _botRosterPeak       = 0;     // captured at roster build; denominator for scarcity
 // Fraction of the original roster still standing: 1 (early/calm) .. ~0 (late/frenzy).
 function _botScarcityFrac() {
@@ -5760,35 +5769,118 @@ function _isRival(countryId, targetCountryId) {
   return set ? set.has(String(targetCountryId)) : false;
 }
 
+// v140: pick a random country anywhere on the map for a takeover campaign. Samples
+// random geos and scores them (prefer standing, contested, big, rivals) so targets vary.
+function _pickCampaignTarget(countryId, ownGeoIdx) {
+  const keys = Object.keys(geoPixels);
+  if (!keys.length) return null;
+  let bestGeo = -1, bestScore = -1;
+  for (let a = 0; a < 25; a++) {
+    const g = parseInt(keys[Math.floor(Math.random() * keys.length)], 10);
+    if (g === ownGeoIdx) continue;
+    const homeId = geoToId(g);
+    if (!_isPlayableNation(homeId)) continue;
+    if (conqueredSet.has(String(homeId) + ':' + String(countryId))) continue; // already ours
+    const total   = geoTotal[g] || 1;
+    const claims  = geoClaimCnt[g] || {};
+    const foreign = Object.entries(claims).filter(([c]) => c !== homeId).reduce((s, [, v]) => s + v, 0);
+    let score = 1 + Math.random() * 3;                              // jitter → varied targets
+    if (!permanentlyConquered.has(String(homeId))) score += 4;      // prefer fresh (standing) conquests
+    score += getWorldShare(homeId) * 8;                            // prefer bigger / more visible
+    if (foreign / total >= 0.1) score += 3;                         // pile onto contested
+    if (_isRival(countryId, homeId)) score += 4;
+    if (score > bestScore) { bestScore = score; bestGeo = g; }
+  }
+  return bestGeo >= 0 ? bestGeo : null;
+}
+// v140: pixels to paint for the active campaign — grow from any foothold the bot has in
+// the target, else seed a cluster near the target's centre.
+function _campaignPixels(geo, cidx, limit) {
+  const px = geoPixels[geo]; if (!px || !px.length) return [];
+  const step = Math.max(1, Math.floor(px.length / 400));
+  const out = [];
+  for (let s = 0; s < px.length && out.length < limit; s += step) {  // grow from a foothold
+    const i = px[s]; if (claimByPixel[i] !== cidx) continue;
+    const x = i % MAP_W, y = (i / MAP_W) | 0;
+    for (let d = 0; d < 4; d++) {
+      const nx = x + DX4[d], ny = y + DY4[d];
+      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+      const ni = ny * MAP_W + nx;
+      if (geoAtPixel[ni] !== geo || !landMask[ni] || claimByPixel[ni] === cidx) continue;
+      out.push({ x: nx, y: ny }); if (out.length >= limit) break;
+    }
+  }
+  if (out.length) return out;
+  const bb = geoBbox[geo];                                            // no foothold → seed near centre
+  const ccx = bb ? ((bb.minX + bb.maxX) / 2) | 0 : 0, ccy = bb ? ((bb.minY + bb.maxY) / 2) | 0 : 0;
+  const cand = [];
+  for (let s = 0; s < px.length; s += step) {
+    const i = px[s]; if (claimByPixel[i] === cidx) continue;
+    const x = i % MAP_W, y = (i / MAP_W) | 0;
+    cand.push({ x, y, d: (x - ccx) * (x - ccx) + (y - ccy) * (y - ccy) });
+  }
+  cand.sort((a, b) => a.d - b.d);
+  return cand.slice(0, limit).map(p => ({ x: p.x, y: p.y }));
+}
+// v140: ENCIRCLE maneuver — draw a ring around the campaign target's centre and capture
+// the enclosed interior (the same detectEncirclement the player path uses). Returns true
+// if it painted anything. Aborts if the ring would cross ocean (it couldn't seal).
+function _botEncircleManeuver(countryId) {
+  const cidx = getIdx(countryId);
+  const bot  = bots.get(String(countryId));
+  if (!bot || bot.campaignGeo == null) return false;
+  const bb = geoBbox[bot.campaignGeo]; if (!bb) return false;
+  const cx = ((bb.minX + bb.maxX) / 2) | 0, cy = ((bb.minY + bb.maxY) / 2) | 0;
+  if (!landMask[cy * MAP_W + cx]) return false;
+  const R = 5 + Math.floor(Math.random() * 3);                        // 5..7
+  const steps = Math.max(28, Math.round(2 * Math.PI * R));
+  const ring = [];
+  for (let k = 0; k < steps; k++) {
+    const ang = (k / steps) * 2 * Math.PI;
+    const x = Math.round(cx + R * Math.cos(ang)), y = Math.round(cy + R * Math.sin(ang));
+    if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return false;
+    if (!landMask[y * MAP_W + x]) return false;                       // ocean gap → can't seal
+    ring.push({ x, y });
+  }
+  const ringRes = applyPixels(ring, countryId);
+  if (ringRes.changed.length) { queueDelta(ringRes.changed); _botPaintsSinceWatch += ringRes.changed.length; }
+  const changedSet = new Set();
+  for (const p of ring) { const i = p.y * MAP_W + p.x; if (claimByPixel[i] === cidx) changedSet.add(i); }
+  const enc = detectEncirclement(ring, countryId, changedSet);
+  if (!enc || !enc.enclosed.length) return ringRes.changed.length > 0;
+  const fill = applyPixels(enc.enclosed, countryId);
+  if (fill.changed.length) { queueDelta(fill.changed); _botPaintsSinceWatch += fill.changed.length; }
+  fill.conquests.forEach(c => broadcast(JSON.stringify({ type: 'conquest', ...c })));
+  fill.reversals.forEach(r => broadcast(JSON.stringify({ type: 'reversal', ...r })));
+  return true;
+}
+
 function getBotTargets(countryId, limit) {
   const cidx       = getIdx(countryId);
   const geoIdx     = getGeoForCountry(countryId);
   const homePixels = geoPixels[geoIdx];
   if (!homePixels || homePixels.length === 0) return [];
 
-  // ── 0. Roaming scout — small chance to seed in a distant appealing territory ──
-  if (Math.random() < BOT_SCOUT_CHANCE) {
-    const geoKeys = Object.keys(geoPixels);
-    let bestGeo = -1, bestScore = -1;
-    // Sample 15 random geos and score them
-    for (let attempt = 0; attempt < 15; attempt++) {
-      const gi = parseInt(geoKeys[Math.floor(Math.random() * geoKeys.length)], 10);
-      if (gi === geoIdx) continue;
-      const total   = geoTotal[gi] || 1;
-      const homeId  = geoToId(gi);
-      const claims  = geoClaimCnt[gi] || {};
-      const foreign = Object.entries(claims)
-        .filter(([c]) => c !== homeId).reduce((s, [, v]) => s + v, 0);
-      // Prefer large countries; bonus if already contested
-      let score = Math.round(getWorldShare(homeId) * 1000);
-      if (foreign / total >= 0.2) score += 3;
-      if (score > bestScore) { bestScore = score; bestGeo = gi; }
-    }
-    if (bestGeo >= 0 && geoPixels[bestGeo]) {
-      const tp = geoPixels[bestGeo];
-      const i  = tp[Math.floor(Math.random() * tp.length)];
-      if (claimByPixel[i] !== cidx)
-        return [{ x: i % MAP_W, y: (i / MAP_W) | 0 }];
+  // ── 0. v140: COMMITTED RANDOM-COUNTRY CAMPAIGN ─────────────────────────────
+  // Periodically push a takeover of a random country anywhere on the map (not just a
+  // neighbour) so the whole world sees back-and-forth fighting. The bot commits to one
+  // target for BOT_CAMPAIGN_MS, then picks a fresh one. Pursued only part of the time so
+  // it still defends/attacks locally the rest.
+  {
+    const _cbot = bots.get(String(countryId));
+    if (_cbot) {
+      const now = Date.now();
+      const valid = (g) => g != null && geoPixels[g]
+        && geoToId(g) !== String(countryId)
+        && !conqueredSet.has(String(geoToId(g)) + ':' + String(countryId)); // not already ours
+      if (!valid(_cbot.campaignGeo) || now > (_cbot.campaignUntil || 0)) {
+        _cbot.campaignGeo  = (Math.random() < BOT_CAMPAIGN_CHANCE) ? _pickCampaignTarget(countryId, geoIdx) : null;
+        _cbot.campaignUntil = now + BOT_CAMPAIGN_MS;
+      }
+      if (valid(_cbot.campaignGeo) && Math.random() < BOT_CAMPAIGN_PURSUE) {
+        const pts = _campaignPixels(_cbot.campaignGeo, cidx, limit);
+        if (pts.length) return pts;
+      }
     }
   }
 
@@ -6168,6 +6260,12 @@ function botTickSingle(countryId) {
   const _minGap = _botPaintGap(_defending);
   const _now = Date.now();
   if (_now - (bot.lastPaintAt || 0) < _minGap) return;
+
+  // v140: occasional ENCIRCLE maneuver — draw a ring around the campaign target and
+  // capture the interior (like a player drawing a circle). Offensive ticks only.
+  if (!_defending && bot.campaignGeo != null && Math.random() < BOT_ENCIRCLE_CHANCE) {
+    try { if (_botEncircleManeuver(countryId)) { bot.lastPaintAt = _now; return; } } catch (e) {}
+  }
 
   const budget = Math.min(BOT_PIXELS_PER_TICK, Math.floor(bot.bucket)); // capped at 1px/paint
   const targets = getBotTargets(countryId, budget);
