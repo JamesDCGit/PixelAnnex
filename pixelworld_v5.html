@@ -1351,6 +1351,22 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   will-change: transform;
 }
 #flag-overlay { transition: opacity .2s linear; }
+/* v144: pulsing yellow glow on flags belonging to the local player (their own
+   country flag + their conquest flags) so they're easy to spot. box-shadow keeps
+   the flag's black border ring (.pa-flag base) and pulses a yellow halo. */
+#flag-overlay .pa-flag.mine-glow{
+  z-index: 3; /* above sibling/occ flags */
+  animation: flagMineGlow 1.4s ease-in-out infinite;
+}
+@keyframes flagMineGlow{
+  0%,100%{ box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.5), 0 0 4px 1px rgba(255,224,130,0.45); }
+  50%    { box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.5), 0 0 9px 3px rgba(255,224,130,0.95); }
+}
+/* v144: the selected-country outline canvas (yellow pixels, drawn in redrawOutline)
+   gently pulses its opacity so the border glows. transform is set inline by applyT;
+   animating opacity is independent of it. */
+#c-outline{ animation: outlinePulse 1.6s ease-in-out infinite; }
+@keyframes outlinePulse{ 0%,100%{ opacity:0.55; } 50%{ opacity:1; } }
 /* v94: country name/outpost label under each flag — fixed screen size, fades with
    the flag overlay (same zoom/fade), centred under the flag via translateX(-50%). */
 #flag-overlay .pa-flag-label {
@@ -3930,7 +3946,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v143';
+const CODE_VERSION = '2026-06-28-v144';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4793,6 +4809,10 @@ function _placeFlagDOM(geoIdx, claimerFi, centers) {
     if (!entry) entry = arr[k] = _makeFlagNode(claimerFi, overlay);
     entry.isoId = claimerFi.id;
     entry.el.src = src;
+    // v144: pulsing yellow glow on the local player's own flags (conquests of the
+    // country they're playing). Re-evaluated on every placeFlag for this geo.
+    const _mineFlag = (currentIdx >= 0 && featList[currentIdx] && String(claimerFi.id) === String(featList[currentIdx].id));
+    entry.el.classList.toggle('mine-glow', !!_mineFlag);
     if (entry.label) entry.label.textContent = _txt;
     entry.cx = centers[k].cx; entry.cy = centers[k].cy;
     if (typeof _applyEmoteToEntry === 'function') _applyEmoteToEntry(geoIdx, entry); // v113
@@ -5028,8 +5048,12 @@ function _renderFallenZones() {
     if (!node) {
       const el = document.createElement('div');
       el.className = 'pa-fallen-flag';
-      // v133a: operator-supplied Fallen.png marker (replaces the 🏳️ emoji).
-      el.innerHTML = '<img src="/flags/Fallen.png" alt="Fallen" style="width:18px;height:auto;image-rendering:pixelated;display:block;">';
+      // v144: show the fallen country's OWN flag, greyed out (instead of the generic
+      // Fallen.png marker) — easier to tell which nation fell. The country's real
+      // PNG is /flags/{A2}.png; on 404 fall back to the generic Fallen.png marker.
+      const _a2 = (typeof isoNumericToA2 === 'function') ? isoNumericToA2(id) : null;
+      const _fsrc = _a2 ? ('/flags/' + _a2 + '.png') : '/flags/Fallen.png';
+      el.innerHTML = '<img src="' + _fsrc + '" alt="Fallen" onerror="this.onerror=null;this.src=\'/flags/Fallen.png\';this.style.filter=\'none\';" style="width:18px;height:auto;image-rendering:pixelated;display:block;filter:grayscale(1) brightness(0.7) contrast(0.9);opacity:0.85;">';
       el.style.cssText = 'position:absolute;top:0;left:0;line-height:0;pointer-events:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.85));will-change:transform;z-index:1;';
       ov.appendChild(el);
       node = _fallenFlagNodes[id] = { el, cx, cy };
@@ -6371,7 +6395,7 @@ function scheduleLegend(){
     // full list of ACTIVE countries (the v98a in-loop filter shrank the list).
     [..._terrByCountry.values()].map(e=>[e.fi,e.cnt])
       .filter(([idx])=>{ const f=featList[+idx]; return f && !(typeof _isCountryFallenClient==='function' && _isCountryFallenClient(f.id)); })
-      .sort((a,b)=>b[1]-a[1]).slice(0,20).forEach(([idx,cnt],_rankPos)=>{
+      .sort((a,b)=>b[1]-a[1]).slice(0,10).forEach(([idx,cnt],_rankPos)=>{ // v144: top 10 only
       const f=featList[+idx];if(!f)return;
       const pct=(cnt/base*100).toFixed(2);
       // Blend country colour against land base (#535353) at alpha=215
@@ -9777,7 +9801,9 @@ function redrawOutline(){
         if(claimByPixel[ny * MAP_W + nx] === currentIdx) continue;
         const lx = nx - x0, ly = ny - y0;
         const p = (ly * w + lx) * 4;
-        d[p]=255; d[p+1]=255; d[p+2]=255; d[p+3]=180;
+        // v144: yellow outline (was white) for your selected country; the #c-outline
+        // canvas also gets a CSS opacity pulse so the border glows.
+        d[p]=255; d[p+1]=224; d[p+2]=130; d[p+3]=215;
       }
     }
   }
@@ -10637,7 +10663,9 @@ function mpHandleMessage(msg) {
       const targetFi = idToFeatIdx.get(String(geoCountryId));
       if (targetFi === undefined || fi === undefined) { scheduleLegend(); break; }
       // v102 (Phase 2C): big winner-vs-loser popup on a fresh nation fall.
-      if (msg.perm && !_wasPerm && targetFi !== fi && typeof _showConquestFallPopup === 'function') {
+      // v144: ONLY the local player who did the conquering sees it (and the emote
+      // picker, below) — it was previously shown to every connected client.
+      if (msg.perm && !_wasPerm && targetFi !== fi && fi === currentIdx && typeof _showConquestFallPopup === 'function') {
         _showConquestFallPopup(fi, targetFi);
       }
       // Attack detection: if WE were conquered, show direction arrow + card + force repick
