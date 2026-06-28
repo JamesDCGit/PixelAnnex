@@ -5825,26 +5825,94 @@ function _campaignPixels(geo, cidx, limit) {
 // v140: ENCIRCLE maneuver — draw a ring around the campaign target's centre and capture
 // the enclosed interior (the same detectEncirclement the player path uses). Returns true
 // if it painted anything. Aborts if the ring would cross ocean (it couldn't seal).
+// v145a: Bresenham line between two ring sample points so a WOBBLY outline has no
+// 1px gaps (gaps would break the encirclement seal). Pushes onto `out`.
+function _lineP(x0, y0, x1, y1, out) {
+  let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  let sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx - dy;
+  for (;;) {
+    out.push({ x: x0, y: y0 });
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x0 += sx; }
+    if (e2 <  dx) { err += dx; y0 += sy; }
+  }
+}
+// v145a: organic splotch — a small irregular blob grown by a short random walk from a
+// seed (with a little +-neighbour spread), clipped to the target geo's land. Pushes
+// in-geo land pixels onto `out`. Makes bot paint look hand-drawn, not geometric.
+function _splotchPixels(sx, sy, geo, size, out) {
+  let x = sx, y = sy;
+  for (let s = 0; s < size; s++) {
+    if (x >= 0 && x < MAP_W && y >= 0 && y < MAP_H) {
+      const i = y * MAP_W + x;
+      if (landMask[i] && geoAtPixel[i] === geo) {
+        out.push({ x, y });
+        // small cross spread for blobbiness
+        for (let d = 0; d < 4; d++) {
+          const nx = x + DX4[d], ny = y + DY4[d];
+          if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+          const ni = ny * MAP_W + nx;
+          if (landMask[ni] && geoAtPixel[ni] === geo && Math.random() < 0.5) out.push({ x: nx, y: ny });
+        }
+      }
+    }
+    const d = Math.floor(Math.random() * 4);
+    x += DX4[d]; y += DY4[d];
+  }
+}
+// v145a: scatter `n` organic splotches over random land pixels of the campaign geo.
+function _scatterSplotches(gpx, geo, n, out) {
+  for (let b = 0; b < n; b++) {
+    const p = gpx[Math.floor(Math.random() * gpx.length)];
+    _splotchPixels(p % MAP_W, (p / MAP_W) | 0, geo, 5 + Math.floor(Math.random() * 9), out);
+  }
+}
 function _botEncircleManeuver(countryId) {
   const cidx = getIdx(countryId);
   const bot  = bots.get(String(countryId));
   if (!bot || bot.campaignGeo == null) return false;
+  const geo = bot.campaignGeo;
   // v140a: centre on a RANDOM land pixel of the target (not the fixed bbox centre) so bots
   // don't keep re-drawing the same circle in the exact same spot.
-  const gpx = geoPixels[bot.campaignGeo]; if (!gpx || !gpx.length) return false;
+  const gpx = geoPixels[geo]; if (!gpx || !gpx.length) return false;
+
+  // v145a: ORGANIC maneuvers. ~35% of the time paint pure random splotches (no sealing
+  // ring) so the map shows hand-drawn blobs, not just clean circles; the rest draw a
+  // WOBBLY (sine-perturbed) ring — connected via Bresenham so it still seals — often
+  // with a few splotches sprinkled alongside for texture.
+  if (Math.random() < 0.35) {
+    const out = [];
+    _scatterSplotches(gpx, geo, 2 + Math.floor(Math.random() * 4), out);
+    if (!out.length) return false;
+    const res = applyPixels(out, countryId);
+    if (res.changed.length) { queueDelta(res.changed); _botPaintsSinceWatch += res.changed.length; }
+    res.conquests.forEach(c => broadcast(JSON.stringify({ type: 'conquest', ...c })));
+    res.reversals.forEach(r => broadcast(JSON.stringify({ type: 'reversal', ...r })));
+    return res.changed.length > 0;
+  }
+
   const ctr = gpx[Math.floor(Math.random() * gpx.length)];
   const cx = ctr % MAP_W, cy = (ctr / MAP_W) | 0;
   if (!landMask[cy * MAP_W + cx]) return false;
-  const R = 5 + Math.floor(Math.random() * 3);                        // 5..7
-  const steps = Math.max(28, Math.round(2 * Math.PI * R));
-  const ring = [];
-  for (let k = 0; k < steps; k++) {
+  const R = 5 + Math.floor(Math.random() * 4);                        // 5..8
+  const steps = Math.max(40, Math.round(2 * Math.PI * R * 1.4));
+  // wobble: 1-2 sine harmonics with a random phase + amplitude → irregular outline
+  const ph = Math.random() * 6.283, amp = 1 + Math.random() * 2.2, harm = 2 + Math.floor(Math.random() * 3);
+  const pts = [];
+  for (let k = 0; k <= steps; k++) {
     const ang = (k / steps) * 2 * Math.PI;
-    const x = Math.round(cx + R * Math.cos(ang)), y = Math.round(cy + R * Math.sin(ang));
+    const rr = R + amp * Math.sin(harm * ang + ph);
+    const x = Math.round(cx + rr * Math.cos(ang)), y = Math.round(cy + rr * Math.sin(ang));
     if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return false;
     if (!landMask[y * MAP_W + x]) return false;                       // ocean gap → can't seal
-    ring.push({ x, y });
+    pts.push({ x, y });
   }
+  const ring = [];
+  for (let k = 0; k < pts.length - 1; k++) _lineP(pts[k].x, pts[k].y, pts[k + 1].x, pts[k + 1].y, ring);
+  // v145a: sprinkle a couple of splotches alongside the ring half the time (organic texture,
+  // doesn't affect the seal — extra interior/edge paint).
+  if (Math.random() < 0.5) _scatterSplotches(gpx, geo, 1 + Math.floor(Math.random() * 2), ring);
   const ringRes = applyPixels(ring, countryId);
   if (ringRes.changed.length) { queueDelta(ringRes.changed); _botPaintsSinceWatch += ringRes.changed.length; }
   const changedSet = new Set();
