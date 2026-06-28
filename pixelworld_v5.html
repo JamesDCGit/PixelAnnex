@@ -3930,7 +3930,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-26-v142';
+const CODE_VERSION = '2026-06-26-v143';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7822,19 +7822,17 @@ function _renderQsTop() {
   _applyQsFallen();
 }
 function qsQuickPlay() {
-  const fallen = (id) => (typeof _isCountryFallenClient === 'function') && _isCountryFallenClient(id);
-  let pool = QS_CURATED.filter(c => !fallen(c.id));
-  if (!pool.length && _qsApiList) pool = _qsApiList.filter(c => !c.fallen);
+  let pool = QS_CURATED.filter(c => !_qsIsFallen(c.id));
+  if (!pool.length && _qsApiList) pool = _qsApiList.filter(c => !_qsIsFallen(c.id));
   if (pool.length) { const p = pool[Math.floor(Math.random() * pool.length)]; qsStart(p.id, p); }
 }
 function _applyQsFallen() {
-  if (typeof _isCountryFallenClient !== 'function') return;
-  document.querySelectorAll('#qs-top .qs-btn').forEach(b => b.classList.toggle('disabled', _isCountryFallenClient(b.dataset.id)));
+  document.querySelectorAll('#qs-top .qs-btn').forEach(b => b.classList.toggle('disabled', _qsIsFallen(b.dataset.id)));
 }
 let _qsPending = null, _qsTries = 0;
 function qsStart(id, meta) {
   id = String(id);
-  if (typeof _isCountryFallenClient === 'function' && _isCountryFallenClient(id)) return; // can't start as a dead nation
+  if (_qsIsFallen(id)) return; // can't start as a dead nation
   const ready = (typeof idToFeatIdx !== 'undefined' && idToFeatIdx && typeof featList !== 'undefined' && featList && featList.length >= 50);
   const idx = ready ? idToFeatIdx.get(id) : undefined;
   if (idx === undefined) {                              // map not mounted yet — wait, then start
@@ -7869,10 +7867,17 @@ function qsToggleMore() {
 // v138a: fetch the cached playable list so the FULL picker can render instantly,
 // before the heavy map mounts. Falls back to building from the loaded map.
 let _qsApiList = null, _qsApiFetched = false, _qsListBuilt = false;
+let _qsFallenSet = new Set(); // v142a: fallen ids from /api/playable — known BEFORE the WS welcome, so the picker greys fallen countries on its very first render (no available→greyed flicker).
+function _qsIsFallen(id) { id = String(id); return (typeof _isCountryFallenClient === 'function' && _isCountryFallenClient(id)) || _qsFallenSet.has(id); }
 function _fetchPlayable() {
   if (_qsApiFetched) return; _qsApiFetched = true;
   fetch('/api/playable').then(r => r.ok ? r.json() : null).then(list => {
-    if (Array.isArray(list) && list.length) { _qsApiList = list; _qsListBuilt = false; _renderQsList(); }
+    if (Array.isArray(list) && list.length) {
+      _qsApiList = list;
+      _qsFallenSet = new Set(list.filter(c => c.fallen).map(c => String(c.id)));
+      _qsListBuilt = false; _renderQsList();
+      if (typeof _applyQsFallen === 'function') _applyQsFallen(); // grey curated buttons immediately
+    }
   }).catch(() => {});
 }
 function _renderQsList() {
@@ -7902,7 +7907,7 @@ function _renderQsList() {
   for (const c of rows) {
     const row = document.createElement('div');
     row.className = 'tut-country-row'; row.dataset.id = c.id; row.dataset.name = (c.name || '').toLowerCase();
-    const fallen = c.fallen || ((typeof _isCountryFallenClient === 'function') && _isCountryFallenClient(c.id));
+    const fallen = c.fallen || _qsIsFallen(c.id);
     if (fallen) row.classList.add('disabled');
     const flag = c.a2 ? '<img class="qs-flag" style="width:22px;height:15px;margin-right:6px;" src="/flags/' + c.a2 + '.png" alt="" onerror="this.style.visibility=\'hidden\'">'
                       : '<div class="tut-country-color" style="background:#888"></div>';
@@ -8472,6 +8477,10 @@ function dbgResetFtue() {
 (function bootTutorial() {
   // v138a: show the quick-start picker on EVERY visit (Poki-style) — the Resume + Quick
   // Play fast paths make re-entry one tap. (Was gated to first visit via pa_tutorial_seen.)
+  // v142a: prefetch the playable list (incl. fallen flags) at page load — it's tiny and
+  // cached, so it resolves long before the deferred welcome renders, meaning fallen
+  // countries are greyed on the picker's FIRST paint (no available→greyed flicker).
+  try { if (typeof _fetchPlayable === 'function') _fetchPlayable(); } catch (e) {}
   const launch = () => {
     if (!document.getElementById('tutorial-overlay')) {
       setTimeout(launch, 80);
