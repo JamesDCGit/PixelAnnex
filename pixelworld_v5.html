@@ -1367,18 +1367,26 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   will-change: transform;
   z-index: 0; /* below conquest flags */
 }
+/* v144b: a fallen nation's flag — same as a native flag but desaturated to 25% so it
+   reads as "fallen" while staying recognisable. */
+#flag-overlay .pa-fallen-flag{
+  filter: saturate(0.25) brightness(0.85);
+  opacity: 0.7;
+}
 /* v144: pulsing yellow glow on flags belonging to the local player (their own
    country flag + their conquest flags) so they're easy to spot. box-shadow keeps
    the flag's black border ring (.pa-flag base) and pulses a yellow halo. */
+/* v144b: your own flags get the SAME pulsing yellow OUTLINE as your country border
+   (no black border ring, no soft halo) — just a clean yellow ring that breathes. */
 #flag-overlay .pa-flag.mine-glow,
 #flag-overlay .pa-native-flag.mine-glow{
   z-index: 4; /* above sibling/occ flags */
   opacity: 1;
-  animation: flagMineGlow 1.4s ease-in-out infinite;
+  animation: flagMineGlow 1.6s ease-in-out infinite;
 }
 @keyframes flagMineGlow{
-  0%,100%{ box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.5), 0 0 4px 1px rgba(255,224,130,0.45); }
-  50%    { box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.5), 0 0 9px 3px rgba(255,224,130,0.95); }
+  0%,100%{ box-shadow: 0 0 0 1px rgba(255,224,130,0.45); }
+  50%    { box-shadow: 0 0 0 2px rgba(255,224,130,1); }
 }
 /* v144: the selected-country outline canvas (yellow pixels, drawn in redrawOutline)
    gently pulses its opacity so the border glows. transform is set inline by applyT;
@@ -3975,7 +3983,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-28-v146';
+const CODE_VERSION = '2026-06-28-v147';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4975,7 +4983,16 @@ function _updateAllFlagPositions() {
 const _fallenFlagNodes = {}; // countryId → { el, cx, cy }
 function _updateFallenFlagPos(node) {
   const sx = node.cx * scale + ox, sy = node.cy * scale + oy;
-  node.el.style.transform = 'translate(' + (sx - 7) + 'px, ' + (sy - 7) + 'px)';
+  // v144b: centred like the native flags (20x13) so fallen + standing flags line up.
+  node.el.style.transform = 'translate(' + (sx - 10) + 'px, ' + (sy - 6.5) + 'px)';
+  if (node.label) node.label.style.transform = 'translate(' + sx + 'px, ' + (sy + 8) + 'px) translateX(-50%)';
+}
+function _removeFallenFlag(id) {
+  const n = _fallenFlagNodes[id];
+  if (!n) return;
+  if (n.el) n.el.remove();
+  if (n.label) n.label.remove();
+  delete _fallenFlagNodes[id];
 }
 let _fallenZonesTimer = null;
 function scheduleFallenZones() {
@@ -5067,7 +5084,7 @@ function _renderFallenZones() {
     // holder's conquest flag AND a leftover white flag.
     const held = (typeof _holderOfGeo === 'function') && _holderOfGeo(id);
     if (c.n <= 0 || held || !ov) {
-      if (_fallenFlagNodes[id]) { _fallenFlagNodes[id].el.remove(); delete _fallenFlagNodes[id]; }
+      _removeFallenFlag(id);
       continue;
     }
     let cx = Math.round(c.sx / c.n), cy = Math.round(c.sy / c.n);
@@ -5076,24 +5093,31 @@ function _renderFallenZones() {
     if (!(featByPixel[ci] >= 0 && featList[featByPixel[ci]] && String(featList[featByPixel[ci]].id) === id)) { cx = c.repX; cy = c.repY; }
     let node = _fallenFlagNodes[id];
     if (!node) {
-      const el = document.createElement('div');
-      el.className = 'pa-fallen-flag';
-      // v144: show the fallen country's OWN flag, greyed out (instead of the generic
-      // Fallen.png marker) — easier to tell which nation fell. The country's real
-      // PNG is /flags/{A2}.png; on 404 fall back to the generic Fallen.png marker.
+      // v144b: a fallen flag is now CONSISTENT with the standing (native) flags — same
+      // size + a country-name label — just DESATURATED to 25% (saturate(0.25)) so it
+      // reads as "this nation has fallen" while still being recognisable. The country's
+      // real PNG is /flags/{A2}.png; on 404 fall back to the generic Fallen.png marker.
+      const _fi = idToFeatIdx.get(id);
       const _a2 = (typeof isoNumericToA2 === 'function') ? isoNumericToA2(id) : null;
       const _fsrc = _a2 ? ('/flags/' + _a2 + '.png') : '/flags/Fallen.png';
-      el.innerHTML = '<img src="' + _fsrc + '" alt="Fallen" onerror="this.onerror=null;this.src=\'/flags/Fallen.png\';this.style.filter=\'none\';" style="width:18px;height:auto;image-rendering:pixelated;display:block;filter:grayscale(1) brightness(0.7) contrast(0.9);opacity:0.85;">';
-      el.style.cssText = 'position:absolute;top:0;left:0;line-height:0;pointer-events:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.85));will-change:transform;z-index:1;';
+      const el = document.createElement('img');
+      el.className = 'pa-native-flag pa-fallen-flag';
+      el.alt = (_fi !== undefined && featList[_fi]) ? featList[_fi].name : 'Fallen';
+      el.src = _fsrc;
+      el.setAttribute('onerror', "this.onerror=null;this.src='/flags/Fallen.png';this.style.filter='none';");
       ov.appendChild(el);
-      node = _fallenFlagNodes[id] = { el, cx, cy };
+      const label = document.createElement('div');
+      label.className = 'pa-flag-label';
+      label.textContent = (_fi !== undefined && featList[_fi]) ? featList[_fi].name : '';
+      ov.appendChild(label);
+      node = _fallenFlagNodes[id] = { el, label, cx, cy };
     }
     node.cx = cx; node.cy = cy;
     _updateFallenFlagPos(node);
   }
   // drop flags for ids that are no longer fallen
   for (const id in _fallenFlagNodes) {
-    if (!cent[id]) { _fallenFlagNodes[id].el.remove(); delete _fallenFlagNodes[id]; }
+    if (!cent[id]) _removeFallenFlag(id);
   }
 }
 
@@ -5118,6 +5142,7 @@ let _nativeFlagsBuilt = false;
 function _updateNativeFlagPos(node) {
   const sx = node.cx * scale + ox, sy = node.cy * scale + oy;
   node.el.style.transform = 'translate(' + (sx - 10) + 'px, ' + (sy - 6.5) + 'px)';
+  if (node.label) node.label.style.transform = 'translate(' + sx + 'px, ' + (sy + 8) + 'px) translateX(-50%)';
 }
 function _refreshNativeFlagVis() {
   const myId = (currentIdx >= 0 && featList[currentIdx]) ? String(featList[currentIdx].id) : null;
@@ -5127,7 +5152,9 @@ function _refreshNativeFlagVis() {
     const dead = permanentlyConqueredSet.has(cid);
     const held = (typeof _holderOfGeo === 'function') && _holderOfGeo(cid);
     const standing = !dead && !held;
-    node.el.style.display = standing ? '' : 'none';
+    const disp = standing ? '' : 'none';
+    node.el.style.display = disp;
+    if (node.label) node.label.style.display = disp;
     // v144: your own country's flag gets the pulsing yellow glow (matches conquests).
     node.el.classList.toggle('mine-glow', standing && myId !== null && cid === myId);
   }
@@ -5184,7 +5211,12 @@ function _buildNativeFlags() {
     el.src = src;
     el.onerror = (function (ffi, im) { return function () { markRealFlagMissing(ffi); const fb = _renderFlagToDataURL(ffi); if (fb && im.src !== fb) im.src = fb; }; })(featList[fi], el);
     ov.appendChild(el);
-    const node = _nativeFlagNodes[cid] = { el, cx, cy };
+    // v144b: country-name label under the flag (reuses the conquest-flag label style).
+    const label = document.createElement('div');
+    label.className = 'pa-flag-label';
+    label.textContent = featList[fi].name || '';
+    ov.appendChild(label);
+    const node = _nativeFlagNodes[cid] = { el, label, cx, cy };
     _updateNativeFlagPos(node);
   }
   _nativeFlagsBuilt = true;
@@ -6921,9 +6953,12 @@ function runAutoFill(){
       const fillImg=claimCtx.getImageData(fillX0,fillY0,fw,fh);
       const fd=fillImg.data;
       for(const gi of enclosed){
-        const fx=(gi%MAP_W)-fillX0, fy=((gi/MAP_W)|0)-fillY0;
+        const gx=gi%MAP_W, gy=(gi/MAP_W)|0;
+        const fx=gx-fillX0, fy=gy-fillY0;
         const fp=(fy*fw+fx)*4;
-        fd[fp]=r;fd[fp+1]=g;fd[fp+2]=b;fd[fp+3]=166;// v130: 65% paint opacity
+        // v144b: encircled pixels are YOURS — render them with the diagonal stripe
+        // (was a flat 166), matching every other own-pixel paint path.
+        fd[fp]=r;fd[fp+1]=g;fd[fp+2]=b;fd[fp+3]=(((gx+gy)>>1)&1)?(_MINE_A_HI*255|0):(_MINE_A_LO*255|0);
       }
       claimCtx.putImageData(fillImg,fillX0,fillY0);
     }
@@ -10277,6 +10312,12 @@ function _finishSnapshotReplay() {
     };
     requestAnimationFrame(replayStep);
   }
+  // v144b: repaint the claim layer so the local player's HOME country pixels (and any
+  // own-painted/snapshot pixels) pick up the diagonal stripe + visible homeland. The
+  // snapshot paints everything flat; this is the only place that stripes "mine" on
+  // load (selectCountry only rebuilds on a CHANGE, which never fires for the initial
+  // self-select). prepopulate has set claimByPixel for native land by now.
+  if (typeof mpRebuildClaimCanvas === 'function') mpRebuildClaimCanvas();
   scheduleLegend();
   if (typeof scheduleFallenZones === 'function') scheduleFallenZones(); // v128: darken + flag fallen zones on load
   if (typeof scheduleNativeFlags === 'function') scheduleNativeFlags(); // v144b: flags for all standing countries
