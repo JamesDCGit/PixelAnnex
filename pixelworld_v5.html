@@ -1351,11 +1351,29 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   will-change: transform;
 }
 #flag-overlay { transition: opacity .2s linear; }
+/* v144b: native (standing-country) flags — one per playable nation at its centroid,
+   so countries are identifiable early game. Smaller + slightly transparent so they
+   read as background ID aids, distinct from the prominent conquest flags. */
+#flag-overlay .pa-native-flag{
+  position: absolute;
+  top: 0; left: 0;
+  width: 20px;
+  height: 13px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  opacity: 0.78;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  pointer-events: none;
+  will-change: transform;
+  z-index: 0; /* below conquest flags */
+}
 /* v144: pulsing yellow glow on flags belonging to the local player (their own
    country flag + their conquest flags) so they're easy to spot. box-shadow keeps
    the flag's black border ring (.pa-flag base) and pulses a yellow halo. */
-#flag-overlay .pa-flag.mine-glow{
-  z-index: 3; /* above sibling/occ flags */
+#flag-overlay .pa-flag.mine-glow,
+#flag-overlay .pa-native-flag.mine-glow{
+  z-index: 4; /* above sibling/occ flags */
+  opacity: 1;
   animation: flagMineGlow 1.4s ease-in-out infinite;
 }
 @keyframes flagMineGlow{
@@ -3957,7 +3975,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-28-v145';
+const CODE_VERSION = '2026-06-28-v146';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4946,6 +4964,7 @@ function _updateAllFlagPositions() {
     for (const e of arr) _updateFlagDOMPosition(e); // v95e: array of nodes per geo
   }
   for (const id in _fallenFlagNodes) _updateFallenFlagPos(_fallenFlagNodes[id]); // v128
+  for (const id in _nativeFlagNodes) _updateNativeFlagPos(_nativeFlagNodes[id]); // v144b
 }
 
 // ── v128: neutral "Fallen" zones ─────────────────────────────────────────────
@@ -5086,6 +5105,91 @@ function _updateFlagOpacity() {
   if (!overlay) return;
   overlay.style.opacity = '1';
   overlay.style.display = '';
+}
+
+// ── v144b: native (standing-country) flags ────────────────────────────────────
+// One flag per playable nation, drawn at its centroid, showing the country's OWN
+// flag — so players can identify countries from the very first paint (early-game
+// readability). A native flag is HIDDEN once its country is conquered (the holder's
+// conquest flag shows) or fallen (the greyed Fallen flag shows), and reappears if
+// the country is liberated. Built once after the first snapshot (geoPixelList ready).
+const _nativeFlagNodes = {}; // countryId → { el, cx, cy }
+let _nativeFlagsBuilt = false;
+function _updateNativeFlagPos(node) {
+  const sx = node.cx * scale + ox, sy = node.cy * scale + oy;
+  node.el.style.transform = 'translate(' + (sx - 10) + 'px, ' + (sy - 6.5) + 'px)';
+}
+function _refreshNativeFlagVis() {
+  const myId = (currentIdx >= 0 && featList[currentIdx]) ? String(featList[currentIdx].id) : null;
+  for (const cid in _nativeFlagNodes) {
+    const node = _nativeFlagNodes[cid];
+    // Show only while the nation is STANDING: not permanently dead and not foreign-held.
+    const dead = permanentlyConqueredSet.has(cid);
+    const held = (typeof _holderOfGeo === 'function') && _holderOfGeo(cid);
+    const standing = !dead && !held;
+    node.el.style.display = standing ? '' : 'none';
+    // v144: your own country's flag gets the pulsing yellow glow (matches conquests).
+    node.el.classList.toggle('mine-glow', standing && myId !== null && cid === myId);
+  }
+}
+let _nativeFlagsTimer = null;
+function scheduleNativeFlags() {
+  if (_nativeFlagsBuilt || _nativeFlagsTimer) { if (_nativeFlagsBuilt) _refreshNativeFlagVis(); return; }
+  _nativeFlagsTimer = setTimeout(() => {
+    _nativeFlagsTimer = null;
+    try { _buildNativeFlags(); } catch (e) { console.warn('[NativeFlags] build failed', e); }
+  }, 500);
+}
+function _buildNativeFlags() {
+  if (_nativeFlagsBuilt) { _refreshNativeFlagVis(); return; }
+  if (typeof _isMobileForMemory !== 'undefined' && _isMobileForMemory) return; // skip on mobile (DOM-node budget)
+  if (!geoPixelList || !landMask) return;
+  const ov = document.getElementById('flag-overlay');
+  if (!ov) return;
+  // Pass 1: per-country centroid (sum x/y over all the country's land pixels).
+  const acc = new Map(); // cid → { sx, sy, n, best, bestD }
+  for (let fi = 0; fi < featList.length; fi++) {
+    const f = featList[fi];
+    if (!f || !f.id || !isPlayableCountry(fi)) continue;
+    const src = geoPixelList[fi]; if (!src) continue;
+    const cid = String(f.id);
+    let a = acc.get(cid); if (!a) { a = { sx: 0, sy: 0, n: 0, best: -1, bestD: Infinity }; acc.set(cid, a); }
+    for (let k = 0; k < src.length; k++) { const i = src[k]; if (!landMask[i]) continue; a.sx += i % MAP_W; a.sy += (i / MAP_W) | 0; a.n++; }
+  }
+  // Pass 2: snap each centroid to the country's nearest actual land pixel (so a flag
+  // for a multi-island nation lands ON land, not in the ocean between landmasses).
+  for (let fi = 0; fi < featList.length; fi++) {
+    const f = featList[fi];
+    if (!f || !f.id) continue;
+    const cid = String(f.id); const a = acc.get(cid); if (!a || !a.n) continue;
+    const cx = a.sx / a.n, cy = a.sy / a.n;
+    const src = geoPixelList[fi]; if (!src) continue;
+    for (let k = 0; k < src.length; k++) {
+      const i = src[k]; if (!landMask[i]) continue;
+      const x = i % MAP_W, y = (i / MAP_W) | 0;
+      const d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+      if (d < a.bestD) { a.bestD = d; a.best = i; }
+    }
+  }
+  // Create the DOM flag nodes.
+  for (const [cid, a] of acc) {
+    if (a.best < 0) continue;
+    const fi = idToFeatIdx.get(cid); if (fi === undefined) continue;
+    const cx = a.best % MAP_W, cy = (a.best / MAP_W) | 0;
+    const el = document.createElement('img');
+    el.className = 'pa-native-flag';
+    el.alt = featList[fi].name || '';
+    el.title = featList[fi].name || '';
+    const src = getRealFlagURL(featList[fi]) || _renderFlagToDataURL(featList[fi]) || '';
+    el.src = src;
+    el.onerror = (function (ffi, im) { return function () { markRealFlagMissing(ffi); const fb = _renderFlagToDataURL(ffi); if (fb && im.src !== fb) im.src = fb; }; })(featList[fi], el);
+    ov.appendChild(el);
+    const node = _nativeFlagNodes[cid] = { el, cx, cy };
+    _updateNativeFlagPos(node);
+  }
+  _nativeFlagsBuilt = true;
+  _refreshNativeFlagVis();
+  console.log('[NativeFlags] built', Object.keys(_nativeFlagNodes).length, 'standing-country flags');
 }
 
 // v95f: centre of a single connected landmass = its pixel CENTROID, snapped to
@@ -10175,6 +10279,7 @@ function _finishSnapshotReplay() {
   }
   scheduleLegend();
   if (typeof scheduleFallenZones === 'function') scheduleFallenZones(); // v128: darken + flag fallen zones on load
+  if (typeof scheduleNativeFlags === 'function') scheduleNativeFlags(); // v144b: flags for all standing countries
   // v95a: snapshot (incl. conqueredSet) is now applied — unblock the fallen re-pick.
   _snapshotApplied = true;
   _bootStage('ready'); // v118a: snapshot applied without crashing — clear the diagnostic
@@ -10749,6 +10854,7 @@ function mpHandleMessage(msg) {
       scheduleLegend();
       refreshConqueredCountLocal(); // v92b: instant Conquered-count update
       if (typeof scheduleFallenZones === 'function') scheduleFallenZones(); // v128: clear a fallen flag if this geo was retaken
+      if (typeof _refreshNativeFlagVis === 'function') _refreshNativeFlagVis(); // v144b: hide native flag of the conquered country
       break;
     }
 
@@ -10771,6 +10877,7 @@ function mpHandleMessage(msg) {
       scheduleLegend();
       refreshConqueredCountLocal(); // v92b: instant Conquered-count update
       if (typeof scheduleFallenZones === 'function') scheduleFallenZones(); // v128: darken + flag the newly-fallen zone
+      if (typeof _refreshNativeFlagVis === 'function') _refreshNativeFlagVis(); // v144b: restore native flag if the country was liberated
       break;
     }
 
@@ -13814,6 +13921,7 @@ function selectCountry(idx){
   // pixels pick up the diagonal stripe + visible homeland (and inversion, if on).
   // Guarded on a real change — never runs on the boot-time self-select.
   if(_countryChanged && typeof mpRebuildClaimCanvas === 'function') mpRebuildClaimCanvas();
+  if(_countryChanged && typeof _refreshNativeFlagVis === 'function') _refreshNativeFlagVis(); // v144b: move the yellow glow to your new country's flag
   const sw = document.getElementById('swatch');
   if(sw) sw.style.background = f.color;
   document.getElementById('csel-label').textContent = f.name;
