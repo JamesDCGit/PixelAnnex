@@ -3926,9 +3926,24 @@ function rebuildFeatIndex(){
 // _renderRgb(fi); a full claim-layer repaint applies it to existing pixels.
 let _invertOwn = false;
 try { _invertOwn = localStorage.getItem('pa_invert_own') === '1'; } catch(e){}
+// v148a: a country can have MULTIPLE featList entries that share one country id
+// (multipolygon split — Australia = mainland + Tasmania + islands). currentIdx is
+// only ONE of them, but the bake/prepopulate stores each polygon's OWN index in
+// claimByPixel, so keying "mine" off `=== currentIdx` missed the other polygons
+// (Australia's mainland wasn't striped and was paintable). _myCountryIdxSet holds
+// EVERY featList index of the player's country; _isMyIdx is the canonical "is this
+// pixel-owner me?" test used by the stripe render + the can't-paint-own guards.
+let _myCountryIdxSet = new Set();
+function _rebuildMyIdxSet(){
+  _myCountryIdxSet = new Set();
+  if (currentIdx < 0 || !featList[currentIdx]) return;
+  const myId = String(featList[currentIdx].id);
+  for (let i = 0; i < featList.length; i++) { if (featList[i] && String(featList[i].id) === myId) _myCountryIdxSet.add(i); }
+}
+function _isMyIdx(fi){ return fi >= 0 && _myCountryIdxSet.has(fi); }
 function _renderRgb(fi){
   const c = colorCache[fi] || (featList[fi] && featList[fi].color ? hexRgb(featList[fi].color) : [128,128,128]);
-  if (_invertOwn && fi === currentIdx) return [255 - c[0], 255 - c[1], 255 - c[2]];
+  if (_invertOwn && _isMyIdx(fi)) return [255 - c[0], 255 - c[1], 255 - c[2]];
   return c;
 }
 // v144b: the LOCAL player's pixels (home country + conquered outposts) render with
@@ -3983,7 +3998,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-29-v148';
+const CODE_VERSION = '2026-06-29-v149';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6391,7 +6406,7 @@ function claimPixel(px,py){
   // Reject paint inside an active nuke lockout zone
   if (typeof isInNukeZone === 'function' && isInNukeZone(px, py)) return;
   const prev=claimByPixel[i];
-  if(prev===currentIdx)return;
+  if(_isMyIdx(prev))return; // v148a: can't repaint ANY pixel already yours (id-aware, multipolygon)
   const geo=featByPixel[i];
   if(prev>=0){
     claimerCount[prev]=(claimerCount[prev]||1)-1;
@@ -6428,7 +6443,7 @@ function claimPixel(px,py){
   // painting your own land should be calm — no attention-grabbing pulse. Painting
   // into other countries (expansion/attack), and own-land paints DURING fight-back,
   // still flash.
-  if (!(geo === currentIdx && !_fightbackActive)) flashPixel(px, py);
+  if (!(_isMyIdx(geo) && !_fightbackActive)) flashPixel(px, py); // v148a: id-aware
   markOutlineDirty(px, py);
 }
 
@@ -6436,7 +6451,7 @@ function paintBrush(px,py){
   // Reject ocean clicks — landMask check at brush centre
   if(!landMask||!landMask[py*MAP_W+px]) return;
   // Block painting if this pixel already belongs to the same country (wastage prevention)
-  if(claimByPixel[py*MAP_W+px]===currentIdx) return;
+  if(_isMyIdx(claimByPixel[py*MAP_W+px])) return; // v148a: id-aware (multipolygon-safe)
   // Inventory gate: each brush call costs 1 pixel.
   // v98: require a FULL pixel and clamp — fractional accrual (e.g. 0.6) must
   // never let a spend drive the bucket negative.
@@ -9949,11 +9964,11 @@ function redrawOutline(){
   for(let y = y0; y <= y1; y++){
     const rowOff = y * MAP_W;
     for(let x = x0; x <= x1; x++){
-      if(claimByPixel[rowOff + x] !== currentIdx) continue;
+      if(!_isMyIdx(claimByPixel[rowOff + x])) continue; // v148a: id-aware (multipolygon)
       for(let d4 = 0; d4 < 4; d4++){
         const nx = x + DX[d4], ny = y + DY[d4];
         if(nx < x0 || nx > x1 || ny < y0 || ny > y1) continue;
-        if(claimByPixel[ny * MAP_W + nx] === currentIdx) continue;
+        if(_isMyIdx(claimByPixel[ny * MAP_W + nx])) continue;
         const lx = nx - x0, ly = ny - y0;
         const p = (ly * w + lx) * 4;
         // v144: yellow outline (was white) for your selected country; the #c-outline
@@ -10638,7 +10653,7 @@ function flushPaintQueue() {
   for (const [fi, arr] of readyByFi) {
     const rgb = _renderRgb(fi); // v97g
     if (!rgb) continue;
-    if (fi === currentIdx) {
+    if (_isMyIdx(fi)) { // v148a: id-aware (multipolygon)
       // v144b: the local player's pixels (own deltas + finisherFill of your conquests)
       // render with the diagonal stripe. Two prebuilt fill styles (HI/LO band); clear
       // first so the striped alpha sits on the biome, not over a prior owner.
@@ -11721,12 +11736,14 @@ function mpRebuildClaimCanvas() {
   // v97g: honour "invert my pixels" for the current player's own pixels.
   let ownInv = null;
   if (_invertOwn && currentIdx >= 0) { const c = colorCache[currentIdx] || [128,128,128]; ownInv = [255-c[0],255-c[1],255-c[2]]; }
+  _rebuildMyIdxSet(); // v148a: ensure the id-aware "my pixels" set is current
   for (let i = 0; i < MAP_PX; i++) {
     const fi = claimByPixel[i];
     if (fi < 0 || !featList[fi]) continue;
-    const rgb = (ownInv && fi === currentIdx) ? ownInv : (colorCache[fi] || hexRgb(featList[fi].color));
+    const mine = _myCountryIdxSet.has(fi); // v148a: id-aware (all polygons of my country)
+    const rgb = (ownInv && mine) ? ownInv : (colorCache[fi] || hexRgb(featList[fi].color));
     let alpha;
-    if (fi === currentIdx) {
+    if (mine) {
       // v144b: the local player's pixels (home country INCLUDED, not just conquests)
       // render striped + clearly visible — instant "this is mine" identification,
       // consistent whether it's homeland or an outpost.
@@ -13956,6 +13973,7 @@ function _resetBonusesForCountryChange(){
 function selectCountry(idx){
   const _countryChanged = (idx !== currentIdx);
   currentIdx = idx;
+  _rebuildMyIdxSet(); // v148a: refresh the id-aware "my pixels" set (multipolygon-safe)
   markOutlineDirty();
   const f = featList[idx];
   if(!f) return;
