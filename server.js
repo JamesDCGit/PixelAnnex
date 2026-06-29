@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-29-v151';
+const SERVER_VERSION       = '2026-06-29-v152';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -4461,6 +4461,11 @@ setInterval(() => {
       // Lost the homeland AND every outpost → truly dead now.
       exiledSet.delete(exId);
       permanentlyConquered.add(String(exId));
+      // v152: tell ALL clients this country is now permanently fallen (not just its own
+      // players via your_country_lost below). Otherwise observers keep it as merely
+      // "held" and the picker — which greys only permanentlyConquered — leaves the dead
+      // country SELECTABLE (the "North Korea still selectable, homeland fallen" bug).
+      broadcast(JSON.stringify({ type: 'country_fallen', countryId: String(exId) }));
       console.log('[Exile]', exId, 'lost all outposts — final death');
       for (const [, pp] of players) {
         if (!pp.isBot && pp.ws && String(pp.countryId) === String(exId)) {

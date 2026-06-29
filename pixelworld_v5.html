@@ -3998,7 +3998,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-29-v151';
+const CODE_VERSION = '2026-06-29-v152';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -10961,6 +10961,21 @@ function mpHandleMessage(msg) {
       _clearHolderEverywhere(msg.countryId);
       scheduleLegend();
       refreshConqueredCountLocal();
+      break;
+    }
+
+    case 'country_fallen': {
+      // v152: a country became PERMANENTLY fallen (an exile lost its last outpost and
+      // died in the server sweep). Previously only the dying player was told
+      // (your_country_lost), so OTHER clients kept it as merely "held" and the picker
+      // (greys only permanentlyConquered) left the dead country selectable. Sync the
+      // perm set on every client so it greys out + renders as a fallen zone.
+      permanentlyConqueredSet.add(String(msg.countryId));
+      if (typeof _refreshNativeFlagVis === 'function') _refreshNativeFlagVis();
+      if (typeof scheduleFallenZones === 'function') scheduleFallenZones();
+      if (typeof refreshCsel === 'function') refreshCsel(); // re-grey the in-game picker
+      refreshConqueredCountLocal();
+      scheduleLegend();
       break;
     }
 
