@@ -3051,13 +3051,24 @@ function _totalCountries() {
 // "Country NNN" / "Disputed Territory" features and landless geos). standing = not
 // yet conquered; fallen = homeland permanentlyConquered. standing+fallen = total.
 function _playableCountryStats() {
-  let total = 0, fallen = 0;
+  // v151a: a country is "standing" only if its homeland is genuinely FREE — not
+  // permanentlyConquered (fallen) AND not currently HELD by a foreigner. The old count
+  // only subtracted permanentlyConquered, so EXILED countries (homeland conquered, alive
+  // via outposts → not perm) and transfer/re-take holds were wrongly counted as standing,
+  // inflating "countries left" (the reported "37 playable but most are conquered" bug).
+  const heldNatives = new Set();
+  for (const k of conqueredSet) {
+    const p = String(k).split(':');
+    if (p[0] && p[1] && p[0] !== p[1]) heldNatives.add(p[0]); // server keys = nativeId:holderId
+  }
+  let total = 0, fallen = 0, held = 0;
   for (const id of Object.keys(countryNames || {})) {
     if (!_isPlayableNation(id)) continue; // v101a: excludes micro countries (Vatican etc.) too
     total++;
     if (permanentlyConquered.has(String(id))) fallen++;
+    else if (heldNatives.has(String(id))) held++;
   }
-  return { total, fallen, standing: Math.max(0, total - fallen) };
+  return { total, fallen, held, standing: Math.max(0, total - fallen - held) };
 }
 function _isPaintLocked() { return _worldConquestActive; }
 
@@ -3077,10 +3088,17 @@ let _endgamePayload = null;   // last _computeEndgame() result (served + broadca
 
 // v105: playable nations whose homeland still stands (not permanentlyConquered).
 function _standingNations() {
+  // v151a: exclude currently-held homelands (exile/transfer) too, not just perm-fallen.
+  const heldNatives = new Set();
+  for (const k of conqueredSet) {
+    const p = String(k).split(':');
+    if (p[0] && p[1] && p[0] !== p[1]) heldNatives.add(p[0]);
+  }
   const out = [];
   for (const id of Object.keys(countryNames || {})) {
     if (!_isPlayableNation(id)) continue;
     if (permanentlyConquered.has(String(id))) continue;
+    if (heldNatives.has(String(id))) continue;
     out.push(_countryName(id));
   }
   return out;
@@ -3153,8 +3171,10 @@ function _computeEndgame() {
     total++;
     const sid = String(id);
     let controller = null;
-    if (!permanentlyConquered.has(sid)) controller = sid;        // standing: holds itself
-    else { fallen++; controller = holderOf[sid] || null; }       // fallen: current holder or neutral
+    // v151a: a homeland that's currently HELD by a foreigner is NOT standing even if the
+    // native isn't permanently dead (exile/transfer) — credit the holder, count it as down.
+    if (!permanentlyConquered.has(sid) && !holderOf[sid]) controller = sid; // standing: free homeland
+    else { fallen++; controller = holderOf[sid] || null; }                  // fallen/held: current holder or neutral
     if (controller) blocFor(controller).countriesHeld++;
   }
   for (const b of blocs.values()) {
