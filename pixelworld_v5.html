@@ -3998,7 +3998,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-29-v149';
+const CODE_VERSION = '2026-06-29-v150';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -5161,15 +5161,22 @@ function _updateNativeFlagPos(node) {
 }
 function _refreshNativeFlagVis() {
   const myId = (currentIdx >= 0 && featList[currentIdx]) ? String(featList[currentIdx].id) : null;
+  // v149a: country ids that currently have a CONQUEST flag (any polygon). A native
+  // flag must never coexist with a conquest flag (the "two flags" bug) — id-keyed so
+  // it's multipolygon-safe and catches LOCALLY-PREDICTED conquests (checkConquest →
+  // finisherFill → placeFlag) that never emit a 'conquest' message.
+  const _conqFlagCids = new Set();
+  for (const gi in _flagDOMNodes) {
+    const arr = _flagDOMNodes[gi];
+    if (arr && arr.length && featList[gi]) _conqFlagCids.add(String(featList[gi].id));
+  }
   for (const cid in _nativeFlagNodes) {
     const node = _nativeFlagNodes[cid];
     // Show only while the nation is STANDING: not permanently dead, not foreign-held,
-    // and with NO conquest flag on its homeland geo (defensive — a native flag must
-    // never coexist with a conquest flag, the "two flags" bug).
+    // and with NO conquest flag on its homeland.
     const dead = permanentlyConqueredSet.has(cid);
     const held = (typeof _holderOfGeo === 'function') && _holderOfGeo(cid);
-    const gfi = idToFeatIdx.get(cid);
-    const hasConquestFlag = gfi !== undefined && _flagDOMNodes[gfi] && _flagDOMNodes[gfi].length;
+    const hasConquestFlag = _conqFlagCids.has(cid);
     const standing = !dead && !held && !hasConquestFlag;
     const disp = standing ? '' : 'none';
     node.el.style.display = disp;
@@ -5314,6 +5321,9 @@ function placeFlag(geoIdx, claimerIdx){
   const c = _landmassCenter(largest);
   placedFlags[geoIdx] = { claimerIdx, cx: c.cx, cy: c.cy };
   _placeFlagDOM(geoIdx, featList[claimerIdx], [c]); // single flag (DOM layer takes an array)
+  // v149a: a conquest flag now exists on this geo — hide its native map flag so the
+  // two never coexist (covers the LOCAL-prediction path that emits no 'conquest' msg).
+  if (typeof _refreshNativeFlagVis === 'function' && _nativeFlagsBuilt) _refreshNativeFlagVis();
 }
 
 // v96a: clear a departed holder's pixels within a geo (all polygons of the geo's
@@ -5364,6 +5374,9 @@ function _clearHolderEverywhere(holderCountryId){
 // Erase a flag for a geo country (when recaptured)
 function eraseFlag(geoIdx){
   _eraseFlagDOM(geoIdx); // v33
+  // v149a: conquest flag gone — restore the native map flag if the country is standing.
+  // Placed BEFORE the placedFlags early-return (that map is separate from the DOM nodes).
+  if (typeof _refreshNativeFlagVis === 'function' && _nativeFlagsBuilt) _refreshNativeFlagVis();
   const f=placedFlags[geoIdx];
   if(!f) return;
   const ox=f.cx-Math.floor(FLAG_W/2)-1;
