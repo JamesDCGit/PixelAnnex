@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-06-29-v150';
+const SERVER_VERSION       = '2026-06-29-v151';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -115,6 +115,12 @@ const CONTEST_TOTAL_FRAC = 0.85; // v95n: group/contested bar vs ALL land — fo
 // (group) — so a passive/fresh country can't be taken at ~45% by dominating the
 // little that's painted.
 const CONTEST_LARGE_MIN  = 8000; // px; painted-relative contested allowed only above this
+// v151: the lenient painted-relative path discounted the huge unpainted interior, so
+// a giant like China could fall to its largest holder at ~40-50% of TOTAL (it only had
+// to dominate the PAINTED area). Now the winning holder must ALSO own at least half the
+// WHOLE country to take it that way. The strict decisiveCoverage path (>=85% of total)
+// is unaffected.
+const CONTEST_WINNER_MIN_FRAC = 0.50; // single largest holder must own >= 50% of TOTAL on the painted-relative path
 // ── v93p (#1): empire-backed homeland defense ─────────────────────
 // Each territory a country has conquered ("outpost") raises the bar to take its
 // HOMELAND, so expansion makes you harder to dislodge — gains feel durable while
@@ -4953,7 +4959,7 @@ function _evaluateConqueror(geo, total, dropEmpireBonus, excludeId, championOnly
   // v95n: painted-relative leniency only for genuinely large countries; everyone
   // else must reach the total-based bar (decisiveCoverage) so a sparsely-painted
   // small country can't be taken at ~45%.
-  const contestedMajority = total > CONTEST_LARGE_MIN && painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb);
+  const contestedMajority = total > CONTEST_LARGE_MIN && painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb) && (topCnt / total) >= CONTEST_WINNER_MIN_FRAC; // v151: winner must hold >=50% of TOTAL
   const decisiveCoverage  = (foreignSum / total) >= Math.min(0.98, CONTEST_TOTAL_FRAC + _eb);
   if (topId && topCnt > nativeOwned && (contestedMajority || decisiveCoverage)) return topId;
   return null;
@@ -5234,7 +5240,8 @@ function applyPixels(pixels, countryId) {
       const painted = foreignSum + nativeOwned;
       const _eb = empireDefenseBonus(_geoId);
       // v95n: painted-relative leniency only for genuinely large countries.
-      const contestedMajority = total > CONTEST_LARGE_MIN && painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb);
+      // v151: + winner must own >= 50% of TOTAL on the lenient painted-relative path.
+      const contestedMajority = total > CONTEST_LARGE_MIN && painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= Math.min(0.98, CONTEST_MAJORITY + _eb) && (topCnt / total) >= CONTEST_WINNER_MIN_FRAC;
       const decisiveCoverage  = (foreignSum / total) >= Math.min(0.98, CONTEST_TOTAL_FRAC + _eb);
       if (topId && topCnt > nativeOwned && !conqueredSet.has(geo + ':' + topId) && (contestedMajority || decisiveCoverage)) {
         _conquerGeo(geo, topId, conquests, changed);
@@ -7355,7 +7362,7 @@ const httpServer = http.createServer(async (req, res) => {
         const painted = foreignSum + nativeCnt;
         const topForeign = holders.find(h => !h.native && h.pixels > 0);
         const topCnt = topForeign ? topForeign.pixels : 0;
-        const contestedMajority = total > CONTEST_LARGE_MIN && painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= CONTEST_MAJORITY;
+        const contestedMajority = total > CONTEST_LARGE_MIN && painted > 0 && (painted / total) >= CONTEST_FLOOR && (foreignSum / painted) >= CONTEST_MAJORITY && (topCnt / total) >= CONTEST_WINNER_MIN_FRAC; // v151
         const decisiveCoverage  = total ? (foreignSum / total) >= CONTEST_TOTAL_FRAC : false;
         return {
           paintedPct:          total ? +(painted / total * 100).toFixed(1) : 0,

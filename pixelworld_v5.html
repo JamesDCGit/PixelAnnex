@@ -3998,7 +3998,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-29-v150';
+const CODE_VERSION = '2026-06-29-v151';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -14285,11 +14285,13 @@ vp.addEventListener("mousemove",e=>{
         let _threatPct, _dangerLo;
         if (total >= _CONTEST_LARGE_MIN) {
           _threatPct = total ? _foreignSum / total : 0;
-          _dangerLo  = Math.max(0.30, _effThresh - 0.35);
         } else {
           _threatPct = total ? _threatCnt / total : 0;
-          _dangerLo  = Math.max(0.40, _effThresh - 0.25);
         }
+        // v151: the red danger flash now starts exactly 10 points below the effective
+        // conquest threshold for this country (was 25-35pts) — a tighter "about to fall"
+        // warning. The threshold itself is size-scaled + empire-bonus aware (_effThresh).
+        _dangerLo = Math.max(0.05, _effThresh - 0.10);
         const _threatened = _threatPct >= _dangerLo;
         // Opening <span> for an owner % — flashes (variable speed) when threatened.
         const _dangerOpen = () => {
@@ -14304,6 +14306,17 @@ vp.addEventListener("mousemove",e=>{
         html2 += flagAny(_nativeFeat.id,1)
           + "<span style='color:"+_nativeFeat.color+";font-weight:600'>"+_nativeFeat.name+"</span>"
           + _natOpen + " "+_nativePct+"% (Original)</span><br>";
+        // v151: per-country "% until conquered" hint — each country's effective fall
+        // threshold differs (size-scaled + empire bonus), so show how much more foreign
+        // share is needed before it falls. Only for a STANDING country (an already-
+        // conquered one has fallen). Driven by the same metric as the danger flash.
+        if(!_holderFeat){
+          const _untilPct = Math.max(0, Math.round((_effThresh - _threatPct) * 100));
+          const _ucHtml = _untilPct <= 0
+            ? "<span style='color:#ef4444;font-weight:700'>&#9888; at risk of falling!</span>"
+            : "<span style='color:#f59e0b'>&#9876; "+_untilPct+"% until conquered</span>";
+          html2 += "<span style='font-size:10px'>"+_ucHtml+"</span><br>";
+        }
         if(_foreign.length===0){
           html2+="<span style='color:#475569;font-size:10px'>No invaders</span>";
         } else {
