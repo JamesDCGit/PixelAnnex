@@ -3051,24 +3051,20 @@ function _totalCountries() {
 // "Country NNN" / "Disputed Territory" features and landless geos). standing = not
 // yet conquered; fallen = homeland permanentlyConquered. standing+fallen = total.
 function _playableCountryStats() {
-  // v151a: a country is "standing" only if its homeland is genuinely FREE — not
-  // permanentlyConquered (fallen) AND not currently HELD by a foreigner. The old count
-  // only subtracted permanentlyConquered, so EXILED countries (homeland conquered, alive
-  // via outposts → not perm) and transfer/re-take holds were wrongly counted as standing,
-  // inflating "countries left" (the reported "37 playable but most are conquered" bug).
-  const heldNatives = new Set();
-  for (const k of conqueredSet) {
-    const p = String(k).split(':');
-    if (p[0] && p[1] && p[0] !== p[1]) heldNatives.add(p[0]); // server keys = nativeId:holderId
-  }
-  let total = 0, fallen = 0, held = 0;
+  // v152a: "countries left" = nations NOT eliminated = not permanentlyConquered. This
+  // matches the picker (which greys perm-fallen). The v151a attempt to also exclude
+  // currently-HELD homelands wrongly dropped EXILED powers still very much in the game
+  // (Cuba/Australia holding dozens of outposts) → a misleading "2 left". The real bug it
+  // was papering over — held countries with NO outposts that were never marked dead
+  // (zombies) — is now fixed at the source by the reconciliation sweep, which marks them
+  // permanentlyConquered, so this simple count is accurate again.
+  let total = 0, fallen = 0;
   for (const id of Object.keys(countryNames || {})) {
     if (!_isPlayableNation(id)) continue; // v101a: excludes micro countries (Vatican etc.) too
     total++;
     if (permanentlyConquered.has(String(id))) fallen++;
-    else if (heldNatives.has(String(id))) held++;
   }
-  return { total, fallen, held, standing: Math.max(0, total - fallen - held) };
+  return { total, fallen, standing: Math.max(0, total - fallen) };
 }
 function _isPaintLocked() { return _worldConquestActive; }
 
@@ -3088,17 +3084,13 @@ let _endgamePayload = null;   // last _computeEndgame() result (served + broadca
 
 // v105: playable nations whose homeland still stands (not permanentlyConquered).
 function _standingNations() {
-  // v151a: exclude currently-held homelands (exile/transfer) too, not just perm-fallen.
-  const heldNatives = new Set();
-  for (const k of conqueredSet) {
-    const p = String(k).split(':');
-    if (p[0] && p[1] && p[0] !== p[1]) heldNatives.add(p[0]);
-  }
+  // v152a: reverted the v151a held-exclusion — a nation is "still standing" if it's not
+  // eliminated (permanentlyConquered); exiled powers count. Zombies are marked perm by
+  // the reconciliation sweep so they no longer leak in.
   const out = [];
   for (const id of Object.keys(countryNames || {})) {
     if (!_isPlayableNation(id)) continue;
     if (permanentlyConquered.has(String(id))) continue;
-    if (heldNatives.has(String(id))) continue;
     out.push(_countryName(id));
   }
   return out;
@@ -3171,10 +3163,11 @@ function _computeEndgame() {
     total++;
     const sid = String(id);
     let controller = null;
-    // v151a: a homeland that's currently HELD by a foreigner is NOT standing even if the
-    // native isn't permanently dead (exile/transfer) — credit the holder, count it as down.
-    if (!permanentlyConquered.has(sid) && !holderOf[sid]) controller = sid; // standing: free homeland
-    else { fallen++; controller = holderOf[sid] || null; }                  // fallen/held: current holder or neutral
+    // v152a: reverted v151a — a not-eliminated nation counts as standing (exiles remain in
+    // the game). Zombies are marked perm by the reconciliation sweep, so this no longer
+    // over-counts. A permanently-fallen homeland is credited to its current holder.
+    if (!permanentlyConquered.has(sid)) controller = sid;        // standing: still in the game
+    else { fallen++; controller = holderOf[sid] || null; }       // fallen: current holder or neutral
     if (controller) blocFor(controller).countriesHeld++;
   }
   for (const b of blocs.values()) {
@@ -4480,6 +4473,37 @@ setInterval(() => {
       }
       _onCountryConquered(String(exId)); // clear any stray pixels
     }
+  }
+  // v152a: ZOMBIE reconciliation. A country whose homeland is currently HELD by a
+  // foreigner and that holds NO outposts is effectively DEAD — it has no territory of
+  // its own and nothing to fight from. But some reach this state WITHOUT ever being
+  // marked dead: a homeland taken via a transfer/contested path (not the fresh-kill
+  // death in _conquerGeo), or an exile whose homeland-holder vanished (mis-read as
+  // "reclaimed"). They linger as "held-not-perm" — still SELECTABLE in the picker, still
+  // littering other countries with stray pixels (the "North Korea 6% of Canada, still
+  // selectable" report). Resolve them to permanently fallen + liquidate their stray
+  // pixels. Rate-limited (the per-country liquidation is a 2M-px scan) and skips any
+  // country a human is actively playing (they may be mid-reclaim of their own homeland).
+  {
+    const MAX_ZOMBIE_KILLS_PER_TICK = 10;
+    let _zk = 0;
+    const _humanCountries = new Set();
+    for (const [, pp] of players) { if (!pp.isBot && pp.countryId) _humanCountries.add(String(pp.countryId)); }
+    for (const id of Object.keys(countryNames || {})) {
+      if (_zk >= MAX_ZOMBIE_KILLS_PER_TICK) break;
+      const sid = String(id);
+      if (permanentlyConquered.has(sid) || exiledSet.has(sid)) continue; // already handled
+      if (_humanCountries.has(sid)) continue;                            // may be reclaiming — leave it
+      if (!_isPlayableNation(sid)) continue;
+      if (_foreignHolderOf(sid) === null) continue;                      // homeland is free → not a zombie
+      if (_countryOutposts(sid).length > 0) continue;                    // holds outposts → an exile, still alive
+      _zk++;
+      permanentlyConquered.add(sid);
+      broadcast(JSON.stringify({ type: 'country_fallen', countryId: sid })); // v152: clients grey it + render Fallen
+      _onCountryConquered(sid); // liquidate its stray foreign pixels (ally-inherit or clear)
+      console.log('[Zombie]', sid, _countryName(sid), '— held with no outposts, marked permanently fallen + liquidated');
+    }
+    if (_zk >= MAX_ZOMBIE_KILLS_PER_TICK) console.log('[Zombie] hit per-tick cap; more will resolve next sweep');
   }
 }, 60_000);
 
