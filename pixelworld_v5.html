@@ -3998,7 +3998,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-06-29-v152';
+const CODE_VERSION = '2026-07-01-v153';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8858,6 +8858,11 @@ let _fallenRepickTries = 0;
 function _tryShowFallenRepick() {
   if (_fallenRepickDone) return;
   if (document.getElementById('repick-overlay')) return;
+  // v153: never while the welcome screen is up — it IS a country picker, so the default
+  // (auto-joined) country being fallen must not pop a re-pick over it. Defer until the
+  // player closes the welcome by choosing a country (they can't pick a fallen one).
+  const _tut = document.getElementById('tutorial-overlay');
+  if (_tut && _tut.classList.contains('open')) { setTimeout(_tryShowFallenRepick, 800); return; }
   const dp = document.getElementById('daily-popup-overlay');
   if (dp && dp.classList.contains('open')) return; // wait for Welcome Back to be dismissed
   // v95a: wait for the board snapshot to be applied before reading conqueredSet —
@@ -15138,70 +15143,100 @@ function _outpostInfo(holderId, geoCountryId) {
 let _repickAwarded = false;
 function _showCountryRepickModal(data) {
   if (document.getElementById('repick-overlay')) return;
+  // v153: never over the welcome screen — the welcome IS a country picker, so a
+  // "your country has fallen, pick again" modal on top is redundant + confusing (and
+  // was firing for the default auto-joined country before the player chose anything).
+  const _tut = document.getElementById('tutorial-overlay');
+  if (_tut && _tut.classList.contains('open')) return;
   const overlay = document.createElement('div');
   overlay.id = 'repick-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(7,13,26,0.96);' +
-    'color:#e2e8f0;font-family:"Courier New",monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;';
-  // v93q (#4): surface the progression the player KEEPS, so a wipe never feels
-  // like total loss. data.keep = { conquests, rank, points } from the server.
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(7,13,26,0.94);' +
+    'font-family:"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
+  // v153: welcome-screen-style picker (matches #tutorial-box + the qs curated grid +
+  // searchable list), replacing the bespoke red grid.
+  const card = document.createElement('div');
+  card.id = 'repick-box';
+  card.style.cssText = 'background:#0c1526;border:1px solid #1e293b;border-radius:12px;width:min(560px,94vw);' +
+    'max-height:92vh;overflow-y:auto;padding:18px 20px;color:#e2e8f0;' +
+    'box-shadow:0 16px 80px rgba(0,0,0,0.9),0 0 0 1px rgba(255,255,255,0.05) inset;';
+  // v93q (#4): surface the progression the player KEEPS, so a wipe never feels like total loss.
   var _keep = data && data.keep;
   var _keepHtml = _keep
-    ? '<div style="font-size:13px;color:#22c55e;margin-bottom:16px;">You keep everything you earned: 🏆 <b>' +
-      (_keep.conquests || 0) + '</b> conquests · 🎖️ <b>' + escapeHtml(String(_keep.rank || 'Soldier')) +
+    ? '<div style="font-size:12px;color:#22c55e;text-align:center;margin-bottom:12px;">You keep everything you earned: 🏆 <b>' +
+      (_keep.conquests || 0) + '</b> · 🎖️ <b>' + escapeHtml(String(_keep.rank || 'Soldier')) +
       '</b> · <b>' + (_keep.points || 0).toLocaleString() + '</b> pts</div>'
     : '';
-  // v93z: bonus text only when there's actually a bonus (e.g. a load-time re-pick
-  // for a country that fell before you joined awards nothing).
   var _mb = (data && data.mercenaryBonus) || 0;
   var _subHtml = _mb > 0
-    ? 'Pick a new allegiance to play as. <b style="color:#fbbf24">+' + _mb + ' mercenary bonus</b> on selection.'
-    : 'Your country has already fallen. Pick a new allegiance to play as.';
-  overlay.innerHTML =
-    '<div style="font-size:28px;font-weight:700;color:#f87171;margin-bottom:6px;">⚔️ YOUR COUNTRY HAS FALLEN ⚔️</div>' +
-    '<div style="font-size:13px;color:#94a3b8;margin-bottom:18px;">' + _subHtml + '</div>' +
+    ? 'Pick a new allegiance. <b style="color:#fbbf24">+' + _mb + ' mercenary bonus</b> on selection.'
+    : 'Your country has fallen. Pick a new allegiance to play as.';
+  card.innerHTML =
+    '<div style="font-size:22px;font-weight:700;color:#f87171;text-align:center;margin-bottom:4px;letter-spacing:.03em;">⚔️ YOUR COUNTRY HAS FALLEN</div>' +
+    '<div style="font-size:12px;color:#94a3b8;text-align:center;margin-bottom:12px;">' + _subHtml + '</div>' +
     _keepHtml +
-    '<input type="text" id="repick-search" placeholder="Search countries…" style="background:#0f172a;border:1px solid #1e293b;color:#e2e8f0;padding:8px 12px;border-radius:6px;font-size:13px;width:280px;font-family:inherit;margin-bottom:12px;">' +
-    '<div id="repick-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;max-width:720px;max-height:60vh;overflow-y:auto;width:100%;padding:8px;"></div>' +
-    '<div style="font-size:10px;color:#475569;margin-top:14px;">Your XP, rank, and stats are preserved.</div>';
+    '<div id="repick-top" class="qs-top-grid" style="margin-bottom:10px;"></div>' +
+    '<input type="text" id="repick-search" class="tut-country-search" placeholder="Search countries…" autocomplete="off">' +
+    '<div id="repick-list" class="tut-country-list"></div>';
+  overlay.appendChild(card);
   document.body.appendChild(overlay);
+  function _fallenId(id) {
+    return (typeof _isCountryFallenClient === 'function' && _isCountryFallenClient(id)) ||
+           (typeof _qsIsFallen === 'function' && _qsIsFallen(id));
+  }
+  function _pickRepickById(id) {
+    const idx = (typeof idToFeatIdx !== 'undefined' && idToFeatIdx) ? idToFeatIdx.get(String(id))
+              : featList.findIndex(function(f){ return f && String(f.id) === String(id); });
+    if (idx === undefined || idx === null || idx < 0 || !featList[idx]) return;
+    _pickRepick(featList[idx]);
+  }
+  // Curated top nations — the SAME 10 as the welcome screen (QS_CURATED), greying fallen.
+  const top = document.getElementById('repick-top');
+  if (top && typeof QS_CURATED !== 'undefined') {
+    for (const c of QS_CURATED) {
+      const isF = _fallenId(c.id);
+      const b = document.createElement('button');
+      b.className = 'qs-btn' + (isF ? ' disabled' : '');
+      b.dataset.id = c.id;
+      b.innerHTML = (typeof _qsFlagHTML === 'function' ? _qsFlagHTML(c.a2) : '') +
+        '<span class="qs-name">' + escapeHtml(c.name) + (isF ? ' <span style="font-size:9px;color:#ef4444">fallen</span>' : '') + '</span>';
+      if (!isF) { (function(id){ b.onclick = function(){ _pickRepickById(id); }; })(c.id); }
+      top.appendChild(b);
+    }
+  }
+  // Full searchable list, welcome-screen .tut-country-row style. Aggregated by id
+  // (largest polygon) so multipolygon countries appear once; fallen sunk + struck.
   function render(filter) {
     const list = document.getElementById('repick-list');
     if (!list || !featList) return;
     const fl = (filter || '').toLowerCase();
-    list.innerHTML = '';
-    // v93j: show conquered countries too, but greyed + struck-through + disabled
-    // (was: hidden) so it's clear WHY they can't be picked.
-    const items = featList
-      .filter(function(f) {
-        // v40: skip culled countries (Antarctica, tiny non-visible islands)
-        return f && f.name
-               && (typeof isPlayableCountry === 'function' ? isPlayableCountry(featList.indexOf(f)) : true)
-               && (!fl || f.name.toLowerCase().includes(fl));
-      })
-      .sort(function(a, b) {
-        // v99a: ACTIVE countries first, fallen at the bottom; alphabetical within.
-        var fa = _isCountryFallenClient(a.id) ? 1 : 0;
-        var fb = _isCountryFallenClient(b.id) ? 1 : 0;
-        if (fa !== fb) return fa - fb;
-        return a.name.localeCompare(b.name);
-      });
-    for (var i = 0; i < Math.min(items.length, 200); i++) {
-      var f = items[i];
-      var fallen = _isCountryFallenClient(f.id); // v95k: survivors (holding outposts) are pickable
-      var btn = document.createElement('button');
-      btn.style.cssText = 'background:#162035;border:1px solid #1e293b;color:' + (fallen ? '#475569' : '#cbd5e1') +
-        ';padding:6px 10px;font-size:11px;border-radius:4px;cursor:' + (fallen ? 'not-allowed' : 'pointer') +
-        ';text-align:left;font-family:inherit;display:flex;align-items:center;gap:6px;' + (fallen ? 'opacity:0.55;' : '');
-      var nameHtml = fallen ? '<s>' + escapeHtml(f.name) + '</s> <span style="font-size:9px;color:#ef4444">fallen</span>' : escapeHtml(f.name);
-      btn.innerHTML = '<span style="width:10px;height:10px;background:' + (f.color || '#475569') + ';border-radius:2px;display:inline-block;flex-shrink:0;' + (fallen ? 'filter:grayscale(1);' : '') + '"></span>' + nameHtml;
-      if (fallen) {
-        btn.disabled = true;
-        btn.title = 'This country has fallen — pick another';
-      } else {
-        (function(ff) { btn.onclick = function() { _pickRepick(ff); }; })(f);
-      }
-      list.appendChild(btn);
+    const byId = new Map();
+    for (var i = 0; i < featList.length; i++) {
+      var f = featList[i];
+      if (!f || !f.id || !f.name) continue;
+      if (typeof isPlayableCountry === 'function' && !isPlayableCountry(i)) continue;
+      if (fl && f.name.toLowerCase().indexOf(fl) < 0) continue;
+      var px = (typeof geoTotal !== 'undefined' && geoTotal[i]) || 0;
+      var ex = byId.get(f.id);
+      if (!ex || px > ex.px) byId.set(f.id, { id: String(f.id), name: f.name, color: f.color, px: px });
     }
+    var rows = [...byId.values()].sort(function(a, b) {
+      var fa = _fallenId(a.id) ? 1 : 0, fb = _fallenId(b.id) ? 1 : 0;
+      if (fa !== fb) return fa - fb;
+      return a.name.localeCompare(b.name);
+    });
+    list.innerHTML = '';
+    var frag = document.createDocumentFragment();
+    for (var r = 0; r < Math.min(rows.length, 250); r++) {
+      var c = rows[r];
+      var isF = _fallenId(c.id);
+      var row = document.createElement('div');
+      row.className = 'tut-country-row' + (isF ? ' disabled' : '');
+      row.innerHTML = '<span class="tut-country-color" style="background:' + (c.color || '#888') + ';' + (isF ? 'filter:grayscale(1);' : '') + '"></span>' +
+        '<div class="tut-country-name">' + escapeHtml(c.name) + (isF ? ' <span style="font-size:9px;color:#ef4444">fallen</span>' : '') + '</div>';
+      if (!isF) { (function(id){ row.onclick = function(){ _pickRepickById(id); }; })(c.id); }
+      frag.appendChild(row);
+    }
+    list.appendChild(frag);
   }
   render('');
   const search = document.getElementById('repick-search');
