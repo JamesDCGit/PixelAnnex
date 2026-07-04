@@ -3998,7 +3998,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-01-v153';
+const CODE_VERSION = '2026-07-01-v154';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -11896,6 +11896,14 @@ async function checkAuth() {
       _userProfile = data;
       renderLoginHUD(data);
       if (!wasLoggedIn) paTrack('signed_in'); // v95w: funnel event on fresh sign-in
+      // v154: auth usually resolves AFTER the bootstrap join (which then sent
+      // discordId:null and latched _joinSent), so explicitly (re)bind the identity on
+      // the server now — otherwise this logged-in player scores nothing. A lightweight
+      // join with just the identity; the server's join handler binds discordId/username.
+      if (wsReady && ws && ws.readyState === 1 && currentIdx >= 0 && featList[currentIdx]) {
+        try { ws.send(JSON.stringify({ type: 'join', countryId: featList[currentIdx].id,
+          discordId: data.discordId, username: data.username })); } catch (e) {}
+      }
 
       // Auto-apply countryMain — only once per session, only if map is ready
       if (!_autoCountryApplied && data.countryMain) {
@@ -14023,7 +14031,15 @@ function selectCountry(idx){
   document.getElementById('csel-label').textContent = f.name;
   document.getElementById('csel-flag').innerHTML = flagAny(f.id, 2);
   if(_countryChanged && typeof refreshRankUI === 'function') refreshRankUI(); // v107: update rank-panel avatar to the new country
-  if(wsReady) { ws.send(JSON.stringify({type:'join', countryId:f.id})); }
+  // v154: carry the Discord identity on EVERY join so the server binds player.discordId
+  // (the bootstrap mpSendJoin often fires before /auth/me resolves → discordId:null, and
+  // its _joinSent guard blocks a re-send — which is why logged-in players scored nothing).
+  if(wsReady) {
+    const _li = _userProfile && _userProfile.loggedIn;
+    ws.send(JSON.stringify({type:'join', countryId:f.id,
+      discordId: _li ? _userProfile.discordId : null,
+      username:  _li ? _userProfile.username  : null }));
+  }
   // If logged in via Discord, push country change back to profile
   // (so /country show in Discord stays in sync with in-game choice)
   if(_userProfile && _userProfile.loggedIn && _autoCountryApplied){
