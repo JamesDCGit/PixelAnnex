@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-04-v157';
+const SERVER_VERSION       = '2026-07-04-v158';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3004,24 +3004,11 @@ setInterval(() => {
 
 
 // ── v157: COLLECTABLES ────────────────────────────────────────────
-// Conquer a country (personally) → unlock its collectable item, persisted on the
-// Discord profile (profile.collectables = { countryId: unlockTimestamp }) so it
-// survives sessions AND wars. Art/manifest live in public/collectables/ (see
-// tools/gen-collectables.js — the atlas is designed for manual editing).
-function _awardCollectables(player, conquests) {
-  if (!player || !player.discordId || !conquests || !conquests.length) return;
-  const prof = getProfile(player.discordId);
-  if (!prof.collectables) prof.collectables = {};
-  let awarded = false;
-  for (const c of conquests) {
-    const cid = String(c.geoIdx);
-    if (prof.collectables[cid]) continue;
-    prof.collectables[cid] = Date.now();
-    awarded = true;
-    try { player.ws.send(JSON.stringify({ type: 'collect_award', countryId: cid })); } catch (e) {}
-  }
-  if (awarded) markProfilesDirty();
-}
+// Conquer a country → unlock its collectable item, persisted on the Discord
+// profile (profile.collectables = { countryId: unlockTimestamp }) so it survives
+// sessions AND wars. Awarded inside _conquerGeo (v158) alongside conquest points.
+// Art/manifest live in public/collectables/ (see tools/gen-collectables.js —
+// the atlas is designed for manual editing).
 
 // ── v156: TREASURE CHESTS ─────────────────────────────────────────
 // Server-spawned bonus chests: 10/hour (one every 6 min), max 10 active, anywhere
@@ -5138,6 +5125,32 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
   conquests.push({ geoIdx: geo, countryId: conquerorId, perm: permanentlyConquered.has(geoId),
                    immunityMs: CONQUEST_IMMUNITY_MS }); // v98: client shows shield countdown under the flag
   changed.push(...finisherFill(geo, conquerorId));
+  // v158: credit the conquest to the conquering country's LIVE HUMAN players HERE —
+  // the single choke point every conquest passes through. Previously credit was only
+  // given in the stroke/stroke-end handlers, i.e. only when the player's OWN stroke
+  // triggered the fall; a fall resolving on a bot's stroke or the periodic sweep
+  // (common, given immunity windows) gave the human playing that country NOTHING
+  // (the "conquered a country, leaderboard didn't move" report). Awards the size-
+  // scaled points, conquest count, session tally, and the collectable.
+  if (!_isSelf) {
+    try {
+      const _pts = conquestPoints(geoTotal[geo] || 0);
+      for (const [, hp] of players) {
+        if (hp.isBot || !hp.discordId || !hp.ws || String(hp.countryId) !== String(conquerorId)) continue;
+        updateProfileXP(hp.discordId, _pts);
+        const _pr = getProfile(hp.discordId);
+        _pr.conquestsMade += 1;
+        _pr.points        += _pts;
+        _recordSession(hp.discordId, _pr.username, _pr.avatar, hp.countryId, 0, 1, _pts);
+        if (!_pr.collectables) _pr.collectables = {};
+        if (!_pr.collectables[String(geo)]) {
+          _pr.collectables[String(geo)] = Date.now();
+          try { hp.ws.send(JSON.stringify({ type: 'collect_award', countryId: String(geo) })); } catch (e) {}
+        }
+        markProfilesDirty();
+      }
+    } catch (e) { console.warn('[Conquest] human credit failed:', e.message); }
+  }
   // Only a FRESH kill notifies the falling country's players + Discord. Transfers,
   // self-conquest, and re-takes of already-fallen zones are silent (anti-spam).
   if (!_freshKill) return;
@@ -8286,19 +8299,10 @@ wss.on('connection', (ws, req) => {
         }
         conquests.forEach(c => broadcast(JSON.stringify({ type:'conquest',...c })));
         reversals.forEach(r => broadcast(JSON.stringify({ type:'reversal',...r })));
-        // Conquest stats
-        if (player.discordId && conquests.length) {
-          // v155: conquest bonus scales 1,000-20,000 with the conquered country's size.
-          let _cqPts = 0;
-          for (const c of conquests) _cqPts += conquestPoints(geoTotal[c.geoIdx] || 0);
-          updateProfileXP(player.discordId, _cqPts);
-          const profile = getProfile(player.discordId);
-          profile.conquestsMade += conquests.length;
-          profile.points        += _cqPts;
-          _recordSession(player.discordId, profile.username, profile.avatar, player.countryId, 0, conquests.length, _cqPts); // v97/v155
-          markProfilesDirty();
-          _awardCollectables(player, conquests); // v157
-        }
+        // v158: conquest credit (points/count/session/collectable) moved into
+        // _conquerGeo — the single choke point — so falls triggered by bot strokes
+        // or the periodic sweep also credit the conquering country's human players.
+        // Crediting here TOO would double-count (applyPixels already ran _conquerGeo).
         break;
       }
 
@@ -8329,18 +8333,8 @@ wss.on('connection', (ws, req) => {
           _recordSession(player.discordId, _epx.username, _epx.avatar, player.countryId, encChanged.length, 0, _encPts);
           markProfilesDirty();
         }
-        if (player.discordId && encConquests.length) {
-          // v155: size-scaled conquest bonus (was flat 50).
-          let _ecqPts = 0;
-          for (const c of encConquests) _ecqPts += conquestPoints(geoTotal[c.geoIdx] || 0);
-          updateProfileXP(player.discordId, _ecqPts);
-          const _ep = getProfile(player.discordId);
-          _ep.conquestsMade += encConquests.length;
-          _ep.points        += _ecqPts;
-          _recordSession(player.discordId, _ep.username, _ep.avatar, player.countryId, 0, encConquests.length, _ecqPts); // v97/v155
-          markProfilesDirty();
-          _awardCollectables(player, encConquests); // v157
-        }
+        // v158: encirclement-conquest credit also moved into _conquerGeo (see the
+        // stroke handler note) — applyPixels above already ran it.
         const bonus = getEncircleBonus(enc.count);
         // v98: ratchet — an overlapping smaller encirclement must not downgrade
         // an active higher multiplier (mirrors the client's v93y rule). The

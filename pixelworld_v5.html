@@ -1787,7 +1787,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
       <!-- v138: rewarded-ad button — +50 bucket cap & max regen for 3 min -->
       <button class="ad-regen-btn" data-label="📺 +50 &amp; Max Regen" onclick="watchAdForRegen()" title="Watch a short ad: +50 pixel bucket and maxed regen for 3 minutes">📺 +50 &amp; Max Regen</button>
     </div>
-    <div id="stats">4096×2048 · Claimed: <b id="px-count">0</b> px</div>
+    <div id="stats" style="display:none">4096×2048 · Claimed: <b id="px-count">0</b> px</div><!-- v158: hidden (operator: remove dims + total-claimed from the menu bar); kept in DOM — 6 call sites write #px-count -->
 
     <!-- v36: Compact audio + zoom + language controls in toolbar -->
     <div class="sep"></div>
@@ -4011,7 +4011,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-04-v157';
+const CODE_VERSION = '2026-07-04-v158';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7044,16 +7044,9 @@ function runAutoFill(){
       claimCtx.putImageData(fillImg,fillX0,fillY0);
     }
     sfxFillSuccess();
-    // v155: encircled pixels score DOUBLE (2pts each; they bypass claimPixel's 1pt).
-    awardXP(enclosed.length * 2);
-    // v155: pixel bonus for encircling — ~10% of the enclosed area back into the
-    // bucket (e.g. 100px enclosed → +10px), on top of the regen multiplier bonus.
-    const _encPxBonus = Math.ceil(enclosed.length / 10);
-    if (_encPxBonus > 0) {
-      pixelBucket = Math.min(BUCKET_MAX, pixelBucket + _encPxBonus);
-      updateBucketHUD();
-      showBonusPop(_encPxBonus, '⭕ Encircle px ', { encirclement: true });
-    }
+    // v158: the 2x points + ~10% pixel bonus are granted in applyEncirclementBonus
+    // (fired once by the server's encircle-bonus confirm) — granting here TOO would
+    // double-award, since both paths fire for a normal local encirclement.
     checkConquest(geo,currentIdx);
   }
 
@@ -7357,7 +7350,8 @@ function showEncircleBurst(mapCX, mapCY, enclosedCount, mult) {
   burst.innerHTML =
     '<span class="eb-mult">×' + mult + '</span>' +
     '<span class="eb-label">' + _encircleLabel(mult) + '</span>' + // v97j: tiered text
-    '<span class="eb-px">' + enclosedCount + ' px</span>';
+    // v158: show the full reward — enclosed px, DOUBLE points, and the ~10% pixel bonus.
+    '<span class="eb-px">' + enclosedCount + ' px · +' + (enclosedCount * 2).toLocaleString() + ' pts · +' + Math.ceil(enclosedCount / 10) + ' px bonus</span>';
   viewport.appendChild(burst);
 
   // Cleanup after animation finishes
@@ -7365,6 +7359,15 @@ function showEncircleBurst(mapCX, mapCY, enclosedCount, mult) {
 }
 
 function applyEncirclementBonus(enclosed, mult, durationMs, cx, cy) {
+  // v158: grant the encircle rewards HERE (fires once, on the server's confirm):
+  // 2x points for the enclosed pixels + ~10% of the enclosed area back as bucket
+  // pixels (the operator's encircle pixel bonus). Shown in the burst + banner.
+  if (enclosed > 0) {
+    awardXP(enclosed * 2); // local points mirror (server credits the profile)
+    const _epx = Math.ceil(enclosed / 10);
+    pixelBucket = Math.min(BUCKET_MAX, pixelBucket + _epx);
+    if (typeof updateBucketHUD === 'function') updateBucketHUD();
+  }
   // v93y (task 3): bonuses only ratchet UP. A smaller new encirclement must not
   // downgrade an active higher one — keep the higher multiplier and extend the
   // timer to the later expiry so the big bonus runs its full course.
@@ -7402,7 +7405,8 @@ function applyEncirclementBonus(enclosed, mult, durationMs, cx, cy) {
     const remain = Math.max(0, _encircleExpiresAt - Date.now());
     const secs = Math.ceil(remain / 1000);
     const tEl = document.getElementById('enc-timer-text');
-    if (tEl) tEl.textContent = t('banner.enclosed', { seconds: secs, pixels: enclosed });
+    if (tEl) tEl.textContent = t('banner.enclosed', { seconds: secs, pixels: enclosed })
+      + ' · +' + (enclosed * 2).toLocaleString() + ' pts · +' + Math.ceil(enclosed / 10) + ' px'; // v158: show the reward
     if (remain <= 0) {
       banner.classList.remove('active');
       clearInterval(_encircleTickId);
@@ -13940,7 +13944,8 @@ function refreshRankUI(){
   const bucketCap = RANK_BUCKET_CAPS[Math.max(0, Math.min(RANK_BUCKET_CAPS.length - 1, ri))] || 50;
   const perks = [];
   perks.push('🪣 ' + bucketCap + 'px pixel bucket');
-  if (rank.bombType) perks.push('☢️ ' + rank.bombType + ' unlocked');
+  // v158: bomb/Nuke perk line removed — the nuke system has been disabled since
+  // v130 (detonation no-ops), so advertising it was a dead feature.
   // Highlight (Select Target) is Admiral-only in v85
   if (ri >= 4) perks.push('🎯 Select Target unlocked');
 
@@ -13963,7 +13968,7 @@ function refreshRankUI(){
           ${next ? ' · ' + t('rank.next_rank_inline', { name: tRank(next.name), min: next.min }) : ' · <b>' + t('hud.max_rank') + '</b>'}
         </div>
         ${perks.length ? '<div class="rank-perks" style="font-size:10px;color:#94a3b8;margin-top:4px;line-height:1.5;">' + perks.join(' · ') + '</div>' : ''}
-        <div onclick="openCollectables()" title="View your collection" style="font-size:10px;color:#fbbf24;margin-top:4px;cursor:pointer;">🎒 Collectables <b>${_collectCountLine()}</b> — view</div>
+        <div onclick="openCollectables()" title="View your collection" style="font-size:10px;color:#fbbf24;margin-top:4px;cursor:pointer;pointer-events:auto;">🎒 Collectables <b>${_collectCountLine()}</b> — view</div><!-- v158: #rank-display is pointer-events:none — re-enable on this line so the click lands -->
         <div class="rank-gdp" title="Combined GDP (USD) of every country you currently hold">
           <span class="gdp-label">GDP</span>
           <span id="gdp-value">$000,000,000,000,000</span>
