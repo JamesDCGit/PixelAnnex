@@ -1373,6 +1373,19 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   filter: saturate(0.25) brightness(0.85);
   opacity: 0.7;
 }
+/* v156: treasure chest — small clickable map bonus. pointer-events:auto overrides the
+   overlay's none so the click lands; gentle bob draws the eye without a notification. */
+#flag-overlay .pa-chest{
+  position:absolute; top:0; left:0;
+  font-size:14px; line-height:1;
+  cursor:pointer; pointer-events:auto;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.8));
+  will-change: transform;
+  z-index: 2;
+  animation: chestBob 1.8s ease-in-out infinite;
+  user-select:none;
+}
+@keyframes chestBob{ 0%,100%{ margin-top:0; } 50%{ margin-top:-3px; } }
 /* v144: pulsing yellow glow on flags belonging to the local player (their own
    country flag + their conquest flags) so they're easy to spot. box-shadow keeps
    the flag's black border ring (.pa-flag base) and pulses a yellow halo. */
@@ -3998,7 +4011,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-04-v155';
+const CODE_VERSION = '2026-07-04-v156';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4988,6 +5001,42 @@ function _updateAllFlagPositions() {
   }
   for (const id in _fallenFlagNodes) _updateFallenFlagPos(_fallenFlagNodes[id]); // v128
   for (const id in _nativeFlagNodes) _updateNativeFlagPos(_nativeFlagNodes[id]); // v144b
+  for (const id in _chestNodes)      _updateChestPos(_chestNodes[id]);           // v156
+}
+
+// ── v156: treasure chests (server-spawned map bonuses) ───────────────────────
+// Silent map icons; click one to claim (+50px +1,000pts, server-authoritative,
+// first click wins). No spawn notification — discovery only.
+const _chestNodes = {}; // id → { el, cx, cy }
+function _updateChestPos(node) {
+  const sx = node.cx * scale + ox, sy = node.cy * scale + oy;
+  node.el.style.transform = 'translate(' + (sx - 7) + 'px, ' + (sy - 8) + 'px)';
+}
+function _addChest(id, x, y) {
+  if (_chestNodes[id]) return;
+  const ov = document.getElementById('flag-overlay');
+  if (!ov) return;
+  const el = document.createElement('div');
+  el.className = 'pa-chest';
+  el.textContent = '💰';
+  el.title = 'Treasure chest — click to claim!';
+  el.onclick = function (ev) {
+    ev.stopPropagation();
+    try { if (wsReady && ws) ws.send(JSON.stringify({ type: 'chest_claim', id: id })); } catch (e) {}
+  };
+  ov.appendChild(el);
+  const node = _chestNodes[id] = { el, cx: x, cy: y };
+  _updateChestPos(node);
+}
+function _removeChest(id) {
+  const n = _chestNodes[id];
+  if (!n) return;
+  n.el.remove();
+  delete _chestNodes[id];
+}
+function _syncChests(list) { // welcome payload → reset to the server's active set
+  for (const id in _chestNodes) _removeChest(id);
+  if (Array.isArray(list)) for (const c of list) if (c && c.id != null) _addChest(String(c.id), c.x, c.y);
 }
 
 // ── v128: neutral "Fallen" zones ─────────────────────────────────────────────
@@ -10792,6 +10841,7 @@ function mpHandleMessage(msg) {
         _seed();
         setTimeout(_seed, 1500); // re-apply once flags from the snapshot have landed
       }
+      if (typeof _syncChests === 'function') _syncChests(msg.chests); // v156: active chests for late-joiners
       scheduleLegend();
       break;
     }
@@ -10999,6 +11049,30 @@ function mpHandleMessage(msg) {
       if (typeof refreshCsel === 'function') refreshCsel(); // re-grey the in-game picker
       refreshConqueredCountLocal();
       scheduleLegend();
+      break;
+    }
+
+    case 'chest_spawn': {
+      // v156: silent — just the map icon, no notification (operator spec).
+      _addChest(String(msg.id), msg.x, msg.y);
+      break;
+    }
+    case 'chest_gone': {
+      _removeChest(String(msg.id));
+      break;
+    }
+    case 'chest_won': {
+      // v156: YOU claimed it — bonus + the only notification in the feature.
+      pixelBucket = Math.min(BUCKET_MAX, pixelBucket + (msg.px || 50));
+      updateBucketHUD();
+      awardXP(msg.pts || 1000); // points (local mirror; server awards the profile)
+      actPushCard({
+        variant: 'win',
+        title: '💰 Chest discovered!',
+        html: 'You found a treasure chest — <b>+' + (msg.px || 50) + 'px</b> and <b>+' +
+              ((msg.pts || 1000).toLocaleString()) + ' points</b>.',
+      });
+      try { sfxFillSuccess && sfxFillSuccess(); } catch (e) {}
       break;
     }
 

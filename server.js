@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-04-v155';
+const SERVER_VERSION       = '2026-07-04-v156';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3002,6 +3002,29 @@ setInterval(() => {
   }
 }, 30 * 1000);
 
+
+// ── v156: TREASURE CHESTS ─────────────────────────────────────────
+// Server-spawned bonus chests: 10/hour (one every 6 min), max 10 active, anywhere
+// on the map (land OR ocean). First player to click one wins +50px +1,000pts; it
+// disappears for everyone. Spawns are broadcast SILENTLY (map icon only, no
+// notification card); only the claimer gets a "chest discovered" notification.
+// Not persisted across restarts — the cadence refills naturally.
+const CHEST_MAX      = 10;
+const CHEST_SPAWN_MS = 6 * 60 * 1000;
+const CHEST_PX       = 50;
+const CHEST_PTS      = 1000;
+const _chests = new Map(); // id → { id, x, y, at }
+let _chestSeq = 1;
+function _spawnChest() {
+  if (_chests.size >= CHEST_MAX) return;
+  const id = 'c' + (_chestSeq++);
+  const x = Math.floor(Math.random() * MAP_W);
+  const y = Math.floor(Math.random() * MAP_H);
+  _chests.set(id, { id, x, y, at: Date.now() });
+  broadcast(JSON.stringify({ type: 'chest_spawn', id, x, y }));
+}
+setInterval(_spawnChest, CHEST_SPAWN_MS);
+setTimeout(_spawnChest, 30_000); // first chest shortly after boot
 
 // ── v38: World conquest watcher + 5-min countdown reset ───────────
 const WORLD_CONQUEST_THRESHOLD = 0.70;
@@ -8127,6 +8150,7 @@ wss.on('connection', (ws, req) => {
           nukeZones: (_pruneServerNukeZones(), _nukeZones.slice()),
           endgame: _endgamePayload || _computeEndgame(), // v100: sudden death + panel for late-joiners
           emotes: _buildActiveEmotes(), // v113: active conquest emotes for late-joiners
+          chests: [..._chests.values()].map(c => ({ id: c.id, x: c.x, y: c.y })), // v156
         }));
         try { ws.send(encodeSnapshotRuns(_snap.runs)); } catch (e) {}
         // v98b: stale unplayable country (e.g. Vatican in localStorage) → open
@@ -8140,6 +8164,24 @@ wss.on('connection', (ws, req) => {
           try { ws.send(JSON.stringify(_worldConquestPayload)); } catch(e) {}
         }
         broadcastPlayers();
+        break;
+      }
+
+      case 'chest_claim': {
+        // v156: first valid claim wins the chest; everyone else sees it vanish.
+        const ch = _chests.get(String(msg.id || ''));
+        if (!ch) return; // already claimed / unknown
+        _chests.delete(ch.id);
+        broadcast(JSON.stringify({ type: 'chest_gone', id: ch.id }));
+        try { ws.send(JSON.stringify({ type: 'chest_won', id: ch.id, px: CHEST_PX, pts: CHEST_PTS })); } catch (e) {}
+        if (player.discordId) {
+          updateProfileXP(player.discordId, CHEST_PTS);
+          const _cp = getProfile(player.discordId);
+          _cp.points += CHEST_PTS;
+          _recordSession(player.discordId, _cp.username, _cp.avatar, player.countryId, 0, 0, CHEST_PTS);
+          markProfilesDirty();
+        }
+        console.log('[Chest]', ch.id, 'claimed by player', pid, player.discordId ? '(' + player.discordId + ')' : '(anon)');
         break;
       }
 
