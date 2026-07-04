@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-01-v154';
+const SERVER_VERSION       = '2026-07-04-v155';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -2656,6 +2656,15 @@ function getProfile(discordId) {
   const p = profiles.get(discordId);
   // Backfill any missing fields (for profiles from before stats existed)
   if (typeof p.points         !== 'number') p.points         = p.xp || 0;
+  // v155 migration (one-shot per profile): points is now THE score and drives rank.
+  // Bring xp into lockstep with points (they had drifted — xp missed some award
+  // sites) and recompute rank on the new thresholds. Existing totals carry over.
+  if (!p._scoreV155) {
+    p._scoreV155 = true;
+    p.xp = Math.max(p.xp || 0, p.points || 0);
+    p.points = p.xp;
+    if (!p.isBot) p.rank = rankFromXP(p.xp);
+  }
   if (typeof p.pixelsPlaced   !== 'number') p.pixelsPlaced   = 0;
   if (typeof p.conquestsMade  !== 'number') p.conquestsMade  = 0;
   if (typeof p.countriesLost  !== 'number') p.countriesLost  = 0;
@@ -2730,15 +2739,28 @@ function processDailyLogin(discordId) {
 }
 
 
+// ── v155: SCORING SYSTEM (full replace — points ARE the score AND the rank) ──
+// 1pt per pixel painted · 2pts per pixel captured via encirclement · conquest
+// bonus 1,000–20,000 scaled by the conquered country's size (log over total px:
+// <=500px -> 1,000 · >=50,000px -> 20,000, rounded to 100). xp mirrors points
+// (kept in lockstep at every award site + migrated in getProfile) so rank,
+// leaderboards, and the stats panels all read the same number.
+function conquestPoints(totalPx) {
+  const lo = Math.log10(500), hi = Math.log10(50000);
+  const t = Math.max(0, Math.min(1, (Math.log10(Math.max(totalPx || 1, 1)) - lo) / (hi - lo)));
+  return Math.round((1000 + 19000 * t) / 100) * 100;
+}
+
 // ── Rank system (mirrors client RANKS array) ─────────────────────
 const RANK_THRESHOLDS = [
-  // v113: aligned to the client RANKS pixel scale (XP == pixels placed) so the
-  // Discord ranks match the in-game ranks. Admiral is 3000 (operator request).
-  { name: 'Soldier',    min: 0    },
-  { name: 'Lieutenant', min: 250  },
-  { name: 'Captain',    min: 750  },
-  { name: 'General',    min: 1500 },
-  { name: 'Admiral',    min: 3000 },
+  // v155: rescaled to the new points economy (pixels + 2x encircle + 1k-20k
+  // conquests). A single mid-size conquest (~5-10k pts) no longer instantly
+  // maxes rank; Admiral needs a real campaign. Mirrors client RANKS.
+  { name: 'Soldier',    min: 0     },
+  { name: 'Lieutenant', min: 1000  },
+  { name: 'Captain',    min: 5000  },
+  { name: 'General',    min: 15000 },
+  { name: 'Admiral',    min: 40000 },
 ];
 
 function rankFromXP(xp) {
@@ -2998,23 +3020,24 @@ let _worldWinnerName = null; // v100: winning bloc name for the win screen
 const SESSION_FILE = path.join(__dirname, 'session_state.json');
 let _warNumber = 1;                 // v97h: which PixelAnnex War (game #) this is
 let _sessionStartMs = Date.now();
-const _sessionStats = new Map(); // discordId → { discordId, username, avatar, country, pixels, conquests }
+const _sessionStats = new Map(); // discordId → { discordId, username, avatar, country, pixels, conquests, points }
 let _sessionDirty = false;
-function _recordSession(discordId, username, avatar, country, dPixels, dConquests) {
+function _recordSession(discordId, username, avatar, country, dPixels, dConquests, dPoints) { // v155: + points
   if (!discordId) return;
   let s = _sessionStats.get(discordId);
-  if (!s) { s = { discordId, username, avatar, country, pixels: 0, conquests: 0 }; _sessionStats.set(discordId, s); }
+  if (!s) { s = { discordId, username, avatar, country, pixels: 0, conquests: 0, points: 0 }; _sessionStats.set(discordId, s); }
   if (username) s.username = username;
   if (avatar)   s.avatar   = avatar;
   if (country)  s.country  = country;
   s.pixels    += dPixels    || 0;
   s.conquests += dConquests || 0;
+  s.points     = (s.points || 0) + (dPoints || 0);
   _sessionDirty = true;
 }
 function _sessionLeaderboard(limit) {
   return [..._sessionStats.values()]
     .filter(s => s.username && (s.pixels > 0 || s.conquests > 0))
-    .sort((a, b) => (b.pixels - a.pixels) || (b.conquests - a.conquests))
+    .sort((a, b) => ((b.points || 0) - (a.points || 0)) || (b.pixels - a.pixels) || (b.conquests - a.conquests)) // v155: score first
     .slice(0, limit || 20);
 }
 function _saveSessionState(sync) {
@@ -7219,7 +7242,7 @@ const httpServer = http.createServer(async (req, res) => {
       allRanked = _sessionLeaderboard(1000).map(s => ({
         discordId: s.discordId, username: s.username, avatar: s.avatar,
         pixels: s.pixels || 0, conquests: s.conquests || 0,
-        points: s.pixels || 0, country: s.country, gameRank: null,
+        points: s.points || s.pixels || 0, country: s.country, gameRank: null, // v155: real session points
       }));
     } else {
       allRanked = [...profiles.values()]
@@ -7229,7 +7252,7 @@ const httpServer = http.createServer(async (req, res) => {
           pixels: p.pixelsPlaced || 0, conquests: p.conquestsMade || 0,
           points: p.points || 0, country: p.countryMain, gameRank: p.rank,
         }))
-        .sort((a, b) => (b.pixels - a.pixels) || (b.conquests - a.conquests));
+        .sort((a, b) => (b.points - a.points) || (b.pixels - a.pixels) || (b.conquests - a.conquests)); // v155: score first
     }
     const sorted = allRanked.slice(0, 20).map((p, i) => ({
       rank:            i + 1,
@@ -7251,7 +7274,7 @@ const httpServer = http.createServer(async (req, res) => {
         const p = allRanked[idx];
         viewer = {
           rank: idx + 1, username: p.username, avatar: p.avatar,
-          pixels: p.pixels, conquests: p.conquests, gameRank: p.gameRank,
+          pixels: p.pixels, conquests: p.conquests, points: p.points, gameRank: p.gameRank, // v155
           inTop20: idx < 20,
         };
       }
@@ -8168,10 +8191,10 @@ wss.on('connection', (ws, req) => {
           updateProfileXP(player.discordId, changed.length);
           // Track stats
           const profile = getProfile(player.discordId);
-          profile.points       += changed.length;
+          profile.points       += changed.length; // v155: 1pt per pixel painted
           profile.pixelsPlaced += changed.length;
           profile.lastSeen     =  Date.now();
-          _recordSession(player.discordId, profile.username, profile.avatar, player.countryId, changed.length, 0); // v97
+          _recordSession(player.discordId, profile.username, profile.avatar, player.countryId, changed.length, 0, changed.length); // v97/v155: + points
           // v65: track 24h activity for status reports
           _recordActivity(player.discordId, player.countryId, changed.length);
           // Per-country pixel painting count
@@ -8188,11 +8211,14 @@ wss.on('connection', (ws, req) => {
         reversals.forEach(r => broadcast(JSON.stringify({ type:'reversal',...r })));
         // Conquest stats
         if (player.discordId && conquests.length) {
-          updateProfileXP(player.discordId, conquests.length * 50);
+          // v155: conquest bonus scales 1,000-20,000 with the conquered country's size.
+          let _cqPts = 0;
+          for (const c of conquests) _cqPts += conquestPoints(geoTotal[c.geoIdx] || 0);
+          updateProfileXP(player.discordId, _cqPts);
           const profile = getProfile(player.discordId);
           profile.conquestsMade += conquests.length;
-          profile.points        += conquests.length * 50;
-          _recordSession(player.discordId, profile.username, profile.avatar, player.countryId, 0, conquests.length); // v97
+          profile.points        += _cqPts;
+          _recordSession(player.discordId, profile.username, profile.avatar, player.countryId, 0, conquests.length, _cqPts); // v97/v155
           markProfilesDirty();
         }
         break;
@@ -8215,12 +8241,25 @@ wss.on('connection', (ws, req) => {
         // v60: broadcast any conquest/reversal triggered by encirclement
         encConquests.forEach(c => broadcast(JSON.stringify({ type: 'conquest', ...c })));
         encReversals.forEach(r => broadcast(JSON.stringify({ type: 'reversal', ...r })));
+        // v155: encircled pixels are worth DOUBLE (2pts each) — the capture reward.
+        if (player.discordId && encChanged.length) {
+          const _encPts = encChanged.length * 2;
+          updateProfileXP(player.discordId, _encPts);
+          const _epx = getProfile(player.discordId);
+          _epx.points       += _encPts;
+          _epx.pixelsPlaced += encChanged.length;
+          _recordSession(player.discordId, _epx.username, _epx.avatar, player.countryId, encChanged.length, 0, _encPts);
+          markProfilesDirty();
+        }
         if (player.discordId && encConquests.length) {
-          updateProfileXP(player.discordId, encConquests.length * 50);
+          // v155: size-scaled conquest bonus (was flat 50).
+          let _ecqPts = 0;
+          for (const c of encConquests) _ecqPts += conquestPoints(geoTotal[c.geoIdx] || 0);
+          updateProfileXP(player.discordId, _ecqPts);
           const _ep = getProfile(player.discordId);
           _ep.conquestsMade += encConquests.length;
-          _ep.points        += encConquests.length * 50;
-          _recordSession(player.discordId, _ep.username, _ep.avatar, player.countryId, 0, encConquests.length); // v97
+          _ep.points        += _ecqPts;
+          _recordSession(player.discordId, _ep.username, _ep.avatar, player.countryId, 0, encConquests.length, _ecqPts); // v97/v155
           markProfilesDirty();
         }
         const bonus = getEncircleBonus(enc.count);

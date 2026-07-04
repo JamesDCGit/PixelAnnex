@@ -2103,7 +2103,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <button class="lb-tab active" data-scope="session" onclick="switchLbTab('session')">Session</button>
     <button class="lb-tab" data-scope="alltime" onclick="switchLbTab('alltime')">All Time</button>
   </div>
-  <div class="lb-head"><span class="lb-pos"></span><span class="lb-name"></span><span class="lb-px" title="Pixels">px</span><span class="lb-conq" title="Conquests">⚔️</span></div>
+  <div class="lb-head"><span class="lb-pos"></span><span class="lb-name"></span><span class="lb-px" title="Points">pts</span><span class="lb-conq" title="Conquests">⚔️</span></div><!-- v155: primary column is now POINTS -->
   <div id="lb-items" class="lb-empty">Loading…</div>
 </div>
 <div class="hud" id="legend">
@@ -3998,7 +3998,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-01-v154';
+const CODE_VERSION = '2026-07-04-v155';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6995,6 +6995,16 @@ function runAutoFill(){
       claimCtx.putImageData(fillImg,fillX0,fillY0);
     }
     sfxFillSuccess();
+    // v155: encircled pixels score DOUBLE (2pts each; they bypass claimPixel's 1pt).
+    awardXP(enclosed.length * 2);
+    // v155: pixel bonus for encircling — ~10% of the enclosed area back into the
+    // bucket (e.g. 100px enclosed → +10px), on top of the regen multiplier bonus.
+    const _encPxBonus = Math.ceil(enclosed.length / 10);
+    if (_encPxBonus > 0) {
+      pixelBucket = Math.min(BUCKET_MAX, pixelBucket + _encPxBonus);
+      updateBucketHUD();
+      showBonusPop(_encPxBonus, '⭕ Encircle px ', { encirclement: true });
+    }
     checkConquest(geo,currentIdx);
   }
 
@@ -10904,6 +10914,14 @@ function mpHandleMessage(msg) {
       // YOU conquered someone
       else if(fi === currentIdx){
         _conquerBoostUntil = Date.now() + CONQUER_BOOST_MS; // v100: 60s max-regen surge
+        // v155: size-scaled conquest bonus points (1,000-20,000), local mirror of the
+        // server award — drives the anonymous rank track + instant feedback. Awarded
+        // here (server broadcast) and NOT in checkConquest, so it can't double-count.
+        try {
+          const _cqp = _conquestPointsClient(geoCountryId);
+          awardXP(_cqp);
+          showBonusPop(_cqp, '🏆 Conquest ', { encirclement: true });
+        } catch(e) {}
         const _dimg = _leaderFaceImg(featList[targetFi], '', 'width:60px;height:60px;object-fit:contain;border-radius:6px;flex-shrink:0;filter:grayscale(.6);display:block;'); // v102: defeated leader (flag fallback) — v107: 2x
         // v114: stamp a red ✕ over the defeated leader's portrait.
         const _crossed = '<span style="position:relative;display:inline-block;margin-right:8px;flex-shrink:0;">' + _dimg
@@ -11912,6 +11930,13 @@ async function checkAuth() {
       // Update rank display whenever profile refreshes
       if (data.rank && typeof setRankFromServer === 'function') {
         setRankFromServer(data.rank, data.xp);
+      }
+      // v155: adopt the server score for the local rank track (points ARE the rank
+      // now). The setRankFromServer call above is a no-op (never defined); this is
+      // the real sync — the profile's authoritative score seeds/updates the local
+      // counter so a logged-in player's rank panel matches the server.
+      if (typeof data.xp === 'number' && data.xp > totalPixelsEverPlaced) {
+        totalPixelsEverPlaced = data.xp; saveXP(); refreshRankUI();
       }
     } else {
       _userProfile = null;
@@ -13397,12 +13422,27 @@ const RANKS = [
   // (see getRankRegenMult), not bombs.
   // v107: broadened, smoother progression (was 0/100/300/1000/3000) — admiral stays
   // at 3000px so the lower ranks span a wider, more even range.
-  { name:'Soldier',    min:0,    bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.0  },
-  { name:'Lieutenant', min:250,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.25 },
-  { name:'Captain',    min:750,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.5  },
-  { name:'General',    min:1500, bombType:null,  bombCost:0,  bombRadius:0,   regenMult:2.0  },
-  { name:'Admiral',    min:3000, bombType:'Nuke',bombCost:100,bombRadius:300, regenMult:3.0  },
+  // v155: thresholds rescaled to the POINTS economy (1/px + 2x encircled + 1k-20k
+  // conquest bonuses) — mirrors server RANK_THRESHOLDS.
+  { name:'Soldier',    min:0,     bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.0  },
+  { name:'Lieutenant', min:1000,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.25 },
+  { name:'Captain',    min:5000,  bombType:null,  bombCost:0,  bombRadius:0,   regenMult:1.5  },
+  { name:'General',    min:15000, bombType:null,  bombCost:0,  bombRadius:0,   regenMult:2.0  },
+  { name:'Admiral',    min:40000, bombType:'Nuke',bombCost:100,bombRadius:300, regenMult:3.0  },
 ];
+
+// v155: conquest bonus points — mirrors server conquestPoints(). totalPx = the
+// conquered country's FULL size (all polygons of its id summed).
+function _conquestPointsClient(countryId){
+  let total = 0;
+  const cid = String(countryId);
+  for (let i = 0; i < featList.length; i++) {
+    if (featList[i] && String(featList[i].id) === cid) total += (geoTotal[i] || 0);
+  }
+  const lo = Math.log10(500), hi = Math.log10(50000);
+  const t = Math.max(0, Math.min(1, (Math.log10(Math.max(total, 1)) - lo) / (hi - lo)));
+  return Math.round((1000 + 19000 * t) / 100) * 100;
+}
 
 // Persistent XP counter
 let totalPixelsEverPlaced = parseInt(localStorage.getItem('pw_xp') || '0', 10);
@@ -14968,7 +15008,7 @@ function _lbRow(r, isViewer) {
   return '<div class="lb-row' + (isViewer ? ' lb-viewer' : '') + (r.rank <= 3 ? ' lb-top' + r.rank : '') + '">'
        + '<span class="lb-pos">' + posDisplay + '</span>'
        + '<span class="lb-name">' + escapeHtml(r.username) + '</span>'
-       + '<span class="lb-px">' + (r.pixels || 0).toLocaleString() + '</span>'
+       + '<span class="lb-px">' + ((r.points != null ? r.points : r.pixels) || 0).toLocaleString() + '</span>' /* v155: show POINTS */
        + '<span class="lb-conq">' + (r.conquests || 0) + '</span>'
        + '</div>';
 }
