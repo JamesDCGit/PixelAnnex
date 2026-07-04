@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-04-v156';
+const SERVER_VERSION       = '2026-07-04-v157';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3002,6 +3002,26 @@ setInterval(() => {
   }
 }, 30 * 1000);
 
+
+// ── v157: COLLECTABLES ────────────────────────────────────────────
+// Conquer a country (personally) → unlock its collectable item, persisted on the
+// Discord profile (profile.collectables = { countryId: unlockTimestamp }) so it
+// survives sessions AND wars. Art/manifest live in public/collectables/ (see
+// tools/gen-collectables.js — the atlas is designed for manual editing).
+function _awardCollectables(player, conquests) {
+  if (!player || !player.discordId || !conquests || !conquests.length) return;
+  const prof = getProfile(player.discordId);
+  if (!prof.collectables) prof.collectables = {};
+  let awarded = false;
+  for (const c of conquests) {
+    const cid = String(c.geoIdx);
+    if (prof.collectables[cid]) continue;
+    prof.collectables[cid] = Date.now();
+    awarded = true;
+    try { player.ws.send(JSON.stringify({ type: 'collect_award', countryId: cid })); } catch (e) {}
+  }
+  if (awarded) markProfilesDirty();
+}
 
 // ── v156: TREASURE CHESTS ─────────────────────────────────────────
 // Server-spawned bonus chests: 10/hour (one every 6 min), max 10 active, anywhere
@@ -6690,6 +6710,20 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── v157: collectables atlas + manifest ──────────────────────────
+  if (url.pathname === '/collectables/atlas.png' || url.pathname === '/collectables/manifest.json') {
+    const fn = url.pathname.endsWith('.png') ? 'atlas.png' : 'manifest.json';
+    const f = path.join(__dirname, 'public', 'collectables', fn);
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end('not found'); return; }
+    res.writeHead(200, {
+      'Content-Type': fn.endsWith('.png') ? 'image/png' : 'application/json',
+      'Cache-Control': 'public, max-age=3600',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
+
   // ── v106: hero banner for the welcome / FTUE screens ─────────────
   if (url.pathname === '/PixelAnnexHero.jpg') {
     const f = path.join(__dirname, 'public', 'PixelAnnexHero.jpg');
@@ -7702,6 +7736,7 @@ const httpServer = http.createServer(async (req, res) => {
       rank:       profile.rank,
       xp:         profile.xp,
       inGuild:    profile.inGuild,
+      collectables: Object.keys(profile.collectables || {}), // v157: unlocked country ids
     }));
     return;
   }
@@ -8262,6 +8297,7 @@ wss.on('connection', (ws, req) => {
           profile.points        += _cqPts;
           _recordSession(player.discordId, profile.username, profile.avatar, player.countryId, 0, conquests.length, _cqPts); // v97/v155
           markProfilesDirty();
+          _awardCollectables(player, conquests); // v157
         }
         break;
       }
@@ -8303,6 +8339,7 @@ wss.on('connection', (ws, req) => {
           _ep.points        += _ecqPts;
           _recordSession(player.discordId, _ep.username, _ep.avatar, player.countryId, 0, encConquests.length, _ecqPts); // v97/v155
           markProfilesDirty();
+          _awardCollectables(player, encConquests); // v157
         }
         const bonus = getEncircleBonus(enc.count);
         // v98: ratchet — an overlapping smaller encirclement must not downgrade

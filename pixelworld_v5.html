@@ -4011,7 +4011,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-04-v156';
+const CODE_VERSION = '2026-07-04-v157';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -11052,6 +11052,27 @@ function mpHandleMessage(msg) {
       break;
     }
 
+    case 'collect_award': {
+      // v157: you conquered a country → its collectable unlocks (server-persisted;
+      // mirrored locally). Card names the item once the manifest is available.
+      const _ccid = String(msg.countryId);
+      if (!_collectSet.has(_ccid)) {
+        _collectSet.add(_ccid); _saveCollect();
+        if (typeof refreshRankUI === 'function') refreshRankUI();
+        _loadCollectManifest().then(function (mf) {
+          const it = mf && mf.items && mf.items[_ccid];
+          actPushCard({
+            variant: 'win',
+            title: '🎒 Collectable unlocked!',
+            html: it ? ('<b>' + escapeHtml(it.name) + '</b> — ' + escapeHtml(it.country) +
+                        ' <span style="color:#94a3b8">(' + _collectSet.size + (mf ? '/' + mf.count : '') + ')</span>')
+                     : 'New item added to your collection.',
+          });
+        });
+      }
+      break;
+    }
+
     case 'chest_spawn': {
       // v156: silent — just the map icon, no notification (operator spec).
       _addChest(String(msg.id), msg.x, msg.y);
@@ -12012,6 +12033,9 @@ async function checkAuth() {
       if (typeof data.xp === 'number' && data.xp > totalPixelsEverPlaced) {
         totalPixelsEverPlaced = data.xp; saveXP(); refreshRankUI();
       }
+      // v157: merge the server-side collection into the local set (server is the
+      // cross-device source of truth for logged-in players).
+      if (typeof _mergeCollectables === 'function') _mergeCollectables(data.collectables);
     } else {
       _userProfile = null;
       _autoCountryApplied = false;
@@ -13491,6 +13515,82 @@ document.addEventListener('visibilitychange', () => {
 
 // ── Rank system ──────────────────────────────────────────────────
 // Ranks are earned by cumulative pixels placed (persists via localStorage).
+// ── v157: COLLECTABLES ────────────────────────────────────────────
+// Conquer a country → unlock its 32x32 pixel-art item. Persistent across sessions
+// and wars: server-side on the Discord profile (authoritative for logged-in users),
+// mirrored to localStorage so anonymous players keep theirs too. Art comes from
+// /collectables/atlas.png (16-col grid of 32px cells, slot = alphabetical index)
+// + manifest.json — see tools/gen-collectables.js.
+let _collectSet = new Set();
+try { _collectSet = new Set(JSON.parse(localStorage.getItem('pa_collect') || '[]').map(String)); } catch (e) {}
+function _saveCollect() { try { localStorage.setItem('pa_collect', JSON.stringify([..._collectSet])); } catch (e) {} }
+let _collectManifest = null, _collectManifestP = null;
+function _loadCollectManifest() {
+  if (_collectManifest) return Promise.resolve(_collectManifest);
+  if (!_collectManifestP) {
+    _collectManifestP = fetch('/collectables/manifest.json').then(r => r.json())
+      .then(m => { _collectManifest = m; if (typeof refreshRankUI === 'function') refreshRankUI(); return m; })
+      .catch(() => { _collectManifestP = null; return null; });
+  }
+  return _collectManifestP;
+}
+function _mergeCollectables(list) { // server profile → local set
+  if (!Array.isArray(list)) return;
+  let changed = false;
+  for (const id of list) { const s = String(id); if (!_collectSet.has(s)) { _collectSet.add(s); changed = true; } }
+  if (changed) { _saveCollect(); if (typeof refreshRankUI === 'function') refreshRankUI(); }
+}
+function _collectCountLine() { // "12/250" info line for the rank panel
+  const total = _collectManifest ? _collectManifest.count : null;
+  return _collectSet.size + '/' + (total != null ? total : '…');
+}
+function openCollectables() {
+  if (document.getElementById('collect-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'collect-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(7,13,26,0.94);' +
+    'font-family:"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+  const card = document.createElement('div');
+  card.style.cssText = 'background:#0c1526;border:1px solid #1e293b;border-radius:12px;width:min(560px,94vw);' +
+    'max-height:92vh;display:flex;flex-direction:column;padding:18px 20px;color:#e2e8f0;' +
+    'box-shadow:0 16px 80px rgba(0,0,0,0.9),0 0 0 1px rgba(255,255,255,0.05) inset;';
+  card.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
+      '<div style="font-size:18px;font-weight:700;color:#fbbf24;">🎒 Collectables</div>' +
+      '<button onclick="this.closest(\'#collect-overlay\').remove()" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;font-family:inherit;">✕</button></div>' +
+    '<div id="collect-sub" style="font-size:11px;color:#94a3b8;margin-bottom:10px;">Conquer a country to collect its item. Loading…</div>' +
+    '<div id="collect-grid" style="overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:6px;padding:4px;"></div>';
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  _loadCollectManifest().then(function (mf) {
+    const grid = document.getElementById('collect-grid');
+    const sub  = document.getElementById('collect-sub');
+    if (!mf || !grid) { if (sub) sub.textContent = 'Could not load the collection.'; return; }
+    if (sub) sub.innerHTML = 'Conquer a country to collect its item · <b style="color:#fbbf24">' +
+      _collectSet.size + '/' + mf.count + ' collected</b>';
+    // manifest slots are already alphabetical by country name
+    const entries = Object.entries(mf.items).sort(function (a, b) { return a[1].slot - b[1].slot; });
+    const frag = document.createDocumentFragment();
+    for (const [cid, it] of entries) {
+      const have = _collectSet.has(String(cid));
+      const tile = document.createElement('div');
+      tile.style.cssText = 'aspect-ratio:1;border-radius:6px;display:flex;align-items:center;justify-content:center;' +
+        (have ? 'background:#132038;border:1px solid #2a3a5c;' : 'background:#0a121f;border:1px solid #16203a;');
+      tile.title = have ? (it.name + ' — ' + it.country) : '??? — conquer ' + it.country;
+      if (have) {
+        const spr = document.createElement('div');
+        spr.style.cssText = 'width:32px;height:32px;image-rendering:pixelated;background-image:url(/collectables/atlas.png);' +
+          'background-position:' + (-(it.slot % mf.cols) * mf.cell) + 'px ' + (-Math.floor(it.slot / mf.cols) * mf.cell) + 'px;';
+        tile.appendChild(spr);
+      } else {
+        tile.innerHTML = '<span style="color:#334155;font-size:16px;font-weight:700;">?</span>';
+      }
+      frag.appendChild(tile);
+    }
+    grid.innerHTML = ''; grid.appendChild(frag);
+  });
+}
+
 const RANKS = [
   // v38: Mortar + MOAB removed. Captain/General now provide regen multipliers
   // (see getRankRegenMult), not bombs.
@@ -13863,6 +13963,7 @@ function refreshRankUI(){
           ${next ? ' · ' + t('rank.next_rank_inline', { name: tRank(next.name), min: next.min }) : ' · <b>' + t('hud.max_rank') + '</b>'}
         </div>
         ${perks.length ? '<div class="rank-perks" style="font-size:10px;color:#94a3b8;margin-top:4px;line-height:1.5;">' + perks.join(' · ') + '</div>' : ''}
+        <div onclick="openCollectables()" title="View your collection" style="font-size:10px;color:#fbbf24;margin-top:4px;cursor:pointer;">🎒 Collectables <b>${_collectCountLine()}</b> — view</div>
         <div class="rank-gdp" title="Combined GDP (USD) of every country you currently hold">
           <span class="gdp-label">GDP</span>
           <span id="gdp-value">$000,000,000,000,000</span>
