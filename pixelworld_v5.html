@@ -4011,7 +4011,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-04-v158';
+const CODE_VERSION = '2026-07-05-v159';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6777,7 +6777,7 @@ function screenToMap(sx,sy){const r=vp.getBoundingClientRect();return{x:Math.flo
 //   - Fills are bounded by the geographic country border automatically
 //   - You cannot fill across country borders
 //   - Small border completes a loop → only the loop interior fills
-const MAX_FILL_PX = 10000;  // v70: cap at 10k — prevents slow GPU readback on large false-fills
+const MAX_FILL_PX = 40000;  // v159: 10k→40k — a large USA-scale ring was skipped WHOLE (matches server ENCIRCLE_MAX_PX); enqueuePaintsSweep already instant-paints >8000px floods
 const FILL_MIN_PX = 15;     // v70: ignore tiny accidental enclosures (v98: 10→15, matches server ENCIRCLE_MIN_PX)
 // v91: progressive, size-scaled conquest threshold — MUST stay byte-identical
 // to the copy in server.js so local prediction matches the authoritative server.

@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-04-v158';
+const SERVER_VERSION       = '2026-07-05-v159';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -5419,10 +5419,15 @@ function applyPixels(pixels, countryId) {
 // clicks are detected the moment the ring closes.
 // Performance: BFS is bounded by own-pixel bbox area capped at 200k cells.
 const ENCIRCLE_MIN_PX      = 15;    // v97j: lowered 50→15 — reward small encirclements too
-const ENCIRCLE_MAX_PX      = 10000; // v98: 500→10000, matches client MAX_FILL_PX (500 caused top-slice half-fills)
-const ENCIRCLE_BBOX_PAD    = 160;   // v98: padding around the STROKE bbox (was 8 around own-pixel bbox)
+// v159: large-encirclement support (the "big USA lasso does nothing" report). The old
+// 10k enclosed cap skipped big rings WHOLE, and the 200k bbox cap made detection bail
+// silently on any large ring (or any ring bigger than ±160px around a small closing
+// stroke). 40k enclosed covers a USA-scale ring (USA ≈ 34k px) without allowing a
+// whole-Russia grab; 700k bbox cells is still a cheap BFS (two Uint8Array floods, ms).
+const ENCIRCLE_MAX_PX      = 40000; // v159: 10000→40000, matches client MAX_FILL_PX
+const ENCIRCLE_BBOX_PAD    = 320;   // v159: 160→320 — a small closing stroke can seal a much bigger ring
 const ENCIRCLE_BBOX_PAD_MIN = 8;    // v98: fallback pad when the generous pad blows the area cap
-const ENCIRCLE_MAX_BBOX_AREA = 200000; // bail if bbox area exceeds this
+const ENCIRCLE_MAX_BBOX_AREA = 700000; // v159: 200k→700k — bail only on absurd areas
 
 // Bresenham line between two pixels — used to seal gaps where the mouse
 // moved fast between samples. Returns all pixels on the line.
