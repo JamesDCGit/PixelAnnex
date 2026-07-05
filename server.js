@@ -8095,6 +8095,19 @@ wss.on('connection', (ws, req) => {
   console.log(`[+] Player ${pid} connected from ${ip}`);
 
   const player = { ws, countryId: null, countryIdx: -1, lastSeen: Date.now(), isBot: false, viewport: null };
+  // v168a: bind the Discord identity from the SESSION COOKIE at connect —
+  // authoritative and timing-proof. The old binding relied on the CLIENT including
+  // discordId in a join message, which races auth resolution vs socket join (live
+  // metrics showed a signed-in player with signedInPlayers=0 → all points/conquest/
+  // collectable credit silently skipped). Same cookie /auth/me uses.
+  try {
+    const _ck = (req.headers.cookie || '').match(/pa_session=([a-f0-9]+)/);
+    const _sess = _ck ? getSession(_ck[1]) : null;
+    if (_sess && _sess.discordId) {
+      player.discordId = String(_sess.discordId);
+      console.log('  [Auth] player ' + pid + ' bound to Discord ' + player.discordId + ' via session cookie');
+    }
+  } catch (e) {}
   players.set(pid, player);
 
   const keepalive = setInterval(() => {
@@ -8158,8 +8171,11 @@ wss.on('connection', (ws, req) => {
             const p = getProfile(player.discordId);
             p.username = msg.username;
           }
-          _backfillCollectables(player); // v161: grant items for countries this nation already holds
         }
+        // v168a: backfill runs off player.discordId (bound from the session cookie at
+        // connect, or from msg.discordId above) — the old msg-only gate skipped
+        // cookie-bound players entirely.
+        if (player.discordId) _backfillCollectables(player); // v161: grant items this nation already holds
         console.log(`  Player ${pid} → country ${player.countryId}`);
 
         // Bootstrap map data from client — always accept the latest (clients are deterministic)
