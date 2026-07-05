@@ -119,8 +119,10 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* ── Pixel bucket HUD ── */
 #bucket-hud{
   display:flex;align-items:center;gap:6px;padding:4px 10px;
-  background:#0d1829;border:1px solid rgba(255,255,255,0.1);
-  border-radius:6px;font-size:11px;color:#94a3b8;white-space:nowrap;
+  background:#182742;border:2px solid var(--px-ink);
+  border-radius:0;font-size:11px;color:#94a3b8;white-space:nowrap;
+  clip-path:var(--px-clip);
+  box-shadow:inset 2px 2px 0 rgba(255,255,255,.10),inset -2px -2px 0 rgba(0,0,0,.35);/* v162 stage 3 */
 }
 #bucket-count{font-weight:700;font-size:13px;color:#e2e8f0;min-width:26px;text-align:right;}
 #bucket-bar{width:42px;height:4px;background:#1e2e4a;border-radius:2px;overflow:hidden;}
@@ -232,19 +234,24 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #country-picker{position:relative;display:flex;align-items:center;}
 #csel-btn{
   display:flex;align-items:center;gap:5px;
-  background:#0a0f1a;border:1px solid #1e293b;border-radius:5px;
+  background:#24395e;border:2px solid var(--px-ink);border-radius:0;
   padding:3px 8px 3px 5px;cursor:pointer;min-width:160px;max-width:220px;
-  font-size:11px;color:#e2e8f0;transition:border-color .15s;
+  font-size:11px;color:#dbe7ff;font-weight:700;transition:background .15s;
   user-select:none;
+  clip-path:var(--px-clip);
+  box-shadow:inset 2px 2px 0 rgba(255,255,255,.14),inset -2px -2px 0 rgba(0,0,0,.40);
+  filter:drop-shadow(2px 2px 0 rgba(8,6,3,.75));/* v162 stage 3 */
 }
-#csel-btn:hover{border-color:#334155;}
+#csel-btn:hover{background:#2e4a7a;}
 #csel-flag{display:flex;align-items:center;flex-shrink:0;}
 #csel-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #csel-arrow{color:#475569;font-size:9px;flex-shrink:0;}
 #csel-dropdown{
-  position:absolute;top:calc(100% + 4px);left:0;z-index:1000;
-  background:#0a0f1a;border:1px solid #1e293b;border-radius:6px;
-  width:240px;display:none;box-shadow:0 8px 24px rgba(0,0,0,.6);
+  position:absolute;top:calc(100% + 5px);left:0;z-index:1000;
+  background:#101b2e;border:2px solid var(--px-ink);border-radius:0;
+  width:240px;display:none;
+  clip-path:var(--px-clip);
+  box-shadow:inset 2px 2px 0 rgba(255,255,255,.08),inset -2px -2px 0 rgba(0,0,0,.35);/* v162 stage 3 */
   flex-direction:column;
 }
 #csel-dropdown.open{display:flex;}
@@ -865,13 +872,17 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #login-name{color:#cbd5e1;font-weight:600;}
 #login-rank{color:#818cf8;font-size:10px;}
 #login-btn,#logout-btn{
-  background:#5865f2;border:none;color:white;
+  background:#5865f2;border:2px solid var(--px-ink);color:white;
   padding:4px 10px;font-size:10px;font-family:inherit;
-  border-radius:4px;cursor:pointer;font-weight:600;
+  border-radius:0;cursor:pointer;font-weight:700;
+  clip-path:var(--px-clip);
+  box-shadow:inset 2px 2px 0 rgba(255,255,255,.20),inset -2px -2px 0 rgba(0,0,0,.35);
+  filter:drop-shadow(2px 2px 0 rgba(8,6,3,.75));/* v162 stage 3: Discord blurple, arcade shape */
 }
-#login-btn:hover{background:#4752c4;}
-#logout-btn{background:transparent;color:#64748b;border:1px solid #1e293b;}
-#logout-btn:hover{color:#cbd5e1;border-color:#334155;}
+#login-btn:hover{background:#6b76f5;}
+#login-btn:active,#logout-btn:active{transform:translate(1px,1px);filter:drop-shadow(1px 1px 0 rgba(8,6,3,.75));}
+#logout-btn{background:#24395e;color:#94a3b8;}
+#logout-btn:hover{color:#dbe7ff;background:#2e4a7a;}
 .discord-icon{width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;}
 /* ── Audio HUD ── */
 #audio-hud{
@@ -1510,8 +1521,10 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 #emote-picker {
   position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
   z-index: 120; display: none;
-  background: rgba(10,18,26,0.92); border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+  background: #101b2e; border: 2px solid var(--px-ink);
+  border-radius: 0; padding: 10px 12px;
+  clip-path: var(--px-clip);
+  box-shadow: inset 2px 2px 0 rgba(255,255,255,.10), inset -2px -2px 0 rgba(0,0,0,.40);/* v162 stage 3 */
   text-align: center; max-width: calc(100vw - 24px);
 }
 #emote-picker.open { display: block; animation: epIn .25s ease; }
@@ -4052,7 +4065,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-05-v163';
+const CODE_VERSION = '2026-07-05-v164';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7614,9 +7627,10 @@ function _renderEndgamePanel() {
     const st = document.createElement('style'); st.id = 'endgame-style';
     st.textContent =
       '#endgame-panel{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:30;' +
-      'width:340px;max-width:calc(100vw - 24px);background:rgba(12,6,3,0.65);' + /* v105 ~65% */
-      'border:1px solid rgba(239,68,68,0.6);border-radius:10px;padding:9px 12px;color:#fee2e2;' +
-      'font-size:12px;box-shadow:0 6px 24px rgba(0,0,0,.55);font-family:inherit;display:none;}' +
+      'width:340px;max-width:calc(100vw - 24px);background:rgba(24,12,6,0.88);' + /* v162 stage 3: arcade-chunky */
+      'border:2px solid rgba(239,68,68,0.8);border-radius:0;padding:9px 12px;color:#fee2e2;' +
+      'clip-path:var(--px-clip);box-shadow:inset 2px 2px 0 rgba(255,255,255,.08),inset -2px -2px 0 rgba(0,0,0,.40);' +
+      'font-size:12px;font-family:inherit;display:none;}' +
       '#endgame-panel.show{display:block;animation:egIn .4s ease;}' +
       '#endgame-panel h4{margin:0 0 2px;font-size:13px;color:#fca5a5;letter-spacing:.04em;}' +
       '#endgame-panel .eg-req{font-size:10px;opacity:.85;margin-bottom:7px;line-height:1.4;}' +
@@ -7860,8 +7874,9 @@ function _showConquestFallPopup(winnerFi, loserFi){
     const st = document.createElement('style'); st.id = 'fallpop-style';
     st.textContent =
       '#fall-popup{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9000;' +
-      'background:linear-gradient(135deg,rgba(18,8,8,0.7),rgba(26,15,26,0.7));border:2px solid rgba(239,68,68,.7);' + /* v105 ~70% */
-      'border-radius:14px;padding:18px 26px;box-shadow:0 12px 48px rgba(0,0,0,.6);color:#fee2e2;' +
+      'background:rgba(24,12,12,.92);border:2px solid rgba(239,68,68,.8);' + /* v162 stage 3: arcade-chunky (red border kept for meaning) */
+      'border-radius:0;padding:18px 26px;color:#fee2e2;clip-path:var(--px-clip);' +
+      'box-shadow:inset 2px 2px 0 rgba(255,255,255,.08),inset -2px -2px 0 rgba(0,0,0,.40);' +
       'font-family:inherit;text-align:center;animation:fpIn .4s cubic-bezier(.2,.8,.3,1.2);cursor:pointer;}' +
       '#fall-popup.fall-out{opacity:0;transform:translate(-50%,-50%) scale(.9);transition:.35s;}' +
       '#fall-popup .fp-title{font-size:13px;letter-spacing:.12em;color:#fca5a5;margin-bottom:12px;font-weight:700;}' +
@@ -15356,14 +15371,14 @@ function _showWorldConquestOverlay(data) {
     'color:#fbbf24;font-family:"Courier New",monospace;display:flex;flex-direction:column;justify-content:space-between;';
   overlay.innerHTML =
     // ── top banner ──
-    '<div style="background:rgba(7,13,26,0.88);border-bottom:1px solid rgba(251,191,36,0.35);padding:12px 16px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.6);">' +
+    '<div style="background:rgba(7,13,26,0.92);border-bottom:3px solid var(--px-ink);padding:12px 16px;text-align:center;box-shadow:inset 0 2px 0 rgba(255,255,255,.08);">' +
       '<div style="font-size:26px;font-weight:800;letter-spacing:.1em;">🌍 WORLD CONQUERED 🌍</div>' +
       (data.winnerName ? '<div style="font-size:17px;font-weight:800;color:#fde68a;margin-top:2px;">👑 ' + escapeHtml(data.winnerName) + ' WINS' +
         (wc != null ? ' <span style="color:#94a3b8;font-weight:600;font-size:12px;">· ' + wc + '% of countries · ' + wp + '% of the map</span>' : '') + '</div>' : '') +
       '<div style="font-size:12px;color:#fbbf24;margin-top:2px;">World restarting in <span id="wc-countdown" style="font-weight:800">5:00</span></div>' +
     '</div>' +
     // ── bottom stats + share ──
-    '<div style="background:rgba(7,13,26,0.9);border-top:1px solid rgba(251,191,36,0.35);padding:10px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.6);">' +
+    '<div style="background:rgba(7,13,26,0.92);border-top:3px solid var(--px-ink);padding:10px 16px;box-shadow:inset 0 -2px 0 rgba(0,0,0,.4);">' +
       '<div style="display:flex;gap:18px;justify-content:center;flex-wrap:wrap;max-width:900px;margin:0 auto;">' +
         '<div style="min-width:180px;"><div style="font-size:10px;color:#94a3b8;letter-spacing:.08em;margin-bottom:3px;">🏆 TOP CONQUERORS</div>' +
           _mini(data.topCountries, function (c) { return escapeHtml(c.name || '?') + ' <span style="color:#64748b">' + c.conquests + ' ⚔️</span>'; }, '#fbbf24') + '</div>' +
@@ -15372,8 +15387,9 @@ function _showWorldConquestOverlay(data) {
         '<div style="min-width:180px;"><div style="font-size:10px;color:#94a3b8;letter-spacing:.08em;margin-bottom:3px;">🔥 TOP CONTRIBUTORS</div>' +
           _mini(data.topContributors, function (p) { return escapeHtml(p.username || '?') + ' <span style="color:#64748b">' + (p.pixels || 0).toLocaleString() + ' px</span>'; }, '#34d399') + '</div>' +
         '<div style="display:flex;align-items:center;">' +
-          '<button id="wc-share" style="background:#1d9bf0;border:none;color:#fff;font-family:inherit;font-weight:700;font-size:13px;' +
-            'padding:10px 18px;border-radius:9px;cursor:pointer;box-shadow:0 2px 10px rgba(29,155,240,.4);">🐦 Share on X</button>' +
+          '<button id="wc-share" style="background:#1d9bf0;border:2px solid var(--px-ink);color:#fff;font-family:inherit;font-weight:700;font-size:13px;' +
+            'padding:10px 18px;border-radius:0;cursor:pointer;clip-path:var(--px-clip);' +
+            'box-shadow:inset 2px 2px 0 rgba(255,255,255,.25),inset -2px -2px 0 rgba(0,0,0,.3);filter:drop-shadow(2px 2px 0 rgba(8,6,3,.75));">🐦 Share on X</button>' +
         '</div>' +
       '</div>' +
     '</div>';
