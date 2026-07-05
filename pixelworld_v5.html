@@ -4011,7 +4011,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-05-v160';
+const CODE_VERSION = '2026-07-05-v161';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -13984,7 +13984,7 @@ function refreshRankUI(){
           ${next ? ' · ' + t('rank.next_rank_inline', { name: tRank(next.name), min: next.min }) : ' · <b>' + t('hud.max_rank') + '</b>'}
         </div>
         ${perks.length ? '<div class="rank-perks" style="font-size:10px;color:#94a3b8;margin-top:4px;line-height:1.5;">' + perks.join(' · ') + '</div>' : ''}
-        <div onclick="openCollectables()" title="View your collection" style="font-size:10px;color:#fbbf24;margin-top:4px;cursor:pointer;pointer-events:auto;">🎒 Collectables <b>${_collectCountLine()}</b> — view</div><!-- v158: #rank-display is pointer-events:none — re-enable on this line so the click lands -->
+        <button onclick="openCollectables()" title="View your collection" style="display:block;width:100%;margin-top:6px;padding:6px 10px;pointer-events:auto;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;color:#fbbf24;background:#162035;border:1px solid #2a3a5c;border-radius:7px;text-align:center;">🎒 Collectables <b>${_collectCountLine()}</b></button><!-- v161: wide button (was a text line); pointer-events:auto because #rank-display is none -->
         <div class="rank-gdp" title="Combined GDP (USD) of every country you currently hold">
           <span class="gdp-label">GDP</span>
           <span id="gdp-value">$000,000,000,000,000</span>

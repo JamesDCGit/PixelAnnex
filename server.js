@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-05-v160';
+const SERVER_VERSION       = '2026-07-05-v161';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3010,6 +3010,31 @@ setInterval(() => {
 // Art/manifest live in public/collectables/ (see tools/gen-collectables.js —
 // the atlas is designed for manual editing).
 
+// v161: BACKFILL — on join, grant a logged-in player the collectable of every
+// country their nation CURRENTLY holds. Safety net for awards missed at conquest
+// time (e.g. the pre-v158 attribution gap, a restart between conquest and save,
+// or a bot landing the killing blow while the player was disconnected). Items
+// only ever ratchet up, so re-running on every join is harmless.
+function _backfillCollectables(player) {
+  if (!player || !player.discordId || !player.countryId || !player.ws) return;
+  const prof = getProfile(player.discordId);
+  if (!prof.collectables) prof.collectables = {};
+  let n = 0;
+  for (const k of conqueredSet) {
+    const p = String(k).split(':');
+    if (p.length !== 2 || p[0] === p[1]) continue;
+    if (p[1] !== String(player.countryId)) continue;   // held by the player's nation
+    if (prof.collectables[p[0]]) continue;             // already unlocked
+    prof.collectables[p[0]] = Date.now();
+    try { player.ws.send(JSON.stringify({ type: 'collect_award', countryId: p[0] })); } catch (e) {}
+    n++;
+  }
+  if (n) {
+    markProfilesDirty();
+    console.log('[Collect] backfilled', n, 'items for', prof.username || player.discordId, '(' + _countryName(player.countryId) + ')');
+  }
+}
+
 // ── v156: TREASURE CHESTS ─────────────────────────────────────────
 // Server-spawned bonus chests: 10/hour (one every 6 min), max 10 active, anywhere
 // on the map (land OR ocean). First player to click one wins +50px +1,000pts; it
@@ -5159,6 +5184,7 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
           try { hp.ws.send(JSON.stringify({ type: 'collect_award', countryId: String(geo) })); } catch (e) {}
         }
         markProfilesDirty();
+        console.log('[Conquest] credited', _pts, 'pts +', _countryName(geo), 'collectable to', _pr.username || hp.discordId); // v161: audit trail
       }
     } catch (e) { console.warn('[Conquest] human credit failed:', e.message); }
   }
@@ -8132,6 +8158,7 @@ wss.on('connection', (ws, req) => {
             const p = getProfile(player.discordId);
             p.username = msg.username;
           }
+          _backfillCollectables(player); // v161: grant items for countries this nation already holds
         }
         console.log(`  Player ${pid} → country ${player.countryId}`);
 
@@ -8267,6 +8294,7 @@ wss.on('connection', (ws, req) => {
           if (!ownerPixels[player.countryIdx]) ownerPixels[player.countryIdx] = new Set();
           countryPxCount[cid] = countryPxCount[cid] || 0;
           console.log('[v38] Player', pid, 'switched to country', cid);
+          _backfillCollectables(player); // v161: new nation may already hold conquests
           broadcastPlayers();
         } else {
           console.log('[v40] Rejected set-country for', cid, 'no playable pixels');
