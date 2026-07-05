@@ -21,7 +21,7 @@ body{width:100%;height:100%;overflow:hidden;background:#070d1a;font-family:'Cour
 #toolbar{display:flex;align-items:center;gap:8px;padding:4px 10px;flex-shrink:0;background:#0c1526;border-bottom:2px solid var(--px-ink);flex-wrap:wrap;z-index:20;min-height:36px;}/* v165: tightened to the button height */
 /* v99b: pulsing exile notice in the menu bar */
 #exile-badge{
-  display:none;align-items:center;padding:3px 10px;border-radius:5px;
+  display:none;align-items:center;padding:3px 10px;border-radius:0;/* v166 */
   font-size:10px;font-weight:700;letter-spacing:.06em;white-space:nowrap;
   color:#fca5a5;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.45);
   animation:exilePulse 1.6s ease-in-out infinite;cursor:help;
@@ -41,9 +41,11 @@ body{width:100%;height:100%;overflow:hidden;background:#070d1a;font-family:'Cour
    — filter turns them into containing blocks for positioned children). */
 :root{
   --px-ink:#14100a;
+  --px-btn-h:28px; /* v166: ONE height for every toolbar control */
   --px-clip:polygon(0 3px,3px 3px,3px 0,calc(100% - 3px) 0,calc(100% - 3px) 3px,100% 3px,100% calc(100% - 3px),calc(100% - 3px) calc(100% - 3px),calc(100% - 3px) 100%,3px 100%,3px calc(100% - 3px),0 calc(100% - 3px));
 }
-select,.btn{background:#24395e;border:2px solid var(--px-ink);color:#dbe7ff;padding:4px 10px;border-radius:0;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;
+select,.btn{background:#24395e;border:2px solid var(--px-ink);color:#dbe7ff;padding:0 10px;border-radius:0;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;
+  height:var(--px-btn-h);box-sizing:border-box;
   clip-path:var(--px-clip);
   box-shadow:inset 2px 2px 0 rgba(255,255,255,.14),inset -2px -2px 0 rgba(0,0,0,.40);
   filter:drop-shadow(2px 2px 0 rgba(8,6,3,.75));
@@ -108,17 +110,22 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 .leg-size-L{background:#3a2e1e;color:#fbbf24;}
 .leg-size-XL{background:#3a1e2e;color:#f9a8d4;}
 #zoom-hud{bottom:14px;right:14px;display:flex;flex-direction:column;gap:4px;padding:6px}/* v99a: 14px edge gap */
-.z-btn{width:27px;height:27px;border-radius:5px;background:#162035;border:1px solid rgba(255,255,255,.08);color:#64748b;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;line-height:1;font-family:inherit;}
-.z-btn:hover{background:#1e2e4a;color:#e2e8f0}
+.z-btn{width:var(--px-btn-h);height:var(--px-btn-h);box-sizing:border-box;border-radius:0;background:#24395e;border:2px solid var(--px-ink);color:#dbe7ff;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;line-height:1;font-family:inherit;
+  clip-path:var(--px-clip);
+  box-shadow:inset 1px 1px 0 rgba(255,255,255,.14),inset -1px -1px 0 rgba(0,0,0,.40);
+  filter:drop-shadow(2px 2px 0 rgba(8,6,3,.75));}/* v166: arcade-chunky, uniform height */
+.z-btn:hover{background:#2e4a7a;color:#fff}
+.z-btn:active{transform:translate(1px,1px);filter:drop-shadow(1px 1px 0 rgba(8,6,3,.75));}
 /* v108: font scales via --pa-tip-scale (can't zoom #tip — it's pinned to the cursor
    in px, so zoom would drift it); bg ~20% more transparent. */
-#tip{position:fixed;display:none;z-index:30;pointer-events:none;background:rgba(7,13,26,.77);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:8px 12px;font-size:calc(11px * var(--pa-tip-scale,1));color:#cbd5e1;min-width:140px;max-width:220px;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,.4);}
+#tip{position:fixed;display:none;z-index:30;pointer-events:none;background:rgba(13,22,38,.90);border:2px solid var(--px-ink);border-radius:0;clip-path:var(--px-clip);padding:8px 12px;font-size:calc(11px * var(--pa-tip-scale,1));color:#cbd5e1;min-width:140px;max-width:220px;line-height:1.4;box-shadow:inset 2px 2px 0 rgba(255,255,255,.08),inset -2px -2px 0 rgba(0,0,0,.35);}/* v166: arcade-chunky */
 #tip-name{font-weight:700;color:#fff;margin-bottom:5px;font-size:calc(12px * var(--pa-tip-scale,1));border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:5px}
 #tip-sub{font-size:calc(10px * var(--pa-tip-scale,1));color:#94a3b8;margin-top:0;line-height:1.8}
 
 /* ── Pixel bucket HUD ── */
 #bucket-hud{
-  display:flex;align-items:center;gap:6px;padding:4px 10px;
+  display:flex;align-items:center;gap:6px;padding:0 10px;
+  height:var(--px-btn-h);box-sizing:border-box;/* v166: matches the uniform control height */
   background:#182742;border:2px solid var(--px-ink);
   border-radius:0;font-size:11px;color:#94a3b8;white-space:nowrap;
   clip-path:var(--px-clip);
@@ -238,7 +245,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #csel-btn{
   display:flex;align-items:center;gap:5px;
   background:#24395e;border:2px solid var(--px-ink);border-radius:0;
-  padding:3px 8px 3px 5px;cursor:pointer;min-width:160px;max-width:220px;
+  height:var(--px-btn-h);box-sizing:border-box;/* v166: uniform height */
+  padding:0 8px 0 5px;cursor:pointer;min-width:160px;max-width:220px;
   font-size:11px;color:#dbe7ff;font-weight:700;transition:background .15s;
   user-select:none;
   clip-path:var(--px-clip);
@@ -688,17 +696,18 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #world-state-bar{
   position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
   display:flex;gap:0;align-items:center;
-  background:rgba(7,13,26,0.85);backdrop-filter:blur(6px);
-  border:1px solid #1e293b;border-radius:8px;
+  background:rgba(13,22,38,.90);
+  border:2px solid var(--px-ink);border-radius:0;/* v166: arcade-chunky */
   padding:6px 14px;z-index:50;
   font-family:'Courier New',monospace;
-  box-shadow:0 4px 12px rgba(0,0,0,0.4);
+  clip-path:var(--px-clip);
+  box-shadow:inset 2px 2px 0 rgba(255,255,255,.09),inset -2px -2px 0 rgba(0,0,0,.35);
   pointer-events:none;
   white-space:nowrap;
 }
 #world-state-bar .ws-cell{
   display:flex;align-items:baseline;gap:5px;
-  padding:0 12px;border-right:1px solid #1e293b;
+  padding:0 12px;border-right:2px solid rgba(20,16,10,.7);/* v166: ink separators */
 }
 #world-state-bar .ws-cell:last-child{border-right:none;}
 #world-state-bar .ws-val{font-size:13px;color:#fff;font-weight:600;}
@@ -881,7 +890,8 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #login-rank{color:#818cf8;font-size:10px;}
 #login-btn,#logout-btn{
   background:#5865f2;border:2px solid var(--px-ink);color:white;
-  padding:4px 10px;font-size:10px;font-family:inherit;
+  padding:0 10px;font-size:10px;font-family:inherit;
+  height:var(--px-btn-h);box-sizing:border-box;/* v166: uniform height */
   border-radius:0;cursor:pointer;font-weight:700;
   clip-path:var(--px-clip);
   box-shadow:inset 2px 2px 0 rgba(255,255,255,.20),inset -2px -2px 0 rgba(0,0,0,.35);
@@ -1592,14 +1602,20 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 /* v36: Toolbar controls — compact audio + zoom + language inline in #toolbar */
 .tb-controls { display: flex; align-items: center; gap: 6px; }
 .tb-audio { display: flex; align-items: center; gap: 2px; }
-.tb-audio .trk-btn { width: 22px; height: 22px; min-width: 22px; padding: 0; font-size: 9px; line-height: 1; background: #24395e; border: 2px solid var(--px-ink); color: #64748b; border-radius: 0; cursor: pointer; font-family: inherit; clip-path: var(--px-clip); box-shadow: inset 1px 1px 0 rgba(255,255,255,.14), inset -1px -1px 0 rgba(0,0,0,.40); }/* v165 */
+.tb-audio .trk-btn { width: var(--px-btn-h); height: var(--px-btn-h); min-width: var(--px-btn-h); box-sizing: border-box; padding: 0; font-size: 10px; line-height: 1; background: #24395e; border: 2px solid var(--px-ink); color: #64748b; border-radius: 0; cursor: pointer; font-family: inherit; clip-path: var(--px-clip); box-shadow: inset 1px 1px 0 rgba(255,255,255,.14), inset -1px -1px 0 rgba(0,0,0,.40); filter: drop-shadow(2px 2px 0 rgba(8,6,3,.75)); }/* v166: uniform height */
 .tb-audio .trk-btn.active { background: #e8b93c; color: #2a1c05; }
-.tb-audio .aud-btn { width: 22px; height: 22px; min-width: 22px; padding: 0; font-size: 10px; background: #24395e; border: 2px solid var(--px-ink); color: #64748b; border-radius: 0; cursor: pointer; font-family: inherit; margin-left: 1px; clip-path: var(--px-clip); box-shadow: inset 1px 1px 0 rgba(255,255,255,.14), inset -1px -1px 0 rgba(0,0,0,.40); }/* v165 */
+.tb-audio .aud-btn { width: var(--px-btn-h); height: var(--px-btn-h); min-width: var(--px-btn-h); box-sizing: border-box; padding: 0; font-size: 12px; background: #24395e; border: 2px solid var(--px-ink); color: #64748b; border-radius: 0; cursor: pointer; font-family: inherit; margin-left: 1px; clip-path: var(--px-clip); box-shadow: inset 1px 1px 0 rgba(255,255,255,.14), inset -1px -1px 0 rgba(0,0,0,.40); filter: drop-shadow(2px 2px 0 rgba(8,6,3,.75)); }/* v166: uniform height */
 .tb-audio .aud-btn.active { background: #e8b93c; color: #2a1c05; }
 .tb-audio .aud-btn.muted { background: #182742; color: #475569; }
-.tb-zoom { display: flex; align-items: center; gap: 2px; }
-.tb-zoom .z-btn { width: 24px; height: 22px; min-width: 24px; padding: 0; font-size: 13px; background: #162035; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1; border-radius: 3px; cursor: pointer; font-family: inherit; line-height: 1; }
-.tb-zoom .z-btn:hover { background: #1e3a5f; }
+/* v166: zoom panel — a small arcade panel floating just above the stats bar.
+   (Replaces the old in-toolbar .tb-zoom placement.) */
+#zoom-hud-tb{
+  position:absolute;bottom:60px;left:50%;transform:translateX(-50%);
+  display:flex;gap:5px;padding:5px;z-index:50;
+  background:rgba(13,22,38,.88);border:2px solid var(--px-ink);
+  clip-path:var(--px-clip);
+  box-shadow:inset 2px 2px 0 rgba(255,255,255,.09),inset -2px -2px 0 rgba(0,0,0,.35);
+}
 .tb-lang { line-height: 1; }
 @media (max-width: 768px) {
   /* On mobile, drop the toolbar controls — they live in the drawer */
@@ -1812,9 +1828,9 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <h1>Pixel<span>Annex</span></h1><span id="ver-badge"></span>
     <!-- v99b: pulsing exile notice — shown while the player's homeland is held -->
     <span id="exile-badge" title="Your homeland has fallen. Regen is limited to a 0.5× base (bonuses still apply) until you reconquer it.">⚠️ REGEN LIMITED — RECLAIM YOUR HOMELAND</span>
-    <button class="z-btn" id="btn-stats" onclick="openStats()" title="Stats &amp; Leaderboard" style="margin-left:6px;font-size:9px;padding:2px 6px;">📊</button>
-    <button class="z-btn" id="btn-howto" onclick="openHowTo()" title="How to play" style="margin-left:6px;font-size:9px;padding:2px 6px;">❔</button>
-    <button class="z-btn" id="btn-font-scale" onclick="cycleFontScale()" title="Font Scale: Normal / Mid / Large" style="margin-left:6px;font-size:9px;padding:2px 6px;">Aa</button>
+    <button class="z-btn" id="btn-stats" onclick="openStats()" title="Stats &amp; Leaderboard" style="margin-left:6px;">📊</button>
+    <button class="z-btn" id="btn-howto" onclick="openHowTo()" title="How to play" style="margin-left:6px;">❔</button>
+    <button class="z-btn" id="btn-font-scale" onclick="cycleFontScale()" title="Font Scale: Normal / Mid / Large" style="margin-left:6px;">Aa</button>
     <span id="font-scale-label" style="font-size:9px;color:#475569;margin-left:2px;margin-right:2px">Normal</span>
     <div class="sep"></div>
     <div id="country-picker">
@@ -1867,13 +1883,9 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
         <button class="aud-btn muted" id="btn-music" onclick="toggleMusic()" title="Toggle music">♪</button>
         <button class="aud-btn muted" id="btn-sfx" onclick="toggleSFX()" title="Toggle sound effects">🔊</button>
       </div>
-      <!-- Zoom (compact) -->
-      <div id="zoom-hud-tb" class="tb-zoom">
-        <button class="z-btn" id="zi" title="Zoom in">+</button>
-        <button class="z-btn" id="zo" title="Zoom out">-</button>
-      </div>
+      <!-- v166: zoom buttons moved to the floating #zoom-hud-tb panel above the stats bar -->
       <!-- Language picker (compact) -->
-      <select id="lang-select-tb" class="tb-lang" title="Language" aria-label="Language" style="background:#162035;border:1px solid rgba(255,255,255,0.1);color:#cbd5e1;padding:3px 6px;font-size:10px;border-radius:4px;font-family:inherit;">
+      <select id="lang-select-tb" class="tb-lang" title="Language" aria-label="Language" style="font-size:10px;padding:0 6px;"><!-- v166: inherits the chunky select style (matches country picker) -->
         <option value="en">🇬🇧 EN</option>
         <option value="es">🇪🇸 ES</option>
         <option value="zh">🇨🇳 中文</option>
@@ -1890,12 +1902,12 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <div id="toolbar-account">
       <div id="social-links" style="display:flex;gap:6px;">
         <a href="https://x.com/PixelAnnexGame" target="_blank" rel="noopener" title="Follow @PixelAnnexGame on X"
-           style="display:flex;align-items:center;gap:4px;padding:3px 8px;background:#24395e;border:2px solid var(--px-ink);border-radius:0;clip-path:var(--px-clip);box-shadow:inset 1px 1px 0 rgba(255,255,255,.14),inset -1px -1px 0 rgba(0,0,0,.40);font-size:10px;font-weight:700;color:#dbe7ff;text-decoration:none;transition:background .15s;">
+           style="display:flex;align-items:center;gap:4px;padding:0 8px;height:var(--px-btn-h);box-sizing:border-box;background:#24395e;border:2px solid var(--px-ink);border-radius:0;clip-path:var(--px-clip);box-shadow:inset 1px 1px 0 rgba(255,255,255,.14),inset -1px -1px 0 rgba(0,0,0,.40);font-size:10px;font-weight:700;color:#dbe7ff;text-decoration:none;transition:background .15s;">
           <span style="font-weight:700;font-size:11px;">𝕏</span>
           <span>Follow</span>
         </a>
         <a href="https://discord.gg/UHQRqXDpBE" target="_blank" rel="noopener" title="Join the PixelAnnex Discord"
-           style="display:flex;align-items:center;gap:4px;padding:3px 8px;background:#24395e;border:2px solid var(--px-ink);border-radius:0;clip-path:var(--px-clip);box-shadow:inset 1px 1px 0 rgba(255,255,255,.14),inset -1px -1px 0 rgba(0,0,0,.40);font-size:10px;font-weight:700;color:#dbe7ff;text-decoration:none;transition:background .15s;">
+           style="display:flex;align-items:center;gap:4px;padding:0 8px;height:var(--px-btn-h);box-sizing:border-box;background:#24395e;border:2px solid var(--px-ink);border-radius:0;clip-path:var(--px-clip);box-shadow:inset 1px 1px 0 rgba(255,255,255,.14),inset -1px -1px 0 rgba(0,0,0,.40);font-size:10px;font-weight:700;color:#dbe7ff;text-decoration:none;transition:background .15s;">
           <span style="font-size:11px;">💬</span>
           <span>Discord</span>
         </a>
@@ -2125,6 +2137,11 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
       </div>
     </div>
     <div id="daily-bonus-toast"></div>
+    <!-- v166: zoom panel — floats just above the stats bar (buttons keep ids #zi/#zo; handlers bind by id) -->
+    <div id="zoom-hud-tb">
+      <button class="z-btn" id="zi" title="Zoom in">+</button>
+      <button class="z-btn" id="zo" title="Zoom out">-</button>
+    </div>
     <div id="world-state-bar" title="Live world state">
       <div class="ws-cell ws-war" title="The current PixelAnnex War (game number) — increments each time the world is conquered"><span class="ws-war-label">PixelAnnex War</span><span class="ws-war-num" id="ws-war-num">#—</span></div>
       <div class="ws-cell"><span class="ws-val" id="ws-players">—</span><span class="ws-lbl" data-i18n="hud.players">players</span></div>
@@ -4078,7 +4095,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-05-v165';
+const CODE_VERSION = '2026-07-05-v166';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6488,7 +6505,9 @@ if (typeof renderLandmarks === 'function') {
     const zoom = _fontScales[0].val;
     // v99c: leaderboard-panel added — it was the ONLY panel missing from the
     // zoom list, so it rendered un-zoomed (smaller font, unscaled edge gaps).
-    ['toolbar','legend','leaderboard-panel','zoom-hud','audio-hud','bucket-hud',
+    // v166: bucket-hud removed (toolbar child since v128 — zooming it separately
+    // DOUBLE-zoomed it); zoom-hud-tb added (now a floating panel above the stats bar).
+    ['toolbar','legend','leaderboard-panel','zoom-hud','audio-hud','zoom-hud-tb',
      'conquest-toast','bomb-toast','activity-toast','banner','highlight-banner',
      'rank-display','bomb-menu'].forEach(id=>{
       const el=document.getElementById(id);
@@ -10169,11 +10188,13 @@ function _applyFontScale(){
   // runtime popups so ALL of their text obeys the global font setting.
   const targets = [
     // v99c: leaderboard-panel added (was missing → un-zoomed font + offsets)
-    'toolbar','legend','leaderboard-panel','zoom-hud','audio-hud','bucket-hud',
+    'toolbar','legend','leaderboard-panel','zoom-hud','audio-hud','zoom-hud-tb',
     'conquest-toast','bomb-toast','activity-toast',
     'banner','highlight-banner',
     'rank-display','bomb-menu',
-    'login-hud','social-links',                                      // v105
+    // v166: bucket-hud / login-hud / social-links REMOVED — all three live inside
+    // #toolbar now (v128/v132a), so zooming them separately double-zoomed them
+    // (social links rendered 1.44x — taller than every other toolbar button).
     'endgame-panel','fall-popup',                                    // v105 runtime popups
     // v111: encircle/fightback banners removed — they're now children of
     // #activity-toast (already zoomed), so listing them would double-zoom.
