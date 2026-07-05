@@ -4011,7 +4011,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-05-v159';
+const CODE_VERSION = '2026-07-05-v160';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6510,6 +6510,8 @@ function claimPixel(px,py){
 }
 
 function paintBrush(px,py){
+  // v160: no painting once the world is conquered (server rejects too via _isPaintLocked).
+  if(typeof _worldLockClient!=='undefined' && _worldLockClient) return;
   // Reject ocean clicks — landMask check at brush centre
   if(!landMask||!landMask[py*MAP_W+px]) return;
   // Block painting if this pixel already belongs to the same country (wastage prevention)
@@ -7585,6 +7587,10 @@ function _renderEndgamePanel() {
       '#endgame-panel .eg-fill.p{background:linear-gradient(90deg,#ef4444,#f87171);}' +
       '#endgame-panel .eg-mark{position:absolute;top:-1px;bottom:-1px;width:2px;background:#fff;opacity:.75;}' +
       '#endgame-panel .eg-lead span:first-child{color:#fde68a;font-weight:700;}' +
+      /* v160: contenders' % numbers pulse once they clear 50% — slow at 50%, ramping
+         to a fast urgent flash as they approach the 65% win bar (duration set inline). */
+      '#endgame-panel .eg-pulse{animation:egPulse 1.6s ease-in-out infinite;color:#fde68a;font-weight:700;}' +
+      '@keyframes egPulse{0%,100%{opacity:1;}50%{opacity:.35;}}' +
       '@keyframes egIn{from{opacity:0;transform:translate(-50%,-8px);}to{opacity:1;transform:translateX(-50%);}}';
     document.head.appendChild(st);
   }
@@ -7612,10 +7618,20 @@ function _renderEndgamePanel() {
   // v132a: only list blocs holding >=10% of the countries or the map (hide the long tail).
   const _shown = (d.contenders || []).filter(c => c.countriesFrac >= 0.10 || c.pixelsFrac >= 0.10).slice(0, 6);
   for (const c of _shown) {
-    const cf = Math.round(c.countriesFrac * 100), pf = Math.round(c.pixelsFrac * 100);
+    // v160: one-decimal display — whole-% rounding made a true 64.6% read as "65%"
+    // while the win check hadn't fired (looked like the world refused to fall).
+    const cfv = c.countriesFrac * 100, pfv = c.pixelsFrac * 100;
+    const cf = Math.round(cfv), pf = Math.round(pfv);
     const won = c.countriesFrac >= (d.winCountriesFrac || 0.65) && c.pixelsFrac >= (d.winPixelsFrac || 0.65);
+    // v160: pulse the numbers once past 50% — 1.6s at 50% ramping to 0.3s by 65%.
+    const _pv = Math.max(cfv, pfv);
+    let _numOpen = '<span>', _numClose = '</span>';
+    if (_pv >= 50) {
+      const _t = Math.min(1, (_pv - 50) / 15);
+      _numOpen = '<span class="eg-pulse" style="animation-duration:' + (1.6 - 1.3 * _t).toFixed(2) + 's">';
+    }
     html += '<div class="eg-row' + (won ? ' eg-lead' : '') + '">' +
-      '<div class="eg-name"><span>' + escapeHtml(c.name) + '</span><span>' + cf + '% · ' + pf + '%</span></div>' +
+      '<div class="eg-name"><span>' + escapeHtml(c.name) + '</span>' + _numOpen + cfv.toFixed(1) + '% · ' + pfv.toFixed(1) + '%' + _numClose + '</div>' +
       '<div class="eg-bar"><div class="eg-fill c" style="width:' + Math.min(100, cf) + '%"></div><div class="eg-mark" style="left:' + winC + '%"></div></div>' +
       '<div class="eg-bar"><div class="eg-fill p" style="width:' + Math.min(100, pf) + '%"></div><div class="eg-mark" style="left:' + winP + '%"></div></div>' +
       '</div>';
@@ -15243,72 +15259,100 @@ document.addEventListener('DOMContentLoaded', () => setTimeout(refreshLeaderboar
 })();
 
 
-// ── v38: World-conquest overlay ───────────────────────────────────
+// ── v38/v160: World-conquest overlay ─────────────────────────────
+// v160 REDESIGN (operator): the WORLD stays VISIBLE — banner pinned top, stats +
+// share pinned bottom, transparent middle (which still swallows input = no more
+// painting). Every country is flood-filled to the winner's colour + flag (chunked),
+// and a "Share on X" button tweets the result (+ the server's full-world shot URL).
+let _worldLockClient = false; // v160: blocks paintBrush once the world is conquered
 function _showWorldConquestOverlay(data) {
   const old = document.getElementById('world-conquest-overlay');
   if (old) old.remove();
   // v100: the game's over — drop the sudden-death panel/regen.
   _suddenDeathClient = false;
+  _worldLockClient = true; // v160: no painting after conquest (server also rejects)
   const _ep = document.getElementById('endgame-panel'); if (_ep) _ep.classList.remove('show');
+
+  // v160: mark EVERY country as conquered by the dominating country — chunked
+  // finisherFill (2 geos/frame) floods each country in the winner's colour and
+  // places the winner's flag (finisherFill → placeFlag; native flags auto-hide).
+  const _winCid = data.winnerCountryId != null ? String(data.winnerCountryId) : null;
+  const _winFi = _winCid != null ? idToFeatIdx.get(_winCid) : undefined;
+  if (_winFi !== undefined && typeof finisherFill === 'function' && typeof geoPixelList !== 'undefined') {
+    const _ids = [];
+    const _seen = new Set();
+    for (let i = 0; i < featList.length; i++) {
+      const f = featList[i];
+      if (!f || !f.id || _seen.has(String(f.id))) continue;
+      _seen.add(String(f.id));
+      if (String(f.id) === _winCid) continue;
+      if (typeof isPlayableCountry === 'function' && !isPlayableCountry(i)) continue;
+      _ids.push(i);
+    }
+    let _qi = 0;
+    const _step = () => {
+      for (let n = 0; n < 2 && _qi < _ids.length; n++, _qi++) {
+        try { finisherFill(_ids[_qi], _winFi); } catch (e) {}
+      }
+      // setTimeout (not rAF): the takeover must keep running for players in a
+      // BACKGROUND tab too, so they return to a fully-conquered world.
+      if (_qi < _ids.length && _worldLockClient) setTimeout(_step, 40);
+    };
+    setTimeout(_step, 50);
+  }
+
+  const wc = data.winnerCountriesFrac != null ? Math.round(data.winnerCountriesFrac * 100) : null;
+  const wp = data.winnerPixelsFrac != null ? Math.round(data.winnerPixelsFrac * 100) : null;
+  const _mini = (arr, fmt, color) => (arr || []).slice(0, 3).map(function (x, i) {
+    return '<div style="font-size:11px;color:#cbd5e1;line-height:1.6;"><b style="color:' + color + '">#' + (i + 1) + '</b> ' + fmt(x) + '</div>';
+  }).join('') || '<div style="font-size:10px;color:#475569;">—</div>';
+
   const overlay = document.createElement('div');
   overlay.id = 'world-conquest-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;background:linear-gradient(135deg,#070d1a,#1a0a14);' +
-    'color:#fbbf24;font-family:"Courier New",monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;' +
-    'padding:24px;text-align:center;overflow-y:auto;';
-  // v39d: render the country flag next to the name
-  function _wcFlagSrc(country) {
-    if (!country || !country.countryId) return '';
-    const fi = (typeof featList !== 'undefined') ? featList.find(f => String(f.id) === String(country.countryId)) : null;
-    if (!fi) return '';
-    // v41a: prefer real PNG; fall back to procedural data URL
-    if (typeof getRealFlagURL === 'function') {
-      const real = getRealFlagURL(fi);
-      if (real) return real;
-    }
-    try {
-      return (typeof _renderFlagToDataURL === 'function') ? (_renderFlagToDataURL(fi) || '') : '';
-    } catch(e) { return ''; }
-  }
-  const topCList = (data.topCountries || []).map(function(c, i) {
-    const flagSrc = _wcFlagSrc(c);
-    const flagImg = flagSrc
-      ? '<img src="' + flagSrc + '" style="width:40px;height:26px;image-rendering:pixelated;box-shadow:0 0 0 1px rgba(0,0,0,0.6),0 2px 4px rgba(0,0,0,0.5);margin-right:10px;flex-shrink:0;">'
-      : '<span style="width:40px;height:26px;display:inline-block;margin-right:10px;background:#475569;border-radius:2px;flex-shrink:0;"></span>';
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,0.04);margin-bottom:4px;border-radius:4px;font-size:14px;">' +
-      '<span style="display:flex;align-items:center;">' + flagImg +
-        '<span><b style="color:#fbbf24">#' + (i + 1) + '</b> ' + (c.name || '?') + '</span>' +
-      '</span>' +
-      '<span style="color:#cbd5e1">' + c.conquests + ' conquests</span></div>';
-  }).join('');
-  const topPList = (data.topPlayers || []).map(function(p, i) {
-    return '<div style="display:flex;justify-content:space-between;padding:6px 12px;background:rgba(99,102,241,0.08);margin-bottom:4px;border-radius:4px;font-size:14px;">' +
-      '<span><b style="color:#93c5fd">#' + (i + 1) + '</b> ' + (p.username || '?') + '</span>' +
-      '<span style="color:#cbd5e1">' + (p.points || 0).toLocaleString() + ' pts</span></div>';
-  }).join('');
-  // v97: this round's top contributors (session pixels + conquests).
-  const topContribList = (data.topContributors || []).map(function(p, i) {
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:rgba(52,211,153,0.08);margin-bottom:4px;border-radius:4px;font-size:14px;">' +
-      '<span><b style="color:#34d399">#' + (i + 1) + '</b> ' + (p.username || '?') + '</span>' +
-      '<span style="color:#cbd5e1">' + (p.pixels || 0).toLocaleString() + ' px · ' + (p.conquests || 0) + ' ⚔️</span></div>';
-  }).join('');
+  // pointer-events:auto on the full-screen overlay swallows all map input (paint lock
+  // UI-side); the middle is transparent so the conquered world stays visible.
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;background:transparent;pointer-events:auto;' +
+    'color:#fbbf24;font-family:"Courier New",monospace;display:flex;flex-direction:column;justify-content:space-between;';
   overlay.innerHTML =
-    '<div style="font-size:36px;font-weight:800;letter-spacing:.12em;margin-bottom:8px;">🌍 WORLD CONQUERED 🌍</div>' +
-    (data.winnerName ? '<div style="font-size:22px;font-weight:800;color:#fde68a;margin-bottom:6px;">👑 ' + escapeHtml(data.winnerName) + ' WINS</div>' : '') +
-    '<div style="font-size:14px;color:#94a3b8;margin-bottom:32px;letter-spacing:.08em;">' +
-      ((data.winnerName && data.winnerCountriesFrac != null)
-        ? Math.round(data.winnerCountriesFrac * 100) + '% OF COUNTRIES · ' + Math.round(data.winnerPixelsFrac * 100) + '% OF THE MAP'
-        : ((data.conquered || 0) + ' / ' + (data.total || 0) + ' COUNTRIES CLAIMED')) + '</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:800px;width:100%;margin-bottom:24px;">' +
-      '<div><h2 style="font-size:14px;color:#94a3b8;letter-spacing:.1em;margin-bottom:12px;">🏆 TOP CONQUERORS</h2>' +
-      (topCList || '<div style="color:#475569;font-size:11px">No conquests recorded.</div>') + '</div>' +
-      '<div><h2 style="font-size:14px;color:#94a3b8;letter-spacing:.1em;margin-bottom:12px;">⭐ TOP PLAYERS</h2>' +
-      (topPList || '<div style="color:#475569;font-size:11px">No ranked players.</div>') + '</div></div>' +
-    '<div style="max-width:800px;width:100%;margin-bottom:8px;">' +
-      '<h2 style="font-size:14px;color:#94a3b8;letter-spacing:.1em;margin-bottom:12px;">🔥 TOP CONTRIBUTORS — THIS SESSION</h2>' +
-      (topContribList || '<div style="color:#475569;font-size:11px">No contributors this round.</div>') + '</div>' +
-    '<div style="margin-top:16px;font-size:16px;color:#fbbf24;">World restarting in <span id="wc-countdown" style="font-weight:800">5:00</span></div>' +
-    '<div style="font-size:11px;color:#475569;margin-top:8px;">Fresh canvas, fresh chaos. Hold tight.</div>';
+    // ── top banner ──
+    '<div style="background:rgba(7,13,26,0.88);border-bottom:1px solid rgba(251,191,36,0.35);padding:12px 16px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.6);">' +
+      '<div style="font-size:26px;font-weight:800;letter-spacing:.1em;">🌍 WORLD CONQUERED 🌍</div>' +
+      (data.winnerName ? '<div style="font-size:17px;font-weight:800;color:#fde68a;margin-top:2px;">👑 ' + escapeHtml(data.winnerName) + ' WINS' +
+        (wc != null ? ' <span style="color:#94a3b8;font-weight:600;font-size:12px;">· ' + wc + '% of countries · ' + wp + '% of the map</span>' : '') + '</div>' : '') +
+      '<div style="font-size:12px;color:#fbbf24;margin-top:2px;">World restarting in <span id="wc-countdown" style="font-weight:800">5:00</span></div>' +
+    '</div>' +
+    // ── bottom stats + share ──
+    '<div style="background:rgba(7,13,26,0.9);border-top:1px solid rgba(251,191,36,0.35);padding:10px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.6);">' +
+      '<div style="display:flex;gap:18px;justify-content:center;flex-wrap:wrap;max-width:900px;margin:0 auto;">' +
+        '<div style="min-width:180px;"><div style="font-size:10px;color:#94a3b8;letter-spacing:.08em;margin-bottom:3px;">🏆 TOP CONQUERORS</div>' +
+          _mini(data.topCountries, function (c) { return escapeHtml(c.name || '?') + ' <span style="color:#64748b">' + c.conquests + ' ⚔️</span>'; }, '#fbbf24') + '</div>' +
+        '<div style="min-width:180px;"><div style="font-size:10px;color:#94a3b8;letter-spacing:.08em;margin-bottom:3px;">⭐ TOP PLAYERS</div>' +
+          _mini(data.topPlayers, function (p) { return escapeHtml(p.username || '?') + ' <span style="color:#64748b">' + (p.points || 0).toLocaleString() + ' pts</span>'; }, '#93c5fd') + '</div>' +
+        '<div style="min-width:180px;"><div style="font-size:10px;color:#94a3b8;letter-spacing:.08em;margin-bottom:3px;">🔥 TOP CONTRIBUTORS</div>' +
+          _mini(data.topContributors, function (p) { return escapeHtml(p.username || '?') + ' <span style="color:#64748b">' + (p.pixels || 0).toLocaleString() + ' px</span>'; }, '#34d399') + '</div>' +
+        '<div style="display:flex;align-items:center;">' +
+          '<button id="wc-share" style="background:#1d9bf0;border:none;color:#fff;font-family:inherit;font-weight:700;font-size:13px;' +
+            'padding:10px 18px;border-radius:9px;cursor:pointer;box-shadow:0 2px 10px rgba(29,155,240,.4);">🐦 Share on X</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
   document.body.appendChild(overlay);
+
+  // v160: Share on X — web intent with the result + the full-world screenshot URL.
+  // (Twitter intents can't attach an image directly; the shot link is included.)
+  const _shareBtn = document.getElementById('wc-share');
+  if (_shareBtn) {
+    _shareBtn.onclick = function () {
+      const warN = data.warNumber ? ' War #' + data.warNumber : '';
+      const topP = (data.topContributors || data.topPlayers || []).slice(0, 2).map(function (p) { return p.username; }).filter(Boolean).join(', ');
+      let text = '🌍 ' + (data.winnerName || 'A superpower') + ' conquered the world in PixelAnnex' + warN + '!' +
+        (wc != null ? ' ' + wc + '% of countries · ' + wp + '% of the map.' : '') +
+        (topP ? ' Top players: ' + topP + '.' : '') + ' ' + location.origin + ' #PixelAnnex';
+      if (data.shotUrl) text += ' ' + location.origin + data.shotUrl;
+      window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text), '_blank');
+    };
+  }
+
   const resetAt = data.resetAt || (Date.now() + 5 * 60 * 1000);
   function tick() {
     const left = Math.max(0, resetAt - Date.now());

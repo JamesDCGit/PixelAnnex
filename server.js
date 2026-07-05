@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-05-v159';
+const SERVER_VERSION       = '2026-07-05-v160';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3238,6 +3238,9 @@ function _computeEndgame() {
       countriesHeld: b.countriesHeld,
       countriesFrac: b.countriesHeld / denomC,
       pixelsFrac: b.pixels / denomP,
+      // v160: representative country id (strongest member by pixels) — used by the
+      // win screen to flood/flag the whole world in the winner's colour.
+      repId: [...b.members].sort((x, y) => (countryPxCount[y] || 0) - (countryPxCount[x] || 0))[0] || null,
     }))
     .sort((a, b) => Math.min(b.countriesFrac, b.pixelsFrac) - Math.min(a.countriesFrac, a.pixelsFrac));
   return {
@@ -3260,8 +3263,12 @@ function _checkWorldConquest() {
   // v105: fire the sudden-death tweet ONCE, on the rising edge into sudden death.
   if (eg.suddenDeath && !_suddenDeathTweeted) { _suddenDeathTweeted = true; _fireSuddenDeathTweet(); }
   // v100: win = a bloc holds >=65% of countries AND >=65% of land pixels.
+  // v160: trigger at 64.999% (operator rule) — the panel rounds to whole percents,
+  // so a displayed "65%" could be a true 64.6% and the exact >=0.65 check never
+  // fired (the "passed 65% on both but the world didn't fall" report).
+  const WIN_TRIGGER_FRAC = 0.64999;
   const winner = eg.contenders.find(c =>
-    c.countriesFrac >= WIN_COUNTRIES_FRAC && c.pixelsFrac >= WIN_PIXELS_FRAC);
+    c.countriesFrac >= WIN_TRIGGER_FRAC && c.pixelsFrac >= WIN_TRIGGER_FRAC);
   if (!winner) return;
   const total = eg.total;
   const conquered = _countDistinctConquered();
@@ -3288,9 +3295,13 @@ function _checkWorldConquest() {
     username: s.username, avatar: s.avatar, pixels: s.pixels, conquests: s.conquests, country: s.country,
   }));
   console.log('[v100] WORLD WON by ' + winner.name + '! countries=' + (winner.countriesFrac*100).toFixed(1) + '% pixels=' + (winner.pixelsFrac*100).toFixed(1) + '%');
+  // v160: fresh full-world screenshot for the win screen's share button.
+  let _shotUrl = null;
+  try { _shotUrl = makeWorldShot(); } catch (e) {}
   // v61: store payload so late-joiners and refreshers get the same screen
   _worldConquestPayload = { type: 'world_conquest', conquered, total, topCountries, topPlayers, topContributors, resetAt: _worldResetAt,
-    winnerName: winner.name, winnerCountriesFrac: winner.countriesFrac, winnerPixelsFrac: winner.pixelsFrac }; // v100
+    winnerName: winner.name, winnerCountriesFrac: winner.countriesFrac, winnerPixelsFrac: winner.pixelsFrac,
+    winnerCountryId: winner.repId || null, shotUrl: _shotUrl || null, warNumber: _warNumber }; // v100/v160
   broadcast(JSON.stringify(_worldConquestPayload));
   emitBotEvent({
     type:        'world_conquest',
