@@ -132,11 +132,11 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   box-shadow:inset 2px 2px 0 rgba(255,255,255,.10),inset -2px -2px 0 rgba(0,0,0,.35);/* v162 stage 3 */
 }
 #bucket-count{font-weight:700;font-size:13px;color:#e2e8f0;min-width:26px;text-align:right;}
-#bucket-bar{width:42px;height:5px;background:#0d1626;border:1px solid var(--px-ink);border-radius:0;overflow:hidden;}/* v165 */
+#bucket-bar{width:60px;height:12px;background:#0d1626;border:2px solid var(--px-ink);border-radius:0;overflow:hidden;box-sizing:border-box;}/* v167: bigger + SAME height as regen-bar */
 #bucket-fill{height:100%;background:#e8b93c;width:0%;transition:width .4s linear;}
 #bucket-timer{font-size:10px;color:#475569;min-width:28px;}
-/* v113: per-pixel regen loading bar — v165: arcade (ink border, flat fills) */
-#regen-bar{width:34px;height:7px;background:#0d1626;border:1px solid var(--px-ink);border-radius:0;overflow:hidden;}
+/* v113: per-pixel regen loading bar — v167: bigger + SAME height as bucket-bar */
+#regen-bar{width:60px;height:12px;background:#0d1626;border:2px solid var(--px-ink);border-radius:0;overflow:hidden;box-sizing:border-box;}
 #regen-fill{height:100%;width:0%;background:#38bdf8;transition:width .25s linear;}
 #regen-bar.full #regen-fill{background:#22c55e;}
 
@@ -352,10 +352,11 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   /* v111: flex child of #activity-toast (the single notification column); order:-1
      pins it above normal cards, beneath the encircle card. */
   order:-1;align-self:stretch;display:none;
-  background:rgba(26,8,8,0.8);border:1px solid rgba(239,68,68,0.7);border-radius:8px;/* v112: 80% opaque */
+  background:rgba(26,8,8,0.9);border:2px solid rgba(239,68,68,0.8);border-radius:0;/* v167: arcade-chunky */
   padding:8px 12px;
   color:#fecaca;font-size:11px;font-weight:700;letter-spacing:.06em;
-  box-shadow:0 4px 12px rgba(0,0,0,0.4);
+  clip-path:var(--px-clip);
+  box-shadow:inset 2px 2px 0 rgba(255,255,255,.08),inset -2px -2px 0 rgba(0,0,0,.35);
   animation:fb-pulse 1.4s ease-in-out infinite;
   pointer-events:none;text-transform:uppercase;
 }
@@ -366,9 +367,11 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   background:rgba(0,0,0,0.3);border-radius:4px;
   font-size:10px;letter-spacing:.06em;font-weight:600;color:#fca5a5;
 }
+/* v167: pulse the BACKGROUND (an outer box-shadow glow is clipped by the pixel
+   bevel; animating box-shadow would also wipe the emboss insets). */
 @keyframes fb-pulse{
-  0%,100%{box-shadow:0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(239,68,68,0.4);}
-  50%    {box-shadow:0 4px 18px rgba(239,68,68,0.5), 0 0 0 1px rgba(239,68,68,0.9);}
+  0%,100%{background:rgba(26,8,8,0.9);}
+  50%    {background:rgba(72,14,14,0.95);}
 }
 
 /* ── Highlight button ── */
@@ -787,10 +790,11 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
      notification column. The REGEN card is HIGHLIGHTED — kept more opaque (0.78)
      than normal notifications (0.5) with a brighter border + a stronger orange glow. */
   order:-2;align-self:stretch;display:none;
-  background:rgba(26,15,0,0.9);border:1px solid rgba(251,146,60,0.95);border-radius:8px;/* v112: regen card most opaque (highlighted) */
+  background:rgba(26,15,0,0.92);border:2px solid rgba(251,146,60,0.95);border-radius:0;/* v167: arcade-chunky */
   padding:8px 12px;
   color:#fed7aa;font-size:11px;font-weight:700;letter-spacing:.06em;
-  box-shadow:0 0 14px rgba(249,115,22,0.35), 0 4px 12px rgba(0,0,0,0.4);
+  clip-path:var(--px-clip);
+  box-shadow:inset 2px 2px 0 rgba(255,255,255,.08),inset -2px -2px 0 rgba(0,0,0,.35);
   animation:enc-pulse 1.4s ease-in-out infinite;
   pointer-events:none;
 }
@@ -804,9 +808,10 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   font-size:16px;letter-spacing:.06em;font-weight:700;color:#fdba74;
   font-variant-numeric:tabular-nums;
 }
+/* v167: pulse the BACKGROUND (see fb-pulse note — glow/box-shadow fight the bevel). */
 @keyframes enc-pulse{
-  0%,100%{box-shadow:0 0 12px rgba(249,115,22,0.35), 0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(251,146,60,0.6);}
-  50%    {box-shadow:0 0 24px rgba(249,115,22,0.8), 0 4px 14px rgba(0,0,0,0.45), 0 0 0 1px rgba(251,146,60,1);}
+  0%,100%{background:rgba(26,15,0,0.92);}
+  50%    {background:rgba(70,38,0,0.95);}
 }
 
 #stats-overlay{
@@ -1850,14 +1855,14 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <span id="rank-chip" onclick="openStats()" title="Your rank — tap for full stats"></span>
     <div class="sep"></div>
     <!-- v130: country borders are baked into the basemap art; the Borders Dark/Light/Off toggle removed -->
-    <button class="btn" id="btn-rst">Reset View</button>
+    <button class="btn" id="btn-rst" data-i18n="tb.reset">Reset View</button>
     <div class="sep"></div>
     <!-- v130: Nuke / bomb system removed for now. Button + menu hidden (kept in DOM so
          existing $("btn-bomb")/bomb-menu references stay valid); detonation is neutered below. -->
     <button class="btn" id="btn-bomb" style="display:none !important;">&#128165; Nuke</button>
     <div id="bomb-menu" style="display:none !important;"></div>
-    <button class="btn" id="btn-highlight" title="Admiral: click to enter target-select mode, then click a country to designate as your attack target">&#127919; Select Target</button>
-    <button class="btn" id="btn-invert" onclick="toggleInvertOwn()" title="Invert MY pixels: shows your own pixels in a contrasting colour so you can see them when painting onto a same-coloured country">&#128260; My Pixels</button>
+    <button class="btn" id="btn-highlight" data-i18n="tb.target" title="Admiral: click to enter target-select mode, then click a country to designate as your attack target">&#127919; Select Target</button>
+    <button class="btn" id="btn-invert" data-i18n="tb.mypixels" onclick="toggleInvertOwn()" title="Invert MY pixels: shows your own pixels in a contrasting colour so you can see them when painting onto a same-coloured country">&#128260; My Pixels</button>
     <div class="sep"></div>
     <div id="bucket-hud">
       <div id="bucket-bar"><div id="bucket-fill"></div></div>
@@ -2003,12 +2008,12 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
         <div id="qs-fast"></div><!-- v138a: Resume + Quick Play fast paths -->
         <div id="qs-top" class="qs-top-grid"></div>
         <div id="qs-more" class="qs-more" style="display:block;"><!-- v140a: always expanded; toggle button removed -->
-          <input type="text" class="tut-country-search" id="qs-search" placeholder="Search countries…" oninput="filterQs()" autocomplete="off" />
+          <input type="text" class="tut-country-search" id="qs-search" data-i18n-attr="qs.search|placeholder" placeholder="Search countries…" oninput="filterQs()" autocomplete="off" />
           <div class="tut-country-list" id="qs-list"><div class="tut-country-row loading">Loading…</div></div>
         </div>
         <div class="qs-foot">
-          <button class="qs-link" onclick="openHowTo()">❔ How to play</button>
-          <button class="qs-link" onclick="window.location.href='/auth/login'">💬 Sign in (optional)</button>
+          <button class="qs-link" data-i18n="qs.howto" onclick="openHowTo()">❔ How to play</button>
+          <button class="qs-link" data-i18n="qs.signin" onclick="window.location.href='/auth/login'">💬 Sign in (optional)</button>
         </div>
         <!-- v138a: AdSense banner slot (inert until ADSENSE_CLIENT/ADSENSE_SLOT are set in JS) -->
         <div id="welcome-ad" style="margin-top:14px;min-height:0;text-align:center;"></div>
@@ -2147,8 +2152,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
       <div class="ws-cell"><span class="ws-val" id="ws-players">—</span><span class="ws-lbl" data-i18n="hud.players">players</span></div>
       <div class="ws-cell"><span class="ws-val" id="ws-conquered">—</span><span class="ws-lbl" data-i18n="hud.conquered">conquered</span></div>
       <div class="ws-cell"><span class="ws-val" id="ws-alliances">—</span><span class="ws-lbl" data-i18n="hud.alliances">alliances</span></div>
-      <div class="ws-cell" title="Real nations not yet conquered (matches the country picker)"><span class="ws-val" id="ws-remaining">—</span><span class="ws-lbl">countries left</span></div>
-      <div class="ws-cell" title="Total real nations at the start of the round"><span class="ws-val" id="ws-original">—</span><span class="ws-lbl">of original</span></div>
+      <div class="ws-cell" title="Real nations not yet conquered (matches the country picker)"><span class="ws-val" id="ws-remaining">—</span><span class="ws-lbl" data-i18n="hud.countries_left">countries left</span></div>
+      <div class="ws-cell" title="Total real nations at the start of the round"><span class="ws-val" id="ws-original">—</span><span class="ws-lbl" data-i18n="hud.of_original">of original</span></div>
     </div>
     <div id="encircle-banner">
       <span class="enc-icon">🎯</span>
@@ -2197,8 +2202,8 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   <h3><span>Leaderboard</span><span class="lb-count" id="lb-count">0 players</span></h3>
   <!-- v97: session / all-time tabs -->
   <div id="lb-tabs">
-    <button class="lb-tab active" data-scope="session" onclick="switchLbTab('session')">Session</button>
-    <button class="lb-tab" data-scope="alltime" onclick="switchLbTab('alltime')">All Time</button>
+    <button class="lb-tab active" data-scope="session" data-i18n="lb.session" onclick="switchLbTab('session')">Session</button>
+    <button class="lb-tab" data-scope="alltime" data-i18n="lb.alltime" onclick="switchLbTab('alltime')">All Time</button>
   </div>
   <div class="lb-head"><span class="lb-pos"></span><span class="lb-name"></span><span class="lb-px" title="Points">pts</span><span class="lb-conq" title="Conquests">⚔️</span></div><!-- v155: primary column is now POINTS -->
   <div id="lb-items" class="lb-empty">Loading…</div>
@@ -2276,6 +2281,7 @@ const LANG_META = [
 
 const LANGS = {
   en: {
+    'hud.countries_left':'countries left','hud.of_original':'of original','tb.reset':'Reset View','tb.target':'🎯 Select Target','tb.mypixels':'🔄 My Pixels','lb.session':'Session','lb.alltime':'All Time','rank.collectables':'Collectables','qs.quick':'Quick Play as Random Country','qs.search':'Search countries…','qs.howto':'❔ How to play','qs.signin':'💬 Sign in (optional)', // v167
     'lang.label':            'Language',
     'tut.title':             'PixelAnnex',
     'tut.welcome_sub':       "Welcome — let's get you set up",
@@ -2493,6 +2499,7 @@ const LANGS = {
     'tip.16': '💬 War events, conquests, and alliances all post to your Discord server.',
   },
   es: {
+    'hud.countries_left':'países restantes','hud.of_original':'del total','tb.reset':'Restablecer vista','tb.target':'🎯 Elegir objetivo','tb.mypixels':'🔄 Mis píxeles','lb.session':'Sesión','lb.alltime':'Histórico','rank.collectables':'Coleccionables','qs.quick':'Partida rápida (país aleatorio)','qs.search':'Buscar países…','qs.howto':'❔ Cómo jugar','qs.signin':'💬 Iniciar sesión (opcional)', // v167
     'lang.label':'Idioma','tut.title':'PixelAnnex','tut.welcome_sub':'Bienvenido — vamos a configurarte','tut.stat_players':'Jugadores','tut.stat_conquered':'Conquistados','tut.stat_alliances':'Alianzas',
     'tut.tile_paint_title':'Pinta píxeles','tut.tile_paint_desc':'Haz clic y arrastra sobre el mapa para pintar. Cada píxel cuesta 1 de tu cubo.',
     'tut.tile_conquer_title':'Conquista países','tut.tile_conquer_desc':'Controla el 70% de los píxeles de un país para reclamarlo. Los países grandes son más difíciles.',
@@ -2548,6 +2555,7 @@ const LANGS = {
     'banner.regen': 'regen',
   },
   zh: {
+    'hud.countries_left':'剩余国家','hud.of_original':'原始总数','tb.reset':'重置视图','tb.target':'🎯 选择目标','tb.mypixels':'🔄 我的像素','lb.session':'本局','lb.alltime':'总榜','rank.collectables':'收藏品','qs.quick':'随机国家快速开始','qs.search':'搜索国家…','qs.howto':'❔ 玩法说明','qs.signin':'💬 登录（可选）', // v167
     'lang.label':'语言','tut.title':'PixelAnnex','tut.welcome_sub':'欢迎 — 让我们开始设置','tut.stat_players':'玩家','tut.stat_conquered':'已征服','tut.stat_alliances':'联盟',
     'tut.tile_paint_title':'绘制像素','tut.tile_paint_desc':'点击并拖动地图进行绘制。每个像素消耗1点桶量。',
     'tut.tile_conquer_title':'征服国家','tut.tile_conquer_desc':'占领国家70%的像素以宣布主权。大国家更难征服。',
@@ -2666,6 +2674,7 @@ const LANGS = {
     'tip.16': '💬 战争事件、征服和联盟都会发布到你的 Discord 服务器。',
   },
   hi: {
+    'hud.countries_left':'शेष देश','hud.of_original':'मूल में से','tb.reset':'दृश्य रीसेट','tb.target':'🎯 लक्ष्य चुनें','tb.mypixels':'🔄 मेरे पिक्सेल','lb.session':'सत्र','lb.alltime':'सर्वकालिक','rank.collectables':'संग्रहणीय','qs.quick':'रैंडम देश से त्वरित खेल','qs.search':'देश खोजें…','qs.howto':'❔ कैसे खेलें','qs.signin':'💬 साइन इन (वैकल्पिक)', // v167
     'lang.label':'भाषा','tut.title':'PixelAnnex','tut.welcome_sub':'स्वागत है — आइए शुरू करें','tut.stat_players':'खिलाड़ी','tut.stat_conquered':'जीते गए','tut.stat_alliances':'गठबंधन',
     'tut.tile_paint_title':'पिक्सेल रंगें','tut.tile_paint_desc':'मानचित्र पर क्लिक करके खींचें। हर पिक्सेल आपकी बकेट से 1 लेता है।',
     'tut.tile_conquer_title':'देश जीतें','tut.tile_conquer_desc':'किसी देश को जीतने के लिए उसके 70% पिक्सेल पर कब्जा करें। बड़े देश अधिक कठिन हैं।',
@@ -2752,6 +2761,7 @@ const LANGS = {
     'tip.16': '💬 युद्ध की घटनाएं, विजय और गठबंधन सब आपके Discord सर्वर पर पोस्ट होते हैं।',
   },
   ar: {
+    'hud.countries_left':'دول متبقية','hud.of_original':'من الأصل','tb.reset':'إعادة العرض','tb.target':'🎯 اختر هدفاً','tb.mypixels':'🔄 بكسلاتي','lb.session':'الجولة','lb.alltime':'كل الأوقات','rank.collectables':'مقتنيات','qs.quick':'لعب سريع بدولة عشوائية','qs.search':'ابحث عن دولة…','qs.howto':'❔ طريقة اللعب','qs.signin':'💬 تسجيل الدخول (اختياري)', // v167
     'lang.label':'اللغة','tut.title':'PixelAnnex','tut.welcome_sub':'مرحباً — لنبدأ','tut.stat_players':'اللاعبون','tut.stat_conquered':'مفتوحة','tut.stat_alliances':'تحالفات',
     'tut.tile_paint_title':'ارسم البكسلات','tut.tile_paint_desc':'انقر واسحب على الخريطة للرسم. كل بكسل يكلف 1 من سلتك.',
     'tut.tile_conquer_title':'افتح البلدان','tut.tile_conquer_desc':'تحكم بـ 70% من بكسلات بلد لضمه. البلدان الكبيرة أصعب.',
@@ -2838,6 +2848,7 @@ const LANGS = {
     'tip.16': '💬 أحداث الحرب والفتوحات والتحالفات تُنشر على خادم Discord الخاص بك.',
   },
   pt: {
+    'hud.countries_left':'países restantes','hud.of_original':'do total','tb.reset':'Redefinir vista','tb.target':'🎯 Escolher alvo','tb.mypixels':'🔄 Meus pixels','lb.session':'Sessão','lb.alltime':'Histórico','rank.collectables':'Colecionáveis','qs.quick':'Jogo rápido (país aleatório)','qs.search':'Buscar países…','qs.howto':'❔ Como jogar','qs.signin':'💬 Entrar (opcional)', // v167
     'lang.label':'Idioma','tut.title':'PixelAnnex','tut.welcome_sub':'Bem-vindo — vamos configurar você','tut.stat_players':'Jogadores','tut.stat_conquered':'Conquistados','tut.stat_alliances':'Alianças',
     'tut.tile_paint_title':'Pinte pixels','tut.tile_paint_desc':'Clique e arraste no mapa para pintar. Cada pixel custa 1 do seu balde.',
     'tut.tile_conquer_title':'Conquiste países','tut.tile_conquer_desc':'Tenha 70% dos pixels de um país para reivindicá-lo. Países grandes são mais difíceis.',
@@ -2892,6 +2903,7 @@ const LANGS = {
     'banner.regen': 'regen',
   },
   ru: {
+    'hud.countries_left':'осталось стран','hud.of_original':'из исходных','tb.reset':'Сброс вида','tb.target':'🎯 Выбрать цель','tb.mypixels':'🔄 Мои пиксели','lb.session':'Сессия','lb.alltime':'За всё время','rank.collectables':'Коллекция','qs.quick':'Быстрая игра (случайная страна)','qs.search':'Поиск стран…','qs.howto':'❔ Как играть','qs.signin':'💬 Войти (необязательно)', // v167
     'lang.label':'Язык','tut.title':'PixelAnnex','tut.welcome_sub':'Добро пожаловать — давайте настроим','tut.stat_players':'Игроки','tut.stat_conquered':'Завоёвано','tut.stat_alliances':'Альянсы',
     'tut.tile_paint_title':'Рисуй пиксели','tut.tile_paint_desc':'Кликни и тяни по карте, чтобы рисовать. Каждый пиксель стоит 1 из ведра.',
     'tut.tile_conquer_title':'Завоёвывай страны','tut.tile_conquer_desc':'Захвати 70% пикселей страны, чтобы её получить. Большие страны сложнее.',
@@ -2978,6 +2990,7 @@ const LANGS = {
     'tip.16': '💬 События войны, завоевания и альянсы публикуются на ваш Discord-сервер.',
   },
   ja: {
+    'hud.countries_left':'残り国数','hud.of_original':'初期の内','tb.reset':'表示リセット','tb.target':'🎯 目標を選択','tb.mypixels':'🔄 自分のピクセル','lb.session':'セッション','lb.alltime':'通算','rank.collectables':'コレクション','qs.quick':'ランダム国でクイックプレイ','qs.search':'国を検索…','qs.howto':'❔ 遊び方','qs.signin':'💬 ログイン（任意）', // v167
     'lang.label':'言語','tut.title':'PixelAnnex','tut.welcome_sub':'ようこそ — セットアップしましょう','tut.stat_players':'プレイヤー','tut.stat_conquered':'征服','tut.stat_alliances':'同盟',
     'tut.tile_paint_title':'ピクセルを塗る','tut.tile_paint_desc':'マップをクリック&ドラッグして塗ります。各ピクセルはバケツから1消費。',
     'tut.tile_conquer_title':'国を征服','tut.tile_conquer_desc':'国の70%のピクセルを保持して占領。大国ほど困難。',
@@ -3032,6 +3045,7 @@ const LANGS = {
     'banner.regen': '再生',
   },
   fr: {
+    'hud.countries_left':'pays restants','hud.of_original':"d'origine",'tb.reset':'Réinitialiser la vue','tb.target':'🎯 Choisir la cible','tb.mypixels':'🔄 Mes pixels','lb.session':'Session','lb.alltime':'Historique','rank.collectables':'Objets','qs.quick':'Partie rapide (pays aléatoire)','qs.search':'Rechercher un pays…','qs.howto':'❔ Comment jouer','qs.signin':'💬 Se connecter (facultatif)', // v167
     'lang.label':'Langue','tut.title':'PixelAnnex','tut.welcome_sub':'Bienvenue — préparons-vous','tut.stat_players':'Joueurs','tut.stat_conquered':'Conquis','tut.stat_alliances':'Alliances',
     'tut.tile_paint_title':'Peindre des pixels','tut.tile_paint_desc':'Cliquez et glissez sur la carte pour peindre. Chaque pixel coûte 1 du seau.',
     'tut.tile_conquer_title':'Conquérir des pays','tut.tile_conquer_desc':"Tenez 70% des pixels d'un pays pour le revendiquer. Les grands pays sont plus durs.",
@@ -3117,6 +3131,7 @@ const LANGS = {
     'tip.16': '💬 Événements de guerre, conquêtes et alliances sont postés sur votre serveur Discord.',
   },
   de: {
+    'hud.countries_left':'Länder übrig','hud.of_original':'von ursprünglich','tb.reset':'Ansicht zurücksetzen','tb.target':'🎯 Ziel wählen','tb.mypixels':'🔄 Meine Pixel','lb.session':'Sitzung','lb.alltime':'Gesamt','rank.collectables':'Sammelobjekte','qs.quick':'Schnellstart (zufälliges Land)','qs.search':'Länder suchen…','qs.howto':'❔ Spielanleitung','qs.signin':'💬 Anmelden (optional)', // v167
     'lang.label':'Sprache','tut.title':'PixelAnnex','tut.welcome_sub':'Willkommen — lass uns dich einrichten','tut.stat_players':'Spieler','tut.stat_conquered':'Erobert','tut.stat_alliances':'Allianzen',
     'tut.tile_paint_title':'Pixel malen','tut.tile_paint_desc':'Klick und zieh über die Karte. Jeder Pixel kostet 1 aus deinem Eimer.',
     'tut.tile_conquer_title':'Länder erobern','tut.tile_conquer_desc':'Halte 70% der Pixel eines Landes, um es zu erobern. Größere Länder sind schwerer.',
@@ -4095,7 +4110,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-05-v166';
+const CODE_VERSION = '2026-07-05-v167';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8178,7 +8193,7 @@ function _renderQsTop() {
     }
     const q = document.createElement('button');
     q.className = 'qs-btn qs-fast-btn qs-quick';
-    q.innerHTML = '<span class="qs-flag" style="display:flex;align-items:center;justify-content:center;font-size:18px;">⚡</span><span class="qs-name">Quick Play as Random Country</span>';
+    q.innerHTML = '<span class="qs-flag" style="display:flex;align-items:center;justify-content:center;font-size:18px;">⚡</span><span class="qs-name">' + t('qs.quick') + '</span>';
     q.onclick = () => qsQuickPlay();
     fast.appendChild(q);
   }
@@ -13669,7 +13684,7 @@ function openCollectables() {
       '<div style="font-size:18px;font-weight:700;color:#fbbf24;">🎒 Collectables</div>' +
       '<button onclick="this.closest(\'#collect-overlay\').remove()" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;font-family:inherit;">✕</button></div>' +
     '<div id="collect-sub" style="font-size:11px;color:#94a3b8;margin-bottom:10px;">Conquer a country to collect its item. Loading…</div>' +
-    '<div id="collect-grid" style="overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:6px;padding:4px;"></div>';
+    '<div id="collect-grid" style="overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;padding:4px;"></div>';/* v167: 2x tiles */
   overlay.appendChild(card);
   document.body.appendChild(overlay);
   _loadCollectManifest().then(function (mf) {
@@ -13684,17 +13699,28 @@ function openCollectables() {
     for (const [cid, it] of entries) {
       const have = _collectSet.has(String(cid));
       const tile = document.createElement('div');
-      tile.style.cssText = 'aspect-ratio:1;border-radius:6px;display:flex;align-items:center;justify-content:center;' +
-        (have ? 'background:#132038;border:1px solid #2a3a5c;' : 'background:#0a121f;border:1px solid #16203a;');
+      // v167: 2x tiles — 64px sprite (atlas background scaled 2x) + country name and
+      // collection # under every box (collected AND locked). Arcade-chunky borders.
+      tile.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px 6px;border-radius:0;clip-path:var(--px-clip);' +
+        (have ? 'background:#132038;border:2px solid var(--px-ink);box-shadow:inset 1px 1px 0 rgba(255,255,255,.08),inset -1px -1px 0 rgba(0,0,0,.3);'
+              : 'background:#0a121f;border:2px solid rgba(20,16,10,.6);');
       tile.title = have ? (it.name + ' — ' + it.country) : '??? — conquer ' + it.country;
       if (have) {
         const spr = document.createElement('div');
-        spr.style.cssText = 'width:32px;height:32px;image-rendering:pixelated;background-image:url(/collectables/atlas.png);' +
-          'background-position:' + (-(it.slot % mf.cols) * mf.cell) + 'px ' + (-Math.floor(it.slot / mf.cols) * mf.cell) + 'px;';
+        spr.style.cssText = 'width:64px;height:64px;image-rendering:pixelated;background-image:url(/collectables/atlas.png);' +
+          'background-size:' + (mf.cols * mf.cell * 2) + 'px auto;' +
+          'background-position:' + (-(it.slot % mf.cols) * mf.cell * 2) + 'px ' + (-Math.floor(it.slot / mf.cols) * mf.cell * 2) + 'px;';
         tile.appendChild(spr);
       } else {
-        tile.innerHTML = '<span style="color:#334155;font-size:16px;font-weight:700;">?</span>';
+        const q = document.createElement('div');
+        q.style.cssText = 'width:64px;height:64px;display:flex;align-items:center;justify-content:center;color:#334155;font-size:30px;font-weight:700;';
+        q.textContent = '?';
+        tile.appendChild(q);
       }
+      const lbl = document.createElement('div');
+      lbl.style.cssText = 'font-size:9px;line-height:1.3;text-align:center;color:' + (have ? '#cbd5e1' : '#475569') + ';max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      lbl.innerHTML = escapeHtml(it.country) + '<br><span style="color:' + (have ? '#e8b93c' : '#334155') + ';font-weight:700;">#' + (it.slot + 1) + '</span>';
+      tile.appendChild(lbl);
       frag.appendChild(tile);
     }
     grid.innerHTML = ''; grid.appendChild(frag);
@@ -14074,7 +14100,7 @@ function refreshRankUI(){
           ${next ? ' · ' + t('rank.next_rank_inline', { name: tRank(next.name), min: next.min }) : ' · <b>' + t('hud.max_rank') + '</b>'}
         </div>
         ${perks.length ? '<div class="rank-perks" style="font-size:10px;color:#94a3b8;margin-top:4px;line-height:1.5;">' + perks.join(' · ') + '</div>' : ''}
-        <button onclick="openCollectables()" title="View your collection" class="px-gold" style="display:block;width:100%;margin-top:6px;padding:6px 10px;pointer-events:auto;cursor:pointer;font-family:inherit;font-size:11px;text-align:center;">🎒 Collectables <b>${_collectCountLine()}</b></button><!-- v161 wide button · v162 arcade-gold primary; pointer-events:auto because #rank-display is none -->
+        <button onclick="openCollectables()" title="View your collection" class="px-gold" style="display:block;width:100%;margin-top:6px;padding:6px 10px;pointer-events:auto;cursor:pointer;font-family:inherit;font-size:11px;text-align:center;">🎒 ${t('rank.collectables')} <b>${_collectCountLine()}</b></button><!-- v161 wide button · v162 arcade-gold primary; pointer-events:auto because #rank-display is none -->
         <div class="rank-gdp" title="Combined GDP (USD) of every country you currently hold">
           <span class="gdp-label">GDP</span>
           <span id="gdp-value">$000,000,000,000,000</span>
@@ -14139,9 +14165,10 @@ function _refreshHighlightBtnLockState(){
   const ri = getRankIndex();
   const locked = ri < 1;
   btn.classList.toggle('locked', locked);
-  // v99a: visible m:ss countdown ON the button (10min cooldown is too long for
-  // a hover-only hint). Original label stashed once.
-  if (!btn.dataset.baseLabel) btn.dataset.baseLabel = btn.textContent;
+  // v99a: visible m:ss countdown ON the button. v167: base label comes from the
+  // ACTIVE language every tick (the old one-shot stash froze the boot-time English and
+  // overwrote applyI18n's translation on every ticker pass).
+  btn.dataset.baseLabel = t('tb.target');
   if (locked) {
     btn.title = '🔒 Locked — reach Lieutenant (50 px) to call rallies';
     btn.style.opacity = '0.55';
@@ -15339,8 +15366,11 @@ document.addEventListener('DOMContentLoaded', () => setTimeout(refreshLeaderboar
     sel.value = (typeof _activeLang !== 'undefined') ? _activeLang : (localStorage.getItem('pa_lang') || 'en');
     sel.addEventListener('change', function() {
       try {
-        if (typeof selectLang === 'function') selectLang(sel.value);
-        else { localStorage.setItem('pa_lang', sel.value); location.reload(); }
+        // v167: apply LIVE via setLanguage (re-applies [data-i18n] + re-renders the
+        // dynamic panels). The old code called selectLang — which never existed — so
+        // it always fell into the localStorage+location.reload() branch: the reported
+        // 5-10s pause was a FULL PAGE RELOAD (map boot) on every language change.
+        setLanguage(sel.value);
       } catch(e) { console.warn('lang switch failed', e); }
     });
   }
