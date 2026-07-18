@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-05-v168';
+const SERVER_VERSION       = '2026-07-18-v169';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -6763,6 +6763,106 @@ const httpServer = http.createServer(async (req, res) => {
     });
     fs.createReadStream(f).pipe(res);
     return;
+  }
+
+  // ── v169: SEO — robots.txt / sitemap.xml / PWA statics / crawlable pages ──
+  if (url.pathname === '/robots.txt') {
+    res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=3600' });
+    res.end('User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /auth/\nDisallow: /shots/\nDisallow: /timelapse/\n\nSitemap: https://pixelannex.io/sitemap.xml\n');
+    return;
+  }
+  if (url.pathname === '/sitemap.xml') {
+    const _now = new Date().toISOString().slice(0, 10);
+    res.writeHead(200, { 'Content-Type': 'application/xml', 'Cache-Control': 'public, max-age=3600' });
+    res.end('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+      ['/', '/about', '/how-to-play'].map(p =>
+        '  <url><loc>https://pixelannex.io' + p + '</loc><lastmod>' + _now + '</lastmod><changefreq>' + (p === '/' ? 'daily' : 'monthly') + '</changefreq></url>').join('\n') +
+      '\n</urlset>\n');
+    return;
+  }
+  if (url.pathname === '/site.webmanifest' || url.pathname === '/icon-192.png' ||
+      url.pathname === '/icon-512.png' || url.pathname === '/apple-touch-icon.png') {
+    const fn = url.pathname.slice(1);
+    const f = path.join(__dirname, 'public', fn);
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end('not found'); return; }
+    res.writeHead(200, {
+      'Content-Type': fn.endsWith('.png') ? 'image/png' : 'application/manifest+json',
+      'Cache-Control': 'public, max-age=86400',
+    });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
+  // Server-rendered crawlable pages — the game itself is canvas/JS, so these are
+  // the indexable copy. Minimal shared shell, arcade-dark styling.
+  function _seoPage(title, desc, bodyHtml, canonicalPath) {
+    return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+      '<title>' + title + '</title>' +
+      '<meta name="description" content="' + desc + '">' +
+      '<link rel="canonical" href="https://pixelannex.io' + canonicalPath + '">' +
+      '<meta property="og:type" content="website"><meta property="og:site_name" content="PixelAnnex">' +
+      '<meta property="og:title" content="' + title + '"><meta property="og:description" content="' + desc + '">' +
+      '<meta property="og:url" content="https://pixelannex.io' + canonicalPath + '">' +
+      '<meta property="og:image" content="https://pixelannex.io/PixelAnnexHero.jpg">' +
+      '<meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@PixelAnnexGame">' +
+      '<link rel="icon" href="/icon-192.png">' +
+      '<style>body{background:#070d1a;color:#cbd5e1;font-family:"Courier New",monospace;max-width:720px;margin:0 auto;padding:32px 20px;line-height:1.7;font-size:15px}' +
+      'h1,h2{color:#e8b93c;letter-spacing:.04em}a{color:#60a5fa}img{max-width:100%;image-rendering:pixelated}' +
+      '.cta{display:inline-block;background:#e8b93c;color:#2a1c05;font-weight:700;padding:10px 22px;border:2px solid #14100a;text-decoration:none;margin:14px 0}</style>' +
+      '</head><body>' + bodyHtml +
+      '<p><a class="cta" href="/">▶ Play PixelAnnex free</a></p>' +
+      '<p style="font-size:11px;color:#475569">Created by <a href="https://www.prettyneatpixels.com">Pretty Neat Pixels</a> · <a href="/">Home</a> · <a href="/about">About</a> · <a href="/how-to-play">How to play</a> · <a href="https://discord.gg/UHQRqXDpBE">Discord</a> · <a href="https://x.com/PixelAnnexGame">X</a></p>' +
+      '</body></html>';
+  }
+  if (url.pathname === '/about') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    res.end(_seoPage('About PixelAnnex — Multiplayer Pixel War Game',
+      'What PixelAnnex is: a free real-time multiplayer strategy game where you claim pixels for your country on a live world map and conquer nations.',
+      '<h1>About PixelAnnex</h1>' +
+      '<img src="/PixelAnnexHero.jpg" alt="PixelAnnex — multiplayer pixel war game world map">' +
+      '<p>PixelAnnex is a free real-time multiplayer pixel war game played on a shared world map. Every pixel of land belongs to a country — pick one of 190+ playable nations and paint pixels to expand your territory, defend your homeland, and invade your neighbours.</p>' +
+      '<p>When a country loses enough of its land it falls to its conqueror. Fallen nations leave collectable pixel-art relics for the player who took them. The war ends when one bloc controls 65% of the world\'s nations and land — then the map resets and a new war begins.</p>' +
+      '<h2>Features</h2><ul>' +
+      '<li>Live shared world map with 190+ playable countries and ambient AI nations</li>' +
+      '<li>Encirclement mechanic — surround territory to capture everything inside</li>' +
+      '<li>Points, ranks (Soldier to Admiral), session and all-time leaderboards</li>' +
+      '<li>250 collectable pixel-art items, one per country</li>' +
+      '<li>Treasure chests, roaming monsters, alliances via Discord, 10 languages</li>' +
+      '</ul>', '/about'));
+    return;
+  }
+  if (url.pathname === '/how-to-play') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    res.end(_seoPage('How to Play PixelAnnex — Rules & Strategy',
+      'Learn PixelAnnex: paint pixels, encircle territory, conquer countries, and win the world war. Rules, bonuses and strategy tips.',
+      '<h1>How to play PixelAnnex</h1>' +
+      '<h2>The basics</h2><p>Pick a country and click or drag on the map to paint pixels. Each pixel costs 1 from your bucket, which refills over time — small nations regenerate faster than superpowers. Every pixel painted earns 1 point.</p>' +
+      '<h2>Conquest</h2><p>Hold roughly 70–75% of a country\'s land and it falls to you (large countries can also fall when foreign invaders dominate the painted area). Conquests award 1,000–20,000 points depending on the country\'s size, plus its unique collectable item.</p>' +
+      '<h2>Encirclement</h2><p>Draw a closed ring around enemy land and everything inside is captured instantly. Encircled pixels score double points, return ~10% of the captured area to your bucket, and boost your regeneration for 60 seconds.</p>' +
+      '<h2>Winning the war</h2><p>A bloc (a country or alliance) wins by controlling 65% of the world\'s nations AND 65% of the land. At five standing nations, sudden death doubles everyone\'s regen. When the world falls, the map resets and the next war begins.</p>' +
+      '<h2>Tips</h2><ul><li>Encircle instead of painting interiors — it\'s faster and pays double.</li><li>Watch the hover panel: it shows exactly how far a country is from falling.</li><li>Grab treasure chests the moment you spot them — first click wins.</li><li>Sign in with Discord so your rank, points and collection persist.</li></ul>',
+      '/how-to-play'));
+    return;
+  }
+  // ── v169: /share/war-N — social-share page with OG tags + a fresh world shot ──
+  {
+    const _shareM = url.pathname.match(/^\/share(?:\/war-(\d+))?$/);
+    if (_shareM) {
+      const wn = _shareM[1] || String(_warNumber);
+      let shot = null;
+      try { shot = makeWorldShot(); } catch (e) {}
+      const img = shot ? ('https://pixelannex.io' + shot) : 'https://pixelannex.io/PixelAnnexHero.jpg';
+      const stats = _playableCountryStats();
+      const title = 'PixelAnnex War #' + wn + ' — World Map';
+      const desc = stats.standing + ' of ' + stats.total + ' nations still stand. Join the war and claim pixels for your country.';
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(_seoPage(title, desc,
+        '<h1>PixelAnnex War #' + wn + '</h1>' +
+        (shot ? '<img src="' + shot + '" alt="PixelAnnex War #' + wn + ' world map" style="width:100%;border:2px solid #14100a;">' : '') +
+        '<p>' + desc + '</p>',
+        '/share/war-' + wn));
+      return;
+    }
   }
 
   // ── v157: collectables atlas + manifest ──────────────────────────

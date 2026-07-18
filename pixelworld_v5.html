@@ -2,12 +2,32 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"><!-- v169 SEO/a11y: dropped maximum-scale/user-scalable=no (Google flags it; map pinch is handled in-app) -->
 <meta name="theme-color" content="#0c1526">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>PixelAnnex</title>
+<title>PixelAnnex — Free Multiplayer Pixel War Game | Conquer the World Map</title>
+<!-- v169: SEO head — description, canonical, Open Graph / Twitter cards, JSON-LD -->
+<meta name="description" content="Claim pixels for your country on a live world map. Battle 190+ nations, encircle territory, and conquer the world in real time. Free to play in your browser — no download.">
+<link rel="canonical" href="https://pixelannex.io/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="PixelAnnex">
+<meta property="og:title" content="PixelAnnex — Free Multiplayer Pixel War Game">
+<meta property="og:description" content="Claim pixels for your country on a live world map. Battle 190+ nations, encircle territory, and conquer the world in real time.">
+<meta property="og:url" content="https://pixelannex.io/">
+<meta property="og:image" content="https://pixelannex.io/PixelAnnexHero.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="PixelAnnex — Free Multiplayer Pixel War Game">
+<meta name="twitter:description" content="Claim pixels for your country on a live world map. Battle 190+ nations and conquer the world in real time.">
+<meta name="twitter:image" content="https://pixelannex.io/PixelAnnexHero.jpg">
+<meta name="twitter:site" content="@PixelAnnexGame">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/map_base.gif" as="image"><!-- v169: LCP — the baked basemap is the biggest boot asset -->
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"VideoGame","name":"PixelAnnex","url":"https://pixelannex.io/","description":"Free multiplayer pixel war game. Claim pixels for your country on a live world map, encircle territory, and conquer the world in real time against 190+ nations.","genre":["Strategy","MMO","io game"],"playMode":"MultiPlayer","applicationCategory":"Game","operatingSystem":"Web browser","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","availability":"https://schema.org/InStock"},"image":"https://pixelannex.io/PixelAnnexHero.jpg","author":{"@type":"Organization","name":"Pretty Neat Pixels","url":"https://www.prettyneatpixels.com"}}
+</script>
 <!-- v95w: Umami Cloud traffic analytics (pageviews/visitors/referrers/devices, no consent banner needed - cookieless). -->
 <script defer src="https://cloud.umami.is/script.js" data-website-id="22da671f-a784-43f5-bb39-fe5b9ea10d5d"></script>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23070d1a'/%3E%3Crect x='6' y='8' width='4' height='4' fill='%2360a5fa'/%3E%3Crect x='12' y='6' width='4' height='4' fill='%23818cf8'/%3E%3Crect x='18' y='8' width='4' height='4' fill='%23a78bfa'/%3E%3Crect x='4' y='14' width='4' height='4' fill='%2334d399'/%3E%3Crect x='10' y='14' width='4' height='4' fill='%23fbbf24'/%3E%3Crect x='16' y='14' width='4' height='4' fill='%23f87171'/%3E%3Crect x='22' y='14' width='4' height='4' fill='%23fb923c'/%3E%3Crect x='6' y='20' width='4' height='4' fill='%23ec4899'/%3E%3Crect x='12' y='20' width='4' height='4' fill='%2306b6d4'/%3E%3Crect x='18' y='20' width='4' height='4' fill='%2384cc16'/%3E%3C/svg%3E"/>
@@ -1751,6 +1771,17 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 </style>
 </head>
 <body>
+<!-- v169 SEO: crawlable text content — the game itself is canvas/JS-rendered, so this
+     visually-hidden semantic block is the only body copy search engines can read.
+     Kept factual and modest (not keyword-stuffed). -->
+<section id="seo-content" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;">
+  <h1>PixelAnnex — free multiplayer pixel war game</h1>
+  <p>PixelAnnex is a free real-time multiplayer strategy game played on a live pixel map of the world. Pick any of 190+ countries, paint pixels to expand your territory, and invade your neighbours. Hold enough of a country and it falls to you — conquer 65% of the world's nations and land to win the war and reset the map.</p>
+  <p>Encircle enemy territory to capture everything inside the ring and earn regen and point bonuses. Find treasure chests on the map for instant rewards, collect a unique pixel-art item for every country you conquer, form alliances through Discord, and climb the global leaderboard from Soldier to Admiral. Watch out for UFOs, Krakens and giant lizards that roam the map.</p>
+  <p>No download and no account needed — play instantly in your browser. Sign in with Discord to save your rank, points and collection across wars. Available in 10 languages.</p>
+  <p><a href="/about">About PixelAnnex</a> · <a href="/how-to-play">How to play</a> · <a href="https://discord.gg/UHQRqXDpBE">Join the Discord</a> · <a href="https://x.com/PixelAnnexGame">Follow on X</a></p>
+</section>
+<noscript><p>PixelAnnex is a free multiplayer pixel war game played on a live world map. It requires JavaScript — enable JavaScript to play, or read more on the <a href="/about">about page</a>.</p></noscript>
 <!-- v32: Mobile gating splash (hidden by default; shown by inline script below) -->
 <div id="mobile-splash">
   <div class="ms-inner">
@@ -1996,7 +2027,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
           <span data-i18n="lang.label">Language</span>
           <select id="lang-picker-tut" onchange="setLanguage(this.value)"></select>
         </div>
-        <img id="tut-hero" src="/PixelAnnexHero.jpg" alt="PixelAnnex"><!-- v140a: heading + subheading removed -->
+        <img id="tut-hero" src="/PixelAnnexHero.jpg" alt="PixelAnnex — multiplayer pixel war game on a live world map"><!-- v140a: heading + subheading removed; v169: descriptive alt -->
         <div class="tut-stats" id="tut-header-stats">
           <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-players">—</div><div class="tut-stat-lbl" data-i18n="tut.stat_players">Players</div></div>
           <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-conquered">—</div><div class="tut-stat-lbl" data-i18n="tut.stat_conquered">Conquered</div></div>
@@ -4120,7 +4151,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-05-v168';
+const CODE_VERSION = '2026-07-18-v169';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -15474,10 +15505,12 @@ function _showWorldConquestOverlay(data) {
     _shareBtn.onclick = function () {
       const warN = data.warNumber ? ' War #' + data.warNumber : '';
       const topP = (data.topContributors || data.topPlayers || []).slice(0, 2).map(function (p) { return p.username; }).filter(Boolean).join(', ');
+      // v169: share the /share/war-N page — it carries OG tags + the world shot, so
+      // the tweet unfurls with a real image card (a raw PNG link doesn't).
+      const shareUrl = location.origin + '/share/war-' + (data.warNumber || '1');
       let text = '🌍 ' + (data.winnerName || 'A superpower') + ' conquered the world in PixelAnnex' + warN + '!' +
         (wc != null ? ' ' + wc + '% of countries · ' + wp + '% of the map.' : '') +
-        (topP ? ' Top players: ' + topP + '.' : '') + ' ' + location.origin + ' #PixelAnnex';
-      if (data.shotUrl) text += ' ' + location.origin + data.shotUrl;
+        (topP ? ' Top players: ' + topP + '.' : '') + ' ' + shareUrl + ' #PixelAnnex';
       window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text), '_blank');
     };
   }

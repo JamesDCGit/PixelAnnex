@@ -1,0 +1,13 @@
+{
+  "name": "PixelAnnex — Multiplayer Pixel War Game",
+  "short_name": "PixelAnnex",
+  "description": "Claim pixels for your country on a live world map. Battle 190+ nations, encircle territory, and conquer the world in real time.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070d1a",
+  "theme_color": "#0c1526",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
