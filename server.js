@@ -3010,30 +3010,13 @@ setInterval(() => {
 // Art/manifest live in public/collectables/ (see tools/gen-collectables.js —
 // the atlas is designed for manual editing).
 
-// v161: BACKFILL — on join, grant a logged-in player the collectable of every
-// country their nation CURRENTLY holds. Safety net for awards missed at conquest
-// time (e.g. the pre-v158 attribution gap, a restart between conquest and save,
-// or a bot landing the killing blow while the player was disconnected). Items
-// only ever ratchet up, so re-running on every join is harmless.
-function _backfillCollectables(player) {
-  if (!player || !player.discordId || !player.countryId || !player.ws) return;
-  const prof = getProfile(player.discordId);
-  if (!prof.collectables) prof.collectables = {};
-  let n = 0;
-  for (const k of conqueredSet) {
-    const p = String(k).split(':');
-    if (p.length !== 2 || p[0] === p[1]) continue;
-    if (p[1] !== String(player.countryId)) continue;   // held by the player's nation
-    if (prof.collectables[p[0]]) continue;             // already unlocked
-    prof.collectables[p[0]] = Date.now();
-    try { player.ws.send(JSON.stringify({ type: 'collect_award', countryId: p[0] })); } catch (e) {}
-    n++;
-  }
-  if (n) {
-    markProfilesDirty();
-    console.log('[Collect] backfilled', n, 'items for', prof.username || player.discordId, '(' + _countryName(player.countryId) + ')');
-  }
-}
+// v170: collectables are PERSONAL (operator rule) — an item is granted ONLY to the
+// player whose OWN stroke triggered the conquest. The v161 join-time backfill
+// (items for whatever the nation already held) is REMOVED: joining or re-picking a
+// conquering country grants nothing. `_strokeActor` is set by the stroke/stroke-end
+// handlers around applyPixels so _conquerGeo knows who landed the finishing blow;
+// bot strokes and the periodic sweep leave it null → no item.
+let _strokeActor = null;
 
 // ── v156: TREASURE CHESTS ─────────────────────────────────────────
 // Server-spawned bonus chests: 10/hour (one every 6 min), max 10 active, anywhere
@@ -5178,13 +5161,23 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
         _pr.conquestsMade += 1;
         _pr.points        += _pts;
         _recordSession(hp.discordId, _pr.username, _pr.avatar, hp.countryId, 0, 1, _pts);
-        if (!_pr.collectables) _pr.collectables = {};
-        if (!_pr.collectables[String(geo)]) {
-          _pr.collectables[String(geo)] = Date.now();
-          try { hp.ws.send(JSON.stringify({ type: 'collect_award', countryId: String(geo) })); } catch (e) {}
-        }
         markProfilesDirty();
-        console.log('[Conquest] credited', _pts, 'pts +', _countryName(geo), 'collectable to', _pr.username || hp.discordId); // v161: audit trail
+        console.log('[Conquest] credited', _pts, 'pts to', _pr.username || hp.discordId); // v161 audit / v170: collectable moved below
+      }
+      // v170: the COLLECTABLE is personal — only the player whose OWN stroke
+      // triggered this fall earns the item. Bot strokes and the periodic sweep
+      // run with _strokeActor null, so they award nothing.
+      const _actor = _strokeActor;
+      if (_actor && _actor.discordId && !_actor.isBot &&
+          String(_actor.countryId) === String(conquerorId)) {
+        const _apr = getProfile(_actor.discordId);
+        if (!_apr.collectables) _apr.collectables = {};
+        if (!_apr.collectables[String(geo)]) {
+          _apr.collectables[String(geo)] = Date.now();
+          try { _actor.ws.send(JSON.stringify({ type: 'collect_award', countryId: String(geo) })); } catch (e) {}
+          markProfilesDirty();
+          console.log('[Collect]', _countryName(geo), 'item earned by', _apr.username || _actor.discordId, '(personal conquest)');
+        }
       }
     } catch (e) { console.warn('[Conquest] human credit failed:', e.message); }
   }
@@ -8272,10 +8265,8 @@ wss.on('connection', (ws, req) => {
             p.username = msg.username;
           }
         }
-        // v168a: backfill runs off player.discordId (bound from the session cookie at
-        // connect, or from msg.discordId above) — the old msg-only gate skipped
-        // cookie-bound players entirely.
-        if (player.discordId) _backfillCollectables(player); // v161: grant items this nation already holds
+        // v170: join-time collectables backfill REMOVED — items are personal now
+        // (only the player whose own stroke lands a conquest earns one).
         console.log(`  Player ${pid} → country ${player.countryId}`);
 
         // Bootstrap map data from client — always accept the latest (clients are deterministic)
@@ -8410,7 +8401,7 @@ wss.on('connection', (ws, req) => {
           if (!ownerPixels[player.countryIdx]) ownerPixels[player.countryIdx] = new Set();
           countryPxCount[cid] = countryPxCount[cid] || 0;
           console.log('[v38] Player', pid, 'switched to country', cid);
-          _backfillCollectables(player); // v161: new nation may already hold conquests
+          // v170: no collectables backfill on re-pick — items are personal.
           broadcastPlayers();
         } else {
           console.log('[v40] Rejected set-country for', cid, 'no playable pixels');
@@ -8426,7 +8417,9 @@ wss.on('connection', (ws, req) => {
         const allowed = consumeStrokeTokens(pid, msg.pixels.length);
         if (allowed <= 0) return; // empty bucket — drop entire stroke silently
         const limitedPixels = allowed < msg.pixels.length ? msg.pixels.slice(0, allowed) : msg.pixels;
+        _strokeActor = player; // v170: this player's stroke — a conquest it triggers earns THEM the collectable
         const { changed, conquests, reversals } = applyPixels(limitedPixels, player.countryId);
+        _strokeActor = null;
         if (changed.length) queueDelta(changed);
         // v98: track pixels THIS stroke actually flipped to own — encirclement
         // detection opens exactly these in its "without the stroke" BFS pass,
@@ -8477,8 +8470,10 @@ wss.on('connection', (ws, req) => {
         if (msg.pixels.length < 1 || msg.pixels.length > 5000) return; // v68: ≥1 (was ≥4)
         const enc = detectEncirclement(msg.pixels, player.countryId, strokeChanged);
         if (!enc) return;
+        _strokeActor = player; // v170: encirclement is this player's action too
         const { changed: encChanged, conquests: encConquests, reversals: encReversals } =
           applyPixels(enc.enclosed, player.countryId);
+        _strokeActor = null;
         if (encChanged.length) queueDelta(encChanged);
         // v60: broadcast any conquest/reversal triggered by encirclement
         encConquests.forEach(c => broadcast(JSON.stringify({ type: 'conquest', ...c })));
