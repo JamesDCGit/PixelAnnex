@@ -28,6 +28,11 @@
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"VideoGame","name":"PixelAnnex","url":"https://pixelannex.io/","description":"Free multiplayer pixel war game. Claim pixels for your country on a live world map, encircle territory, and conquer the world in real time against 190+ nations.","genre":["Strategy","MMO","io game"],"playMode":"MultiPlayer","applicationCategory":"Game","operatingSystem":"Web browser","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","availability":"https://schema.org/InStock"},"image":"https://pixelannex.io/PixelAnnexHero.jpg","author":{"@type":"Organization","name":"Pretty Neat Pixels","url":"https://www.prettyneatpixels.com"}}
 </script>
+<!-- v171: Google AdSense loader — also serves as the site-verification tag. Ad UNITS
+     only render where explicitly placed (see _initAdSense / #welcome-ad); keep
+     Auto ads OFF in the AdSense dashboard so Google doesn't inject ads over the map. -->
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9562564409490681"
+     crossorigin="anonymous"></script>
 <!-- v95w: Umami Cloud traffic analytics (pageviews/visitors/referrers/devices, no consent banner needed - cookieless). -->
 <script defer src="https://cloud.umami.is/script.js" data-website-id="22da671f-a784-43f5-bb39-fe5b9ea10d5d"></script>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23070d1a'/%3E%3Crect x='6' y='8' width='4' height='4' fill='%2360a5fa'/%3E%3Crect x='12' y='6' width='4' height='4' fill='%23818cf8'/%3E%3Crect x='18' y='8' width='4' height='4' fill='%23a78bfa'/%3E%3Crect x='4' y='14' width='4' height='4' fill='%2334d399'/%3E%3Crect x='10' y='14' width='4' height='4' fill='%23fbbf24'/%3E%3Crect x='16' y='14' width='4' height='4' fill='%23f87171'/%3E%3Crect x='22' y='14' width='4' height='4' fill='%23fb923c'/%3E%3Crect x='6' y='20' width='4' height='4' fill='%23ec4899'/%3E%3Crect x='12' y='20' width='4' height='4' fill='%2306b6d4'/%3E%3Crect x='18' y='20' width='4' height='4' fill='%2384cc16'/%3E%3C/svg%3E"/>
@@ -4151,7 +4156,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-18-v169';
+const CODE_VERSION = '2026-07-18-v171';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8348,17 +8353,16 @@ function _renderQsList() {
   list.innerHTML = ''; list.appendChild(frag);
 }
 // v138a: AdSense banner on the welcome screen (allowed display ad — NOT the rewarded
-// button). Inert until you set ADSENSE_CLIENT (+ ADSENSE_SLOT) to your real IDs.
-const ADSENSE_CLIENT = '';   // e.g. 'ca-pub-XXXXXXXXXXXXXXXX'
-const ADSENSE_SLOT   = '';   // e.g. '1234567890'
+// button). v171: real publisher id wired; the loader <script> now lives in <head>
+// (verification + shared loader), so this only renders the <ins> unit. Still inert
+// until ADSENSE_SLOT is set to a real display ad-unit id from the AdSense dashboard
+// (create one under Ads → By ad unit → Display, then paste its data-ad-slot here).
+const ADSENSE_CLIENT = 'ca-pub-9562564409490681';
+const ADSENSE_SLOT   = '';   // e.g. '1234567890' — REQUIRED before the banner shows
 let _adSenseInit = false;
 function _initAdSense() {
   if (_adSenseInit || !ADSENSE_CLIENT || !ADSENSE_SLOT) return;
   _adSenseInit = true;
-  const s = document.createElement('script');
-  s.async = true; s.crossOrigin = 'anonymous';
-  s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + ADSENSE_CLIENT;
-  document.head.appendChild(s);
   const slot = document.getElementById('welcome-ad');
   if (slot) {
     slot.innerHTML = '<ins class="adsbygoogle" style="display:block" data-ad-client="' + ADSENSE_CLIENT +

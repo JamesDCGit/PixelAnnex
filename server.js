@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-18-v169';
+const SERVER_VERSION       = '2026-07-18-v171';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -6762,6 +6762,13 @@ const httpServer = http.createServer(async (req, res) => {
   if (url.pathname === '/robots.txt') {
     res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=3600' });
     res.end('User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /auth/\nDisallow: /shots/\nDisallow: /timelapse/\n\nSitemap: https://pixelannex.io/sitemap.xml\n');
+    return;
+  }
+  // v171: AdSense seller authorization — Google requires this at the domain root
+  // for approval/serving. Format: <domain>, <pub id WITHOUT "ca-">, DIRECT, <TAG id>.
+  if (url.pathname === '/ads.txt') {
+    res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=86400' });
+    res.end('google.com, pub-9562564409490681, DIRECT, f08c47fec0942fa0\n');
     return;
   }
   if (url.pathname === '/sitemap.xml') {
