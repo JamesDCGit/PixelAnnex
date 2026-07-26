@@ -31,8 +31,8 @@
 <!-- v171: Google AdSense loader — also serves as the site-verification tag. Ad UNITS
      only render where explicitly placed (see _initAdSense / #welcome-ad); keep
      Auto ads OFF in the AdSense dashboard so Google doesn't inject ads over the map. -->
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9562564409490681"
-     crossorigin="anonymous"></script>
+<script async data-ad-frequency-hint="30s" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9562564409490681"
+     crossorigin="anonymous"></script><!-- v172: frequency hint = H5 Games Ads (Ad Placement API) interstitial pacing -->
 <!-- v95w: Umami Cloud traffic analytics (pageviews/visitors/referrers/devices, no consent banner needed - cookieless). -->
 <script defer src="https://cloud.umami.is/script.js" data-website-id="22da671f-a784-43f5-bb39-fe5b9ea10d5d"></script>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23070d1a'/%3E%3Crect x='6' y='8' width='4' height='4' fill='%2360a5fa'/%3E%3Crect x='12' y='6' width='4' height='4' fill='%23818cf8'/%3E%3Crect x='18' y='8' width='4' height='4' fill='%23a78bfa'/%3E%3Crect x='4' y='14' width='4' height='4' fill='%2334d399'/%3E%3Crect x='10' y='14' width='4' height='4' fill='%23fbbf24'/%3E%3Crect x='16' y='14' width='4' height='4' fill='%23f87171'/%3E%3Crect x='22' y='14' width='4' height='4' fill='%23fb923c'/%3E%3Crect x='6' y='20' width='4' height='4' fill='%23ec4899'/%3E%3Crect x='12' y='20' width='4' height='4' fill='%2306b6d4'/%3E%3Crect x='18' y='20' width='4' height='4' fill='%2384cc16'/%3E%3C/svg%3E"/>
@@ -4156,7 +4156,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-18-v171';
+const CODE_VERSION = '2026-07-27-v172';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7602,6 +7602,28 @@ const CONQUER_BOOST_MS = 60000;
 // are still server rate-limited), acceptable for a casual game.
 const AD_REWARD_MS = 180000; // 3 minutes
 const AD_BUCKET_BONUS = 50;
+// v172: REWARDED ADS FEATURE FLAG. False until the Google H5 Games Ads application
+// is approved — while false the 📺 buttons are HIDDEN entirely (an AdSense reviewer
+// must never see a reward button backed by no real ad). Flip to true post-approval;
+// localStorage pa_h5ads=1 force-enables for testing.
+const H5_ADS_ENABLED = false;
+function _h5AdsOn() {
+  try { if (localStorage.getItem('pa_h5ads') === '1') return true; } catch (e) {}
+  return H5_ADS_ENABLED;
+}
+// v172: H5 Games Ads bootstrap — the Ad Placement API rides the SAME adsbygoogle
+// loader already in <head>. adBreak/adConfig are queue shims per Google's docs.
+document.addEventListener('DOMContentLoaded', function () {
+  if (!_h5AdsOn()) {
+    document.querySelectorAll('.ad-regen-btn').forEach(b => { b.style.display = 'none'; });
+    return;
+  }
+  window.adsbygoogle = window.adsbygoogle || [];
+  if (typeof window.adBreak !== 'function') {
+    window.adBreak = window.adConfig = function (o) { window.adsbygoogle.push(o); };
+  }
+  try { window.adConfig({ preloadAdBreaks: 'on', sound: 'on' }); } catch (e) {}
+});
 let _adRewardUntil = 0, _adInProgress = false, _adTicker = null;
 function _adRewardActive() { return _adRewardUntil > Date.now(); }
 function _adSecsLeft() { return Math.max(0, Math.ceil((_adRewardUntil - Date.now()) / 1000)); }
@@ -7618,14 +7640,24 @@ function showRewardedAd() {
       return new Promise(res => { let g = false; window.adBreak({ type: 'reward', name: 'pa-regen', beforeReward: show => show(), adViewed: () => { g = true; }, adBreakDone: () => res(g) }); });
     }
   } catch (e) { console.warn('[Ad] provider error', e); }
-  // Dev stub — no SDK present: simulate a short ad then grant.
-  return new Promise(res => setTimeout(() => res(true), 600));
+  // v172: NO dev stub — without a real provider there is NO reward. (The old stub
+  // granted after 600ms with no ad, which is an AdSense policy violation if a
+  // reviewer ever clicks it.)
+  console.warn('[Ad] no rewarded provider available');
+  return Promise.resolve(false);
 }
 function watchAdForRegen() {
+  if (!_h5AdsOn()) return; // v172: feature-flagged off until H5 Games Ads approval
   if (_adInProgress || currentIdx < 0) return;
   _adInProgress = true; _setAdButtonsState();
   Promise.resolve(showRewardedAd())
-    .then(ok => { _adInProgress = false; if (ok) grantAdReward(); _setAdButtonsState(); })
+    .then(ok => {
+      _adInProgress = false;
+      // v172: the grant is SERVER-validated (per-player cooldown) — the client asks
+      // and only applies the reward on ad_reward_ok. Blocks rapid re-watch spam.
+      if (ok && wsReady && ws) { try { ws.send(JSON.stringify({ type: 'ad_reward' })); } catch (e) {} }
+      _setAdButtonsState();
+    })
     .catch(() => { _adInProgress = false; _setAdButtonsState(); });
 }
 function grantAdReward() {
@@ -11240,6 +11272,13 @@ function mpHandleMessage(msg) {
           });
         });
       }
+      break;
+    }
+
+    case 'ad_reward_ok': {
+      // v172: server-validated rewarded-ad grant (per-player cooldown enforced there).
+      if (msg.grant) grantAdReward();
+      else if (msg.cooldownMs) actPushCard({ variant: 'info', title: '📺 Ad reward recharging', html: 'Try again in ' + Math.ceil((msg.cooldownMs || 0) / 60000) + ' min.' });
       break;
     }
 
