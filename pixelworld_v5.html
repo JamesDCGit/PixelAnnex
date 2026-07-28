@@ -4159,7 +4159,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-28-v177';
+const CODE_VERSION = '2026-07-28-v178';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6983,25 +6983,9 @@ function _bakeCityLights(img){
     d[i+3] = Math.round(a * 255);
   }
   x.putImageData(im, 0, 0);
-  // v176: BLOOM — a 1px light is SUB-PIXEL at world zoom (the 2048px map is squeezed
-  // to ~700px on screen, so a single lit pixel renders at ~0.34px and vanishes). Bake
-  // a blurred glow underneath a sharp copy so cities stay visible zoomed out, which
-  // is exactly the zoom range where the lights are supposed to read.
-  const g = document.createElement('canvas'); g.width = MAP_W; g.height = MAP_H;
-  const gx = g.getContext('2d');
-  // ADDITIVE glow ('lighter'): a plain blur only SPREADS the same energy, so the peak
-  // drops when the map is downscaled to world zoom. Compositing the halo additively
-  // over the sharp cores adds brightness instead, so cities read at every zoom.
-  try { gx.filter = 'blur(2.5px)'; } catch (e) {}
-  gx.drawImage(c, 0, 0);                                        // wide halo (base)
-  gx.globalCompositeOperation = 'lighter';
-  try { gx.filter = 'blur(1px)'; } catch (e) {}
-  gx.drawImage(c, 0, 0);                                        // + tighter glow
-  try { gx.filter = 'none'; } catch (e) {}
-  gx.drawImage(c, 0, 0);                                        // + sharp centres
-  gx.globalCompositeOperation = 'source-over';
-  _cityLights = g;
-  console.log('[Night] city lights baked (additive bloom) from', CITY_LIGHTS_URL);
+  // v178: BLOOM REMOVED (operator) — crisp 1px city pixels, no glow halo.
+  _cityLights = c;
+  console.log('[Night] city lights baked from', CITY_LIGHTS_URL);
 }
 function _loadCityLights(){
   if (_cityLightsTried) return; _cityLightsTried = true;
@@ -7040,20 +7024,32 @@ window.dbgNight = function(){
   console.log('[Night diagnostic]', r);
   return r;
 };
-// Small animated noise tile — regenerated AND randomly offset each tick, so the
-// twinkle never shows a repeating pattern the way the old hash scatter did.
+// v178: SMOOTH SLOW TWINKLE (operator). The old version regenerated hard random
+// noise every tick, so lights snapped between states — a strobe, not a shimmer.
+// Now: ONE blurred low-frequency field, baked once, that DRIFTS slowly across the
+// map. Because the field is smooth, each city's dimming changes gradually as the
+// field slides over it — a gentle breathing shimmer. ~11 minutes to cross the map.
 const _NOISE_N = 256;
 let _noiseCv = null, _maskWrap = null;
-function _regenNoise(){
-  if (!_noiseCv){ _noiseCv = document.createElement('canvas'); _noiseCv.width = _noiseCv.height = _NOISE_N; }
-  const nx = _noiseCv.getContext('2d');
-  const im = nx.createImageData(_NOISE_N, _NOISE_N), d = im.data;
+function _twinkleField(){
+  if (_noiseCv) return _noiseCv;
+  // Generate the noise at LOW RESOLUTION and upscale it smoothly. (Blurring white
+  // noise instead would average ~150 samples per output pixel and flatten the field
+  // to near-uniform — measured: max 1/255 variation, i.e. no visible twinkle at all.)
+  const S = 24;
+  const small = document.createElement('canvas'); small.width = small.height = S;
+  const sx = small.getContext('2d');
+  const im = sx.createImageData(S, S), d = im.data;
   for (let i = 0; i < d.length; i += 4){
     d[i] = d[i+1] = d[i+2] = 0;
-    // ~40% of pixels get partially punched out (dimmed) this frame
-    d[i+3] = Math.random() < 0.40 ? (Math.random() * 210) | 0 : 0;
+    d[i+3] = (Math.random() * 255) | 0;
   }
-  nx.putImageData(im, 0, 0);
+  sx.putImageData(im, 0, 0);
+  const N = _NOISE_N;
+  _noiseCv = document.createElement('canvas'); _noiseCv.width = _noiseCv.height = N;
+  const bx = _noiseCv.getContext('2d');
+  bx.imageSmoothingEnabled = true;          // bilinear upscale → smooth, full contrast
+  bx.drawImage(small, 0, 0, N, N);
   return _noiseCv;
 }
 function _nightLightsTick(){
@@ -7077,23 +7073,23 @@ function _nightLightsTick(){
   mwx.drawImage(_nightMask, o, 0);
   fx.globalCompositeOperation = 'destination-in';
   fx.drawImage(_maskWrap, 0, 0);
-  // twinkle — punch out a random subset of lit pixels
+  // v178: twinkle — dim by a SMOOTH field that drifts slowly (no per-tick randomness,
+  // so brightness changes are continuous). Drawn oversized (1.5x) at a drifting origin
+  // so it always covers the map without tiling seams from the blur.
+  const t = Date.now() / 1000;
+  const dx = -((t * 20) % (MAP_W * 0.5));   // ~20 px/s — a light breathes over ~6-12s
+  const dy = -((t * 10) % (MAP_H * 0.5));
   fx.globalCompositeOperation = 'destination-out';
-  const pat = fx.createPattern(_regenNoise(), 'repeat');
-  if (pat){
-    fx.save();
-    fx.translate(-(Math.random() * _NOISE_N) | 0, -(Math.random() * _NOISE_N) | 0);
-    fx.fillStyle = pat;
-    fx.fillRect(0, 0, MAP_W + _NOISE_N, MAP_H + _NOISE_N);
-    fx.restore();
-  }
+  fx.globalAlpha = 0.5;                       // max ~50% dip — a shimmer, not a blink
+  fx.drawImage(_twinkleField(), dx, dy, MAP_W * 1.5, MAP_H * 1.5);
+  fx.globalAlpha = 1;
   fx.globalCompositeOperation = 'source-over';
 }
 if (typeof _isMobileForMemory !== 'undefined' && !_isMobileForMemory) {
   setTimeout(_nightTick, 3000);            // first paint shortly after boot
   setInterval(_nightTick, 60 * 1000);      // terminator nudge ~1/min
   setTimeout(_loadCityLights, 4000);       // v175: fetch + bake the lights art
-  setInterval(_nightLightsTick, 900);      // v175: twinkle ~1.1fps (cheap: 3 drawImages)
+  setInterval(_nightLightsTick, 125);      // v178: ~8fps so the slow drift reads as smooth (3 drawImages/tick)
 }
 
 function applyT(){
