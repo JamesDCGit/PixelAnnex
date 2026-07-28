@@ -953,6 +953,15 @@ function _pruneTimelapseFrames() {
       const ts = parseInt(f.slice(3, -4), 10);
       if (ts && ts < cutoff) { try { fs.unlinkSync(path.join(TIMELAPSE_DIR, f)); } catch (e) {} }
     }
+    // v182: prune assembled GIFs too — they were NEVER cleaned up (one per day
+    // accumulating forever, ~1-3MB each), and the unique-name fix now produces two
+    // per day. Keep 14 days so recently-shared Discord/X links stay alive.
+    const gifCutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+    for (const f of fs.readdirSync(TIMELAPSE_DIR)) {
+      if (!f.startsWith('timelapse_') || !f.endsWith('.gif')) continue;
+      const fp = path.join(TIMELAPSE_DIR, f);
+      try { if (fs.statSync(fp).mtimeMs < gifCutoff) fs.unlinkSync(fp); } catch (e) {}
+    }
   } catch (e) {}
 }
 // Frames within the GIF window: trailing TL_WINDOW_MS, but never older than the
@@ -986,7 +995,12 @@ function assembleTimelapseGif() {
     } catch (e) { console.warn('[Timelapse] staging failed:', e.message); return resolve(null); }
     const input   = path.join(stage, 'f_%05d.png');
     const pal     = path.join(stage, 'pal.png');
-    const outName = 'timelapse_' + new Date().toISOString().slice(0, 10) + '.gif';
+    // v182: name by DATE **AND TIME**. It was date-only, so the 00:00 and 12:00 UTC
+    // assemblies of the same day wrote the SAME file — the evening GIF overwrote the
+    // morning one and, because the URL was identical, Discord/Cloudflare served the
+    // cached first image for both posts (they looked like the same GIF), while the
+    // morning post's image silently changed to the evening's content.
+    const outName = 'timelapse_' + new Date().toISOString().slice(0, 16).replace(/:/g, '') + '.gif';
     const outPath = path.join(TIMELAPSE_DIR, outName);
     const vf      = 'fps=' + TL_GIF_FPS + ',scale=' + TL_OUT_W + ':' + TL_OUT_H + ':flags=lanczos';
     // Pass 1 — palette
