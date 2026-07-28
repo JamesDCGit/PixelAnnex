@@ -71,6 +71,83 @@ async function preloadBaseMap(publicDir) {
   console.warn('[Mapshot] no basemap image loaded — world snapshots use the procedural base');
 }
 
+// v176: city-lights art for the day/night pass in world snapshots. Same B&W
+// 2048x1024 asset the client uses; decoded once at boot into a luminance array so
+// the render loop can read it without per-frame image work.
+let _lightsLum = null, _lightsW = 0, _lightsH = 0;
+async function preloadCityLights(publicDir) {
+  const C = _loadCanvas();
+  if (!C || !C.loadImage) return;
+  const path = require('path'), fs = require('fs');
+  const fp = path.join(publicDir, 'city_lights.png');
+  if (!fs.existsSync(fp)) { console.log('[Mapshot] no city_lights.png — snapshot lights disabled'); return; }
+  try {
+    const img = await C.loadImage(fp);
+    const cv = C.createCanvas(img.width, img.height);
+    const cx = cv.getContext('2d');
+    cx.drawImage(img, 0, 0);
+    const d = cx.getImageData(0, 0, img.width, img.height).data;
+    _lightsW = img.width; _lightsH = img.height;
+    _lightsLum = new Uint8Array(_lightsW * _lightsH);
+    for (let i = 0, p = 0; p < d.length; i++, p += 4) {
+      _lightsLum[i] = (d[p] * 0.299 + d[p + 1] * 0.587 + d[p + 2] * 0.114) | 0;
+    }
+    console.log('[Mapshot] city lights loaded (' + _lightsW + 'x' + _lightsH + ')');
+  } catch (e) { console.warn('[Mapshot] city lights load failed:', e.message); }
+}
+
+// v176: shared day/night maths — mirrors the client (_solarDecl / _subsolarLonDeg)
+// so a snapshot shows the SAME terminator players see in-game.
+function _sunParams(now) {
+  const n = Math.floor((now - Date.UTC(now.getUTCFullYear(), 0, 0)) / 864e5);
+  const decl = -23.44 * Math.PI / 180 * Math.cos(2 * Math.PI / 365 * (n + 10));
+  const h = now.getUTCHours() + now.getUTCMinutes() / 60 + now.getUTCSeconds() / 3600;
+  return { sd: Math.sin(decl), cd: Math.cos(decl), ssl: (12 - h) * 15 * Math.PI / 180 };
+}
+
+// Apply the night veil + city lights over an already-rendered world image.
+// `bd` is RGBA data of an OUT_W x OUT_H frame covering the whole equirect map.
+function _applyNight(bd, OUT_W, OUT_H, claimByPixel, MAP_W, MAP_H) {
+  const { sd, cd, ssl } = _sunParams(new Date());
+  for (let oy = 0; oy < OUT_H; oy++) {
+    const lat = (90 - ((oy + 0.5) / OUT_H) * 180) * Math.PI / 180;
+    const sl = Math.sin(lat) * sd, cl = Math.cos(lat) * cd;
+    for (let ox = 0; ox < OUT_W; ox++) {
+      const lon = (((ox + 0.5) / OUT_W) * 360 - 180) * Math.PI / 180;
+      const sinAlt = sl + cl * Math.cos(lon - ssl);
+      if (sinAlt > 0.105) continue;                       // full day
+      const p = (oy * OUT_W + ox) * 4;
+      // veil: smoothstep +6deg..-12deg, capped at 50% like the client
+      const t = Math.min(1, (0.105 - sinAlt) / 0.313);
+      const s = t * t * (3 - 2 * t);
+      const tw = Math.max(0, 1 - Math.abs(sinAlt) / 0.105); // warm twilight band
+      // painted pixels dim less (~30%) than bare terrain (~50%) — matches the
+      // in-game layering where claims sit above the veil.
+      const sx = Math.min(MAP_W - 1, Math.floor((ox / OUT_W) * MAP_W));
+      const sy = Math.min(MAP_H - 1, Math.floor((oy / OUT_H) * MAP_H));
+      const painted = claimByPixel && claimByPixel[sy * MAP_W + sx] >= 0;
+      const a = s * (painted ? 0.30 : 0.50) * (1 - tw * 0.35);
+      const nr = 8 + 160 * tw * 0.55, ng = 10 + 70 * tw * 0.4, nb = 28;
+      bd[p]     = (bd[p]     * (1 - a) + nr * a) | 0;
+      bd[p + 1] = (bd[p + 1] * (1 - a) + ng * a) | 0;
+      bd[p + 2] = (bd[p + 2] * (1 - a) + nb * a) | 0;
+      // city lights — only once properly dark, brightness from the art's luminance
+      if (_lightsLum && sinAlt < -0.05) {
+        const lx = Math.min(_lightsW - 1, Math.floor((ox / OUT_W) * _lightsW));
+        const ly = Math.min(_lightsH - 1, Math.floor((oy / OUT_H) * _lightsH));
+        const lum = _lightsLum[ly * _lightsW + lx] / 255;
+        if (lum > 0.05) {
+          const mt = Math.min(1, (-0.05 - sinAlt) / 0.20);
+          const la = Math.min(1, lum * 1.15) * mt * mt * (3 - 2 * mt);
+          bd[p]     = (bd[p]     * (1 - la) + 255 * la) | 0;
+          bd[p + 1] = (bd[p + 1] * (1 - la) + 214 * la) | 0;
+          bd[p + 2] = (bd[p + 2] * (1 - la) + 140 * la) | 0;
+        }
+      }
+    }
+  }
+}
+
 function hexToRgb(hex) {
   if (!hex || hex[0] !== '#' || hex.length < 7) return [128, 128, 128];
   return [
@@ -246,6 +323,8 @@ function renderWorldPNG(opts) {
         bd[p + 3] = 255;
       }
     }
+    // v176: day/night veil + city lights (skippable via opts.night === false)
+    if (opts.night !== false) _applyNight(bd, OUT_W, OUT_H, claimByPixel, MAP_W, MAP_H);
     ctx.putImageData(base, 0, 0);
   } else {
     // Fallback (basemap failed to load): procedural grey-land / blue-ocean base.
@@ -263,6 +342,7 @@ function renderWorldPNG(opts) {
         d[p] = r; d[p + 1] = g; d[p + 2] = b; d[p + 3] = 255;
       }
     }
+    if (opts.night !== false) _applyNight(d, OUT_W, OUT_H, claimByPixel, MAP_W, MAP_H); // v176
     ctx.putImageData(img, 0, 0);
   }
 
@@ -285,4 +365,4 @@ function renderWorldPNG(opts) {
   return canvas.toBuffer('image/png');
 }
 
-module.exports = { renderCountryPNG, renderWorldPNG, preloadFlags, preloadBaseMap, getFlagImage };
+module.exports = { renderCountryPNG, renderWorldPNG, preloadFlags, preloadBaseMap, preloadCityLights, getFlagImage };

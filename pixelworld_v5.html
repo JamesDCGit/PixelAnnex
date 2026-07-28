@@ -4159,7 +4159,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-28-v175';
+const CODE_VERSION = '2026-07-28-v176';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6978,21 +6978,68 @@ function _bakeCityLights(img){
     // luminance → alpha (works for opaque B&W or transparent-with-white art)
     const lum = (d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114) / 255;
     const srcA = d[i+3] / 255;
-    const a = lum < 0.05 ? 0 : Math.min(1, lum * 1.15) * srcA;
+    const a = lum < 0.04 ? 0 : Math.min(1, lum * 1.6) * srcA; // v176: brighter gain
     d[i] = 255; d[i+1] = 214; d[i+2] = 140;   // warm sodium-lamp tint
     d[i+3] = Math.round(a * 255);
   }
   x.putImageData(im, 0, 0);
-  _cityLights = c;
-  console.log('[Night] city lights baked from', CITY_LIGHTS_URL);
+  // v176: BLOOM — a 1px light is SUB-PIXEL at world zoom (the 2048px map is squeezed
+  // to ~700px on screen, so a single lit pixel renders at ~0.34px and vanishes). Bake
+  // a blurred glow underneath a sharp copy so cities stay visible zoomed out, which
+  // is exactly the zoom range where the lights are supposed to read.
+  const g = document.createElement('canvas'); g.width = MAP_W; g.height = MAP_H;
+  const gx = g.getContext('2d');
+  // ADDITIVE glow ('lighter'): a plain blur only SPREADS the same energy, so the peak
+  // drops when the map is downscaled to world zoom. Compositing the halo additively
+  // over the sharp cores adds brightness instead, so cities read at every zoom.
+  try { gx.filter = 'blur(2.5px)'; } catch (e) {}
+  gx.drawImage(c, 0, 0);                                        // wide halo (base)
+  gx.globalCompositeOperation = 'lighter';
+  try { gx.filter = 'blur(1px)'; } catch (e) {}
+  gx.drawImage(c, 0, 0);                                        // + tighter glow
+  try { gx.filter = 'none'; } catch (e) {}
+  gx.drawImage(c, 0, 0);                                        // + sharp centres
+  gx.globalCompositeOperation = 'source-over';
+  _cityLights = g;
+  console.log('[Night] city lights baked (additive bloom) from', CITY_LIGHTS_URL);
 }
 function _loadCityLights(){
   if (_cityLightsTried) return; _cityLightsTried = true;
   const im = new Image();
   im.onload  = () => { try { _bakeCityLights(im); _nightLightsTick(); } catch(e){ console.warn('[Night] lights bake failed', e); } };
-  im.onerror = () => console.log('[Night] no city_lights.png — lights disabled');
+  im.onerror = () => console.warn('[Night] city_lights.png FAILED to load from', CITY_LIGHTS_URL, '— lights disabled');
   im.src = CITY_LIGHTS_URL;
 }
+// v176: run dbgNight() in the console — reports exactly why lights may not show.
+window.dbgNight = function(){
+  const fxC = cNightFx && cNightFx.getContext ? cNightFx.getContext('2d') : null;
+  let litNow = 0;
+  try {
+    if (fxC && cNightFx.width > 1){
+      const d = fxC.getImageData(0, 0, cNightFx.width, cNightFx.height).data;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 0) litNow++;
+    }
+  } catch(e){}
+  const r = {
+    version: CODE_VERSION,
+    mobileSkip: _isMobileForMemory,          // true = whole night system disabled
+    nightEnabled: !!_nightOn(),
+    veilCanvas: cNight ? cNight.width + 'x' + cNight.height : 'missing',
+    lightsCanvas: cNightFx ? cNightFx.width + 'x' + cNightFx.height : 'missing',
+    maskBaked: !!_nightMask,
+    lightsArtLoaded: !!_cityLights,
+    litPixelsOnScreenLayer: litNow,
+    lightsLayerOpacity: cNightFx ? (cNightFx.style.opacity || '1') : 'n/a',
+    zoomScale: (typeof scale === 'number' ? +scale.toFixed(2) : '?'),
+    utcNow: new Date().toISOString().slice(11,16),
+    hint: !_nightOn() ? 'night system OFF (mobile/touch detection)'
+        : !_cityLights ? 'lights art not loaded — check /city_lights.png in Network tab'
+        : litNow === 0 ? 'lights layer empty — is the visible region in DAYLIGHT right now?'
+        : 'lights are drawn; if unseen, check the region you are viewing is on the night side'
+  };
+  console.log('[Night diagnostic]', r);
+  return r;
+};
 // Small animated noise tile — regenerated AND randomly offset each tick, so the
 // twinkle never shows a repeating pattern the way the old hash scatter did.
 const _NOISE_N = 256;

@@ -36,12 +36,12 @@ const fs        = require('fs');
 const crypto    = require('crypto'); // v98b: timing-safe admin auth
 const os        = require('os');
 const { execFile } = require('child_process');
-const { renderCountryPNG, renderWorldPNG, preloadFlags, preloadBaseMap, getFlagImage } = require('./mapshot'); // v88/v92e/v92m: tweet screenshots + flags; v136: baked basemap
+const { renderCountryPNG, renderWorldPNG, preloadFlags, preloadBaseMap, preloadCityLights, getFlagImage } = require('./mapshot'); // v88/v92e/v92m: tweet screenshots + flags; v136: baked basemap
 const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitter) poster
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-28-v175';
+const SERVER_VERSION       = '2026-07-28-v176';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -727,6 +727,9 @@ preloadFlags(path.join(__dirname, 'public', 'flags')).catch(e =>
 // the real terrain instead of the procedural grey-land/blue-ocean fill.
 preloadBaseMap(path.join(__dirname, 'public')).catch(e =>
   console.warn('[Mapshot] basemap preload failed:', e.message));
+// v176: city-lights art for the snapshot day/night pass (same asset the client uses).
+preloadCityLights(path.join(__dirname, 'public')).catch(e =>
+  console.warn('[Mapshot] city lights preload failed:', e.message));
 
 // v92g: outlier-robust bbox for SCREENSHOTS only. geoBbox is the true min/max
 // over every pixel (needed by detectEncirclement), but map-data artifacts give
