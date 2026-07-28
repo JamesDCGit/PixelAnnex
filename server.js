@@ -6932,8 +6932,11 @@ const httpServer = http.createServer(async (req, res) => {
 
   // ── v88: tweet screenshots at /shots/{name}.png ────────────────
   if (url.pathname.startsWith('/shots/') && url.pathname.endsWith('.png')) {
-    const m = url.pathname.match(/^\/shots\/([A-Za-z0-9_]+\.png)$/);
-    if (!m) { res.writeHead(400); res.end('invalid shot path'); return; }
+    // v176a: allow hyphens/dots — WORLD shots are named world_YYYY-MM-DD.png, which the
+    // old [A-Za-z0-9_]+ pattern rejected, so every shared world-snapshot URL 400'd
+    // (share pages, og:image). '..' is still refused so the path can't traverse.
+    const m = url.pathname.match(/^\/shots\/([A-Za-z0-9_.-]+\.png)$/);
+    if (!m || m[1].includes('..')) { res.writeHead(400); res.end('invalid shot path'); return; }
     const f = path.join(SHOTS_DIR, m[1]);
     if (!fs.existsSync(f)) { res.writeHead(404); res.end('shot not found'); return; }
     res.writeHead(200, {
