@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-28-v178';
+const SERVER_VERSION       = '2026-07-28-v179';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -6774,7 +6774,13 @@ const httpServer = http.createServer(async (req, res) => {
   // ── v169: SEO — robots.txt / sitemap.xml / PWA statics / crawlable pages ──
   if (url.pathname === '/robots.txt') {
     res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=3600' });
-    res.end('User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /auth/\nDisallow: /shots/\nDisallow: /timelapse/\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
+    // v179: /shots/ and /timelapse/ are now ALLOWED — they hold the world snapshots and
+    // timelapse GIFs that the share pages use as og:image. Blocking them meant Google
+    // could not fetch our own social/rich-result images (and Search Console flagged
+    // them as "Blocked by robots.txt"). They are public media with nothing sensitive.
+    // Still blocked: /admin (operator dashboard), /api/ (JSON endpoints, no SEO value),
+    // /auth/ (OAuth redirects — these were the "Page with redirect" reports).
+    res.end('User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /auth/\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
     return;
   }
   // v171: AdSense seller authorization — Google requires this at the domain root

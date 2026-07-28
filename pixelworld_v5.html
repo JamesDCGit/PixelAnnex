@@ -4159,7 +4159,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-28-v178';
+const CODE_VERSION = '2026-07-28-v179';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6966,7 +6966,7 @@ function _nightTick(){
 //   3. 'destination-out' an animated noise tile → twinkle by darkening pixels
 // Replaces v174's hash-scatter over painted pixels, which repeated visibly and
 // wrongly followed territory instead of cities. No image → no lights (clean no-op).
-const CITY_LIGHTS_URL = '/city_lights.png?v=177'; // v177: query busts a CDN/SW-cached 404
+const CITY_LIGHTS_URL = '/city_lights.png?v=179'; // v179: BUMP THIS whenever the art changes — the CDN/SW caches the old file otherwise
 let _cityLights = null, _cityLightsTried = false;
 function _bakeCityLights(img){
   const c = document.createElement('canvas'); c.width = MAP_W; c.height = MAP_H;
@@ -6983,9 +6983,22 @@ function _bakeCityLights(img){
     d[i+3] = Math.round(a * 255);
   }
   x.putImageData(im, 0, 0);
-  // v178: BLOOM REMOVED (operator) — crisp 1px city pixels, no glow halo.
-  _cityLights = c;
-  console.log('[Night] city lights baked from', CITY_LIGHTS_URL);
+  // v179: BLOOM RE-ENABLED (operator). ADDITIVE ('lighter') rather than a plain blur —
+  // a blur only SPREADS the same energy, so the peak drops when the map is downscaled
+  // to world zoom; compositing halos additively over the sharp cores adds brightness,
+  // which matters more now the texture is sparser (11.7k lit px vs 38.3k).
+  const g = document.createElement('canvas'); g.width = MAP_W; g.height = MAP_H;
+  const gx = g.getContext('2d');
+  try { gx.filter = 'blur(2.5px)'; } catch (e) {}
+  gx.drawImage(c, 0, 0);                       // wide halo (base)
+  gx.globalCompositeOperation = 'lighter';
+  try { gx.filter = 'blur(1px)'; } catch (e) {}
+  gx.drawImage(c, 0, 0);                       // + tighter glow
+  try { gx.filter = 'none'; } catch (e) {}
+  gx.drawImage(c, 0, 0);                       // + sharp centres
+  gx.globalCompositeOperation = 'source-over';
+  _cityLights = g;
+  console.log('[Night] city lights baked (additive bloom) from', CITY_LIGHTS_URL);
 }
 function _loadCityLights(){
   if (_cityLightsTried) return; _cityLightsTried = true;
