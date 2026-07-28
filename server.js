@@ -932,7 +932,8 @@ function captureTimelapseFrame() {
   try {
     if (Object.keys(geoPixels).length === 0) return; // map not ready yet
     // v95y: burn the capture time into the frame so the GIF ticks through 12h.
-    const _ts = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+    // v173: + the war number, so a shared GIF says which game it was.
+    const _ts = 'War #' + _warNumber + ' · ' + new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
     const buf = renderWorldPNG({ MAP_W, MAP_H, claimByPixel, landMask, idxToId, geoColorsById, outW: TL_OUT_W, label: _ts });
     if (!buf) return;
     // zero-padded epoch-ms filename → lexical sort == chronological
@@ -1014,7 +1015,9 @@ const DISCORD_INVITE = 'https://discord.gg/UHQRqXDpBE'; // v99j: permanent (neve
 const GAME_URL       = 'pixelannex.com';
 function _pickSassy(pool) { return pool[Math.floor(Math.random() * pool.length)]; }
 // v39a: tweet posted by @PixelAnnexGame anyway — drop the self-mention
-function _suffix() { return GAME_URL + ' #PixelAnnex'; }
+// v173: every post tail carries the war number — one edit covers all sass-based
+// tweet + Discord lines (they all end with `+ _suffix()`).
+function _suffix() { return 'War #' + _warNumber + ' · ' + GAME_URL + ' #PixelAnnex'; }
 
 // CONQUEST variants — {attacker} {defender} {held}
 // v84: pool expanded with paraphrased war/strategy tropes. Rules:
@@ -3178,9 +3181,9 @@ function _fireSuddenDeathTweet() {
   try {
     const standing = _standingNations();
     const topP = _sessionLeaderboard(3).map(s => s.username).filter(Boolean).join(', ');
-    const text = '⚔️ SUDDEN DEATH on PixelAnnex — only ' + standing.length + ' nations remain: ' +
+    const text = '⚔️ SUDDEN DEATH in PixelAnnex War #' + _warNumber + ' — only ' + standing.length + ' nations remain: ' +
       standing.join(', ') + '. Regen is DOUBLED — the endgame is here.' +
-      (topP ? ' Top players: ' + topP : '') + ' ' + GAME_URL + ' #PixelAnnex';
+      (topP ? ' Top players: ' + topP : '') + ' ' + _suffix(); // v173: war # in text + tail
     _fireEndgameTweet(text, 'sudden_death:' + _warNumber);
   } catch (e) { console.warn('[Tweet] sudden death tweet failed:', e.message); }
 }
@@ -3319,7 +3322,7 @@ function _checkWorldConquest() {
     tier:        3,
     conquered, total, topCountries, topPlayers,
     timestamp:   Date.now(),
-    sassyText:   '🌍 THE WORLD HAS BEEN CONQUERED! ' + conquered + '/' + total + ' countries claimed. Top conqueror: ' + (topCountries[0] && topCountries[0].name || '??') + ' with ' + (topCountries[0] && topCountries[0].conquests || 0) + '. Resetting in 5 minutes.',
+    sassyText:   '🌍 WAR #' + _warNumber + ' IS OVER — THE WORLD HAS BEEN CONQUERED! ' + conquered + '/' + total + ' countries claimed. Top conqueror: ' + (topCountries[0] && topCountries[0].name || '??') + ' with ' + (topCountries[0] && topCountries[0].conquests || 0) + '. Resetting in 5 minutes.', // v173: war #
   });
   // v105: world conquest fires an IMMEDIATE tweet (bypasses the manual queue) with
   // a fresh world snapshot + the last nations standing + top players.
@@ -3329,9 +3332,9 @@ function _checkWorldConquest() {
     const topP = (topContributors.length ? topContributors : topPlayers)
       .slice(0, 3).map(p => p.username).filter(Boolean).join(', ');
     const wc = Math.round(winner.countriesFrac * 100), wp = Math.round(winner.pixelsFrac * 100);
-    const text = '🌍 THE WORLD HAS BEEN CONQUERED! ' + winner.name + ' wins — ' + wc +
+    const text = '🌍 WAR #' + _warNumber + ' IS OVER — THE WORLD HAS BEEN CONQUERED! ' + winner.name + ' wins — ' + wc +
       '% of countries & ' + wp + '% of the map. Last standing: ' + finalNations +
-      (topP ? '. Top players: ' + topP : '') + '. ' + GAME_URL + ' #PixelAnnex';
+      (topP ? '. Top players: ' + topP : '') + '. ' + _suffix(); // v173
     _fireEndgameTweet(text, 'world_conquest:' + Math.floor(_worldResetAt / 1000));
   } catch(e) { console.warn('[Tweet] world conquest tweet failed:', e.message); }
   setTimeout(_resetWorld, WORLD_RESET_COUNTDOWN_MS);
