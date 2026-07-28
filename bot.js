@@ -905,6 +905,23 @@ async function handleDailyReport(event) {
   try { await ch.send({ embeds: [embed] }); }
   catch (e) { console.error('[Daily] post failed:', e.message); }
 }
+// v181: operator announcement (feature drops / patch notes) -> #general. Distinct from
+// daily_report, which hardcodes the "State of the World" title and is for standings.
+async function handleAnnouncement(event) {
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (!guild) return;
+  const ch = _getGeneralChannel(guild);
+  if (!ch) { console.log(`[Announce] #${GENERAL_CHANNEL} not found — skipped`); return; }
+  const embed = new EmbedBuilder()
+    .setColor(0xe8b93c) // arcade gold
+    .setTitle(event.title || '📢 PixelAnnex Update')
+    .setDescription(event.text || '')
+    .setTimestamp(new Date(event.timestamp || Date.now()));
+  const img = _absUrl(event.imageUrl);
+  if (img) embed.setImage(img);
+  try { await ch.send({ embeds: [embed] }); console.log('[Announce] posted to #' + GENERAL_CHANNEL); }
+  catch (e) { console.error('[Announce] post failed:', e.message); }
+}
 // v98b: football matchup hype — "which country wins in pixels?" -> #general.
 // (No tournament branding in the copy — trademark caution, operator request.)
 async function handleFootballMatchup(event) {
@@ -1404,6 +1421,10 @@ function handleGameEvent(event) {
 
     case 'daily_report':        // v93j: 12h state-of-the-world GIF -> #general
       handleDailyReport(event);
+      break;
+
+    case 'announcement':        // v181: operator update/patch note -> #general
+      handleAnnouncement(event);
       break;
 
     case 'football_matchup':    // v98b: country-vs-country fixture hype -> #general

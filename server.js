@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-28-v180';
+const SERVER_VERSION       = '2026-07-28-v181';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -7118,6 +7118,19 @@ const httpServer = http.createServer(async (req, res) => {
       if (text) { broadcast(JSON.stringify({ type: 'admin_announce', text })); console.log('[Admin] broadcast:', text); }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: !!text }));
+      return;
+    }
+    // v181: post an operator announcement (feature drop / patch note) to Discord
+    // #general. Separate from 'broadcast', which is the transient in-game card.
+    if (action === 'announce') {
+      const text  = (url.searchParams.get('text')  || '').slice(0, 3000).trim();
+      const title = (url.searchParams.get('title') || '📢 PixelAnnex Update').slice(0, 200).trim();
+      const image = (url.searchParams.get('image') || '').slice(0, 300).trim();
+      if (!text) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'missing text' })); return; }
+      emitBotEvent({ type: 'announcement', title, text, imageUrl: image || undefined, timestamp: Date.now() });
+      console.log('[Admin] announcement →', title);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, title }));
       return;
     }
     if (action === 'reset') {
