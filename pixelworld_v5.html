@@ -2190,6 +2190,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
       <div class="ws-cell"><span class="ws-val" id="ws-alliances">—</span><span class="ws-lbl" data-i18n="hud.alliances">alliances</span></div>
       <div class="ws-cell" title="Real nations not yet conquered (matches the country picker)"><span class="ws-val" id="ws-remaining">—</span><span class="ws-lbl" data-i18n="hud.countries_left">countries left</span></div>
       <div class="ws-cell" title="Total real nations at the start of the round"><span class="ws-val" id="ws-original">—</span><span class="ws-lbl" data-i18n="hud.of_original">of original</span></div>
+      <div class="ws-cell" title="Coordinated Universal Time — the day/night terminator on the map follows real UTC"><span class="ws-val" id="ws-utc">—</span><span class="ws-lbl">UTC</span></div><!-- v174 -->
     </div>
     <div id="encircle-banner">
       <span class="enc-icon">🎯</span>
@@ -2209,8 +2210,10 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <canvas id="c-waves" style="pointer-events:none"></canvas>
     <canvas id="c-sprites" style="pointer-events:none"></canvas>
     <canvas id="c-landmarks" style="pointer-events:none"></canvas>
+    <canvas id="c-night" style="pointer-events:none"></canvas><!-- v174: day/night veil UNDER claims — biome darkens ~50%, painted pixels (drawn above at 65-92% alpha) punch through at ~30% -->
     <canvas id="c-border"></canvas><!-- v39b: now below c-claim -->
     <canvas id="c-claim"></canvas>
+    <canvas id="c-nightfx" style="pointer-events:none"></canvas><!-- v174: city-light glints ABOVE claims; fades out with zoom -->
     <canvas id="c-flash" style="pointer-events:none;"></canvas>
     <canvas id="c-outline" style="pointer-events:none;"></canvas>
     <!-- v39b: c-border moved below to render before c-claim -->
@@ -4156,7 +4159,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-27-v172';
+const CODE_VERSION = '2026-07-28-v174';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4245,7 +4248,7 @@ const _isMobileForMemory = matchMedia('(max-width: 768px)').matches || _isIOS ||
 // the cap is confirmed → WebGL (one surface) is the real fix. Lost on mobile: monster
 // sprites, rally/nuke/overlay layers, the paint flash, the (DOM-rendered) flags
 // canvas — all cosmetic or occasional. Gameplay (terrain + ownership + borders) stays.
-const _DECORATIVE_CANVAS_IDS = ['c-grid','c-waves','c-sprites','c-landmarks','c-crater','c-siege','c-flash','c-outline','c-monsters','c-flags','c-highlight','c-overlay','c-nuke'];
+const _DECORATIVE_CANVAS_IDS = ['c-grid','c-waves','c-sprites','c-landmarks','c-crater','c-siege','c-flash','c-outline','c-monsters','c-flags','c-highlight','c-overlay','c-nuke','c-night','c-nightfx']; // v174: night layers stripped on mobile
 const cBase=document.getElementById("c-base");
 const cGrid=document.getElementById("c-grid");
 const gridCtx=cGrid.getContext("2d");
@@ -6871,10 +6874,113 @@ function _hideLegendOccTip() {
 }
 
 // ── View ─────────────────────────────────────────────────────────
+// ── v174: DAY/NIGHT CYCLE (operator spec) ─────────────────────────────────────
+// Real 24h UTC terminator. One pre-baked 2048x1024 night image (rebaked daily —
+// declination drifts slowly) drawn onto #c-night with a wrapping horizontal offset
+// recomputed every minute. #c-night sits UNDER the claim layer, so the biome dims
+// up to ~50% while painted pixels (65-92% alpha above it) read at roughly ~30% dim
+// — the differential the operator asked for, with zero per-pixel work per frame.
+// CITY LIGHTS: warm 1px glints on #c-nightfx (ABOVE claims) at subsampled painted
+// pixels inside the night band, refreshed every 3 min; the layer fades out with
+// zoom (matching the environment sprites). Mobile: both layers are in
+// _DECORATIVE_CANVAS_IDS (1x1) and the whole system is skipped.
+const cNight   = document.getElementById('c-night');
+const cNightFx = document.getElementById('c-nightfx');
+const _NIGHT_MAX_A = 0.50;                 // background darkening cap (operator: 50%)
+let _nightStrip = null, _nightBakeDay = -1;
+function _nightOn(){ return !_isMobileForMemory && cNight && cNightFx; }
+function _solarDecl(now){ // approx solar declination, radians
+  const n = Math.floor((now - Date.UTC(now.getUTCFullYear(), 0, 0)) / 864e5);
+  return -23.44 * Math.PI / 180 * Math.cos(2 * Math.PI / 365 * (n + 10));
+}
+function _subsolarLonDeg(now){ // longitude where the sun is overhead
+  const h = now.getUTCHours() + now.getUTCMinutes() / 60 + now.getUTCSeconds() / 3600;
+  return (12 - h) * 15;
+}
+function _bakeNightStrip(){ // baked with subsolar longitude = 0 (map centre)
+  const now = new Date();
+  const day = now.getUTCDate() + now.getUTCMonth() * 40;
+  if (_nightStrip && day === _nightBakeDay) return;
+  _nightBakeDay = day;
+  const c = document.createElement('canvas'); c.width = MAP_W; c.height = MAP_H;
+  const x = c.getContext('2d');
+  const img = x.createImageData(MAP_W, MAP_H), d = img.data;
+  const decl = _solarDecl(now), sd = Math.sin(decl), cd = Math.cos(decl);
+  for (let py = 0; py < MAP_H; py++){
+    const lat = (90 - (py + 0.5) / MAP_H * 180) * Math.PI / 180;
+    const sl = Math.sin(lat) * sd, cl = Math.cos(lat) * cd;
+    for (let px = 0; px < MAP_W; px++){
+      const lon = ((px + 0.5) / MAP_W * 360 - 180) * Math.PI / 180; // subsolar at lon 0
+      const sinAlt = sl + cl * Math.cos(lon);
+      const p = (py * MAP_W + px) * 4;
+      // day above +6deg → clear; full night below -12deg; smooth ramp between.
+      if (sinAlt > 0.105) continue;
+      const t2 = Math.min(1, (0.105 - sinAlt) / 0.313);
+      const a = _NIGHT_MAX_A * t2 * t2 * (3 - 2 * t2); // smoothstep
+      // deep blue night; warm twilight tint near the terminator
+      const tw = Math.max(0, 1 - Math.abs(sinAlt) / 0.105);
+      d[p]   = 8 + 160 * tw * 0.55;  // r — orange bleed in twilight
+      d[p+1] = 10 + 70 * tw * 0.4;
+      d[p+2] = 28;
+      d[p+3] = Math.round(a * 255 * (1 - tw * 0.35)); // twilight slightly lighter
+    }
+  }
+  x.putImageData(img, 0, 0);
+  _nightStrip = c;
+}
+function _nightTick(){
+  if (!_nightOn()) return;
+  _bakeNightStrip();
+  if (cNight.width !== MAP_W) { cNight.width = MAP_W; cNight.height = MAP_H; }
+  const nx = cNight.getContext('2d');
+  nx.clearRect(0, 0, MAP_W, MAP_H);
+  // shift so the baked subsolar (map centre) lands at the CURRENT subsolar longitude
+  const off = Math.round(_subsolarLonDeg(new Date()) / 360 * MAP_W);
+  const o = ((off % MAP_W) + MAP_W) % MAP_W;
+  nx.drawImage(_nightStrip, o - MAP_W, 0);
+  nx.drawImage(_nightStrip, o, 0);
+  // UTC clock cell (v174 extras)
+  const uc = document.getElementById('ws-utc');
+  if (uc) { const n2 = new Date(); uc.textContent = String(n2.getUTCHours()).padStart(2,'0') + ':' + String(n2.getUTCMinutes()).padStart(2,'0'); }
+}
+function _nightLightsTick(){
+  if (!_nightOn() || !claimByPixel || !featByPixel) return;
+  if (cNightFx.width !== MAP_W) { cNightFx.width = MAP_W; cNightFx.height = MAP_H; }
+  const fx = cNightFx.getContext('2d');
+  fx.clearRect(0, 0, MAP_W, MAP_H);
+  const now = new Date();
+  const decl = _solarDecl(now), sd = Math.sin(decl), cd = Math.cos(decl);
+  const ssl = _subsolarLonDeg(now) * Math.PI / 180;
+  fx.fillStyle = 'rgba(255,198,110,0.85)';
+  for (let i = 0; i < MAP_PX; i += 1){
+    const own = claimByPixel[i];
+    if (own < 0 || own === featByPixel[i]) continue;          // actively painted only
+    if (((i * 2654435761) >>> 0) % 11 !== 0) continue;        // ~9% scatter, stable per pixel
+    const y = (i / MAP_W) | 0, x2 = i % MAP_W;
+    const lat = (90 - (y + 0.5) / MAP_H * 180) * Math.PI / 180;
+    const lon = ((x2 + 0.5) / MAP_W * 360 - 180) * Math.PI / 180;
+    const sinAlt = Math.sin(lat) * sd + Math.cos(lat) * cd * Math.cos(lon - ssl);
+    if (sinAlt > -0.10) continue;                              // lights only in real night
+    fx.fillRect(x2, y, 1, 1);
+  }
+}
+if (typeof _isMobileForMemory !== 'undefined' && !_isMobileForMemory) {
+  setTimeout(_nightTick, 3000);            // first paint shortly after boot
+  setInterval(_nightTick, 60 * 1000);      // terminator nudge ~1/min
+  setTimeout(_nightLightsTick, 12000);     // lights once claims have landed
+  setInterval(_nightLightsTick, 180 * 1000);
+}
+
 function applyT(){
   const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";
   // v133a: cGrid removed — the pixel grid is now screen-space (drawn by drawGrid), not transformed with the map.
-  [cBase,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege].forEach(c=>{if(c)c.style.transform=t;});
+  [cBase,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cNight,cNightFx].forEach(c=>{if(c)c.style.transform=t;});
+  // v174: environment sprites + landmark icons + city lights FADE OUT as you zoom in
+  // (fully visible below scale 4, gone by scale 8) — operator request.
+  const _envFade = Math.max(0, Math.min(1, (8 - scale) / 4));
+  if (cSprites)   cSprites.style.opacity   = _envFade;
+  if (cLandmarks) cLandmarks.style.opacity = _envFade;
+  if (cNightFx)   cNightFx.style.opacity   = _envFade;
   // translateZ(0.01px) promotes c-monsters to its own GPU compositing layer,
   // guaranteeing it renders above all sibling canvases regardless of z-index quirks.
   if(cMonsters) cMonsters.style.transform=t+' translateZ(0.01px)';
