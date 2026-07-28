@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-28-v174';
+const SERVER_VERSION       = '2026-07-28-v175';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -6787,7 +6787,8 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/site.webmanifest' || url.pathname === '/icon-192.png' ||
-      url.pathname === '/icon-512.png' || url.pathname === '/apple-touch-icon.png') {
+      url.pathname === '/icon-512.png' || url.pathname === '/apple-touch-icon.png' ||
+      url.pathname === '/city_lights.png') { // v175: day/night city-lights art
     const fn = url.pathname.slice(1);
     const f = path.join(__dirname, 'public', fn);
     if (!fs.existsSync(f)) { res.writeHead(404); res.end('not found'); return; }

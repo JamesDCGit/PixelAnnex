@@ -4159,7 +4159,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-28-v174';
+const CODE_VERSION = '2026-07-28-v175';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6887,7 +6887,7 @@ function _hideLegendOccTip() {
 const cNight   = document.getElementById('c-night');
 const cNightFx = document.getElementById('c-nightfx');
 const _NIGHT_MAX_A = 0.50;                 // background darkening cap (operator: 50%)
-let _nightStrip = null, _nightBakeDay = -1;
+let _nightStrip = null, _nightMask = null, _nightBakeDay = -1;
 function _nightOn(){ return !_isMobileForMemory && cNight && cNightFx; }
 function _solarDecl(now){ // approx solar declination, radians
   const n = Math.floor((now - Date.UTC(now.getUTCFullYear(), 0, 0)) / 864e5);
@@ -6905,6 +6905,12 @@ function _bakeNightStrip(){ // baked with subsolar longitude = 0 (map centre)
   const c = document.createElement('canvas'); c.width = MAP_W; c.height = MAP_H;
   const x = c.getContext('2d');
   const img = x.createImageData(MAP_W, MAP_H), d = img.data;
+  // v175: pure night MASK baked in the same pass (alpha only) — used to clip the
+  // city-lights image to the night side. Ramps in slightly later than the veil so
+  // lights appear once it's properly dark, not at first dusk.
+  const mc = document.createElement('canvas'); mc.width = MAP_W; mc.height = MAP_H;
+  const mx = mc.getContext('2d');
+  const mimg = mx.createImageData(MAP_W, MAP_H), md = mimg.data;
   const decl = _solarDecl(now), sd = Math.sin(decl), cd = Math.cos(decl);
   for (let py = 0; py < MAP_H; py++){
     const lat = (90 - (py + 0.5) / MAP_H * 180) * Math.PI / 180;
@@ -6913,6 +6919,12 @@ function _bakeNightStrip(){ // baked with subsolar longitude = 0 (map centre)
       const lon = ((px + 0.5) / MAP_W * 360 - 180) * Math.PI / 180; // subsolar at lon 0
       const sinAlt = sl + cl * Math.cos(lon);
       const p = (py * MAP_W + px) * 4;
+      // v175: night mask for city lights — 0 until the sun is ~3deg down, full by ~14deg.
+      if (sinAlt < -0.05) {
+        const mt = Math.min(1, (-0.05 - sinAlt) / 0.20);
+        md[p] = md[p+1] = md[p+2] = 255;
+        md[p+3] = Math.round(255 * mt * mt * (3 - 2 * mt));
+      }
       // day above +6deg → clear; full night below -12deg; smooth ramp between.
       if (sinAlt > 0.105) continue;
       const t2 = Math.min(1, (0.105 - sinAlt) / 0.313);
@@ -6926,7 +6938,9 @@ function _bakeNightStrip(){ // baked with subsolar longitude = 0 (map centre)
     }
   }
   x.putImageData(img, 0, 0);
+  mx.putImageData(mimg, 0, 0);
   _nightStrip = c;
+  _nightMask  = mc; // v175
 }
 function _nightTick(){
   if (!_nightOn()) return;
@@ -6943,32 +6957,96 @@ function _nightTick(){
   const uc = document.getElementById('ws-utc');
   if (uc) { const n2 = new Date(); uc.textContent = String(n2.getUTCHours()).padStart(2,'0') + ':' + String(n2.getUTCMinutes()).padStart(2,'0'); }
 }
+// ── v175: CITY LIGHTS from an operator-supplied image ────────────────────────
+// Drop a BLACK-AND-WHITE lights map at public/city_lights.png (2048x1024,
+// equirectangular — same projection/alignment as map_base.gif; white = lit city,
+// black = dark). It is baked ONCE into a warm-tinted alpha layer, then each tick:
+//   1. draw the lights (fixed to the map — cities don't move)
+//   2. 'destination-in' the night mask (which DOES move) → lit only after dark
+//   3. 'destination-out' an animated noise tile → twinkle by darkening pixels
+// Replaces v174's hash-scatter over painted pixels, which repeated visibly and
+// wrongly followed territory instead of cities. No image → no lights (clean no-op).
+const CITY_LIGHTS_URL = '/city_lights.png';
+let _cityLights = null, _cityLightsTried = false;
+function _bakeCityLights(img){
+  const c = document.createElement('canvas'); c.width = MAP_W; c.height = MAP_H;
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  x.drawImage(img, 0, 0, MAP_W, MAP_H);
+  const im = x.getImageData(0, 0, MAP_W, MAP_H), d = im.data;
+  for (let i = 0; i < d.length; i += 4){
+    // luminance → alpha (works for opaque B&W or transparent-with-white art)
+    const lum = (d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114) / 255;
+    const srcA = d[i+3] / 255;
+    const a = lum < 0.05 ? 0 : Math.min(1, lum * 1.15) * srcA;
+    d[i] = 255; d[i+1] = 214; d[i+2] = 140;   // warm sodium-lamp tint
+    d[i+3] = Math.round(a * 255);
+  }
+  x.putImageData(im, 0, 0);
+  _cityLights = c;
+  console.log('[Night] city lights baked from', CITY_LIGHTS_URL);
+}
+function _loadCityLights(){
+  if (_cityLightsTried) return; _cityLightsTried = true;
+  const im = new Image();
+  im.onload  = () => { try { _bakeCityLights(im); _nightLightsTick(); } catch(e){ console.warn('[Night] lights bake failed', e); } };
+  im.onerror = () => console.log('[Night] no city_lights.png — lights disabled');
+  im.src = CITY_LIGHTS_URL;
+}
+// Small animated noise tile — regenerated AND randomly offset each tick, so the
+// twinkle never shows a repeating pattern the way the old hash scatter did.
+const _NOISE_N = 256;
+let _noiseCv = null, _maskWrap = null;
+function _regenNoise(){
+  if (!_noiseCv){ _noiseCv = document.createElement('canvas'); _noiseCv.width = _noiseCv.height = _NOISE_N; }
+  const nx = _noiseCv.getContext('2d');
+  const im = nx.createImageData(_NOISE_N, _NOISE_N), d = im.data;
+  for (let i = 0; i < d.length; i += 4){
+    d[i] = d[i+1] = d[i+2] = 0;
+    // ~40% of pixels get partially punched out (dimmed) this frame
+    d[i+3] = Math.random() < 0.40 ? (Math.random() * 210) | 0 : 0;
+  }
+  nx.putImageData(im, 0, 0);
+  return _noiseCv;
+}
 function _nightLightsTick(){
-  if (!_nightOn() || !claimByPixel || !featByPixel) return;
+  if (!_nightOn()) return;
   if (cNightFx.width !== MAP_W) { cNightFx.width = MAP_W; cNightFx.height = MAP_H; }
   const fx = cNightFx.getContext('2d');
+  fx.setTransform(1,0,0,1,0,0);
+  fx.globalCompositeOperation = 'source-over';
   fx.clearRect(0, 0, MAP_W, MAP_H);
-  const now = new Date();
-  const decl = _solarDecl(now), sd = Math.sin(decl), cd = Math.cos(decl);
-  const ssl = _subsolarLonDeg(now) * Math.PI / 180;
-  fx.fillStyle = 'rgba(255,198,110,0.85)';
-  for (let i = 0; i < MAP_PX; i += 1){
-    const own = claimByPixel[i];
-    if (own < 0 || own === featByPixel[i]) continue;          // actively painted only
-    if (((i * 2654435761) >>> 0) % 11 !== 0) continue;        // ~9% scatter, stable per pixel
-    const y = (i / MAP_W) | 0, x2 = i % MAP_W;
-    const lat = (90 - (y + 0.5) / MAP_H * 180) * Math.PI / 180;
-    const lon = ((x2 + 0.5) / MAP_W * 360 - 180) * Math.PI / 180;
-    const sinAlt = Math.sin(lat) * sd + Math.cos(lat) * cd * Math.cos(lon - ssl);
-    if (sinAlt > -0.10) continue;                              // lights only in real night
-    fx.fillRect(x2, y, 1, 1);
+  if (!_cityLights || !_nightMask) return;      // nothing to draw without the art
+  fx.drawImage(_cityLights, 0, 0);              // cities are fixed on the map
+  // clip to the night side (mask wraps with the terminator)
+  const off = Math.round(_subsolarLonDeg(new Date()) / 360 * MAP_W);
+  const o = ((off % MAP_W) + MAP_W) % MAP_W;
+  // The wrapped mask MUST be flattened into one canvas first: two successive
+  // destination-in draws intersect, and the two halves are disjoint → erases all.
+  if (!_maskWrap){ _maskWrap = document.createElement('canvas'); _maskWrap.width = MAP_W; _maskWrap.height = MAP_H; }
+  const mwx = _maskWrap.getContext('2d');
+  mwx.clearRect(0, 0, MAP_W, MAP_H);
+  mwx.drawImage(_nightMask, o - MAP_W, 0);
+  mwx.drawImage(_nightMask, o, 0);
+  fx.globalCompositeOperation = 'destination-in';
+  fx.drawImage(_maskWrap, 0, 0);
+  // twinkle — punch out a random subset of lit pixels
+  fx.globalCompositeOperation = 'destination-out';
+  const pat = fx.createPattern(_regenNoise(), 'repeat');
+  if (pat){
+    fx.save();
+    fx.translate(-(Math.random() * _NOISE_N) | 0, -(Math.random() * _NOISE_N) | 0);
+    fx.fillStyle = pat;
+    fx.fillRect(0, 0, MAP_W + _NOISE_N, MAP_H + _NOISE_N);
+    fx.restore();
   }
+  fx.globalCompositeOperation = 'source-over';
 }
 if (typeof _isMobileForMemory !== 'undefined' && !_isMobileForMemory) {
   setTimeout(_nightTick, 3000);            // first paint shortly after boot
   setInterval(_nightTick, 60 * 1000);      // terminator nudge ~1/min
-  setTimeout(_nightLightsTick, 12000);     // lights once claims have landed
-  setInterval(_nightLightsTick, 180 * 1000);
+  setTimeout(_loadCityLights, 4000);       // v175: fetch + bake the lights art
+  setInterval(_nightLightsTick, 900);      // v175: twinkle ~1.1fps (cheap: 3 drawImages)
 }
 
 function applyT(){
