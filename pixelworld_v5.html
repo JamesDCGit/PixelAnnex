@@ -4159,7 +4159,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-28-v179';
+const CODE_VERSION = '2026-07-28-v180';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7037,33 +7037,32 @@ window.dbgNight = function(){
   console.log('[Night diagnostic]', r);
   return r;
 };
-// v178: SMOOTH SLOW TWINKLE (operator). The old version regenerated hard random
-// noise every tick, so lights snapped between states — a strobe, not a shimmer.
-// Now: ONE blurred low-frequency field, baked once, that DRIFTS slowly across the
-// map. Because the field is smooth, each city's dimming changes gradually as the
-// field slides over it — a gentle breathing shimmer. ~11 minutes to cross the map.
-const _NOISE_N = 256;
-let _noiseCv = null, _maskWrap = null;
-function _twinkleField(){
-  if (_noiseCv) return _noiseCv;
-  // Generate the noise at LOW RESOLUTION and upscale it smoothly. (Blurring white
-  // noise instead would average ~150 samples per output pixel and flatten the field
-  // to near-uniform — measured: max 1/255 variation, i.e. no visible twinkle at all.)
-  const S = 24;
-  const small = document.createElement('canvas'); small.width = small.height = S;
-  const sx = small.getContext('2d');
-  const im = sx.createImageData(S, S), d = im.data;
-  for (let i = 0; i < d.length; i += 4){
-    d[i] = d[i+1] = d[i+2] = 0;
-    d[i+3] = (Math.random() * 255) | 0;
+// v180: PER-CITY TWINKLE (operator). The v178 field was ONE smooth low-frequency
+// pattern that DRIFTED, so every city within ~128px dimmed together — a regional
+// wash, not individual cities twinkling. Fine-grained noise can't be animated by
+// sliding it (that just strobes), so the smoothing moves to the TIME axis: several
+// FINE noise frames are baked once, and each tick LERPs between consecutive frames
+// over 5s with smoothstep easing. Every city therefore drifts smoothly and
+// INDEPENDENTLY to its next brightness, with no velocity kick at the joins.
+const _TW_W = 512, _TW_H = 256;   // ~4 map px per cell — about one bloomed city
+const _TW_FRAMES = 4;             // 4 frames x 5s = 20s before the sequence repeats
+const _TW_PERIOD = 5000;          // ms per cross-fade (operator: ~5s)
+let _twFrames = null, _twTmp = null, _maskWrap = null;
+function _twinkleFrames(){
+  if (_twFrames) return _twFrames;
+  _twFrames = [];
+  for (let k = 0; k < _TW_FRAMES; k++){
+    const c = document.createElement('canvas'); c.width = _TW_W; c.height = _TW_H;
+    const cx = c.getContext('2d');
+    const im = cx.createImageData(_TW_W, _TW_H), d = im.data;
+    for (let i = 0; i < d.length; i += 4){
+      d[i] = d[i+1] = d[i+2] = 0;
+      d[i+3] = (Math.random() * 255) | 0;    // independent per cell
+    }
+    cx.putImageData(im, 0, 0);
+    _twFrames.push(c);
   }
-  sx.putImageData(im, 0, 0);
-  const N = _NOISE_N;
-  _noiseCv = document.createElement('canvas'); _noiseCv.width = _noiseCv.height = N;
-  const bx = _noiseCv.getContext('2d');
-  bx.imageSmoothingEnabled = true;          // bilinear upscale → smooth, full contrast
-  bx.drawImage(small, 0, 0, N, N);
-  return _noiseCv;
+  return _twFrames;
 }
 function _nightLightsTick(){
   if (!_nightOn()) return;
@@ -7086,15 +7085,29 @@ function _nightLightsTick(){
   mwx.drawImage(_nightMask, o, 0);
   fx.globalCompositeOperation = 'destination-in';
   fx.drawImage(_maskWrap, 0, 0);
-  // v178: twinkle — dim by a SMOOTH field that drifts slowly (no per-tick randomness,
-  // so brightness changes are continuous). Drawn oversized (1.5x) at a drifting origin
-  // so it always covers the map without tiling seams from the blur.
-  const t = Date.now() / 1000;
-  const dx = -((t * 20) % (MAP_W * 0.5));   // ~20 px/s — a light breathes over ~6-12s
-  const dy = -((t * 10) % (MAP_H * 0.5));
+  // v180: twinkle — LERP between two fine noise frames over _TW_PERIOD (5s), so each
+  // city fades smoothly and independently to its next brightness.
+  const fr  = _twinkleFrames();
+  const seg = Date.now() / _TW_PERIOD;
+  const i0  = ((seg | 0) % _TW_FRAMES + _TW_FRAMES) % _TW_FRAMES;
+  const i1  = (i0 + 1) % _TW_FRAMES;
+  let w = seg - Math.floor(seg);
+  w = w * w * (3 - 2 * w);                    // smoothstep — zero velocity at the joins
+  if (!_twTmp){ _twTmp = document.createElement('canvas'); _twTmp.width = MAP_W; _twTmp.height = MAP_H; }
+  const tx = _twTmp.getContext('2d');
+  tx.setTransform(1,0,0,1,0,0);
+  tx.imageSmoothingEnabled = true;            // upscale cells into soft blobs, not squares
+  // A TRUE alpha lerp needs 'lighter' for the second draw: source-over would give
+  // wB + A(1-wB) (a union), which never reaches pure B and so breaks the loop.
+  tx.globalCompositeOperation = 'source-over';
+  tx.clearRect(0, 0, MAP_W, MAP_H);
+  tx.globalAlpha = 1 - w; tx.drawImage(fr[i0], 0, 0, MAP_W, MAP_H);
+  tx.globalCompositeOperation = 'lighter';
+  tx.globalAlpha = w;     tx.drawImage(fr[i1], 0, 0, MAP_W, MAP_H);
+  tx.globalCompositeOperation = 'source-over'; tx.globalAlpha = 1;
   fx.globalCompositeOperation = 'destination-out';
-  fx.globalAlpha = 0.5;                       // max ~50% dip — a shimmer, not a blink
-  fx.drawImage(_twinkleField(), dx, dy, MAP_W * 1.5, MAP_H * 1.5);
+  fx.globalAlpha = 0.55;                      // max dip — a twinkle, not a blink
+  fx.drawImage(_twTmp, 0, 0);
   fx.globalAlpha = 1;
   fx.globalCompositeOperation = 'source-over';
 }
