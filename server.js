@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-28-v176';
+const SERVER_VERSION       = '2026-07-28-v177';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -1016,6 +1016,10 @@ console.log('[Timelapse] capture every ' + (TL_FRAME_MS / 1000) + 's, ' +
 const TWITTER_HANDLE = '@PixelAnnexGame';
 const DISCORD_INVITE = 'https://discord.gg/UHQRqXDpBE'; // v99j: permanent (never-expiring) invite
 const GAME_URL       = 'pixelannex.com';
+// v177: ONE source of truth for absolute URLs (SEO/OG/sitemap/share). These were
+// hardcoded to pixelannex.io while the site actually runs on .com — a canonical
+// pointing at another domain tells Google THIS site is the duplicate.
+const SITE_URL       = 'https://' + GAME_URL;
 function _pickSassy(pool) { return pool[Math.floor(Math.random() * pool.length)]; }
 // v39a: tweet posted by @PixelAnnexGame anyway — drop the self-mention
 // v173: every post tail carries the war number — one edit covers all sass-based
@@ -6770,7 +6774,7 @@ const httpServer = http.createServer(async (req, res) => {
   // ── v169: SEO — robots.txt / sitemap.xml / PWA statics / crawlable pages ──
   if (url.pathname === '/robots.txt') {
     res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=3600' });
-    res.end('User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /auth/\nDisallow: /shots/\nDisallow: /timelapse/\n\nSitemap: https://pixelannex.io/sitemap.xml\n');
+    res.end('User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /auth/\nDisallow: /shots/\nDisallow: /timelapse/\n\nSitemap: ' + SITE_URL + '/sitemap.xml\n');
     return;
   }
   // v171: AdSense seller authorization — Google requires this at the domain root
@@ -6785,7 +6789,7 @@ const httpServer = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/xml', 'Cache-Control': 'public, max-age=3600' });
     res.end('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
       ['/', '/about', '/how-to-play'].map(p =>
-        '  <url><loc>https://pixelannex.io' + p + '</loc><lastmod>' + _now + '</lastmod><changefreq>' + (p === '/' ? 'daily' : 'monthly') + '</changefreq></url>').join('\n') +
+        '  <url><loc>' + SITE_URL + p + '</loc><lastmod>' + _now + '</lastmod><changefreq>' + (p === '/' ? 'daily' : 'monthly') + '</changefreq></url>').join('\n') +
       '\n</urlset>\n');
     return;
   }
@@ -6809,11 +6813,11 @@ const httpServer = http.createServer(async (req, res) => {
       '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
       '<title>' + title + '</title>' +
       '<meta name="description" content="' + desc + '">' +
-      '<link rel="canonical" href="https://pixelannex.io' + canonicalPath + '">' +
+      '<link rel="canonical" href="' + SITE_URL + canonicalPath + '">' +
       '<meta property="og:type" content="website"><meta property="og:site_name" content="PixelAnnex">' +
       '<meta property="og:title" content="' + title + '"><meta property="og:description" content="' + desc + '">' +
-      '<meta property="og:url" content="https://pixelannex.io' + canonicalPath + '">' +
-      '<meta property="og:image" content="https://pixelannex.io/PixelAnnexHero.jpg">' +
+      '<meta property="og:url" content="' + SITE_URL + canonicalPath + '">' +
+      '<meta property="og:image" content="' + SITE_URL + '/PixelAnnexHero.jpg">' +
       '<meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@PixelAnnexGame">' +
       '<link rel="icon" href="/icon-192.png">' +
       '<style>body{background:#070d1a;color:#cbd5e1;font-family:"Courier New",monospace;max-width:720px;margin:0 auto;padding:32px 20px;line-height:1.7;font-size:15px}' +
@@ -6861,7 +6865,7 @@ const httpServer = http.createServer(async (req, res) => {
       const wn = _shareM[1] || String(_warNumber);
       let shot = null;
       try { shot = makeWorldShot(); } catch (e) {}
-      const img = shot ? ('https://pixelannex.io' + shot) : 'https://pixelannex.io/PixelAnnexHero.jpg';
+      const img = shot ? (SITE_URL + shot) : (SITE_URL + '/PixelAnnexHero.jpg');
       const stats = _playableCountryStats();
       const title = 'PixelAnnex War #' + wn + ' — World Map';
       const desc = stats.standing + ' of ' + stats.total + ' nations still stand. Join the war and claim pixels for your country.';

@@ -10,23 +10,23 @@
 <title>PixelAnnex — Free Multiplayer Pixel War Game | Conquer the World Map</title>
 <!-- v169: SEO head — description, canonical, Open Graph / Twitter cards, JSON-LD -->
 <meta name="description" content="Claim pixels for your country on a live world map. Battle 190+ nations, encircle territory, and conquer the world in real time. Free to play in your browser — no download.">
-<link rel="canonical" href="https://pixelannex.io/">
+<link rel="canonical" href="https://pixelannex.com/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="PixelAnnex">
 <meta property="og:title" content="PixelAnnex — Free Multiplayer Pixel War Game">
 <meta property="og:description" content="Claim pixels for your country on a live world map. Battle 190+ nations, encircle territory, and conquer the world in real time.">
-<meta property="og:url" content="https://pixelannex.io/">
-<meta property="og:image" content="https://pixelannex.io/PixelAnnexHero.jpg">
+<meta property="og:url" content="https://pixelannex.com/">
+<meta property="og:image" content="https://pixelannex.com/PixelAnnexHero.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="PixelAnnex — Free Multiplayer Pixel War Game">
 <meta name="twitter:description" content="Claim pixels for your country on a live world map. Battle 190+ nations and conquer the world in real time.">
-<meta name="twitter:image" content="https://pixelannex.io/PixelAnnexHero.jpg">
+<meta name="twitter:image" content="https://pixelannex.com/PixelAnnexHero.jpg">
 <meta name="twitter:site" content="@PixelAnnexGame">
 <link rel="manifest" href="/site.webmanifest">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preload" href="/map_base.gif" as="image"><!-- v169: LCP — the baked basemap is the biggest boot asset -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"VideoGame","name":"PixelAnnex","url":"https://pixelannex.io/","description":"Free multiplayer pixel war game. Claim pixels for your country on a live world map, encircle territory, and conquer the world in real time against 190+ nations.","genre":["Strategy","MMO","io game"],"playMode":"MultiPlayer","applicationCategory":"Game","operatingSystem":"Web browser","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","availability":"https://schema.org/InStock"},"image":"https://pixelannex.io/PixelAnnexHero.jpg","author":{"@type":"Organization","name":"Pretty Neat Pixels","url":"https://www.prettyneatpixels.com"}}
+{"@context":"https://schema.org","@type":"VideoGame","name":"PixelAnnex","url":"https://pixelannex.com/","description":"Free multiplayer pixel war game. Claim pixels for your country on a live world map, encircle territory, and conquer the world in real time against 190+ nations.","genre":["Strategy","MMO","io game"],"playMode":"MultiPlayer","applicationCategory":"Game","operatingSystem":"Web browser","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","availability":"https://schema.org/InStock"},"image":"https://pixelannex.com/PixelAnnexHero.jpg","author":{"@type":"Organization","name":"Pretty Neat Pixels","url":"https://www.prettyneatpixels.com"}}
 </script>
 <!-- v171: Google AdSense loader — also serves as the site-verification tag. Ad UNITS
      only render where explicitly placed (see _initAdSense / #welcome-ad); keep
@@ -4159,7 +4159,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-28-v176';
+const CODE_VERSION = '2026-07-28-v177';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6966,7 +6966,7 @@ function _nightTick(){
 //   3. 'destination-out' an animated noise tile → twinkle by darkening pixels
 // Replaces v174's hash-scatter over painted pixels, which repeated visibly and
 // wrongly followed territory instead of cities. No image → no lights (clean no-op).
-const CITY_LIGHTS_URL = '/city_lights.png';
+const CITY_LIGHTS_URL = '/city_lights.png?v=177'; // v177: query busts a CDN/SW-cached 404
 let _cityLights = null, _cityLightsTried = false;
 function _bakeCityLights(img){
   const c = document.createElement('canvas'); c.width = MAP_W; c.height = MAP_H;
