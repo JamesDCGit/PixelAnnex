@@ -5861,9 +5861,9 @@ function _rebuildGeoClaimCnt() {
 }
 
 loadBoardSnapshot();
-// v182: become map-ready immediately from the baked files (see loadBakedMapFromDisk).
-// Runs AFTER the board restore so the geoClaimCnt rebuild it triggers sees the board.
-loadBakedMapFromDisk();
+// v182: the baked-map bootstrap is invoked further down, right after mapReady /
+// geoPixelReady are declared — calling it here hit the temporal dead zone
+// ("Cannot access 'geoPixelReady' before initialization") and silently no-opped.
 setInterval(() => saveBoardSnapshot(false), BOARD_SNAPSHOT_MS);
 console.log('[Board] snapshot cadence', (BOARD_SNAPSHOT_MS / 1000) + 's →', BOARD_FILE);
 
@@ -6691,6 +6691,10 @@ function loadBakedMapFromDisk() {
     return false;
   }
 }
+// Invoked HERE (not at the board-restore call site) so mapReady/geoPixelReady are
+// already initialised — see the TDZ note above. loadBoardSnapshot() has run by now,
+// so the geoClaimCnt rebuild above sees the restored board.
+loadBakedMapFromDisk();
 
 function checkMapReady() {
   if (!geoPixelReady || Object.keys(geoTotal).length === 0) return;
