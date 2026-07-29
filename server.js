@@ -931,9 +931,19 @@ let   _timelapseRoundStart = 0;
 
 // Render one full-map frame. Skipped until the geo index is built (map ready) so
 // we never bank empty all-ocean frames right after a restart.
+let _tlSkipWarned = 0;
 function captureTimelapseFrame() {
   try {
-    if (Object.keys(geoPixels).length === 0) return; // map not ready yet
+    if (Object.keys(geoPixels).length === 0) {
+      // v182: this used to return SILENTLY, so a map-unready server produced no frames
+      // for hours and the 12h "State of the World" GIF quietly degraded to a static
+      // PNG with nothing in the logs. Warn (throttled to hourly) so it's visible.
+      if (Date.now() - _tlSkipWarned > 3600000) {
+        _tlSkipWarned = Date.now();
+        console.warn('[Timelapse] SKIPPED — map not ready (geoPixels empty); no frames are being captured');
+      }
+      return;
+    }
     // v95y: burn the capture time into the frame so the GIF ticks through 12h.
     // v173: + the war number, so a shared GIF says which game it was.
     const _ts = 'War #' + _warNumber + ' · ' + new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
@@ -5851,6 +5861,9 @@ function _rebuildGeoClaimCnt() {
 }
 
 loadBoardSnapshot();
+// v182: become map-ready immediately from the baked files (see loadBakedMapFromDisk).
+// Runs AFTER the board restore so the geoClaimCnt rebuild it triggers sees the board.
+loadBakedMapFromDisk();
 setInterval(() => saveBoardSnapshot(false), BOARD_SNAPSHOT_MS);
 console.log('[Board] snapshot cadence', (BOARD_SNAPSHOT_MS / 1000) + 's →', BOARD_FILE);
 
@@ -6618,6 +6631,66 @@ setInterval(() => {
 // ── Map readiness ─────────────────────────────────────────────────
 let mapReady = false;
 let geoPixelReady = false;
+
+// v182: BOOTSTRAP THE MAP FROM DISK. The server used to learn the world ONLY from a
+// joining client's `join` payload, so after every restart it sat map-unready until a
+// human happened to visit. Consequences (all observed in production): the 15-min
+// timelapse capture silently no-ops (`geoPixels` empty), so the twice-daily
+// "State of the World" post falls back to a static PNG instead of the GIF — after a
+// day of deploys the server had captured ZERO frames in 12.5h with 0 visitors.
+// Bots also couldn't start. We already ship the baked map as static files for the
+// client (public/map_grid.json + map_meta.json), so load the same data here and be
+// self-sufficient. A later client join still overwrites this (unchanged behaviour).
+function loadBakedMapFromDisk() {
+  try {
+    const dir  = path.join(__dirname, 'public');
+    const gridF = path.join(dir, 'map_grid.json'), metaF = path.join(dir, 'map_meta.json');
+    if (!fs.existsSync(gridF) || !fs.existsSync(metaF)) {
+      console.warn('[Map] baked map files missing — waiting for a client to bootstrap');
+      return false;
+    }
+    const grid = JSON.parse(fs.readFileSync(gridF, 'utf8'));
+    const meta = JSON.parse(fs.readFileSync(metaF, 'utf8'));
+    if (grid.w !== MAP_W || grid.h !== MAP_H) { console.warn('[Map] baked grid dim mismatch'); return false; }
+    if (!Array.isArray(meta) || grid.n !== meta.length) { console.warn('[Map] baked grid/meta length mismatch'); return false; }
+    geoAtPixel.fill(-1); landMask.fill(0);
+    for (const k of Object.keys(geoTotal)) delete geoTotal[k];
+    let p = 0;
+    for (let r = 0; r < grid.runs.length; r += 2) {
+      const v = grid.runs[r], len = grid.runs[r + 1];
+      if (v >= 0 && meta[v]) {
+        const id = parseInt(meta[v].id, 10);
+        if (!Number.isNaN(id)) {
+          for (let i = p; i < p + len && i < MAP_PX; i++) { geoAtPixel[i] = id; landMask[i] = 1; }
+          geoTotal[id] = (geoTotal[id] || 0) + len;
+        }
+      }
+      p += len;
+    }
+    for (let i = 0; i < meta.length; i++) {
+      const id = parseInt(meta[i].id, 10);
+      if (Number.isNaN(id)) continue;
+      indexToId[i] = String(id);
+      if (meta[i].color) geoColorsById[id] = meta[i].color;
+    }
+    recomputeTotalLand();
+    geoPixelReady = true;
+    console.log('[Map] baked map loaded from disk — ' + Object.keys(geoTotal).length +
+                ' countries, ' + totalLandPxCached + ' land px (no client needed)');
+    checkMapReady();
+    // v93x (mirrored from the join handler): geoAtPixel is available now, so rebuild
+    // geoClaimCnt from the restored board — without this the conquest check reads
+    // zeroed occupation and countries never fall until a client happens to join.
+    if (_boardRestoredPendingRebuild) {
+      _rebuildGeoClaimCnt();
+      _boardRestoredPendingRebuild = false;
+    }
+    return true;
+  } catch (e) {
+    console.warn('[Map] baked map load failed:', e.message);
+    return false;
+  }
+}
 
 function checkMapReady() {
   if (!geoPixelReady || Object.keys(geoTotal).length === 0) return;
