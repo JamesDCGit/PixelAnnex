@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-28-v181';
+const SERVER_VERSION       = '2026-07-29-v183';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -6885,7 +6885,7 @@ const httpServer = http.createServer(async (req, res) => {
     const _now = new Date().toISOString().slice(0, 10);
     res.writeHead(200, { 'Content-Type': 'application/xml', 'Cache-Control': 'public, max-age=3600' });
     res.end('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-      ['/', '/about', '/how-to-play'].map(p =>
+      ['/', '/about', '/how-to-play', '/strategy', '/faq', '/privacy', '/terms'].map(p =>
         '  <url><loc>' + SITE_URL + p + '</loc><lastmod>' + _now + '</lastmod><changefreq>' + (p === '/' ? 'daily' : 'monthly') + '</changefreq></url>').join('\n') +
       '\n</urlset>\n');
     return;
@@ -6922,8 +6922,125 @@ const httpServer = http.createServer(async (req, res) => {
       '.cta{display:inline-block;background:#e8b93c;color:#2a1c05;font-weight:700;padding:10px 22px;border:2px solid #14100a;text-decoration:none;margin:14px 0}</style>' +
       '</head><body>' + bodyHtml +
       '<p><a class="cta" href="/">▶ Play PixelAnnex free</a></p>' +
-      '<p style="font-size:11px;color:#475569">Created by <a href="https://www.prettyneatpixels.com">Pretty Neat Pixels</a> · <a href="/">Home</a> · <a href="/about">About</a> · <a href="/how-to-play">How to play</a> · <a href="https://discord.gg/UHQRqXDpBE">Discord</a> · <a href="https://x.com/PixelAnnexGame">X</a></p>' +
+      '<p style="font-size:11px;color:#475569">Created by <a href="https://www.prettyneatpixels.com">Pretty Neat Pixels</a> · <a href="/">Play</a> · <a href="/about">About</a> · <a href="/how-to-play">How to play</a> · <a href="/strategy">Strategy</a> · <a href="/faq">FAQ</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="https://discord.gg/UHQRqXDpBE">Discord</a> · <a href="https://x.com/PixelAnnexGame">X</a></p>' +
       '</body></html>';
+  }
+
+  // v183: content pages added for the AdSense "low value content" review. A canvas
+  // game exposes almost no readable text, so these carry the site's real substance —
+  // and a Privacy Policy is a hard AdSense requirement (third-party cookie disclosure).
+  if (url.pathname === '/privacy') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    res.end(_seoPage('Privacy Policy — PixelAnnex',
+      'How PixelAnnex handles your data: what we store, the cookies we use, third-party advertising and analytics, and how to control or delete your information.',
+      '<h1>Privacy Policy</h1>' +
+      '<p><em>Last updated: 29 July 2026.</em> This policy explains what PixelAnnex collects, why, and what control you have. PixelAnnex is operated by Pretty Neat Pixels.</p>' +
+      '<h2>Playing without an account</h2>' +
+      '<p>You can play PixelAnnex without signing in or giving us any personal details. In anonymous play we store your chosen country, your rank progress and your item collection in your own browser using <strong>localStorage</strong>. That data never leaves your device unless you sign in, and clearing your browser storage erases it permanently.</p>' +
+      '<p>Our game server does record the pixels you paint, because they form the shared world map every player sees. Those pixels are linked to a country and a temporary connection id, not to you personally.</p>' +
+      '<h2>Signing in with Discord</h2>' +
+      '<p>Signing in is optional and only exists so your progress survives across devices and game rounds. If you choose to sign in, Discord sends us your Discord user id, username and avatar image URL. We use them to save your points, rank, conquest history and collectables, to show your name on the leaderboard, and to assign Discord roles if you are in our server.</p>' +
+      '<p>We never receive your Discord password or email address. A session cookie named <code>pa_session</code> keeps you logged in; it contains a random token and nothing else. You can sign out at any time to clear it, or ask us to delete your profile entirely (see Contact).</p>' +
+      '<h2>Cookies and similar technologies</h2>' +
+      '<ul>' +
+      '<li><strong>Essential:</strong> <code>pa_session</code> keeps you signed in. Without it, sign-in cannot work.</li>' +
+      '<li><strong>Preferences:</strong> browser localStorage remembers your language, audio settings, chosen country and tutorial progress. This is not sent to our server.</li>' +
+      '<li><strong>Analytics:</strong> we use Umami, a privacy-focused analytics tool that is <em>cookieless</em> and does not track individuals or build advertising profiles. It records aggregate page views, referrers and device types.</li>' +
+      '<li><strong>Advertising:</strong> see below.</li>' +
+      '</ul>' +
+      '<h2>Advertising</h2>' +
+      '<p>PixelAnnex uses Google AdSense to display advertising. Third-party vendors, including Google, use cookies to serve ads based on your prior visits to this and other websites.</p>' +
+      '<p>Google\'s use of advertising cookies enables it and its partners to serve ads to you based on your visit to this site and/or other sites on the Internet. You may opt out of personalised advertising by visiting <a href="https://www.google.com/settings/ads">Google Ads Settings</a>. You can also opt out of third-party vendor cookies for personalised advertising at <a href="https://www.aboutads.info/choices/">aboutads.info</a>.</p>' +
+      '<p>If you are in the European Economic Area or the United Kingdom, you will be asked for consent before personalised advertising cookies are set, and you can change or withdraw that choice at any time.</p>' +
+      '<h2>Children</h2>' +
+      '<p>PixelAnnex is not directed at children under 13, and we do not knowingly collect personal information from them. If you believe a child has provided us data, contact us and we will delete it.</p>' +
+      '<h2>Data retention and your rights</h2>' +
+      '<p>Profile data is kept while your account is active. World map data is reset each time a war ends. You may request access to, correction of, or deletion of your data at any time and we will action it promptly.</p>' +
+      '<h2>Contact</h2>' +
+      '<p>For any privacy question or a deletion request, reach us on our <a href="https://discord.gg/UHQRqXDpBE">Discord server</a> or via <a href="https://www.prettyneatpixels.com">prettyneatpixels.com</a>.</p>',
+      '/privacy'));
+    return;
+  }
+  if (url.pathname === '/terms') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    res.end(_seoPage('Terms of Use — PixelAnnex',
+      'The rules for playing PixelAnnex: fair play, acceptable conduct, account terms, and the disclaimers that apply to this free browser game.',
+      '<h1>Terms of Use</h1>' +
+      '<p><em>Last updated: 29 July 2026.</em> By playing PixelAnnex you agree to these terms. If you do not agree, please do not use the game.</p>' +
+      '<h2>The game</h2>' +
+      '<p>PixelAnnex is a free browser game provided as-is for entertainment. We may change, suspend or discontinue any part of it at any time, including resetting the world map, adjusting game balance, or removing features. Game progress has no monetary value and cannot be sold, transferred or exchanged.</p>' +
+      '<h2>Fair play</h2>' +
+      '<p>You agree not to use automation, scripts, bots or modified clients to paint pixels or gain an advantage; not to exploit bugs deliberately rather than reporting them; not to interfere with the server or other players\' access; and not to attempt to access accounts or systems that are not yours. Our own ambient AI nations are part of the game design and are not player automation.</p>' +
+      '<h2>Conduct</h2>' +
+      '<p>Player names shown on leaderboards come from Discord. We may hide, rename or remove any name or content that is hateful, harassing, sexually explicit, or impersonates another person or organisation, and we may suspend access for repeated abuse.</p>' +
+      '<h2>Countries and neutrality</h2>' +
+      '<p>PixelAnnex uses real country names, flags and borders purely as game geography. Nothing in the game is a political statement, endorsement, or claim about any territory or dispute. Border data comes from the public Natural Earth dataset.</p>' +
+      '<h2>Accounts</h2>' +
+      '<p>Signing in with Discord is optional. You are responsible for activity on your account. You may stop using the game at any time and request deletion of your profile.</p>' +
+      '<h2>Disclaimer and liability</h2>' +
+      '<p>The game is provided "as is" without warranties of any kind. We do not guarantee uninterrupted availability or that progress will never be lost. To the fullest extent permitted by law, we are not liable for any indirect or consequential loss arising from your use of the game.</p>' +
+      '<h2>Contact</h2>' +
+      '<p>Questions about these terms: <a href="https://discord.gg/UHQRqXDpBE">Discord</a> or <a href="https://www.prettyneatpixels.com">prettyneatpixels.com</a>.</p>',
+      '/terms'));
+    return;
+  }
+  if (url.pathname === '/faq') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    res.end(_seoPage('PixelAnnex FAQ — Common Questions Answered',
+      'Answers to common PixelAnnex questions: is it free, do I need an account, how conquest works, what happens when a war ends, and how to play on mobile.',
+      '<h1>Frequently asked questions</h1>' +
+      '<h2>Is PixelAnnex free?</h2>' +
+      '<p>Yes. The whole game is free to play in your browser with no download and no purchase. The game is supported by advertising.</p>' +
+      '<h2>Do I need an account?</h2>' +
+      '<p>No. You can pick a country and start painting immediately. Signing in with Discord is optional and only saves your points, rank and item collection across devices and future wars.</p>' +
+      '<h2>How do I take over a country?</h2>' +
+      '<p>Hold roughly 70&ndash;75% of its land and it falls to you. Large countries can also fall through the contested route, where foreign invaders collectively dominate the painted area &mdash; but a single attacker must still hold at least half of the whole country. Hover any country to see exactly how far it is from falling.</p>' +
+      '<h2>What is encirclement?</h2>' +
+      '<p>If you paint a closed ring around territory, everything sealed inside is captured at once. Encircled pixels are worth double points, hand back roughly a tenth of the captured area as fresh pixels, and boost your regeneration for a minute. It is the single most efficient move in the game.</p>' +
+      '<h2>Why does my pixel bucket run out?</h2>' +
+      '<p>Every pixel you paint costs one from your bucket, which refills over time. Smaller nations regenerate faster than superpowers, which is a deliberate balance so a small country is never hopeless.</p>' +
+      '<h2>What happens when a war ends?</h2>' +
+      '<p>When one bloc controls 65% of the world&rsquo;s nations and 65% of the land, the war ends, a winner is declared, and the map resets for a new war. Your rank, points and collectables carry over; the map does not.</p>' +
+      '<h2>What are collectables?</h2>' +
+      '<p>Every country has a unique pixel-art item. Conquer that country yourself and you keep its item permanently, across every future war. There are 250 to find.</p>' +
+      '<h2>Can I play on mobile?</h2>' +
+      '<p>Yes. The interface adapts to phones and tablets. Some decorative effects, including the day/night lighting, are disabled on mobile to keep memory use low.</p>' +
+      '<h2>Why is part of the map dark?</h2>' +
+      '<p>The map follows real time. The dark region is wherever it is currently night on Earth, and city lights glow across it. The clock in the status bar shows the current UTC time.</p>' +
+      '<h2>What are the roaming monsters?</h2>' +
+      '<p>UFOs, Krakens and giant lizards periodically cross the map and wipe out pixels in their path. They affect everyone equally and are simply chaos.</p>' +
+      '<h2>I found a bug. Where do I report it?</h2>' +
+      '<p>Please post it in our <a href="https://discord.gg/UHQRqXDpBE">Discord</a>. Bug reports genuinely do get fixed.</p>',
+      '/faq'));
+    return;
+  }
+  if (url.pathname === '/strategy') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    res.end(_seoPage('PixelAnnex Strategy Guide — Tactics for Winning Wars',
+      'A practical PixelAnnex strategy guide: why encirclement beats painting, how to pick a country, when to expand versus defend, and how to win the endgame.',
+      '<h1>PixelAnnex strategy guide</h1>' +
+      '<p>PixelAnnex looks like a painting game, but it is really a game about efficiency. Your pixel bucket refills slowly, so every pixel you spend should buy more than one pixel of territory. The players at the top of the leaderboard are not the ones who click fastest &mdash; they are the ones who spend pixels well.</p>' +
+      '<h2>1. Encircle, never fill</h2>' +
+      '<p>The single biggest mistake new players make is colouring in territory pixel by pixel. Painting a 40&times;40 area costs 1,600 pixels. Drawing a ring around that same area costs about 160 and captures everything inside instantly.</p>' +
+      '<p>Encircled pixels also score double, refund roughly ten percent of the captured area back into your bucket, and trigger a regeneration bonus for the next minute. Chain encirclements while that bonus is live and the effect compounds.</p>' +
+      '<h2>2. Choose your country deliberately</h2>' +
+      '<p>Small nations regenerate pixels considerably faster than large ones. If you want to be active and aggressive, a small country gives you more pixels per hour to spend. Large countries start with far more territory to defend but refill slowly, so they suit a patient, defensive style.</p>' +
+      '<p>Also look at neighbours. A country surrounded by weak or unclaimed land has cheap expansion available; one wedged between two active players will spend its whole war defending.</p>' +
+      '<h2>3. Attack the contested, not the pristine</h2>' +
+      '<p>A country already carved up by several invaders is far closer to falling than an untouched one, because conquest is measured against painted territory as well as total land. Hover any country to read exactly what percentage remains before it falls, and finish someone else&rsquo;s work rather than starting fresh.</p>' +
+      '<h2>4. Understand what actually triggers a fall</h2>' +
+      '<p>There are two routes. The champion route needs a single nation (with allies) to hold about 70&ndash;75% of a country. The contested route applies to large countries where invaders collectively dominate the painted area &mdash; but the leading attacker must still hold at least half the whole country. If you are close on a large nation, concentrating your pixels rather than spreading them is what pushes it over.</p>' +
+      '<h2>5. Defend by denying the ring</h2>' +
+      '<p>Because encirclement is so powerful, the best defence is breaking rings before they close. A single painted pixel in the path of an enemy ring stops the whole capture. Watching for half-drawn circles inside your borders is worth more than blanket repainting.</p>' +
+      '<h2>6. Play the clock</h2>' +
+      '<p>The map runs on real time, and the day/night terminator shows you which parts of the world are asleep. Regions in the middle of their local night usually have the fewest active defenders. Expanding into a sleeping timezone is one of the cheapest ways to gain ground.</p>' +
+      '<h2>7. Bank the endgame</h2>' +
+      '<p>A war ends when one bloc holds 65% of nations and 65% of the land. When only five nations remain, sudden death doubles everyone&rsquo;s regeneration &mdash; the point at which a war can flip fastest. Conquest points scale with the size of the country taken, from 1,000 up to 20,000, so late in a war a single large conquest is worth more than hours of painting.</p>' +
+      '<h2>8. Ally deliberately</h2>' +
+      '<p>Allied pixels count together toward conquest thresholds, so two co-ordinated players can take a country neither could take alone. Alliances are formed through our Discord, which is also where you will find people to co-ordinate a push with.</p>' +
+      '<p>Ready to try it? <a href="/">Start a game</a>, or read the <a href="/how-to-play">basics</a> first.</p>',
+      '/strategy'));
+    return;
   }
   if (url.pathname === '/about') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
@@ -6939,7 +7056,21 @@ const httpServer = http.createServer(async (req, res) => {
       '<li>Points, ranks (Soldier to Admiral), session and all-time leaderboards</li>' +
       '<li>250 collectable pixel-art items, one per country</li>' +
       '<li>Treasure chests, roaming monsters, alliances via Discord, 10 languages</li>' +
-      '</ul>', '/about'));
+      '</ul>' +
+      // v183: expanded for the AdSense content review — the page was 178 words.
+      '<h2>How a war unfolds</h2>' +
+      '<p>Every war starts with the map reset and all 190+ nations standing. In the opening hours most players expand into unclaimed land and skirmish with neighbours. As the war matures, stronger nations begin swallowing weaker ones, and the map visibly consolidates into a handful of blocs. When only five nations remain, sudden death doubles everyone&rsquo;s pixel regeneration and the final scramble begins. A war typically runs for days rather than hours.</p>' +
+      '<p>When a country is conquered its flag changes on the map, and if its conqueror is later destroyed the land can be released as neutral &ldquo;fallen&rdquo; territory that anyone may claim. Nothing on the map is permanent.</p>' +
+      '<h2>The world is always alive</h2>' +
+      '<p>PixelAnnex never sits empty. Alongside human players, every unclaimed nation is run by an ambient AI that paints, defends its homeland and launches campaigns of its own. They grow more aggressive as the world consolidates, so an unattended map still changes hour to hour &mdash; log back in the next day and the borders will have moved.</p>' +
+      '<p>The map itself also follows real time. A day/night terminator tracks the actual position of the sun, city lights glow across the dark side, and the status bar shows the current UTC time. It is cosmetic, but it tells you which parts of the world are likely asleep.</p>' +
+      '<h2>Progression</h2>' +
+      '<p>You earn a point for every pixel painted, double for pixels captured by encirclement, and a bonus of 1,000 to 20,000 for each country you conquer depending on its size. Points carry you from Soldier through Lieutenant, Captain and General to Admiral, and higher ranks increase how many pixels your bucket can hold. Signing in with Discord is optional but keeps your rank, points and collection across wars.</p>' +
+      '<h2>Where the map comes from</h2>' +
+      '<p>Country borders are derived from the public Natural Earth 1:10m dataset, rasterised to a 2048&times;1024 pixel world. Countries appear purely as game geography &mdash; PixelAnnex takes no position on any real-world border or territorial dispute.</p>' +
+      '<h2>Who makes it</h2>' +
+      '<p>PixelAnnex is built by <a href="https://www.prettyneatpixels.com">Pretty Neat Pixels</a>, an independent studio. It is free to play and supported by advertising. Feature requests and bug reports are genuinely acted on &mdash; the fastest way to reach us is the <a href="https://discord.gg/UHQRqXDpBE">Discord server</a>.</p>' +
+      '<p>New here? Read <a href="/how-to-play">how to play</a>, then the <a href="/strategy">strategy guide</a>.</p>', '/about'));
     return;
   }
   if (url.pathname === '/how-to-play') {
@@ -6951,7 +7082,26 @@ const httpServer = http.createServer(async (req, res) => {
       '<h2>Conquest</h2><p>Hold roughly 70–75% of a country\'s land and it falls to you (large countries can also fall when foreign invaders dominate the painted area). Conquests award 1,000–20,000 points depending on the country\'s size, plus its unique collectable item.</p>' +
       '<h2>Encirclement</h2><p>Draw a closed ring around enemy land and everything inside is captured instantly. Encircled pixels score double points, return ~10% of the captured area to your bucket, and boost your regeneration for 60 seconds.</p>' +
       '<h2>Winning the war</h2><p>A bloc (a country or alliance) wins by controlling 65% of the world\'s nations AND 65% of the land. At five standing nations, sudden death doubles everyone\'s regen. When the world falls, the map resets and the next war begins.</p>' +
-      '<h2>Tips</h2><ul><li>Encircle instead of painting interiors — it\'s faster and pays double.</li><li>Watch the hover panel: it shows exactly how far a country is from falling.</li><li>Grab treasure chests the moment you spot them — first click wins.</li><li>Sign in with Discord so your rank, points and collection persist.</li></ul>',
+      '<h2>Tips</h2><ul><li>Encircle instead of painting interiors — it\'s faster and pays double.</li><li>Watch the hover panel: it shows exactly how far a country is from falling.</li><li>Grab treasure chests the moment you spot them — first click wins.</li><li>Sign in with Discord so your rank, points and collection persist.</li></ul>' +
+      // v183: expanded for the AdSense content review — the page was 246 words.
+      '<h2>Your first ten minutes</h2>' +
+      '<p>Pick a country from the welcome screen &mdash; a smaller one if you want to be active, since small nations refill pixels faster. The camera starts on your homeland. Click and drag to paint; the counter in the toolbar shows how many pixels you have left and the bar beside it shows the next one refilling.</p>' +
+      '<p>Spend your first pixels pushing outward from your own border rather than dotting the map at random. Connected territory is defensible and sets up the rings you will want later. Once you are comfortable, draw a small closed loop around a patch of enemy land and watch the whole interior flip to your colour.</p>' +
+      '<h2>Reading the map</h2>' +
+      '<p>Your own territory is drawn with a subtle diagonal stripe and a glowing yellow outline, so you can always tell your pixels from a neighbour&rsquo;s even when the colours are close. Standing countries fly their national flag; conquered ones fly their conqueror&rsquo;s flag with an outpost number; fallen, unclaimed nations show a faded grey flag over darkened land.</p>' +
+      '<p>Hovering any country opens a panel showing who holds what percentage and exactly how much more is needed before it falls. That number is the single most useful thing on screen &mdash; it tells you whether an attack is worth starting.</p>' +
+      '<h2>Bonuses worth knowing</h2>' +
+      '<ul>' +
+      '<li><strong>Treasure chests</strong> appear on the map roughly ten times an hour. Clicking one gives 50 pixels and 1,000 points. First player to click wins it.</li>' +
+      '<li><strong>Underdog regeneration</strong> means a small nation refills far faster than a superpower, so being small is not a losing position.</li>' +
+      '<li><strong>Fight-back</strong> maxes your regeneration while your homeland is being overrun, giving you a real chance to push invaders out.</li>' +
+      '<li><strong>Collectables</strong> are permanent: conquer a country yourself and its unique pixel-art item stays in your collection across every future war.</li>' +
+      '</ul>' +
+      '<h2>Hazards</h2>' +
+      '<p>UFOs, Krakens and giant lizards roam the map at intervals and erase pixels in their path. They are indiscriminate, so treat them as weather rather than an attack &mdash; avoid painting directly ahead of one.</p>' +
+      '<h2>Controls</h2>' +
+      '<p>Left-click or drag to paint. Right-click a country to inspect who holds it. Scroll or use the zoom buttons to move between the world view and close-up painting. Middle-click or hold Alt to pan. On touch devices, drag to paint, pinch to zoom, and long-press to inspect.</p>' +
+      '<p>When you are ready for real tactics, read the <a href="/strategy">strategy guide</a> &mdash; it explains why encirclement beats painting and how to time an endgame push.</p>',
       '/how-to-play'));
     return;
   }

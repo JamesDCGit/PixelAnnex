@@ -1779,13 +1779,10 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 <!-- v169 SEO: crawlable text content — the game itself is canvas/JS-rendered, so this
      visually-hidden semantic block is the only body copy search engines can read.
      Kept factual and modest (not keyword-stuffed). -->
-<section id="seo-content" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;">
-  <h1>PixelAnnex — free multiplayer pixel war game</h1>
-  <p>PixelAnnex is a free real-time multiplayer strategy game played on a live pixel map of the world. Pick any of 190+ countries, paint pixels to expand your territory, and invade your neighbours. Hold enough of a country and it falls to you — conquer 65% of the world's nations and land to win the war and reset the map.</p>
-  <p>Encircle enemy territory to capture everything inside the ring and earn regen and point bonuses. Find treasure chests on the map for instant rewards, collect a unique pixel-art item for every country you conquer, form alliances through Discord, and climb the global leaderboard from Soldier to Admiral. Watch out for UFOs, Krakens and giant lizards that roam the map.</p>
-  <p>No download and no account needed — play instantly in your browser. Sign in with Discord to save your rank, points and collection across wars. Available in 10 languages.</p>
-  <p><a href="/about">About PixelAnnex</a> · <a href="/how-to-play">How to play</a> · <a href="https://discord.gg/UHQRqXDpBE">Join the Discord</a> · <a href="https://x.com/PixelAnnexGame">Follow on X</a></p>
-</section>
+<!-- v183: the visually-hidden SEO text block was REMOVED. Hidden text aimed at
+     crawlers is a policy violation (Search + AdSense) and an unnecessary risk during
+     the "low value content" review. The same information now lives on real, visible
+     pages (/about, /how-to-play, /strategy, /faq) linked from the welcome screen. -->
 <noscript><p>PixelAnnex is a free multiplayer pixel war game played on a live world map. It requires JavaScript — enable JavaScript to play, or read more on the <a href="/about">about page</a>.</p></noscript>
 <!-- v32: Mobile gating splash (hidden by default; shown by inline script below) -->
 <div id="mobile-splash">
@@ -2050,6 +2047,17 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
         <div class="qs-foot">
           <button class="qs-link" data-i18n="qs.howto" onclick="openHowTo()">❔ How to play</button>
           <button class="qs-link" data-i18n="qs.signin" onclick="window.location.href='/auth/login'">💬 Sign in (optional)</button>
+        </div>
+        <!-- v183: VISIBLE links to the real content pages. These replace the removed
+             hidden SEO block: crawlable, honest, and reachable by a policy reviewer
+             landing on the game. -->
+        <div class="qs-foot" style="flex-wrap:wrap;justify-content:center;gap:4px 10px;font-size:10px;margin-top:6px;">
+          <a href="/about" style="color:#64748b;text-decoration:none;">About</a>
+          <a href="/how-to-play" style="color:#64748b;text-decoration:none;">Guide</a>
+          <a href="/strategy" style="color:#64748b;text-decoration:none;">Strategy</a>
+          <a href="/faq" style="color:#64748b;text-decoration:none;">FAQ</a>
+          <a href="/privacy" style="color:#64748b;text-decoration:none;">Privacy</a>
+          <a href="/terms" style="color:#64748b;text-decoration:none;">Terms</a>
         </div>
         <!-- v138a: AdSense banner slot (inert until ADSENSE_CLIENT/ADSENSE_SLOT are set in JS) -->
         <div id="welcome-ad" style="margin-top:14px;min-height:0;text-align:center;"></div>
@@ -4159,7 +4167,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-07-28-v181';
+const CODE_VERSION = '2026-07-29-v183';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
