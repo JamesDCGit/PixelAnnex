@@ -6917,6 +6917,10 @@ const httpServer = http.createServer(async (req, res) => {
       '<meta property="og:image" content="' + SITE_URL + '/PixelAnnexHero.jpg">' +
       '<meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@PixelAnnexGame">' +
       '<link rel="icon" href="/icon-192.png">' +
+      // v183a: AdSense loader on the content pages too (was game page only). The
+      // review crawler weighs pages carrying the ad code, and these are the readable
+      // ones; also lets Auto ads serve here once approved.
+      '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9562564409490681" crossorigin="anonymous"></script>' +
       '<style>body{background:#070d1a;color:#cbd5e1;font-family:"Courier New",monospace;max-width:720px;margin:0 auto;padding:32px 20px;line-height:1.7;font-size:15px}' +
       'h1,h2{color:#e8b93c;letter-spacing:.04em}a{color:#60a5fa}img{max-width:100%;image-rendering:pixelated}' +
       '.cta{display:inline-block;background:#e8b93c;color:#2a1c05;font-weight:700;padding:10px 22px;border:2px solid #14100a;text-decoration:none;margin:14px 0}</style>' +
