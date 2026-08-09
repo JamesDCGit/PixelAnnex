@@ -7171,6 +7171,7 @@ const httpServer = http.createServer(async (req, res) => {
       'Content-Type': ctype,
       'Cache-Control': 'public, max-age=86400',
       'Access-Control-Allow-Origin': '*',
+      'X-Robots-Tag': 'noindex', // v183b: data files, not pages (see countries-10m note)
     };
     const accept = req.headers['accept-encoding'] || '';
     if (!isImage && accept.includes('gzip')) {
@@ -7234,6 +7235,11 @@ const httpServer = http.createServer(async (req, res) => {
     if (_compressedAssets.has(f)) {
       serveCompressedAsset(req, res, f, {
         'Cache-Control': 'public, max-age=31536000, immutable',
+        // v183b: GSC showed Google crawling this 3.6MB data file as a "page"
+        // ("Crawled - currently not indexed"). noindex keeps data files out of the
+        // page index for good. Header, not robots.txt: a robots block would stop
+        // Google from ever SEEING the noindex, leaving the URL in limbo forever.
+        'X-Robots-Tag': 'noindex',
       });
       return;
     }
@@ -7246,6 +7252,7 @@ const httpServer = http.createServer(async (req, res) => {
     const headers = {
       'Content-Type':  'application/json',
       'Cache-Control': 'public, max-age=31536000, immutable',
+      'X-Robots-Tag': 'noindex', // v183b: keep the data file out of the page index
     };
     const accept = req.headers['accept-encoding'] || '';
     if (accept.includes('gzip')) {
