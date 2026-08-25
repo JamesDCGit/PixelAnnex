@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-07-29-v183';
+const SERVER_VERSION       = '2026-08-25-v184';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -7145,6 +7145,18 @@ const httpServer = http.createServer(async (req, res) => {
   }
 
   // ── v106: hero banner for the welcome / FTUE screens ─────────────
+  // v184: Pretty Neat Pixels studio logo (About screen)
+  if (url.pathname === '/PrettyNeatLogo512.png') {
+    const f = path.join(__dirname, 'public', 'PrettyNeatLogo512.png');
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end('logo not found'); return; }
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=86400',
+      'Access-Control-Allow-Origin': '*',
+    });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
   if (url.pathname === '/PixelAnnexHero.jpg') {
     const f = path.join(__dirname, 'public', 'PixelAnnexHero.jpg');
     if (!fs.existsSync(f)) { res.writeHead(404); res.end('hero not found'); return; }
