@@ -41,7 +41,7 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-08-25-v184a';
+const SERVER_VERSION       = '2026-08-31-v185';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -7145,6 +7145,22 @@ const httpServer = http.createServer(async (req, res) => {
   }
 
   // ── v106: hero banner for the welcome / FTUE screens ─────────────
+  // v185: LanaPixel webfont subsets (see the @font-face block in the client).
+  // Immutable + 1yr cache: the filenames change if the subsets are ever rebuilt.
+  if (url.pathname.startsWith('/fonts/') && url.pathname.endsWith('.woff2')) {
+    const m = url.pathname.match(/^\/fonts\/([A-Za-z0-9_.-]+\.woff2)$/);
+    if (!m || m[1].includes('..')) { res.writeHead(400); res.end('bad font path'); return; }
+    const f = path.join(__dirname, 'public', 'fonts', m[1]);
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end('font not found'); return; }
+    res.writeHead(200, {
+      'Content-Type': 'font/woff2',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Access-Control-Allow-Origin': '*',
+      'X-Robots-Tag': 'noindex',
+    });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
   // v184: Pretty Neat Pixels studio logo (About screen)
   if (url.pathname === '/PrettyNeatLogo512.png') {
     const f = path.join(__dirname, 'public', 'PrettyNeatLogo512.png');

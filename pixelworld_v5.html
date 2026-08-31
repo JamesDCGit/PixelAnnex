@@ -37,10 +37,27 @@
 <script defer src="https://cloud.umami.is/script.js" data-website-id="22da671f-a784-43f5-bb39-fe5b9ea10d5d"></script>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23070d1a'/%3E%3Crect x='6' y='8' width='4' height='4' fill='%2360a5fa'/%3E%3Crect x='12' y='6' width='4' height='4' fill='%23818cf8'/%3E%3Crect x='18' y='8' width='4' height='4' fill='%23a78bfa'/%3E%3Crect x='4' y='14' width='4' height='4' fill='%2334d399'/%3E%3Crect x='10' y='14' width='4' height='4' fill='%23fbbf24'/%3E%3Crect x='16' y='14' width='4' height='4' fill='%23f87171'/%3E%3Crect x='22' y='14' width='4' height='4' fill='%23fb923c'/%3E%3Crect x='6' y='20' width='4' height='4' fill='%23ec4899'/%3E%3Crect x='12' y='20' width='4' height='4' fill='%2306b6d4'/%3E%3Crect x='18' y='20' width='4' height='4' fill='%2384cc16'/%3E%3C/svg%3E"/>
 <style>
+/* ── v185: LanaPixel (CC BY 4.0, Lana Ro) — localization-friendly pixel font ──
+   Split into three woff2 subsets keyed by unicode-range so a browser downloads
+   ONLY the scripts on screen: latin+greek+cyrillic is 10.5KB (what almost every
+   player gets), CJK 199KB and Hangul 105KB arrive only for zh/ja/ko. The full
+   font is 3MB — shipping it whole would have cost more than the entire client.
+   Arabic and Devanagari are absent from LanaPixel by design, so ar/hi fall
+   through to 'Courier New'/system, which shapes those scripts correctly. */
+@font-face{font-family:'LanaPixel';font-style:normal;font-weight:400;font-display:swap;
+  src:url('/fonts/lanapixel-latin.woff2') format('woff2');
+  unicode-range:U+0020-007E,U+00A0-00FF,U+0100-017F,U+0180-024F,U+0370-03FF,U+0400-04FF,U+2000-206F,U+2190-21FF,U+25A0-25FF,U+2600-26FF;}
+@font-face{font-family:'LanaPixel';font-style:normal;font-weight:400;font-display:swap;
+  src:url('/fonts/lanapixel-cjk.woff2') format('woff2');
+  unicode-range:U+3000-303F,U+3040-309F,U+30A0-30FF,U+3400-4DBF,U+4E00-9FFF,U+FF00-FFEF;}
+@font-face{font-family:'LanaPixel';font-style:normal;font-weight:400;font-display:swap;
+  src:url('/fonts/lanapixel-hangul.woff2') format('woff2');
+  unicode-range:U+AC00-D7A3;}
+
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 /* ── Font scale applied via JS zoom on UI containers ── */
-body{width:100%;height:100%;overflow:hidden;background:#070d1a;font-family:'Courier New',monospace}
+body{width:100%;height:100%;overflow:hidden;background:#070d1a;font-family:'LanaPixel','Courier New',monospace}
 #app{display:flex;flex-direction:column;width:100vw;height:100vh}
 #main{display:flex;flex-direction:row;flex:1;overflow:hidden;min-height:0}
 #toolbar{display:flex;align-items:center;gap:8px;padding:4px 10px;flex-shrink:0;background:#0c1526;border-bottom:2px solid var(--px-ink);flex-wrap:wrap;z-index:20;min-height:36px;}/* v165: tightened to the button height */
@@ -218,7 +235,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   background:rgba(0,0,0,0.92);
   display:flex;align-items:center;justify-content:center;
   opacity:0;transition:opacity .5s;
-  font-family:'Courier New',monospace;
+  font-family:'LanaPixel','Courier New',monospace;
 }
 #world-conquest-modal.wcm-visible{opacity:1;}
 #wcm-inner{
@@ -465,7 +482,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   display:none; position:fixed; inset:0;
   background:rgba(8,12,20,0.92); backdrop-filter:blur(6px);
   z-index:2000; align-items:center; justify-content:center;
-  font-family:'Courier New', monospace;
+  font-family:'LanaPixel','Courier New',monospace;
 }
 #daily-popup-overlay.open{display:flex;}
 #daily-popup-card{
@@ -529,7 +546,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   animation:ctaPulse 1.6s ease-in-out infinite; /* v99a: CTA pulse */
   display:block; width:100%; margin-top:6px; padding:12px;
   background:linear-gradient(135deg,#3b82f6,#1d4ed8);
-  border:none; color:#fff; font-family:'Courier New', monospace;
+  border:none; color:#fff; font-family:'LanaPixel','Courier New',monospace;
   font-size:14px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
   border-radius:8px; cursor:pointer;
 }
@@ -560,7 +577,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #tutorial-overlay{
   position:fixed;inset:0;background:rgba(7,13,26,0.78);z-index:9999;
   display:none;align-items:center;justify-content:center;
-  font-family:'Courier New',monospace;color:#cbd5e1;
+  font-family:'LanaPixel','Courier New',monospace;color:#cbd5e1;
   backdrop-filter:blur(2px);
 }
 #tutorial-overlay.open{display:flex;}
@@ -727,7 +744,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   background:rgba(13,22,38,.90);
   border:2px solid var(--px-ink);border-radius:0;/* v166: arcade-chunky */
   padding:6px 14px;z-index:50;
-  font-family:'Courier New',monospace;
+  font-family:'LanaPixel','Courier New',monospace;
   clip-path:var(--px-clip);
   box-shadow:inset 2px 2px 0 rgba(255,255,255,.09),inset -2px -2px 0 rgba(0,0,0,.35);
   pointer-events:none;
@@ -750,7 +767,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* ── Encirclement burst effect (centred over enclosed area) ── */
 .encircle-burst{
   position:absolute;pointer-events:none;
-  font-family:'Courier New',monospace;
+  font-family:'LanaPixel','Courier New',monospace;
   font-weight:700;color:#fff;
   z-index:130;
   text-align:center;
@@ -851,7 +868,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #stats-modal{
   background:#101b2e;border:2px solid var(--px-ink);border-radius:0;/* v162: arcade-chunky */
   width:min(720px, 92vw);height:min(640px, 88vh);max-height:88vh;overflow-y:auto;/* v165: FIXED height — the modal no longer resizes when tabbing leaderboard/about/terms */
-  padding:24px;font-family:'Courier New',monospace;color:#cbd5e1;
+  padding:24px;font-family:'LanaPixel','Courier New',monospace;color:#cbd5e1;
   clip-path:var(--px-clip);
   box-shadow:inset 2px 2px 0 rgba(255,255,255,.10), inset -2px -2px 0 rgba(0,0,0,.40);
 }
@@ -985,7 +1002,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* v113: combined-GDP odometer — bold white, fixed-width 15-digit field */
 .rank-gdp{display:flex;align-items:baseline;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.07);}
 .rank-gdp .gdp-label{font-size:8px;letter-spacing:.12em;color:#64748b;text-transform:uppercase;}
-.rank-gdp #gdp-value{font-family:'Courier New',monospace;font-weight:700;color:#ffffff;font-size:12px;letter-spacing:.02em;white-space:nowrap;}
+.rank-gdp #gdp-value{font-family:'LanaPixel','Courier New',monospace;font-weight:700;color:#ffffff;font-size:12px;letter-spacing:.02em;white-space:nowrap;}
 .rank-gdp #gdp-value .gdp-dim{color:#33415580;font-weight:700;}
 .rank-bomb{color:#f87171;font-size:9px;margin-top:2px;}
 .rank-bonus{color:#22c55e;font-size:9px;margin-top:1px;}
@@ -1317,7 +1334,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   z-index: 100000;
   background: linear-gradient(135deg, #070d1a 0%, #0c1526 50%, #0a1020 100%);
   color: #e2e8f0;
-  font-family: 'Courier New', monospace;
+  font-family: 'LanaPixel','Courier New',monospace;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   box-sizing: border-box;
   overflow-y: auto;
@@ -1432,7 +1449,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   padding: 4px 10px;
   border-radius: 4px;
   font-size: 9px;
-  font-family: 'Courier New', monospace;
+  font-family: 'LanaPixel','Courier New',monospace;
   letter-spacing: .04em;
   cursor: pointer;
   text-decoration: none;
@@ -2282,7 +2299,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 <!-- v60: Admin debug panel — toggle with Ctrl+Shift+D -->
 <div id="admin-debug-panel" style="display:none;position:fixed;bottom:70px;right:16px;z-index:9999;
   background:#0d1117;border:1px solid rgba(239,68,68,.5);border-radius:8px;
-  padding:12px 16px;min-width:260px;font-family:'Courier New',monospace;font-size:12px;color:#e2e8f0;
+  padding:12px 16px;min-width:260px;font-family:'LanaPixel','Courier New',monospace;font-size:12px;color:#e2e8f0;
   box-shadow:0 4px 24px rgba(0,0,0,.7);">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
     <span style="color:#f87171;font-weight:700;letter-spacing:.06em;">🔧 ADMIN DEBUG</span>
@@ -2322,6 +2339,7 @@ const LANG_META = [
   { code: 'pt', name: 'Português',   flag: '🇧🇷', dir: 'ltr' },
   { code: 'ru', name: 'Русский',     flag: '🇷🇺', dir: 'ltr' },
   { code: 'ja', name: '日本語',       flag: '🇯🇵', dir: 'ltr' },
+  { code: 'ko', name: '한국어',       flag: '🇰🇷', dir: 'ltr' },
   { code: 'fr', name: 'Français',    flag: '🇫🇷', dir: 'ltr' },
   { code: 'de', name: 'Deutsch',     flag: '🇩🇪', dir: 'ltr' },
 ];
@@ -2449,70 +2467,6 @@ const LANGS = {
     'daily.toast_week_bonus': '+{n} WEEK STREAK BONUS',
     'banner.encirclement_static': 'ENCIRCLEMENT',
     'banner.regen': 'regen',
-    'stats.signin_prompt': 'Entre com Discord para ver suas estatísticas.',
-    'stats.title': '📊 Estatísticas e Ranking',
-    'stats.close': 'Fechar ✕',
-    'stats.tab_me': 'Minhas estatísticas',
-    'stats.tab_lb': 'Ranking',
-    'stats.loading': 'Carregando…',
-    'stats.joined': 'entrou em {date}',
-    'stats.points': 'Pontos',
-    'stats.pixels_placed': 'Pixels colocados',
-    'stats.conquests': 'Conquistas',
-    'stats.bombs_used': 'Bombas usadas',
-    'stats.top_painted': 'Países mais pintados',
-    'stats.load_error': 'Não foi possível carregar: {err}',
-    'stats.no_players': 'Nenhum jogador classificado — seja o primeiro!',
-    'stats.total_players': '{n} jogadores no total',
-    'stats.lb_load_error': 'Não foi possível carregar o ranking.',
-    'tip.1': '💡 Clique e arraste para mover. Role para zoom.',
-    'tip.2': '🎨 Você pode pintar pixels em qualquer país, mas conquistar requer 70% de domínio.',
-    'tip.3': '💥 Suba de patente para desbloquear bônus maiores, chamadas de reforço e a Bomba Nuclear (Almirante).',
-    'tip.4': '🤝 Defina 3 países preferidos no Discord com /country para formar alianças.',
-    'tip.5': '⚔️ Quando seu país perde mais de 50%, o modo contra-ataque dá pixels bônus progressivos (até 6× com 90% perdido).',
-    'tip.6': '🏆 Veja o ranking pelo botão 📊 na barra de ferramentas.',
-    'tip.7': '🌊 O oceano cobre 71% da Terra — mas em PixelAnnex são pixels puros.',
-    'tip.8': '📊 1 pixel colocado = 1 ponto. Conquistar um país = 50 pontos bônus.',
-    'tip.9': '🎖️ Suba 5 patentes: Soldado → Tenente → Capitão → General → Almirante.',
-    'tip.10': '🚨 Países piscam vermelho quando sob cerco (>50% inimigo).',
-    'tip.11': '🛡️ Defenda territórios contestados — perder mais de 50% ativa o bônus progressivo de contra-ataque.',
-    'tip.12': '🌐 O mapa tem ~2.4 milhões de pixels pintáveis em mais de 240 países.',
-    'tip.13': '🎵 Três trilhas musicais: chiptune, clássica e militar. Alterne no HUD de áudio.',
-    'tip.14': '👥 Entre com Discord para salvar progresso e ganhar promoções.',
-    'tip.15': '🏴 O menor país do mapa é o Vaticano — apenas alguns pixels!',
-    'tip.16': '💬 Eventos de guerra, conquistas e alianças são postados no seu servidor Discord.',
-    'stats.signin_prompt': 'Inicia sesión con Discord para ver tus estadísticas.',
-    'stats.title': '📊 Estadísticas y Clasificación',
-    'stats.close': 'Cerrar ✕',
-    'stats.tab_me': 'Mis estadísticas',
-    'stats.tab_lb': 'Clasificación',
-    'stats.loading': 'Cargando…',
-    'stats.joined': 'se unió el {date}',
-    'stats.points': 'Puntos',
-    'stats.pixels_placed': 'Píxeles colocados',
-    'stats.conquests': 'Conquistas',
-    'stats.bombs_used': 'Bombas usadas',
-    'stats.top_painted': 'Países más pintados',
-    'stats.load_error': 'No se pudieron cargar las estadísticas: {err}',
-    'stats.no_players': 'No hay jugadores clasificados aún — ¡sé el primero!',
-    'stats.total_players': '{n} jugadores en total',
-    'stats.lb_load_error': 'No se pudo cargar la clasificación.',
-    'tip.1': '💡 Haz clic y arrastra para mover. Rueda para zoom.',
-    'tip.2': '🎨 Puedes pintar píxeles en cualquier país, pero conquistar requiere 70% de control.',
-    'tip.3': '💥 Sube de rango para desbloquear mayores bonus, llamadas de refuerzo y la Bomba Nuclear (Almirante).',
-    'tip.4': '🤝 Configura 3 países preferidos en Discord con /country para formar alianzas.',
-    'tip.5': '⚔️ Cuando tu país pierde más del 50%, el modo contraataque da píxeles bonus progresivos (hasta 6× con 90% perdido).',
-    'tip.6': '🏆 Mira la clasificación con el botón 📊 de la barra de herramientas.',
-    'tip.7': '🌊 El océano cubre el 71% de la Tierra — pero en PixelAnnex son píxeles puros.',
-    'tip.8': '📊 1 píxel colocado = 1 punto. Conquistar un país = 50 puntos extra.',
-    'tip.9': '🎖️ Sube 5 rangos: Soldado → Teniente → Capitán → General → Almirante.',
-    'tip.10': '🚨 Los países parpadean en rojo cuando están bajo asedio (>50% enemigo).',
-    'tip.11': '🛡️ Defiende territorios disputados — perder más del 50% activa el bono progresivo de contraataque.',
-    'tip.12': '🌐 El mapa tiene ~2.4 millones de píxeles pintables en más de 240 países.',
-    'tip.13': '🎵 Tres pistas musicales: chiptune, clásica y militar. Alterna en el HUD de audio.',
-    'tip.14': '👥 Inicia sesión con Discord para guardar tu progreso y ganar ascensos.',
-    'tip.15': '🏴 ¡El país más pequeño del mapa es Ciudad del Vaticano — solo unos píxeles!',
-    'tip.16': '💬 Eventos de guerra, conquistas y alianzas se publican en tu servidor de Discord.',
     'stats.signin_prompt': 'Sign in with Discord to see your stats.',
     'stats.title': '📊 Stats & Leaderboard',
     'stats.close': 'Close ✕',
@@ -2555,7 +2509,6 @@ const LANGS = {
     'tut.tile_bombs_title':'Armas nucleares y rangos','tut.tile_bombs_desc':'Gana XP por cada píxel colocado. Los rangos altos desbloquean mayores bonus, llamadas de refuerzo y la Bomba Nuclear.',
     'tut.tile_fightback_title':'Contraataque','tut.tile_fightback_desc':'Cuando tu país pierde más del 50%, pintar en tu propia tierra otorga píxeles bonus progresivos: cuanto más pierdes, mayor es el impulso.',
     'tut.hint_keys':'{drag} para mover · {scroll} para zoom · {click} para pintar','tut.key_drag':'Arrastra','tut.key_scroll':'Rueda','tut.key_click':'Clic',
-    'tut.hint_keys_touch':'Un doigt pour peindre · Deux doigts pour déplacer et zoomer',
     'tut.hint_keys_touch':'Un dedo para pintar · Dos dedos para mover y zoom',
     'tut.btn_skip':'Omitir','tut.btn_next':'Siguiente →','tut.btn_back':'← Atrás','tut.btn_pick_country':'Elige un país',
     'tut.country_intro':'Elige el país desde el que empezarás. Puedes cambiarlo más tarde.','tut.country_search':'Buscar países…','tut.country_loading':'Cargando lista de países…',
@@ -2602,6 +2555,38 @@ const LANGS = {
     'daily.toast_week_bonus': '+{n} BONO DE SEMANA',
     'banner.encirclement_static': 'CERCADO',
     'banner.regen': 'regen',
+    'stats.signin_prompt': 'Inicia sesión con Discord para ver tus estadísticas.',
+    'stats.title': '📊 Estadísticas y Clasificación',
+    'stats.close': 'Cerrar ✕',
+    'stats.tab_me': 'Mis estadísticas',
+    'stats.tab_lb': 'Clasificación',
+    'stats.loading': 'Cargando…',
+    'stats.joined': 'se unió el {date}',
+    'stats.points': 'Puntos',
+    'stats.pixels_placed': 'Píxeles colocados',
+    'stats.conquests': 'Conquistas',
+    'stats.bombs_used': 'Bombas usadas',
+    'stats.top_painted': 'Países más pintados',
+    'stats.load_error': 'No se pudieron cargar las estadísticas: {err}',
+    'stats.no_players': 'No hay jugadores clasificados aún — ¡sé el primero!',
+    'stats.total_players': '{n} jugadores en total',
+    'stats.lb_load_error': 'No se pudo cargar la clasificación.',
+    'tip.1': '💡 Haz clic y arrastra para mover. Rueda para zoom.',
+    'tip.2': '🎨 Puedes pintar píxeles en cualquier país, pero conquistar requiere 70% de control.',
+    'tip.3': '💥 Sube de rango para desbloquear mayores bonus, llamadas de refuerzo y la Bomba Nuclear (Almirante).',
+    'tip.4': '🤝 Configura 3 países preferidos en Discord con /country para formar alianzas.',
+    'tip.5': '⚔️ Cuando tu país pierde más del 50%, el modo contraataque da píxeles bonus progresivos (hasta 6× con 90% perdido).',
+    'tip.6': '🏆 Mira la clasificación con el botón 📊 de la barra de herramientas.',
+    'tip.7': '🌊 El océano cubre el 71% de la Tierra — pero en PixelAnnex son píxeles puros.',
+    'tip.8': '📊 1 píxel colocado = 1 punto. Conquistar un país = 50 puntos extra.',
+    'tip.9': '🎖️ Sube 5 rangos: Soldado → Teniente → Capitán → General → Almirante.',
+    'tip.10': '🚨 Los países parpadean en rojo cuando están bajo asedio (>50% enemigo).',
+    'tip.11': '🛡️ Defiende territorios disputados — perder más del 50% activa el bono progresivo de contraataque.',
+    'tip.12': '🌐 El mapa tiene ~2.4 millones de píxeles pintables en más de 240 países.',
+    'tip.13': '🎵 Tres pistas musicales: chiptune, clásica y militar. Alterna en el HUD de audio.',
+    'tip.14': '👥 Inicia sesión con Discord para guardar tu progreso y ganar ascensos.',
+    'tip.15': '🏴 ¡El país más pequeño del mapa es Ciudad del Vaticano — solo unos píxeles!',
+    'tip.16': '💬 Eventos de guerra, conquistas y alianzas se publican en tu servidor de Discord.',
   },
   zh: {
     'hud.countries_left':'剩余国家','hud.of_original':'原始总数','tb.reset':'重置视图','tb.target':'🎯 选择目标','tb.mypixels':'🔄 我的像素','lb.session':'本局','lb.alltime':'总榜','rank.collectables':'收藏品','qs.quick':'随机国家快速开始','qs.search':'搜索国家…','qs.howto':'❔ 玩法说明','qs.signin':'💬 登录（可选）', // v167
@@ -2658,38 +2643,6 @@ const LANGS = {
     'daily.toast_week_bonus': '+{n} 周连续奖励',
     'banner.encirclement_static': '包围',
     'banner.regen': '再生',
-    'stats.signin_prompt': 'Discordでログインして統計を表示。',
-    'stats.title': '📊 統計とリーダーボード',
-    'stats.close': '閉じる ✕',
-    'stats.tab_me': '自分の統計',
-    'stats.tab_lb': 'リーダーボード',
-    'stats.loading': '読込中…',
-    'stats.joined': '{date} に参加',
-    'stats.points': 'ポイント',
-    'stats.pixels_placed': '配置ピクセル',
-    'stats.conquests': '征服数',
-    'stats.bombs_used': '使用爆弾',
-    'stats.top_painted': 'よく塗られた国',
-    'stats.load_error': '統計を読込めません: {err}',
-    'stats.no_players': 'ランク付きプレイヤーがいません — 最初の一人に!',
-    'stats.total_players': '合計 {n} プレイヤー',
-    'stats.lb_load_error': 'リーダーボードを読込めません。',
-    'tip.1': '💡 クリック&ドラッグで移動。スクロールでズーム。',
-    'tip.2': '🎨 どの国でもピクセルを塗れますが、征服には70%の所有が必要です。',
-    'tip.3': '💥 昇進でより大きなボーナス、増援要請、核兵器(提督)が解放されます。',
-    'tip.4': '🤝 Discord で /country を使って3つの国の好みを設定し同盟を組みましょう。',
-    'tip.5': '⚔️ 自国の50%以上を失うと、反撃モードで累進ピクセルボーナス(90%喪失で最大6×)。',
-    'tip.6': '🏆 ツールバーの 📊 ボタンでリーダーボードをチェック。',
-    'tip.7': '🌊 海洋は地球表面の71%を覆っています — でも PixelAnnex では純粋なピクセル。',
-    'tip.8': '📊 1ピクセル = 1ポイント。国を征服 = ボーナス50ポイント。',
-    'tip.9': '🎖️ 5つの階級を上る: 兵士 → 中尉 → 大尉 → 将軍 → 提督。',
-    'tip.10': '🚨 国が包囲されると赤く点滅 (>50%敵が保有)。',
-    'tip.11': '🛡️ 争われた領土を守りましょう — 50%以上失うと累進カウンター攻撃ボーナスが発動。',
-    'tip.12': '🌐 マップには240以上の国に約240万の塗装可能ピクセル。',
-    'tip.13': '🎵 3つの音楽トラック: チップチューン、クラシック、ミリタリー。オーディオHUDで切替。',
-    'tip.14': '👥 Discordでログインして進行状況を保存し、階級昇進を獲得。',
-    'tip.15': '🏴 マップ最小の国はバチカン市国 — わずか数ピクセル!',
-    'tip.16': '💬 戦争イベント、征服、同盟はすべてDiscordサーバーに投稿されます。',
     'stats.signin_prompt': '使用 Discord 登录以查看您的统计。',
     'stats.title': '📊 统计与排行榜',
     'stats.close': '关闭 ✕',
@@ -2954,6 +2907,38 @@ const LANGS = {
     'daily.toast_week_bonus': '+{n} BÔNUS DE SEMANA',
     'banner.encirclement_static': 'CERCO',
     'banner.regen': 'regen',
+    'stats.signin_prompt': 'Entre com Discord para ver suas estatísticas.',
+    'stats.title': '📊 Estatísticas e Ranking',
+    'stats.close': 'Fechar ✕',
+    'stats.tab_me': 'Minhas estatísticas',
+    'stats.tab_lb': 'Ranking',
+    'stats.loading': 'Carregando…',
+    'stats.joined': 'entrou em {date}',
+    'stats.points': 'Pontos',
+    'stats.pixels_placed': 'Pixels colocados',
+    'stats.conquests': 'Conquistas',
+    'stats.bombs_used': 'Bombas usadas',
+    'stats.top_painted': 'Países mais pintados',
+    'stats.load_error': 'Não foi possível carregar: {err}',
+    'stats.no_players': 'Nenhum jogador classificado — seja o primeiro!',
+    'stats.total_players': '{n} jogadores no total',
+    'stats.lb_load_error': 'Não foi possível carregar o ranking.',
+    'tip.1': '💡 Clique e arraste para mover. Role para zoom.',
+    'tip.2': '🎨 Você pode pintar pixels em qualquer país, mas conquistar requer 70% de domínio.',
+    'tip.3': '💥 Suba de patente para desbloquear bônus maiores, chamadas de reforço e a Bomba Nuclear (Almirante).',
+    'tip.4': '🤝 Defina 3 países preferidos no Discord com /country para formar alianças.',
+    'tip.5': '⚔️ Quando seu país perde mais de 50%, o modo contra-ataque dá pixels bônus progressivos (até 6× com 90% perdido).',
+    'tip.6': '🏆 Veja o ranking pelo botão 📊 na barra de ferramentas.',
+    'tip.7': '🌊 O oceano cobre 71% da Terra — mas em PixelAnnex são pixels puros.',
+    'tip.8': '📊 1 pixel colocado = 1 ponto. Conquistar um país = 50 pontos bônus.',
+    'tip.9': '🎖️ Suba 5 patentes: Soldado → Tenente → Capitão → General → Almirante.',
+    'tip.10': '🚨 Países piscam vermelho quando sob cerco (>50% inimigo).',
+    'tip.11': '🛡️ Defenda territórios contestados — perder mais de 50% ativa o bônus progressivo de contra-ataque.',
+    'tip.12': '🌐 O mapa tem ~2.4 milhões de pixels pintáveis em mais de 240 países.',
+    'tip.13': '🎵 Três trilhas musicais: chiptune, clássica e militar. Alterne no HUD de áudio.',
+    'tip.14': '👥 Entre com Discord para salvar progresso e ganhar promoções.',
+    'tip.15': '🏴 O menor país do mapa é o Vaticano — apenas alguns pixels!',
+    'tip.16': '💬 Eventos de guerra, conquistas e alianças são postados no seu servidor Discord.',
   },
   ru: {
     'hud.countries_left':'осталось стран','hud.of_original':'из исходных','tb.reset':'Сброс вида','tb.target':'🎯 Выбрать цель','tb.mypixels':'🔄 Мои пиксели','lb.session':'Сессия','lb.alltime':'За всё время','rank.collectables':'Коллекция','qs.quick':'Быстрая игра (случайная страна)','qs.search':'Поиск стран…','qs.howto':'❔ Как играть','qs.signin':'💬 Войти (необязательно)', // v167
@@ -3098,6 +3083,38 @@ const LANGS = {
     'daily.toast_week_bonus': '+{n} 週間ストリークボーナス',
     'banner.encirclement_static': '包囲',
     'banner.regen': '再生',
+    'stats.signin_prompt': 'Discordでログインして統計を表示。',
+    'stats.title': '📊 統計とリーダーボード',
+    'stats.close': '閉じる ✕',
+    'stats.tab_me': '自分の統計',
+    'stats.tab_lb': 'リーダーボード',
+    'stats.loading': '読込中…',
+    'stats.joined': '{date} に参加',
+    'stats.points': 'ポイント',
+    'stats.pixels_placed': '配置ピクセル',
+    'stats.conquests': '征服数',
+    'stats.bombs_used': '使用爆弾',
+    'stats.top_painted': 'よく塗られた国',
+    'stats.load_error': '統計を読込めません: {err}',
+    'stats.no_players': 'ランク付きプレイヤーがいません — 最初の一人に!',
+    'stats.total_players': '合計 {n} プレイヤー',
+    'stats.lb_load_error': 'リーダーボードを読込めません。',
+    'tip.1': '💡 クリック&ドラッグで移動。スクロールでズーム。',
+    'tip.2': '🎨 どの国でもピクセルを塗れますが、征服には70%の所有が必要です。',
+    'tip.3': '💥 昇進でより大きなボーナス、増援要請、核兵器(提督)が解放されます。',
+    'tip.4': '🤝 Discord で /country を使って3つの国の好みを設定し同盟を組みましょう。',
+    'tip.5': '⚔️ 自国の50%以上を失うと、反撃モードで累進ピクセルボーナス(90%喪失で最大6×)。',
+    'tip.6': '🏆 ツールバーの 📊 ボタンでリーダーボードをチェック。',
+    'tip.7': '🌊 海洋は地球表面の71%を覆っています — でも PixelAnnex では純粋なピクセル。',
+    'tip.8': '📊 1ピクセル = 1ポイント。国を征服 = ボーナス50ポイント。',
+    'tip.9': '🎖️ 5つの階級を上る: 兵士 → 中尉 → 大尉 → 将軍 → 提督。',
+    'tip.10': '🚨 国が包囲されると赤く点滅 (>50%敵が保有)。',
+    'tip.11': '🛡️ 争われた領土を守りましょう — 50%以上失うと累進カウンター攻撃ボーナスが発動。',
+    'tip.12': '🌐 マップには240以上の国に約240万の塗装可能ピクセル。',
+    'tip.13': '🎵 3つの音楽トラック: チップチューン、クラシック、ミリタリー。オーディオHUDで切替。',
+    'tip.14': '👥 Discordでログインして進行状況を保存し、階級昇進を獲得。',
+    'tip.15': '🏴 マップ最小の国はバチカン市国 — わずか数ピクセル!',
+    'tip.16': '💬 戦争イベント、征服、同盟はすべてDiscordサーバーに投稿されます。',
   },
   fr: {
     'hud.countries_left':'pays restants','hud.of_original':"d'origine",'tb.reset':'Réinitialiser la vue','tb.target':'🎯 Choisir la cible','tb.mypixels':'🔄 Mes pixels','lb.session':'Session','lb.alltime':'Historique','rank.collectables':'Objets','qs.quick':'Partie rapide (pays aléatoire)','qs.search':'Rechercher un pays…','qs.howto':'❔ Comment jouer','qs.signin':'💬 Se connecter (facultatif)', // v167
@@ -3185,6 +3202,7 @@ const LANGS = {
     'tip.14': '👥 Connectez-vous avec Discord pour sauvegarder vos progrès et gagner des promotions.',
     'tip.15': '🏴 Le plus petit pays est le Vatican — juste quelques pixels !',
     'tip.16': '💬 Événements de guerre, conquêtes et alliances sont postés sur votre serveur Discord.',
+    'tut.hint_keys_touch': 'Un doigt pour peindre · Deux doigts pour déplacer et zoomer',
   },
   de: {
     'hud.countries_left':'Länder übrig','hud.of_original':'von ursprünglich','tb.reset':'Ansicht zurücksetzen','tb.target':'🎯 Ziel wählen','tb.mypixels':'🔄 Meine Pixel','lb.session':'Sitzung','lb.alltime':'Gesamt','rank.collectables':'Sammelobjekte','qs.quick':'Schnellstart (zufälliges Land)','qs.search':'Länder suchen…','qs.howto':'❔ Spielanleitung','qs.signin':'💬 Anmelden (optional)', // v167
@@ -3273,6 +3291,198 @@ const LANGS = {
     'tip.14': '👥 Melde dich mit Discord an, um deinen Fortschritt zu speichern.',
     'tip.15': '🏴 Das kleinste Land ist Vatikanstadt — nur ein paar Pixel!',
     'tip.16': '💬 Kriegsereignisse, Eroberungen und Allianzen werden auf deinen Discord-Server gepostet.',
+  },
+  ko: {  // v185: Korean — LanaPixel covers Hangul in full (11,172 syllables)
+    'hud.countries_left': '남은 국가',
+    'hud.of_original': '전체 중',
+    'tb.reset': '화면 초기화',
+    'tb.target': '🎯 목표 선택',
+    'tb.mypixels': '🔄 내 픽셀',
+    'lb.session': '세션',
+    'lb.alltime': '전체 기간',
+    'rank.collectables': '수집품',
+    'qs.quick': '무작위 국가로 바로 시작',
+    'qs.search': '국가 검색…',
+    'qs.howto': '❔ 게임 방법',
+    'qs.signin': '💬 로그인 (선택)',
+    'chest.title': '💰 상자 발견!',
+    'chest.body': '보물 상자를 찾았습니다 — <b>+{px}px</b>와 <b>+{pts}점</b>.',
+    'collect.unlocked': '🎒 수집품 획득!',
+    'collect.sub': '국가를 정복하면 해당 아이템을 얻습니다',
+    'collect.collected': '수집됨',
+    'collect.locked': '??? — {country} 정복 필요',
+    'victory.surge': '⚡ 정복 가속 — 60초간 최대 재생!',
+    'pop.conquest': '🏆 정복 ',
+    'enc.reward': '{px} px · +{pts}점 · +{bonus} px 보너스',
+    'tip.until': '정복까지 {n}%',
+    'tip.atrisk': '⚠ 함락 위기!',
+    'repick.title': '⚔️ 당신의 국가가 함락되었습니다',
+    'repick.sub': '국가가 함락되었습니다. 새로운 국가를 선택하세요.',
+    'repick.sub_bonus': '새 국가를 선택하세요. 선택 시 <b style="color:#fbbf24">+{n} 용병 보너스</b>.',
+    'repick.fallen': '함락됨',
+    'exile.title': '🏴 본국 함락 — 망명',
+    'exile.body': '본국이 정복되었지만 전초기지는 건재합니다! <b>본국을 탈환</b>할 때까지 <b>0.5× 재생</b>으로 싸웁니다.',
+    'reclaim.title': '🏛️ 본국 탈환!',
+    'reclaim.body': '본국을 되찾았습니다 — 재생이 완전히 회복되었습니다. 기세를 이어가세요.',
+    'wc.title': '🌍 세계 정복 🌍',
+    'wc.wins': '승리',
+    'wc.restart': '세계 재시작까지',
+    'wc.topc': '🏆 최고 정복자',
+    'wc.topp': '⭐ 최고 플레이어',
+    'wc.topx': '🔥 최고 기여자',
+    'firstenc.title': '🎉 첫 포위 성공!',
+    'firstenc.body': '영토를 포위해 내부를 모두 점령했습니다 — 계속 확장하도록 <b>+50 보너스 픽셀</b>을 드립니다!',
+    'lang.label': '언어',
+    'tut.title': 'PixelAnnex',
+    'tut.welcome_sub': '환영합니다 — 설정을 시작하죠',
+    'tut.stat_players': '플레이어',
+    'tut.stat_conquered': '정복됨',
+    'tut.stat_alliances': '동맹',
+    'tut.tile_paint_title': '픽셀 칠하기',
+    'tut.tile_paint_desc': '지도를 클릭하고 드래그해 칠하세요. 픽셀 1개당 버킷에서 1이 소모됩니다.',
+    'tut.tile_conquer_title': '국가 정복',
+    'tut.tile_conquer_desc': '국가 픽셀의 70~75%를 점유하면 정복합니다 — 작은 국가일수록 더 높은 비율이 필요합니다.',
+    'tut.tile_bombs_title': '핵과 계급',
+    'tut.tile_bombs_desc': '픽셀을 놓을 때마다 XP를 얻습니다. 계급이 오르면 더 큰 보너스, 집결 명령, 핵이 해금됩니다.',
+    'tut.tile_fightback_title': '반격',
+    'tut.tile_fightback_desc': '국가의 50% 이상을 잃으면 자국 영토를 칠할 때 누진 보너스 픽셀을 받습니다 — 많이 잃을수록 보너스가 커집니다.',
+    'tut.hint_keys': '{drag}로 이동 · {scroll}로 확대 · {click}로 칠하기',
+    'tut.key_drag': '드래그',
+    'tut.key_scroll': '스크롤',
+    'tut.key_click': '클릭',
+    'tut.hint_keys_touch': '한 손가락으로 칠하기 · 두 손가락으로 이동 및 확대',
+    'tut.btn_skip': '건너뛰기',
+    'tut.btn_next': '다음 →',
+    'tut.btn_back': '← 뒤로',
+    'tut.btn_pick_country': '국가 선택',
+    'tut.country_intro': '시작할 국가를 선택하세요. 나중에 언제든 변경할 수 있습니다.',
+    'tut.country_search': '국가 검색…',
+    'tut.country_loading': '국가 목록 불러오는 중…',
+    'tut.discord_title': 'Discord 연결',
+    'tut.discord_desc': '로그인하면 <b>계급, 점수, 통계</b>가 저장되고, 국가 선호를 공유해 <b>동맹</b>을 맺으며, <b>매일 로그인 보너스</b>를 받습니다.',
+    'tut.discord_btn': 'Discord로 로그인',
+    'tut.loading_world': '세계 불러오는 중…',
+    'tut.start_btn': '게임 시작',
+    'tut.start_btn_loading': '불러오는 중…',
+    'hud.territory': '영토',
+    'hud.players': '플레이어',
+    'hud.conquered': '정복됨',
+    'hud.alliances': '동맹',
+    'hud.highlight': '강조',
+    'hud.my_pixels': '내 픽셀',
+    'hud.bomb_menu': '폭탄',
+    'hud.bucket': '버킷',
+    'hud.max_rank': '최고 계급',
+    'hud.next_rank': '다음 계급까지 {n} px',
+    'hud.unlock_captain': '계급을 올려 더 좋은 보너스를 받으세요',
+    'hud.sign_in_discord': '로그인',
+    'rank.soldier': '병사',
+    'rank.lieutenant': '중위',
+    'rank.captain': '대위',
+    'rank.general': '장군',
+    'rank.admiral': '제독',
+    'rank.bomb_unlocked': '{bomb} 해금',
+    'rank.bonus_stroke': '강조된 국가 공격 시 획당 +{n} 보너스 px',
+    'banner.encirclement': '포위 {mult} 재생',
+    'banner.enclosed': '{seconds}초 · {pixels} px 포위됨',
+    'banner.fightback': '반격 모드',
+    'banner.fightback_power': '획당 +{n} px',
+    'act.conquest_title': '⚔️ 국가 정복됨',
+    'act.conquest_text': '{attacker}이(가) {defender}을(를) 정복했습니다',
+    'act.reversal_title': '🛡️ 해방',
+    'act.reversal_text': '{country}이(가) {oppressor}로부터 해방되었습니다',
+    'act.encircle_title': '🎯 포위 성공!',
+    'act.encircle_text': '{count} 픽셀 포위 · {seconds}초간 {mult} 재생',
+    'act.fightback_title': '⚔️ 반격 모드',
+    'act.fightback_text': '국가가 포위당했습니다. 자국 영토를 칠하면 보너스를 받습니다.',
+    'act.nuke_title': '☢️ 핵 공격',
+    'act.nuke_text': '폭발 지점 주변에 <b>{seconds}초</b>간 페인트 금지 구역이 활성화됩니다',
+    'act.daily_bonus_title': '🎁 일일 보너스',
+    'act.daily_bonus_text': '버킷에 +{amount} 픽셀이 추가되었습니다',
+    'daily.heading': '다시 오신 것을 환영합니다',
+    'daily.sub_discord': 'Discord로 로그인됨',
+    'daily.sub_no_discord': '로그인 보너스를 받으려면 Discord로 로그인하세요',
+    'daily.bonuses_section': '보너스',
+    'daily.discord_welcome': '🎉 Discord 환영 보너스',
+    'daily.discord_welcome_signin': '🎉 Discord 환영 보너스 (로그인 후 수령)',
+    'daily.daily_login': '📅 일일 로그인',
+    'daily.daily_already': '📅 일일 로그인 (오늘 이미 수령)',
+    'daily.daily_signin': '📅 일일 로그인 (로그인 후 수령)',
+    'daily.streak_bonus': '🔥 주간 연속 보너스 ({days}일)',
+    'daily.streak_signin': '🔥 주간 연속 (로그인 후 수령)',
+    'daily.streak_progress': '🔥 주간 연속 (+150까지 {days}일)',
+    'daily.total_awarded': '총 지급:',
+    'daily.world_section': '세계 현황',
+    'daily.top_countries': '상위 국가',
+    'daily.active': '{n}개 활동 중',
+    'daily.conquered_label': '⚔️ 정복된 국가',
+    'daily.top_players': '상위 플레이어',
+    'daily.online': '{n}명 접속 중',
+    'daily.be_first': '첫 번째가 되어보세요!',
+    'daily.world_unavail': '세계 현황을 불러올 수 없습니다',
+    'daily.enter_world': '세계로 입장',
+    'bomb.mortar': '박격포',
+    'bomb.moab': 'MOAB',
+    'bomb.nuke': '핵',
+    'misc.copied': '복사됨!',
+    'hud.logout': '로그아웃',
+    'hud.sign_in_with_discord': 'Discord로 로그인',
+    'rank.next_rank_inline': '다음: {min}에서 <b>{name}</b>',
+    'rank.pixels_placed': '{n} px 배치됨',
+    'bomb.tooltip': '반경 {radius}px · {cost} 픽셀 소모',
+    'act.your_country_fell_title': '🚨 국가가 함락되었습니다',
+    'act.your_country_fell_text': '<b>{attacker}</b>이(가) 당신의 국가를 정복했습니다!',
+    'act.conquest_event_title': '⚔️ 정복',
+    'act.conquest_event_text': '<b>{attacker}</b>이(가) <b>{defender}</b>을(를) 정복했습니다',
+    'act.victory_title': '🏆 승리!',
+    'act.victory_text': '<b>{defender}</b>을(를) 정복했습니다!',
+    'act.under_attack_title': '⚠️ 공격받는 중',
+    'act.fighting_back_title': '⚔️ 반격 중',
+    'act.being_targeted': '{country}이(가) 표적이 되었습니다',
+    'act.fighting_back_msg': '{country}이(가) 반격하고 있습니다!',
+    'act.bomb_cooldown_title': '⏱️ 폭탄 재사용 대기',
+    'act.bomb_cooldown_text': '다음 폭탄까지 <b>{seconds}초</b>',
+    'act.encircle_enclosed_html': '<b>{pixels}px</b>를 포위했습니다 — {seconds}초간 <b>{mult}</b> 재생',
+    'fightback.banner_pct': '반격 · {pct}% 상실',
+    'fightback.power_brush': '획당 +4 px · {brush} 브러시',
+    'daily.toast_title': '🌅 일일 로그인',
+    'daily.toast_amount': '+{amount} 픽셀',
+    'daily.toast_streak': '{days}일 연속',
+    'daily.toast_week_bonus': '+{n} 주간 연속 보너스',
+    'banner.encirclement_static': '포위',
+    'banner.regen': '재생',
+    'stats.signin_prompt': '통계를 보려면 Discord로 로그인하세요.',
+    'stats.title': '📊 통계 및 순위표',
+    'stats.close': '닫기 ✕',
+    'stats.tab_me': '내 통계',
+    'stats.tab_lb': '순위표',
+    'stats.loading': '불러오는 중…',
+    'stats.joined': '{date} 가입',
+    'stats.points': '점수',
+    'stats.pixels_placed': '배치한 픽셀',
+    'stats.conquests': '정복',
+    'stats.bombs_used': '사용한 폭탄',
+    'stats.top_painted': '가장 많이 칠한 국가',
+    'stats.load_error': '통계를 불러올 수 없습니다: {err}',
+    'stats.no_players': '아직 순위에 오른 플레이어가 없습니다 — 첫 번째가 되어보세요!',
+    'stats.total_players': '총 {n}명의 플레이어',
+    'stats.lb_load_error': '순위표를 불러올 수 없습니다.',
+    'tip.1': '💡 클릭하고 드래그해 이동하세요. 스크롤로 확대/축소합니다.',
+    'tip.2': '🎨 어느 국가에나 픽셀을 칠할 수 있지만, 정복하려면 70%를 점유해야 합니다.',
+    'tip.3': '💥 계급을 올려 더 큰 보너스, 집결 명령, 핵(제독)을 해금하세요.',
+    'tip.4': '🤝 Discord에서 /country로 선호 국가 3곳을 설정해 동맹을 맺으세요.',
+    'tip.5': '⚔️ 국가의 50% 이상을 잃으면 반격 모드가 누진 보너스 픽셀을 제공합니다 (90% 상실 시 최대 6×).',
+    'tip.6': '🏆 툴바의 📊 버튼으로 순위표를 확인하세요.',
+    'tip.7': '🌊 바다는 지구 표면의 71%를 덮고 있습니다 — 하지만 PixelAnnex에서는 순수한 픽셀입니다.',
+    'tip.8': '📊 픽셀 1개 = 1점. 국가 정복 = 보너스 50점.',
+    'tip.9': '🎖️ 5단계 계급: 병사 → 중위 → 대위 → 장군 → 제독.',
+    'tip.10': '🚨 포위당한 국가는 빨간색으로 깜박입니다 (적이 50% 이상 점유하고 공격 중일 때).',
+    'tip.11': '🛡️ 분쟁 지역을 방어하세요 — 국가의 50% 이상을 잃으면 누진 반격 보너스가 활성화됩니다.',
+    'tip.12': '🌐 지도에는 240개 이상의 국가에 걸쳐 약 240만 개의 칠할 수 있는 픽셀이 있습니다.',
+    'tip.13': '🎵 세 가지 음악 트랙: 칩튠, 클래식, 군악. 오디오 HUD에서 전환하세요.',
+    'tip.14': '👥 Discord로 로그인해 진행 상황을 저장하고 계급 승진을 받으세요.',
+    'tip.15': '🏴 지도에서 가장 작은 국가는 바티칸 시국입니다 — 겨우 몇 픽셀!',
+    'tip.16': '💬 전쟁 이벤트, 정복, 동맹은 모두 Discord 서버에 게시됩니다.',
   },
 };
 
@@ -4167,7 +4377,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-08-25-v184a';
+const CODE_VERSION = '2026-08-31-v185';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -16421,6 +16631,8 @@ function _showMonsterBanner(type) {
           ·
           <a href="https://pixelannex.com" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none;">pixelannex.com</a>
         </div>
+        <!-- v185: LanaPixel is CC BY 4.0 - attribution is a licence condition -->
+        <div style="margin-top:10px;font-size:9px;color:#475569;">Font: <a href="https://opengameart.org/content/lanapixel-localization-friendly-pixel-font" target="_blank" rel="noopener" style="color:#64748b;text-decoration:none;">LanaPixel</a> by Lana Ro (CC BY 4.0)</div>
         <div style="margin-top:18px;"><a href="https://www.prettyneatpixels.com" target="_blank" rel="noopener" style="display:inline-block;"><img src="/PrettyNeatLogo512.png" alt="Pretty Neat Pixels" style="width:160px;max-width:60%;image-rendering:pixelated;"></a></div>
       </div>
     </div>
