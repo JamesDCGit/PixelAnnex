@@ -1532,7 +1532,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 #flag-overlay .pa-flag-label {
   position: absolute;
   top: 0; left: 0;
-  font: 700 var(--pa-flag-label-size, 9px)/1 "Courier New", monospace;
+  font: 700 var(--pa-flag-label-size, 9px)/1 'LanaPixel', "Courier New", monospace;
   color: #fff;
   text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 1px #000;
   white-space: nowrap;
@@ -1566,7 +1566,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 #flag-overlay .pa-flag-shield {
   position: absolute;
   top: 0; left: 0;
-  font: 700 9px/1 "Courier New", monospace;
+  font: 700 9px/1 'LanaPixel', "Courier New", monospace;
   color: #fbbf24;
   text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 1px #000;
   white-space: nowrap;
@@ -4377,7 +4377,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-08-31-v185';
+const CODE_VERSION = '2026-08-31-v185a';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4670,7 +4670,7 @@ function drawNukeZoneOverlay() {
       const secs = Math.ceil(remaining / 1000);
       const mm = Math.floor(secs / 60), ss = secs % 60;
       const txt = mm + ':' + (ss < 10 ? '0' : '') + ss;
-      nukeCtx.font = '700 9px "Courier New", monospace';
+      nukeCtx.font = '700 9px LanaPixel, "Courier New", monospace';
       nukeCtx.textAlign = 'center';
       nukeCtx.textBaseline = 'bottom';
       const ty = z.cy - z.radius - 2;
@@ -14227,7 +14227,7 @@ function openCollectables() {
   const overlay = document.createElement('div');
   overlay.id = 'collect-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(7,13,26,0.94);' +
-    'font-family:"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
+    'font-family:LanaPixel,"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
   overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
   const card = document.createElement('div');
   card.style.cssText = 'background:#101b2e;border:2px solid var(--px-ink);border-radius:0;width:min(560px,94vw);' +
@@ -15985,7 +15985,7 @@ function _showWorldConquestOverlay(data) {
   // pointer-events:auto on the full-screen overlay swallows all map input (paint lock
   // UI-side); the middle is transparent so the conquered world stays visible.
   overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;background:transparent;pointer-events:auto;' +
-    'color:#fbbf24;font-family:"Courier New",monospace;display:flex;flex-direction:column;justify-content:space-between;';
+    'color:#fbbf24;font-family:LanaPixel,"Courier New",monospace;display:flex;flex-direction:column;justify-content:space-between;';
   overlay.innerHTML =
     // ── top banner ──
     '<div style="background:rgba(7,13,26,0.92);border-bottom:3px solid var(--px-ink);padding:12px 16px;text-align:center;box-shadow:inset 0 2px 0 rgba(255,255,255,.08);">' +
@@ -16107,7 +16107,7 @@ function _showCountryRepickModal(data) {
   const overlay = document.createElement('div');
   overlay.id = 'repick-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(7,13,26,0.94);' +
-    'font-family:"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
+    'font-family:LanaPixel,"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
   // v153: welcome-screen-style picker (matches #tutorial-box + the qs curated grid +
   // searchable list), replacing the bespoke red grid.
   const card = document.createElement('div');
@@ -16575,7 +16575,7 @@ function _showMonsterBanner(type) {
   else if (type === 'godzilla') bannerBg = 'rgba(20,80,20,0.94)';
   banner.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:120;' +
     'background:' + bannerBg + ';' +
-    'color:#fff;padding:8px 16px;border-radius:6px;font-family:"Courier New",monospace;' +
+    'color:#fff;padding:8px 16px;border-radius:6px;font-family:LanaPixel,"Courier New",monospace;' +
     'font-size:13px;letter-spacing:.04em;box-shadow:0 4px 12px rgba(0,0,0,0.4);' +
     'animation:monsterBannerFade 6s ease-out forwards;';
   banner.textContent = (type === 'ufo')      ? '🛸 UFO sighting! Pixels are being abducted.'
