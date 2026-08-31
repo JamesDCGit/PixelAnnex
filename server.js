@@ -7114,13 +7114,30 @@ const httpServer = http.createServer(async (req, res) => {
     const _shareM = url.pathname.match(/^\/share(?:\/war-(\d+))?$/);
     if (_shareM) {
       const wn = _shareM[1] || String(_warNumber);
+      // v190: these are SOCIAL-PREVIEW pages (they exist to serve og:image when a
+      // war link is shared), not articles. Two problems fixed here:
+      //  1. Any \d+ used to return 200 — /share/war-99 rendered fine for a war
+      //     that never happened, so a crawler could walk an UNBOUNDED set of
+      //     near-identical 53-word pages. Now anything outside 1..current 404s.
+      //  2. They were indexable and self-canonical, so that set looked like thin
+      //     scaled content to a reviewer — a plausible contributor to the AdSense
+      //     "low value content" verdict. They are noindex now; social crawlers
+      //     (Twitter/Discord/Facebook) read og: tags regardless of noindex.
+      const wnNum = parseInt(wn, 10);
+      if (!(wnNum >= 1 && wnNum <= _warNumber)) {
+        res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<!DOCTYPE html><meta charset="utf-8"><title>Not found</title>' +
+                '<p>No such war. <a href="/">Play PixelAnnex</a></p>');
+        return;
+      }
       let shot = null;
       try { shot = makeWorldShot(); } catch (e) {}
       const img = shot ? (SITE_URL + shot) : (SITE_URL + '/PixelAnnexHero.jpg');
       const stats = _playableCountryStats();
       const title = 'PixelAnnex War #' + wn + ' — World Map';
       const desc = stats.standing + ' of ' + stats.total + ' nations still stand. Join the war and claim pixels for your country.';
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache',
+                           'X-Robots-Tag': 'noindex, nofollow' });
       res.end(_seoPage(title, desc,
         '<h1>PixelAnnex War #' + wn + '</h1>' +
         (shot ? '<img src="' + shot + '" alt="PixelAnnex War #' + wn + ' world map" style="width:100%;border:2px solid #14100a;">' : '') +
