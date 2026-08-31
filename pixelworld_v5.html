@@ -37,32 +37,64 @@
 <script defer src="https://cloud.umami.is/script.js" data-website-id="22da671f-a784-43f5-bb39-fe5b9ea10d5d"></script>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23070d1a'/%3E%3Crect x='6' y='8' width='4' height='4' fill='%2360a5fa'/%3E%3Crect x='12' y='6' width='4' height='4' fill='%23818cf8'/%3E%3Crect x='18' y='8' width='4' height='4' fill='%23a78bfa'/%3E%3Crect x='4' y='14' width='4' height='4' fill='%2334d399'/%3E%3Crect x='10' y='14' width='4' height='4' fill='%23fbbf24'/%3E%3Crect x='16' y='14' width='4' height='4' fill='%23f87171'/%3E%3Crect x='22' y='14' width='4' height='4' fill='%23fb923c'/%3E%3Crect x='6' y='20' width='4' height='4' fill='%23ec4899'/%3E%3Crect x='12' y='20' width='4' height='4' fill='%2306b6d4'/%3E%3Crect x='18' y='20' width='4' height='4' fill='%2384cc16'/%3E%3C/svg%3E"/>
 <style>
-/* ── v187: PixelUI = LanaPixel (CC BY 4.0, Lana Ro), split by unicode-range so a
-   browser fetches only the scripts on screen: latin 10.5KB / cjk 199KB / hangul
-   105KB. Ark Pixel was trialled in v186 but reverted — it has NO Hangul at all
-   (its "ko" build is Korean Hanja variants), and its CJK subset was 3x larger.
-   LanaPixel is drawn on an 11px grid, so it is only crisp at 11px — see
-   --pa-text below, which keeps rendered text on that grid through the UI zoom.
-   Arabic + Devanagari are absent by design (they need contextual joining /
-   conjunct GSUB lookups a bitmap font cannot carry) and fall through to
-   'Courier New'/system, which shapes them correctly. */
-@font-face{font-family:'PixelUI';font-style:normal;font-weight:400;font-display:swap;
-  src:url('/fonts/lanapixel-latin.woff2') format('woff2');
-  unicode-range:U+0020-007E,U+00A0-00FF,U+0100-017F,U+0180-024F,U+0370-03FF,U+0400-04FF,U+2000-206F,U+2190-21FF,U+25A0-25FF,U+2600-26FF;}
-@font-face{font-family:'PixelUI';font-style:normal;font-weight:400;font-display:swap;
-  src:url('/fonts/lanapixel-cjk.woff2') format('woff2');
-  unicode-range:U+3000-303F,U+3040-309F,U+30A0-30FF,U+3400-4DBF,U+4E00-9FFF,U+FF00-FFEF;}
-@font-face{font-family:'PixelUI';font-style:normal;font-weight:400;font-display:swap;
-  src:url('/fonts/lanapixel-hangul.woff2') format('woff2');
-  unicode-range:U+AC00-D7A3;}
-/* v187: rendered text size, kept on LanaPixel's 11px grid. _applyFontScale sets
-   this to 11/zoom so the panel zoom multiplies it back to exactly 11px. */
-:root{--pa-text:9.1667px;--pa-text-lg:18.3333px;}
+/* ── v189: IBM Plex Sans (OFL 1.1, IBM) — self-hosted woff2 subsets.
+   Replaces the LanaPixel pixel face, which could not be made legible at this
+   UI's sizes: it is drawn on an 11px grid, and it ships a SINGLE weight, so the
+   ~300 bold declarations in this file were being synthesised (1px stems smeared).
+   Plex is drawn for UI/code at small sizes and has REAL 400/700 weights, so bold
+   is now genuine rather than faked.
+   Self-hosted rather than CDN-linked to keep the game free of third-party font
+   requests (and out of the Google Fonts privacy question); OFL permits it.
+   Split by unicode-range, so a player downloads only the scripts on screen —
+   ~89KB for Latin 400+700, and nothing else unless their locale needs it.
+   Arabic and Devanagari now get a MATCHING face with proper shaping, which no
+   pixel font could provide. CJK + Hangul have no Plex subset here and fall
+   through to the system sans, which every platform ships a good face for. */
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:400;font-display:swap;
+  src:url('/fonts/plex-cyrillic-400.woff2') format('woff2');
+  unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;}
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:400;font-display:swap;
+  src:url('/fonts/plex-greek-400.woff2') format('woff2');
+  unicode-range:U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;}
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:400;font-display:swap;
+  src:url('/fonts/plex-latin-ext-400.woff2') format('woff2');
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;}
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:400;font-display:swap;
+  src:url('/fonts/plex-latin-400.woff2') format('woff2');
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:700;font-display:swap;
+  src:url('/fonts/plex-cyrillic-700.woff2') format('woff2');
+  unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;}
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:700;font-display:swap;
+  src:url('/fonts/plex-greek-700.woff2') format('woff2');
+  unicode-range:U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;}
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:700;font-display:swap;
+  src:url('/fonts/plex-latin-ext-700.woff2') format('woff2');
+  unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;}
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:700;font-display:swap;
+  src:url('/fonts/plex-latin-700.woff2') format('woff2');
+  unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:400;font-display:swap;
+  src:url('/fonts/plex-ar-arabic-400.woff2') format('woff2');
+  unicode-range:U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC, U+102E0-102FB, U+10E60-10E7E, U+10EC2-10EC4, U+10EFC-10EFF, U+1EE00-1EE03, U+1EE05-1EE1F, U+1EE21-1EE22, U+1EE24, U+1EE27, U+1EE29-1EE32, U+1EE34-1EE37, U+1EE39, U+1EE3B, U+1EE42, U+1EE47, U+1EE49, U+1EE4B, U+1EE4D-1EE4F, U+1EE51-1EE52, U+1EE54, U+1EE57, U+1EE59, U+1EE5B, U+1EE5D, U+1EE5F, U+1EE61-1EE62, U+1EE64, U+1EE67-1EE6A, U+1EE6C-1EE72, U+1EE74-1EE77, U+1EE79-1EE7C, U+1EE7E, U+1EE80-1EE89, U+1EE8B-1EE9B, U+1EEA1-1EEA3, U+1EEA5-1EEA9, U+1EEAB-1EEBB, U+1EEF0-1EEF1;}
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:700;font-display:swap;
+  src:url('/fonts/plex-ar-arabic-700.woff2') format('woff2');
+  unicode-range:U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC, U+102E0-102FB, U+10E60-10E7E, U+10EC2-10EC4, U+10EFC-10EFF, U+1EE00-1EE03, U+1EE05-1EE1F, U+1EE21-1EE22, U+1EE24, U+1EE27, U+1EE29-1EE32, U+1EE34-1EE37, U+1EE39, U+1EE3B, U+1EE42, U+1EE47, U+1EE49, U+1EE4B, U+1EE4D-1EE4F, U+1EE51-1EE52, U+1EE54, U+1EE57, U+1EE59, U+1EE5B, U+1EE5D, U+1EE5F, U+1EE61-1EE62, U+1EE64, U+1EE67-1EE6A, U+1EE6C-1EE72, U+1EE74-1EE77, U+1EE79-1EE7C, U+1EE7E, U+1EE80-1EE89, U+1EE8B-1EE9B, U+1EEA1-1EEA3, U+1EEA5-1EEA9, U+1EEAB-1EEBB, U+1EEF0-1EEF1;}
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:400;font-display:swap;
+  src:url('/fonts/plex-hi-devanagari-400.woff2') format('woff2');
+  unicode-range:U+0900-097F, U+1CD0-1CF9, U+200C-200D, U+20A8, U+20B9, U+20F0, U+25CC, U+A830-A839, U+A8E0-A8FF, U+11B00-11B09;}
+@font-face{font-family:'PlexUI';font-style:normal;font-weight:700;font-display:swap;
+  src:url('/fonts/plex-hi-devanagari-700.woff2') format('woff2');
+  unicode-range:U+0900-097F, U+1CD0-1CF9, U+200C-200D, U+20A8, U+20B9, U+20F0, U+25CC, U+A830-A839, U+A8E0-A8FF, U+11B00-11B09;}
+/* v189: Plex is not bound to a pixel grid, so text scales with the UI zoom
+   again (v187 had to pin it to 11px to stay on LanaPixel's grid, which
+   disabled the font-scale button for text). */
+:root{--pa-text:11px;--pa-text-lg:18px;}
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 /* ── Font scale applied via JS zoom on UI containers ── */
-body{width:100%;height:100%;overflow:hidden;background:#070d1a;font-family:'PixelUI','Courier New',monospace;font-size:var(--pa-text)}
+body{width:100%;height:100%;overflow:hidden;background:#070d1a;font-family:'PlexUI',system-ui,sans-serif;font-size:var(--pa-text)}
 #app{display:flex;flex-direction:column;width:100vw;height:100vh}
 #main{display:flex;flex-direction:row;flex:1;overflow:hidden;min-height:0}
 #toolbar{display:flex;align-items:center;gap:8px;padding:4px 10px;flex-shrink:0;background:#0c1526;border-bottom:2px solid var(--px-ink);flex-wrap:wrap;z-index:20;min-height:36px;}/* v165: tightened to the button height */
@@ -240,7 +272,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   background:rgba(0,0,0,0.92);
   display:flex;align-items:center;justify-content:center;
   opacity:0;transition:opacity .5s;
-  font-family:'PixelUI','Courier New',monospace;
+  font-family:'PlexUI',system-ui,sans-serif;
 }
 #world-conquest-modal.wcm-visible{opacity:1;}
 #wcm-inner{
@@ -487,7 +519,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   display:none; position:fixed; inset:0;
   background:rgba(8,12,20,0.92); backdrop-filter:blur(6px);
   z-index:2000; align-items:center; justify-content:center;
-  font-family:'PixelUI','Courier New',monospace;
+  font-family:'PlexUI',system-ui,sans-serif;
 }
 #daily-popup-overlay.open{display:flex;}
 #daily-popup-card{
@@ -551,7 +583,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   animation:ctaPulse 1.6s ease-in-out infinite; /* v99a: CTA pulse */
   display:block; width:100%; margin-top:6px; padding:12px;
   background:linear-gradient(135deg,#3b82f6,#1d4ed8);
-  border:none; color:#fff; font-family:'PixelUI','Courier New',monospace;
+  border:none; color:#fff; font-family:'PlexUI',system-ui,sans-serif;
   font-size:var(--pa-text-lg); font-weight:700; letter-spacing:.1em; text-transform:uppercase;
   border-radius:8px; cursor:pointer;
 }
@@ -582,7 +614,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #tutorial-overlay{
   position:fixed;inset:0;background:rgba(7,13,26,0.78);z-index:9999;
   display:none;align-items:center;justify-content:center;
-  font-family:'PixelUI','Courier New',monospace;color:#cbd5e1;
+  font-family:'PlexUI',system-ui,sans-serif;color:#cbd5e1;
   backdrop-filter:blur(2px);
 }
 #tutorial-overlay.open{display:flex;}
@@ -749,7 +781,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   background:rgba(13,22,38,.90);
   border:2px solid var(--px-ink);border-radius:0;/* v166: arcade-chunky */
   padding:6px 14px;z-index:50;
-  font-family:'PixelUI','Courier New',monospace;
+  font-family:'PlexUI',system-ui,sans-serif;
   clip-path:var(--px-clip);
   box-shadow:inset 2px 2px 0 rgba(255,255,255,.09),inset -2px -2px 0 rgba(0,0,0,.35);
   pointer-events:none;
@@ -772,7 +804,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* ── Encirclement burst effect (centred over enclosed area) ── */
 .encircle-burst{
   position:absolute;pointer-events:none;
-  font-family:'PixelUI','Courier New',monospace;
+  font-family:'PlexUI',system-ui,sans-serif;
   font-weight:700;color:#fff;
   z-index:130;
   text-align:center;
@@ -873,7 +905,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #stats-modal{
   background:#101b2e;border:2px solid var(--px-ink);border-radius:0;/* v162: arcade-chunky */
   width:min(720px, 92vw);height:min(640px, 88vh);max-height:88vh;overflow-y:auto;/* v165: FIXED height — the modal no longer resizes when tabbing leaderboard/about/terms */
-  padding:24px;font-family:'PixelUI','Courier New',monospace;color:#cbd5e1;
+  padding:24px;font-family:'PlexUI',system-ui,sans-serif;color:#cbd5e1;
   clip-path:var(--px-clip);
   box-shadow:inset 2px 2px 0 rgba(255,255,255,.10), inset -2px -2px 0 rgba(0,0,0,.40);
 }
@@ -1007,7 +1039,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* v113: combined-GDP odometer — bold white, fixed-width 15-digit field */
 .rank-gdp{display:flex;align-items:baseline;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.07);}
 .rank-gdp .gdp-label{font-size:var(--pa-text);letter-spacing:.12em;color:#64748b;text-transform:uppercase;}
-.rank-gdp #gdp-value{font-family:'PixelUI','Courier New',monospace;font-weight:700;color:#ffffff;font-size:var(--pa-text);letter-spacing:.02em;white-space:nowrap;}
+.rank-gdp #gdp-value{font-family:'PlexUI',system-ui,sans-serif;font-weight:700;color:#ffffff;font-size:var(--pa-text);letter-spacing:.02em;white-space:nowrap;}
 .rank-gdp #gdp-value .gdp-dim{color:#33415580;font-weight:700;}
 .rank-bomb{color:#f87171;font-size:var(--pa-text);margin-top:2px;}
 .rank-bonus{color:#22c55e;font-size:var(--pa-text);margin-top:1px;}
@@ -1339,7 +1371,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   z-index: 100000;
   background: linear-gradient(135deg, #070d1a 0%, #0c1526 50%, #0a1020 100%);
   color: #e2e8f0;
-  font-family: 'PixelUI','Courier New',monospace;
+  font-family: 'PlexUI',system-ui,sans-serif;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   box-sizing: border-box;
   overflow-y: auto;
@@ -1454,7 +1486,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   padding: 4px 10px;
   border-radius: 4px;
   font-size:var(--pa-text);
-  font-family: 'PixelUI','Courier New',monospace;
+  font-family: 'PlexUI',system-ui,sans-serif;
   letter-spacing: .04em;
   cursor: pointer;
   text-decoration: none;
@@ -1540,7 +1572,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   /* v188: 400, not 700. LanaPixel ships ONE weight, so 700 made the browser
      synthesise bold by smearing 1px stems - the main reason map country names
      read as mush. font-synthesis:none is belt-and-braces. */
-  font: 400 var(--pa-flag-label-size, 11px)/1 'PixelUI', "Courier New", monospace;
+  font: 400 var(--pa-flag-label-size, 11px)/1 'PlexUI', system-ui, sans-serif;
   font-synthesis: none;
   color: #fff;
   text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 1px #000;
@@ -1575,7 +1607,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 #flag-overlay .pa-flag-shield {
   position: absolute;
   top: 0; left: 0;
-  font: 700 9px/1 'PixelUI', "Courier New", monospace;
+  font: 700 9px/1 'PlexUI', system-ui, sans-serif;
   color: #fbbf24;
   text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 1px #000;
   white-space: nowrap;
@@ -2308,7 +2340,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 <!-- v60: Admin debug panel — toggle with Ctrl+Shift+D -->
 <div id="admin-debug-panel" style="display:none;position:fixed;bottom:70px;right:16px;z-index:9999;
   background:#0d1117;border:1px solid rgba(239,68,68,.5);border-radius:8px;
-  padding:12px 16px;min-width:260px;font-family:'PixelUI','Courier New',monospace;font-size:var(--pa-text);color:#e2e8f0;
+  padding:12px 16px;min-width:260px;font-family:'PlexUI',system-ui,sans-serif;font-size:var(--pa-text);color:#e2e8f0;
   box-shadow:0 4px 24px rgba(0,0,0,.7);">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
     <span style="color:#f87171;font-weight:700;letter-spacing:.06em;">🔧 ADMIN DEBUG</span>
@@ -4386,7 +4418,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-08-31-v188';
+const CODE_VERSION = '2026-08-31-v189';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4679,7 +4711,7 @@ function drawNukeZoneOverlay() {
       const secs = Math.ceil(remaining / 1000);
       const mm = Math.floor(secs / 60), ss = secs % 60;
       const txt = mm + ':' + (ss < 10 ? '0' : '') + ss;
-      nukeCtx.font = '700 9px PixelUI, "Courier New", monospace';
+      nukeCtx.font = '700 11px PlexUI, system-ui, sans-serif';
       nukeCtx.textAlign = 'center';
       nukeCtx.textBaseline = 'bottom';
       const ty = z.cy - z.radius - 2;
@@ -10788,13 +10820,10 @@ function _applyFontScale(){
   // `zoom`, so declaring 11/zoom makes the browser paint exactly 11px (and
   // 22px for large text) whatever scale the player picks.
   const z = parseFloat(zoom) || 1;
-  const root = document.documentElement.style;
-  root.setProperty('--pa-text',    (11/z).toFixed(4)+'px');
-  root.setProperty('--pa-text-lg', (22/z).toFixed(4)+'px');
   const fo = document.getElementById('flag-overlay');
   // #flag-overlay is NOT zoomed (its children are transform-positioned in
   // screen px), so the label takes the grid size directly.
-  if(fo) fo.style.setProperty('--pa-flag-label-size', '11px');
+  if(fo) fo.style.setProperty('--pa-flag-label-size', (10*z).toFixed(1)+'px');
   // v108: hover tooltip (#tip) can't be zoomed (pinned to cursor) — scale its font
   // via a CSS variable instead so it obeys the global font setting.
   const tipEl = document.getElementById('tip');
@@ -14245,7 +14274,7 @@ function openCollectables() {
   const overlay = document.createElement('div');
   overlay.id = 'collect-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(7,13,26,0.94);' +
-    'font-family:PixelUI,"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
+    'font-family:PlexUI,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:20px;';
   overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
   const card = document.createElement('div');
   card.style.cssText = 'background:#101b2e;border:2px solid var(--px-ink);border-radius:0;width:min(560px,94vw);' +
@@ -16003,7 +16032,7 @@ function _showWorldConquestOverlay(data) {
   // pointer-events:auto on the full-screen overlay swallows all map input (paint lock
   // UI-side); the middle is transparent so the conquered world stays visible.
   overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;background:transparent;pointer-events:auto;' +
-    'color:#fbbf24;font-family:PixelUI,"Courier New",monospace;display:flex;flex-direction:column;justify-content:space-between;';
+    'color:#fbbf24;font-family:PlexUI,system-ui,sans-serif;display:flex;flex-direction:column;justify-content:space-between;';
   overlay.innerHTML =
     // ── top banner ──
     '<div style="background:rgba(7,13,26,0.92);border-bottom:3px solid var(--px-ink);padding:12px 16px;text-align:center;box-shadow:inset 0 2px 0 rgba(255,255,255,.08);">' +
@@ -16125,7 +16154,7 @@ function _showCountryRepickModal(data) {
   const overlay = document.createElement('div');
   overlay.id = 'repick-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(7,13,26,0.94);' +
-    'font-family:PixelUI,"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
+    'font-family:PlexUI,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:20px;';
   // v153: welcome-screen-style picker (matches #tutorial-box + the qs curated grid +
   // searchable list), replacing the bespoke red grid.
   const card = document.createElement('div');
@@ -16593,7 +16622,7 @@ function _showMonsterBanner(type) {
   else if (type === 'godzilla') bannerBg = 'rgba(20,80,20,0.94)';
   banner.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:120;' +
     'background:' + bannerBg + ';' +
-    'color:#fff;padding:8px 16px;border-radius:6px;font-family:PixelUI,"Courier New",monospace;' +
+    'color:#fff;padding:8px 16px;border-radius:6px;font-family:PlexUI,system-ui,sans-serif;' +
     'font-size:var(--pa-text);letter-spacing:.04em;box-shadow:0 4px 12px rgba(0,0,0,0.4);' +
     'animation:monsterBannerFade 6s ease-out forwards;';
   banner.textContent = (type === 'ufo')      ? '🛸 UFO sighting! Pixels are being abducted.'
@@ -16650,7 +16679,7 @@ function _showMonsterBanner(type) {
           <a href="https://pixelannex.com" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none;">pixelannex.com</a>
         </div>
         <!-- v185: LanaPixel is CC BY 4.0 - attribution is a licence condition -->
-        <div style="margin-top:10px;font-size:var(--pa-text);color:#475569;line-height:1.6;">Fonts: <a href="https://github.com/TakWolf/ark-pixel-font" target="_blank" rel="noopener" style="color:#64748b;text-decoration:none;">Ark Pixel</a> by TakWolf (OFL 1.1) &middot; <a href="https://opengameart.org/content/lanapixel-localization-friendly-pixel-font" target="_blank" rel="noopener" style="color:#64748b;text-decoration:none;">LanaPixel</a> by Lana Ro (CC BY 4.0)</div>
+        <div style="margin-top:10px;font-size:var(--pa-text);color:#475569;line-height:1.6;">Font: <a href="https://github.com/IBM/plex" target="_blank" rel="noopener" style="color:#64748b;text-decoration:none;">IBM Plex Sans</a> by IBM (OFL 1.1)</div>
         <div style="margin-top:18px;"><a href="https://www.prettyneatpixels.com" target="_blank" rel="noopener" style="display:inline-block;"><img src="/PrettyNeatLogo512.png" alt="Pretty Neat Pixels" style="width:160px;max-width:60%;image-rendering:pixelated;"></a></div>
       </div>
     </div>
