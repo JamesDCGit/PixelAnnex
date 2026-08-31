@@ -37,27 +37,35 @@
 <script defer src="https://cloud.umami.is/script.js" data-website-id="22da671f-a784-43f5-bb39-fe5b9ea10d5d"></script>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23070d1a'/%3E%3Crect x='6' y='8' width='4' height='4' fill='%2360a5fa'/%3E%3Crect x='12' y='6' width='4' height='4' fill='%23818cf8'/%3E%3Crect x='18' y='8' width='4' height='4' fill='%23a78bfa'/%3E%3Crect x='4' y='14' width='4' height='4' fill='%2334d399'/%3E%3Crect x='10' y='14' width='4' height='4' fill='%23fbbf24'/%3E%3Crect x='16' y='14' width='4' height='4' fill='%23f87171'/%3E%3Crect x='22' y='14' width='4' height='4' fill='%23fb923c'/%3E%3Crect x='6' y='20' width='4' height='4' fill='%23ec4899'/%3E%3Crect x='12' y='20' width='4' height='4' fill='%2306b6d4'/%3E%3Crect x='18' y='20' width='4' height='4' fill='%2384cc16'/%3E%3C/svg%3E"/>
 <style>
-/* ── v185: LanaPixel (CC BY 4.0, Lana Ro) — localization-friendly pixel font ──
-   Split into three woff2 subsets keyed by unicode-range so a browser downloads
-   ONLY the scripts on screen: latin+greek+cyrillic is 10.5KB (what almost every
-   player gets), CJK 199KB and Hangul 105KB arrive only for zh/ja/ko. The full
-   font is 3MB — shipping it whole would have cost more than the entire client.
-   Arabic and Devanagari are absent from LanaPixel by design, so ar/hi fall
-   through to 'Courier New'/system, which shapes those scripts correctly. */
-@font-face{font-family:'LanaPixel';font-style:normal;font-weight:400;font-display:swap;
-  src:url('/fonts/lanapixel-latin.woff2') format('woff2');
+/* ── v186: PixelUI — one logical family composed from the best pixel font per
+   script, because no single open pixel font covers everything this game needs.
+     Latin/Greek/Cyrillic + CJK : Ark Pixel 12px proportional (OFL 1.1, TakWolf)
+                                  — designed on a 12px grid (upm 1200 = 100
+                                  units/px), so it is CRISP at 12px/24px, unlike
+                                  LanaPixel's 11px grid which never landed on a
+                                  whole pixel at our UI sizes.
+     Hangul                     : LanaPixel (CC BY 4.0, Lana Ro) — Ark Pixel has
+                                  NO Hangul at all (its "ko" build is Korean
+                                  Hanja variants), so Korean would otherwise lose
+                                  the pixel face entirely.
+   Arabic + Devanagari are in neither font by design: they need contextual
+   joining / conjunct GSUB lookups that bitmap-style fonts don't carry, so they
+   fall through to 'Courier New'/system, which shapes them correctly.
+   Split by unicode-range so a browser fetches only the scripts on screen. */
+@font-face{font-family:'PixelUI';font-style:normal;font-weight:400;font-display:swap;
+  src:url('/fonts/arkpixel-latin.woff2') format('woff2');
   unicode-range:U+0020-007E,U+00A0-00FF,U+0100-017F,U+0180-024F,U+0370-03FF,U+0400-04FF,U+2000-206F,U+2190-21FF,U+25A0-25FF,U+2600-26FF;}
-@font-face{font-family:'LanaPixel';font-style:normal;font-weight:400;font-display:swap;
-  src:url('/fonts/lanapixel-cjk.woff2') format('woff2');
+@font-face{font-family:'PixelUI';font-style:normal;font-weight:400;font-display:swap;
+  src:url('/fonts/arkpixel-cjk.woff2') format('woff2');
   unicode-range:U+3000-303F,U+3040-309F,U+30A0-30FF,U+3400-4DBF,U+4E00-9FFF,U+FF00-FFEF;}
-@font-face{font-family:'LanaPixel';font-style:normal;font-weight:400;font-display:swap;
+@font-face{font-family:'PixelUI';font-style:normal;font-weight:400;font-display:swap;
   src:url('/fonts/lanapixel-hangul.woff2') format('woff2');
   unicode-range:U+AC00-D7A3;}
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 /* ── Font scale applied via JS zoom on UI containers ── */
-body{width:100%;height:100%;overflow:hidden;background:#070d1a;font-family:'LanaPixel','Courier New',monospace}
+body{width:100%;height:100%;overflow:hidden;background:#070d1a;font-family:'PixelUI','Courier New',monospace}
 #app{display:flex;flex-direction:column;width:100vw;height:100vh}
 #main{display:flex;flex-direction:row;flex:1;overflow:hidden;min-height:0}
 #toolbar{display:flex;align-items:center;gap:8px;padding:4px 10px;flex-shrink:0;background:#0c1526;border-bottom:2px solid var(--px-ink);flex-wrap:wrap;z-index:20;min-height:36px;}/* v165: tightened to the button height */
@@ -235,7 +243,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   background:rgba(0,0,0,0.92);
   display:flex;align-items:center;justify-content:center;
   opacity:0;transition:opacity .5s;
-  font-family:'LanaPixel','Courier New',monospace;
+  font-family:'PixelUI','Courier New',monospace;
 }
 #world-conquest-modal.wcm-visible{opacity:1;}
 #wcm-inner{
@@ -482,7 +490,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   display:none; position:fixed; inset:0;
   background:rgba(8,12,20,0.92); backdrop-filter:blur(6px);
   z-index:2000; align-items:center; justify-content:center;
-  font-family:'LanaPixel','Courier New',monospace;
+  font-family:'PixelUI','Courier New',monospace;
 }
 #daily-popup-overlay.open{display:flex;}
 #daily-popup-card{
@@ -546,7 +554,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   animation:ctaPulse 1.6s ease-in-out infinite; /* v99a: CTA pulse */
   display:block; width:100%; margin-top:6px; padding:12px;
   background:linear-gradient(135deg,#3b82f6,#1d4ed8);
-  border:none; color:#fff; font-family:'LanaPixel','Courier New',monospace;
+  border:none; color:#fff; font-family:'PixelUI','Courier New',monospace;
   font-size:14px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
   border-radius:8px; cursor:pointer;
 }
@@ -577,7 +585,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #tutorial-overlay{
   position:fixed;inset:0;background:rgba(7,13,26,0.78);z-index:9999;
   display:none;align-items:center;justify-content:center;
-  font-family:'LanaPixel','Courier New',monospace;color:#cbd5e1;
+  font-family:'PixelUI','Courier New',monospace;color:#cbd5e1;
   backdrop-filter:blur(2px);
 }
 #tutorial-overlay.open{display:flex;}
@@ -744,7 +752,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   background:rgba(13,22,38,.90);
   border:2px solid var(--px-ink);border-radius:0;/* v166: arcade-chunky */
   padding:6px 14px;z-index:50;
-  font-family:'LanaPixel','Courier New',monospace;
+  font-family:'PixelUI','Courier New',monospace;
   clip-path:var(--px-clip);
   box-shadow:inset 2px 2px 0 rgba(255,255,255,.09),inset -2px -2px 0 rgba(0,0,0,.35);
   pointer-events:none;
@@ -767,7 +775,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* ── Encirclement burst effect (centred over enclosed area) ── */
 .encircle-burst{
   position:absolute;pointer-events:none;
-  font-family:'LanaPixel','Courier New',monospace;
+  font-family:'PixelUI','Courier New',monospace;
   font-weight:700;color:#fff;
   z-index:130;
   text-align:center;
@@ -868,7 +876,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 #stats-modal{
   background:#101b2e;border:2px solid var(--px-ink);border-radius:0;/* v162: arcade-chunky */
   width:min(720px, 92vw);height:min(640px, 88vh);max-height:88vh;overflow-y:auto;/* v165: FIXED height — the modal no longer resizes when tabbing leaderboard/about/terms */
-  padding:24px;font-family:'LanaPixel','Courier New',monospace;color:#cbd5e1;
+  padding:24px;font-family:'PixelUI','Courier New',monospace;color:#cbd5e1;
   clip-path:var(--px-clip);
   box-shadow:inset 2px 2px 0 rgba(255,255,255,.10), inset -2px -2px 0 rgba(0,0,0,.40);
 }
@@ -1002,7 +1010,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
 /* v113: combined-GDP odometer — bold white, fixed-width 15-digit field */
 .rank-gdp{display:flex;align-items:baseline;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.07);}
 .rank-gdp .gdp-label{font-size:8px;letter-spacing:.12em;color:#64748b;text-transform:uppercase;}
-.rank-gdp #gdp-value{font-family:'LanaPixel','Courier New',monospace;font-weight:700;color:#ffffff;font-size:12px;letter-spacing:.02em;white-space:nowrap;}
+.rank-gdp #gdp-value{font-family:'PixelUI','Courier New',monospace;font-weight:700;color:#ffffff;font-size:12px;letter-spacing:.02em;white-space:nowrap;}
 .rank-gdp #gdp-value .gdp-dim{color:#33415580;font-weight:700;}
 .rank-bomb{color:#f87171;font-size:9px;margin-top:2px;}
 .rank-bonus{color:#22c55e;font-size:9px;margin-top:1px;}
@@ -1334,7 +1342,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   z-index: 100000;
   background: linear-gradient(135deg, #070d1a 0%, #0c1526 50%, #0a1020 100%);
   color: #e2e8f0;
-  font-family: 'LanaPixel','Courier New',monospace;
+  font-family: 'PixelUI','Courier New',monospace;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   box-sizing: border-box;
   overflow-y: auto;
@@ -1449,7 +1457,7 @@ canvas{position:absolute;top:0;left:0;transform-origin:0 0;image-rendering:pixel
   padding: 4px 10px;
   border-radius: 4px;
   font-size: 9px;
-  font-family: 'LanaPixel','Courier New',monospace;
+  font-family: 'PixelUI','Courier New',monospace;
   letter-spacing: .04em;
   cursor: pointer;
   text-decoration: none;
@@ -1532,7 +1540,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 #flag-overlay .pa-flag-label {
   position: absolute;
   top: 0; left: 0;
-  font: 700 var(--pa-flag-label-size, 9px)/1 'LanaPixel', "Courier New", monospace;
+  font: 700 var(--pa-flag-label-size, 9px)/1 'PixelUI', "Courier New", monospace;
   color: #fff;
   text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 1px #000;
   white-space: nowrap;
@@ -1566,7 +1574,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 #flag-overlay .pa-flag-shield {
   position: absolute;
   top: 0; left: 0;
-  font: 700 9px/1 'LanaPixel', "Courier New", monospace;
+  font: 700 9px/1 'PixelUI', "Courier New", monospace;
   color: #fbbf24;
   text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 1px #000;
   white-space: nowrap;
@@ -2299,7 +2307,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 <!-- v60: Admin debug panel — toggle with Ctrl+Shift+D -->
 <div id="admin-debug-panel" style="display:none;position:fixed;bottom:70px;right:16px;z-index:9999;
   background:#0d1117;border:1px solid rgba(239,68,68,.5);border-radius:8px;
-  padding:12px 16px;min-width:260px;font-family:'LanaPixel','Courier New',monospace;font-size:12px;color:#e2e8f0;
+  padding:12px 16px;min-width:260px;font-family:'PixelUI','Courier New',monospace;font-size:12px;color:#e2e8f0;
   box-shadow:0 4px 24px rgba(0,0,0,.7);">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
     <span style="color:#f87171;font-weight:700;letter-spacing:.06em;">🔧 ADMIN DEBUG</span>
@@ -4377,7 +4385,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-08-31-v185a';
+const CODE_VERSION = '2026-08-31-v186';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4670,7 +4678,7 @@ function drawNukeZoneOverlay() {
       const secs = Math.ceil(remaining / 1000);
       const mm = Math.floor(secs / 60), ss = secs % 60;
       const txt = mm + ':' + (ss < 10 ? '0' : '') + ss;
-      nukeCtx.font = '700 9px LanaPixel, "Courier New", monospace';
+      nukeCtx.font = '700 9px PixelUI, "Courier New", monospace';
       nukeCtx.textAlign = 'center';
       nukeCtx.textBaseline = 'bottom';
       const ty = z.cy - z.radius - 2;
@@ -14227,7 +14235,7 @@ function openCollectables() {
   const overlay = document.createElement('div');
   overlay.id = 'collect-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(7,13,26,0.94);' +
-    'font-family:LanaPixel,"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
+    'font-family:PixelUI,"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
   overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
   const card = document.createElement('div');
   card.style.cssText = 'background:#101b2e;border:2px solid var(--px-ink);border-radius:0;width:min(560px,94vw);' +
@@ -15985,7 +15993,7 @@ function _showWorldConquestOverlay(data) {
   // pointer-events:auto on the full-screen overlay swallows all map input (paint lock
   // UI-side); the middle is transparent so the conquered world stays visible.
   overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;background:transparent;pointer-events:auto;' +
-    'color:#fbbf24;font-family:LanaPixel,"Courier New",monospace;display:flex;flex-direction:column;justify-content:space-between;';
+    'color:#fbbf24;font-family:PixelUI,"Courier New",monospace;display:flex;flex-direction:column;justify-content:space-between;';
   overlay.innerHTML =
     // ── top banner ──
     '<div style="background:rgba(7,13,26,0.92);border-bottom:3px solid var(--px-ink);padding:12px 16px;text-align:center;box-shadow:inset 0 2px 0 rgba(255,255,255,.08);">' +
@@ -16107,7 +16115,7 @@ function _showCountryRepickModal(data) {
   const overlay = document.createElement('div');
   overlay.id = 'repick-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(7,13,26,0.94);' +
-    'font-family:LanaPixel,"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
+    'font-family:PixelUI,"Courier New",monospace;display:flex;align-items:center;justify-content:center;padding:20px;';
   // v153: welcome-screen-style picker (matches #tutorial-box + the qs curated grid +
   // searchable list), replacing the bespoke red grid.
   const card = document.createElement('div');
@@ -16575,7 +16583,7 @@ function _showMonsterBanner(type) {
   else if (type === 'godzilla') bannerBg = 'rgba(20,80,20,0.94)';
   banner.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:120;' +
     'background:' + bannerBg + ';' +
-    'color:#fff;padding:8px 16px;border-radius:6px;font-family:LanaPixel,"Courier New",monospace;' +
+    'color:#fff;padding:8px 16px;border-radius:6px;font-family:PixelUI,"Courier New",monospace;' +
     'font-size:13px;letter-spacing:.04em;box-shadow:0 4px 12px rgba(0,0,0,0.4);' +
     'animation:monsterBannerFade 6s ease-out forwards;';
   banner.textContent = (type === 'ufo')      ? '🛸 UFO sighting! Pixels are being abducted.'
@@ -16632,7 +16640,7 @@ function _showMonsterBanner(type) {
           <a href="https://pixelannex.com" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none;">pixelannex.com</a>
         </div>
         <!-- v185: LanaPixel is CC BY 4.0 - attribution is a licence condition -->
-        <div style="margin-top:10px;font-size:9px;color:#475569;">Font: <a href="https://opengameart.org/content/lanapixel-localization-friendly-pixel-font" target="_blank" rel="noopener" style="color:#64748b;text-decoration:none;">LanaPixel</a> by Lana Ro (CC BY 4.0)</div>
+        <div style="margin-top:10px;font-size:9px;color:#475569;line-height:1.6;">Fonts: <a href="https://github.com/TakWolf/ark-pixel-font" target="_blank" rel="noopener" style="color:#64748b;text-decoration:none;">Ark Pixel</a> by TakWolf (OFL 1.1) &middot; <a href="https://opengameart.org/content/lanapixel-localization-friendly-pixel-font" target="_blank" rel="noopener" style="color:#64748b;text-decoration:none;">LanaPixel</a> by Lana Ro (CC BY 4.0)</div>
         <div style="margin-top:18px;"><a href="https://www.prettyneatpixels.com" target="_blank" rel="noopener" style="display:inline-block;"><img src="/PrettyNeatLogo512.png" alt="Pretty Neat Pixels" style="width:160px;max-width:60%;image-rendering:pixelated;"></a></div>
       </div>
     </div>
