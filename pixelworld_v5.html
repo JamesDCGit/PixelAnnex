@@ -1537,7 +1537,11 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 #flag-overlay .pa-flag-label {
   position: absolute;
   top: 0; left: 0;
-  font: 700 var(--pa-flag-label-size, 9px)/1 'PixelUI', "Courier New", monospace;
+  /* v188: 400, not 700. LanaPixel ships ONE weight, so 700 made the browser
+     synthesise bold by smearing 1px stems - the main reason map country names
+     read as mush. font-synthesis:none is belt-and-braces. */
+  font: 400 var(--pa-flag-label-size, 11px)/1 'PixelUI', "Courier New", monospace;
+  font-synthesis: none;
   color: #fff;
   text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 1px #000;
   white-space: nowrap;
@@ -4382,7 +4386,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-08-31-v187';
+const CODE_VERSION = '2026-08-31-v188';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
