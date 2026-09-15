@@ -1,0 +1,14 @@
+{
+  "name": "Australia attacks New Zealand",
+  "note": "Standalone version of the Australia/NZ beat. Reset first if you want a clean map.",
+  "steps": [
+    { "at": 0,   "action": "world",     "mode": "freeze" },
+    { "at": 0,   "action": "speed",     "mult": 10 },
+    { "at": 0,   "action": "cinematic", "on": true, "hud": "events" },
+    { "at": 0.5, "action": "camera",    "countries": ["Australia", "New Zealand"], "pad": 0.7, "dur": 1200 },
+    { "at": 2,   "action": "attack",    "attacker": "Australia", "targets": ["New Zealand"], "style": "mixed", "rate": 250, "radius": 7 },
+    { "at": 6,   "action": "camera",    "country": "New Zealand", "pad": 0.5, "dur": 1500 },
+    { "at": 22,  "action": "conquer",   "attacker": "Australia", "target": "New Zealand" },
+    { "at": 26,  "action": "camera",    "countries": ["Australia", "New Zealand"], "pad": 0.7, "dur": 1500 }
+  ]
+}

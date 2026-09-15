@@ -41,7 +41,16 @@ const xposter = require('./xposter'); // v93l: optional manual-approve X (Twitte
 
 // ── Config ────────────────────────────────────────────────────────
 const PORT               = parseInt(process.env.PORT || '3000', 10);
-const SERVER_VERSION       = '2026-08-31-v189';
+// v191: DIRECTOR MODE — scripted-gameplay recording rig for promo videos. Only
+// exists when DIRECTOR=1 (never set on the droplet): the endpoint 404s, no
+// director code path runs, persistence/monsters/chests are untouched.
+const DIRECTOR = process.env.DIRECTOR === '1';
+let _directorFrozen      = DIRECTOR;   // freeze = only DIRECTED bots act (clean shots)
+let _directorSpeed       = 1;          // global multiplier for directed paint rate
+let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
+const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
+let _directorTimers      = [];         // timeline setTimeouts
+const SERVER_VERSION       = '2026-09-15-v191';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -226,6 +235,7 @@ function _rebuildHumansByCountry() {
 }
 function _effectiveBotUnits(bot) {
   if (!bot) return 0;
+  if (DIRECTOR) return bot.units || 1; // v191: the recording seat must not deactivate a bot unit
   const humans = _humansByCountry.get(String(bot.countryId)) || 0;
   return Math.max(0, (bot.units || 1) - humans);
 }
@@ -3075,8 +3085,10 @@ function _spawnChest() {
   _chests.set(id, { id, x, y, at: Date.now() });
   broadcast(JSON.stringify({ type: 'chest_spawn', id, x, y }));
 }
-setInterval(_spawnChest, CHEST_SPAWN_MS);
-setTimeout(_spawnChest, 30_000); // first chest shortly after boot
+if (!DIRECTOR) { // v191: no surprise chests during a take
+  setInterval(_spawnChest, CHEST_SPAWN_MS);
+  setTimeout(_spawnChest, 30_000); // first chest shortly after boot
+}
 
 // ── v38: World conquest watcher + 5-min countdown reset ───────────
 const WORLD_CONQUEST_THRESHOLD = 0.70;
@@ -3804,7 +3816,9 @@ function _scheduleGodzilla() {
 // ── Bootstrap ──────────────────────────────────────────────────────
 // DEBUG: spawn each type at startup (staggered) then every 2 min after despawn.
 // PROD:  schedule each at their own independent random interval.
-if (MONSTER_DEBUG) {
+if (DIRECTOR) {
+  console.log('[Director] monsters: manual spawn only');
+} else if (MONSTER_DEBUG) {
   setTimeout(() => _spawnUFO('ufo-'     + Date.now()),       5 * 1000);
   setTimeout(() => _spawnKraken('kraken-'  + Date.now()),   35 * 1000);
   setTimeout(() => _spawnGodzilla('godzilla-' + Date.now()), 65 * 1000);
@@ -4806,7 +4820,7 @@ let deltaTimer   = null;
 
 function queueDelta(pixels) {
   pendingDelta.push(...pixels);
-  if (!deltaTimer) deltaTimer = setTimeout(flushDelta, BROADCAST_MS);
+  if (!deltaTimer) deltaTimer = setTimeout(flushDelta, _directorBroadcastMs || BROADCAST_MS); // v191
 }
 
 // ── v92: binary delta encoder ─────────────────────────────────────
@@ -5781,6 +5795,7 @@ function _writeBoard(json, sync) {
 
 let _boardSaving = false;
 function saveBoardSnapshot(sync) {
+  if (DIRECTOR) return; // v191: never write board_state.json from a recording run
   // Only persist once map geography is loaded — otherwise there is no live
   // world to save and we'd risk clobbering the file we just restored on boot.
   if (!mapReady) return;
@@ -5860,7 +5875,7 @@ function _rebuildGeoClaimCnt() {
   console.log('[Board] rebuilt geoClaimCnt from restored board:', n, 'claimed pixels across', Object.keys(geoClaimCnt).length, 'geos');
 }
 
-loadBoardSnapshot();
+if (!DIRECTOR) loadBoardSnapshot(); // v191: director runs start from a fresh world
 // v182: the baked-map bootstrap is invoked further down, right after mapReady /
 // geoPixelReady are declared — calling it here hit the temporal dead zone
 // ("Cannot access 'geoPixelReady' before initialization") and silently no-opped.
@@ -5950,6 +5965,7 @@ function _botPaintGap(defending) {
   const frac = _botScarcityFrac();
   let gap = BOT_GAP_FRENZY_MS + (BOT_GAP_CALM_MS - BOT_GAP_FRENZY_MS) * frac;
   if (defending) gap = Math.max(400, gap / 3);
+  if (DIRECTOR && _directorSpeed > 1) gap = Math.max(40, gap / _directorSpeed); // v191: world-normal b-roll runs fast too
   return gap;
 }
 
@@ -6124,7 +6140,8 @@ function _scatterSplotches(gpx, geo, n, out) {
     _splotchPixels(p % MAP_W, (p / MAP_W) | 0, geo, 5 + Math.floor(Math.random() * 9), out);
   }
 }
-function _botEncircleManeuver(countryId) {
+function _botEncircleManeuver(countryId, opts) {
+  opts = opts || {}; // v191: director can force a sealing ring + set the radius
   const cidx = getIdx(countryId);
   const bot  = bots.get(String(countryId));
   if (!bot || bot.campaignGeo == null) return false;
@@ -6137,7 +6154,7 @@ function _botEncircleManeuver(countryId) {
   // ring) so the map shows hand-drawn blobs, not just clean circles; the rest draw a
   // WOBBLY (sine-perturbed) ring — connected via Bresenham so it still seals — often
   // with a few splotches sprinkled alongside for texture.
-  if (Math.random() < 0.35) {
+  if (!opts.forceRing && Math.random() < 0.35) {
     const out = [];
     _scatterSplotches(gpx, geo, 2 + Math.floor(Math.random() * 4), out);
     if (!out.length) return false;
@@ -6151,7 +6168,7 @@ function _botEncircleManeuver(countryId) {
   const ctr = gpx[Math.floor(Math.random() * gpx.length)];
   const cx = ctr % MAP_W, cy = (ctr / MAP_W) | 0;
   if (!landMask[cy * MAP_W + cx]) return false;
-  const R = 5 + Math.floor(Math.random() * 4);                        // 5..8
+  const R = opts.radius || (5 + Math.floor(Math.random() * 4));       // 5..8 (director may override)
   const steps = Math.max(40, Math.round(2 * Math.PI * R * 1.4));
   // wobble: 1-2 sine harmonics with a random phase + amplitude → irregular outline
   const ph = Math.random() * 6.283, amp = 1 + Math.random() * 2.2, harm = 2 + Math.floor(Math.random() * 3);
@@ -6542,6 +6559,7 @@ if (_BOTS_DISABLED) console.log('[Bot] *** BOTS DISABLED via DISABLE_BOTS env va
 
 function botTickSingle(countryId) {
   if (_BOTS_DISABLED) return;
+  if (DIRECTOR && (_directorFrozen || _directed.has(String(countryId)))) return; // v191: director owns these
   if (!mapReady) return;
   // Once permanently conquered this cycle the bot never resumes — even if a
   // monster/nuke reversal temporarily drops the attacker below the threshold.
@@ -6577,6 +6595,7 @@ function botTickSingle(countryId) {
   }
   // v34: only active bots paint
   if (!_isBotActive(countryId)) return;
+  if (DIRECTOR) bot.bucket = Math.max(bot.bucket, BOT_PIXELS_PER_TICK * 4); // v191: never bucket-starve during a take
   if (bot.bucket < BOT_PIXELS_PER_TICK) return;
 
   // v114/v115: per-bot paint-rate cap that scales with scarcity (calm early, frenzy
@@ -7426,6 +7445,31 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+
+  // ── v191: /api/director — scripted-gameplay recording rig ────────────────
+  // POST {action, ...} or {action:'run', steps:[{at,action,...}]}. Localhost only,
+  // and ONLY when DIRECTOR=1 — otherwise it does not exist (404).
+  if (url.pathname === '/api/director') {
+    if (!DIRECTOR) { res.writeHead(404); res.end('not found'); return; }
+    const _ip = String(req.socket.remoteAddress || '');
+    if (!/^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(_ip)) { res.writeHead(403); res.end('localhost only'); return; }
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(_directorStatus(), null, 2));
+      return;
+    }
+    if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
+    let body = '';
+    req.on('data', c => { body += c.toString(); if (body.length > 262144) req.destroy(); });
+    req.on('end', () => {
+      let out;
+      try { out = _directorAction(JSON.parse(body || '{}')); }
+      catch (e) { out = { ok: false, error: String(e && e.message || e) }; }
+      res.writeHead(out && out.ok === false ? 400 : 200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(out));
+    });
+    return;
+  }
   // ── /api/admin/control — world actions (gated, POST) ─────────────────
   if (url.pathname === '/api/admin/control' && req.method === 'POST') {
     if (!_adminOK(url, req)) {
@@ -8728,6 +8772,7 @@ wss.on('connection', (ws, req) => {
           state: { conquered: _snap.conquered, players: _snap.players, sieged: _snap.sieged, permanentlyConquered: _snap.permanentlyConquered }, // v95o: include dead natives for client "Fallen"/grey-out
           david: buildDavidSnapshot(),
           serverVersion: SERVER_VERSION,
+          director: DIRECTOR, // v191: client enables camera/cinematic hooks + the C hotkey
           nukeZones: (_pruneServerNukeZones(), _nukeZones.slice()),
           endgame: _endgamePayload || _computeEndgame(), // v100: sudden death + panel for late-joiners
           emotes: _buildActiveEmotes(), // v113: active conquest emotes for late-joiners
@@ -9061,6 +9106,215 @@ wss.on('connection', (ws, req) => {
 
   ws.on('error', err => console.error(`  Player ${pid} error:`, err.message));
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v191: DIRECTOR MODE — scripted gameplay for promo recordings (DIRECTOR=1 only)
+// ═══════════════════════════════════════════════════════════════════════════
+// Design: a DIRECTED bot is pulled out of the normal ticker (botTickSingle
+// returns early for it) and driven by _directorTick instead — forced active,
+// infinite bucket, no surrender, no idle windows, a LIST of targets painted
+// round-robin, at a rate in px/s. "Attack" is organic (grows from a foothold,
+// so the spread reads on camera); "conquer" is the forced cut (_conquerGeo +
+// finisherFill) so the fall lands on cue. Everything else in the world is
+// frozen by default so takes are clean and repeatable.
+const _DIRECTOR_ALIASES = {
+  usa: 'United States of America', us: 'United States of America', america: 'United States of America',
+  'united states': 'United States of America', uk: 'United Kingdom', britain: 'United Kingdom',
+  uae: 'United Arab Emirates', drc: 'Dem. Rep. Congo', 'south korea': 'South Korea', 'north korea': 'North Korea',
+};
+function _directorFindId(q) {
+  if (q == null) return null;
+  const raw = String(q).trim();
+  if (/^\d+$/.test(raw) && countryNames[raw]) return raw;
+  const want = (_DIRECTOR_ALIASES[raw.toLowerCase()] || raw).toLowerCase();
+  let exact = null, prefix = null, contains = null;
+  for (const id of Object.keys(countryNames)) {
+    const n = String(countryNames[id]).toLowerCase();
+    if (n === want) { exact = id; break; }
+    if (!prefix && n.startsWith(want)) prefix = id;
+    if (!contains && n.includes(want)) contains = id;
+  }
+  const id = exact || prefix || contains;
+  if (!id) return null;
+  const g = getGeoForCountry(id);
+  return (g != null && g >= 0 && geoPixels[g]) ? id : null;
+}
+function _directorGeo(q) { const id = _directorFindId(q); return id == null ? null : getGeoForCountry(id); }
+function _directorName(id) { return _countryName(id); }
+function _directorRate(d) {
+  // px per tick at the directed gap; a rate given explicitly ignores the speed knob
+  const pps = d.rateExplicit ? d.pxPerSec : 40 * _directorSpeed;
+  return Math.max(1, Math.round(pps * d.gapMs / 1000));
+}
+function _directedNextGeo(d, cid) {
+  for (let k = 0; k < d.geos.length; k++) {
+    const g = d.geos[(d.i + k) % d.geos.length];
+    if (!geoPixels[g]) continue;
+    if (conqueredSet.has(g + ':' + cid)) continue;            // already ours
+    if (String(geoToId(g)) === String(cid)) continue;          // never our own homeland
+    d.i = (d.i + k + 1) % d.geos.length;
+    return g;
+  }
+  return null;
+}
+function _directorEmit(r) {
+  if (!r) return;
+  if (r.changed && r.changed.length) { queueDelta(r.changed); _botPaintsSinceWatch += r.changed.length; }
+  (r.conquests || []).forEach(c => broadcast(JSON.stringify({ type: 'conquest', ...c })));
+  (r.reversals || []).forEach(x => broadcast(JSON.stringify({ type: 'reversal', ...x })));
+}
+function _directorTick() {
+  if (!mapReady || _directed.size === 0) return;
+  const now = Date.now();
+  for (const [cid, d] of _directed) {
+    if (now - d.lastAt < d.gapMs) continue;
+    d.lastAt = now;
+    if (permanentlyConquered.has(cid)) { _directed.delete(cid); console.log('[Director] ' + _directorName(cid) + ' is dead — released'); continue; }
+    const geo = _directedNextGeo(d, cid);
+    if (geo == null) continue;
+    const bot = bots.get(String(cid));
+    let did = false;
+    const wantRing = d.style === 'rings' || (d.style === 'mixed' && Math.random() < 0.35);
+    if (wantRing && bot) {
+      bot.campaignGeo = geo; bot.campaignUntil = now + 3600000;
+      try { did = _botEncircleManeuver(cid, { forceRing: true, radius: d.radius }); } catch (e) {}
+    }
+    if (!did) {
+      const pts = _campaignPixels(geo, getIdx(cid), _directorRate(d));
+      if (pts.length) _directorEmit(applyPixels(pts, cid));
+    }
+  }
+}
+if (DIRECTOR) setInterval(_directorTick, 25);
+
+function _directorAttack(a) {
+  const cid = _directorFindId(a.attacker); if (!cid) return { ok: false, error: 'unknown attacker: ' + a.attacker };
+  const list = [].concat(a.targets || a.target || []);
+  const geos = list.map(_directorGeo).filter(g => g != null);
+  if (!geos.length) return { ok: false, error: 'no valid targets in ' + JSON.stringify(list) };
+  if (!bots.has(String(cid))) return { ok: false, error: _directorName(cid) + ' has no bot (fallen / non-playable)' };
+  const d = { geos, i: 0, style: a.style || 'spread', gapMs: 100, radius: a.radius || 0, lastAt: 0,
+              rateExplicit: a.rate != null, pxPerSec: a.rate != null ? +a.rate : 0 };
+  _directed.set(String(cid), d);
+  console.log('[Director] ' + _directorName(cid) + ' attacks ' + geos.map(g => _directorName(geoToId(g))).join(', ') + ' (' + d.style + ')');
+  return { ok: true, attacker: cid, targets: geos.map(geoToId) };
+}
+function _directorStop(a) {
+  if (!a.attacker || a.attacker === '*') { _directed.clear(); return { ok: true, stopped: 'all' }; }
+  const cid = _directorFindId(a.attacker); if (!cid) return { ok: false, error: 'unknown: ' + a.attacker };
+  _directed.delete(String(cid)); return { ok: true, stopped: cid };
+}
+function _directorConquer(a) {
+  const cid = _directorFindId(a.attacker), geo = _directorGeo(a.target);
+  if (!cid || geo == null) return { ok: false, error: 'bad attacker/target' };
+  const conquests = [], changed = [];
+  _conquerGeo(geo, cid, conquests, changed);
+  _directorEmit({ changed, conquests, reversals: [] });
+  console.log('[Director] FORCED: ' + _directorName(cid) + ' conquers ' + _directorName(geoToId(geo)));
+  return { ok: true };
+}
+function _directorSeed(a) {
+  // Pre-paint pct of the target as one CONTIGUOUS blob grown from a random land
+  // pixel, so a scene can open mid-siege and still look like an organic front.
+  const cid = _directorFindId(a.country), geo = _directorGeo(a.target);
+  if (!cid || geo == null) return { ok: false, error: 'bad country/target' };
+  const px = geoPixels[geo]; const want = Math.floor(px.length * Math.min(0.95, Math.max(0.01, +a.pct || 0.3)));
+  const start = px[Math.floor(Math.random() * px.length)];
+  const seen = new Uint8Array(MAP_PX); const q = [start]; seen[start] = 1; const out = [];
+  while (q.length && out.length < want) {
+    const i = q.shift(); out.push({ x: i % MAP_W, y: (i / MAP_W) | 0 });
+    const x = i % MAP_W, y = (i / MAP_W) | 0;
+    for (let dd = 0; dd < 4; dd++) {
+      const nx = x + DX4[dd], ny = y + DY4[dd];
+      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+      const ni = ny * MAP_W + nx;
+      if (seen[ni] || geoAtPixel[ni] !== geo || !landMask[ni]) continue;
+      seen[ni] = 1; q.push(ni);
+    }
+  }
+  for (let k = 0; k < out.length; k += 5000) _directorEmit(applyPixels(out.slice(k, k + 5000), cid));
+  return { ok: true, painted: out.length, of: px.length };
+}
+function _directorEncircle(a) {
+  const cid = _directorFindId(a.attacker), geo = _directorGeo(a.target);
+  if (!cid || geo == null) return { ok: false, error: 'bad attacker/target' };
+  const bot = bots.get(String(cid)); if (!bot) return { ok: false, error: 'no bot for ' + _directorName(cid) };
+  const n = Math.max(1, +a.count || 1), gap = +a.gapMs || 600;
+  bot.campaignGeo = geo; bot.campaignUntil = Date.now() + 3600000;
+  for (let k = 0; k < n; k++) setTimeout(() => { try { _botEncircleManeuver(cid, { forceRing: true, radius: a.radius || 0 }); } catch (e) {} }, k * gap);
+  return { ok: true, rings: n };
+}
+function _directorMonster(a) {
+  const t = String(a.type || 'ufo').toLowerCase(), id = 'dir-' + Date.now();
+  if (t === 'ufo') _spawnUFO(id); else if (t === 'kraken') _spawnKraken(id); else if (t === 'godzilla') _spawnGodzilla(id);
+  else return { ok: false, error: 'monster type must be ufo|kraken|godzilla' };
+  return { ok: true, spawned: t };
+}
+function _directorCamera(a) {
+  const ids = [].concat(a.countries || a.country || []).map(_directorFindId).filter(Boolean);
+  broadcast(JSON.stringify({ type: 'director', cmd: 'camera', ids, x: a.x, y: a.y, scale: a.scale, dur: a.dur, pad: a.pad }));
+  return { ok: true, ids };
+}
+function _directorCinematic(a) {
+  broadcast(JSON.stringify({ type: 'director', cmd: 'cinematic', on: a.on !== false, hud: a.hud || 'none' }));
+  return { ok: true };
+}
+function _directorSpeedSet(a) {
+  _directorSpeed = Math.max(0.1, +a.mult || 1);
+  _directorBroadcastMs = _directorSpeed > 1 ? 100 : 0;   // stream paint instead of 1Hz steps
+  return { ok: true, speed: _directorSpeed, broadcastMs: _directorBroadcastMs || BROADCAST_MS };
+}
+function _directorWorld(a) { _directorFrozen = (a.mode || 'freeze') !== 'normal'; return { ok: true, frozen: _directorFrozen }; }
+function _directorReset() { _directorAbort(); _resetWorld(); return { ok: true, note: 'clients reload in ~1.5s; leave >=3s before the next step' }; } // abort first: a reset mid-timeline must cancel pending steps
+function _directorAbort() { _directorTimers.forEach(clearTimeout); _directorTimers = []; _directed.clear(); return { ok: true }; }
+function _directorRun(a) {
+  _directorAbort();
+  const steps = Array.isArray(a.steps) ? a.steps : [];
+  if (!steps.length) return { ok: false, error: 'steps[] required' };
+  for (const st of steps) {
+    const at = Math.max(0, (+st.at || 0) * 1000);
+    _directorTimers.push(setTimeout(() => {
+      const r = _directorAction(Object.assign({}, st, { at: undefined }));
+      console.log('[Director] t=' + (at / 1000) + 's ' + st.action + ' -> ' + JSON.stringify(r));
+    }, at));
+  }
+  const last = Math.max(...steps.map(x => +x.at || 0));
+  console.log('[Director] timeline started: ' + steps.length + ' steps over ' + last + 's');
+  return { ok: true, steps: steps.length, durationSec: last };
+}
+function _directorFind(a) {
+  const q = String(a.q || '').toLowerCase();
+  const hits = Object.keys(countryNames).filter(id => String(countryNames[id]).toLowerCase().includes(q))
+    .slice(0, 25).map(id => ({ id, name: countryNames[id], playable: !!(geoPixels[getGeoForCountry(id)]) }));
+  return { ok: true, hits };
+}
+function _directorStatus() {
+  return { director: true, frozen: _directorFrozen, speed: _directorSpeed, war: _warNumber, mapReady,
+    directed: [..._directed].map(([cid, d]) => ({ country: _directorName(cid), style: d.style,
+      targets: d.geos.map(g => _directorName(geoToId(g))), pxPerSec: d.rateExplicit ? d.pxPerSec : 40 * _directorSpeed })),
+    pendingSteps: _directorTimers.length };
+}
+function _directorAction(a) {
+  switch (String(a.action || '')) {
+    case 'reset':     return _directorReset();
+    case 'speed':     return _directorSpeedSet(a);
+    case 'world':     return _directorWorld(a);
+    case 'attack':    return _directorAttack(a);
+    case 'stop':      return _directorStop(a);
+    case 'conquer':   return _directorConquer(a);
+    case 'seed':      return _directorSeed(a);
+    case 'encircle':  return _directorEncircle(a);
+    case 'monster':   return _directorMonster(a);
+    case 'camera':    return _directorCamera(a);
+    case 'cinematic': return _directorCinematic(a);
+    case 'run':       return _directorRun(a);
+    case 'abort':     return _directorAbort();
+    case 'find':      return _directorFind(a);
+    case 'status':    return _directorStatus();
+    default:          return { ok: false, error: 'unknown action: ' + a.action };
+  }
+}
 
 httpServer.listen(PORT, () => {
   console.log(`\n🌍 PixelAnnex server running`);

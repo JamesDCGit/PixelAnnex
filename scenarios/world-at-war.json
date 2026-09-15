@@ -1,0 +1,12 @@
+{
+  "name": "World at war (wide b-roll)",
+  "note": "World stays ALIVE here (mode normal) so all 166 bots fight at speed; wide shot, no HUD, a couple of monsters for texture.",
+  "steps": [
+    { "at": 0,   "action": "world",     "mode": "normal" },
+    { "at": 0,   "action": "speed",     "mult": 8 },
+    { "at": 0,   "action": "cinematic", "on": true, "hud": "none" },
+    { "at": 0.5, "action": "camera",    "x": 1024, "y": 512, "scale": 0.9, "dur": 1500 },
+    { "at": 3,   "action": "monster",   "type": "kraken" },
+    { "at": 30,  "action": "monster",   "type": "ufo" }
+  ]
+}

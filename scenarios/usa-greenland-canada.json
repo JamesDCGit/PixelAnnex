@@ -1,0 +1,23 @@
+{
+  "name": "USA takes Greenland, then Canada takes USA (Australia vs NZ in the background)",
+  "note": "Run `node tools/director.js reset` first and wait for the page to reload, then start recording, then run this. Organic attacks paint in visibly; the `conquer` steps are the forced cuts.",
+  "steps": [
+    { "at": 0,   "action": "world",     "mode": "freeze" },
+    { "at": 0,   "action": "speed",     "mult": 15 },
+    { "at": 0,   "action": "cinematic", "on": true, "hud": "events" },
+    { "at": 0.5, "action": "camera",    "countries": ["USA", "Canada", "Greenland"], "pad": 0.7, "dur": 1200 },
+
+    { "at": 2,   "action": "attack",    "attacker": "USA",       "targets": ["Greenland", "Canada"], "style": "spread", "rate": 350 },
+    { "at": 2,   "action": "attack",    "attacker": "Australia", "targets": ["New Zealand"],         "style": "mixed",  "rate": 200, "radius": 7 },
+
+    { "at": 6,   "action": "camera",    "country": "Greenland", "pad": 0.55, "dur": 1500 },
+    { "at": 22,  "action": "conquer",   "attacker": "USA", "target": "Greenland" },
+
+    { "at": 26,  "action": "camera",    "countries": ["USA", "Canada"], "pad": 0.7, "dur": 1500 },
+    { "at": 28,  "action": "stop",      "attacker": "USA" },
+    { "at": 28,  "action": "attack",    "attacker": "Canada", "targets": ["USA"], "style": "mixed", "rate": 600, "radius": 9 },
+    { "at": 68,  "action": "conquer",   "attacker": "Canada", "target": "USA" },
+
+    { "at": 72,  "action": "camera",    "countries": ["USA", "Canada", "Greenland", "Australia", "New Zealand"], "pad": 0.85, "dur": 2200 }
+  ]
+}

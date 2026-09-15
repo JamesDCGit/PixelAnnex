@@ -1,0 +1,14 @@
+{
+  "name": "Encirclement showcase (Argentina rings Brazil)",
+  "note": "Close-up b-roll of rings closing and interiors flipping. Seeds a foothold first so the rings have somewhere to grow from.",
+  "steps": [
+    { "at": 0,   "action": "world",     "mode": "freeze" },
+    { "at": 0,   "action": "speed",     "mult": 6 },
+    { "at": 0,   "action": "cinematic", "on": true, "hud": "events" },
+    { "at": 0.5, "action": "camera",    "country": "Brazil", "pad": 0.5, "dur": 1200 },
+    { "at": 2,   "action": "seed",      "country": "Argentina", "target": "Brazil", "pct": 0.12 },
+    { "at": 4,   "action": "encircle",  "attacker": "Argentina", "target": "Brazil", "count": 6, "radius": 12, "gapMs": 1500 },
+    { "at": 14,  "action": "attack",    "attacker": "Argentina", "targets": ["Brazil"], "style": "rings", "rate": 200, "radius": 10 },
+    { "at": 40,  "action": "stop",      "attacker": "Argentina" }
+  ]
+}
