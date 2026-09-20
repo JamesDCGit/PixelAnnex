@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-09-15-v191';
+const SERVER_VERSION       = '2026-09-21-v192';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3074,9 +3074,6 @@ const CHEST_PX       = 50;
 const CHEST_PTS      = 1000;
 const _chests = new Map(); // id → { id, x, y, at }
 let _chestSeq = 1;
-// v172: rewarded-ad grant rate limit (see the 'ad_reward' handler).
-const AD_REWARD_COOLDOWN_MS = 10 * 60 * 1000; // one rewarded grant per player per 10 min
-const _adRewardAt = new Map(); // 'd:<discordId>' | 'p:<pid>' → last grant ts
 function _spawnChest() {
   if (_chests.size >= CHEST_MAX) return;
   const id = 'c' + (_chestSeq++);
@@ -8793,22 +8790,6 @@ wss.on('connection', (ws, req) => {
         break;
       }
 
-      case 'ad_reward': {
-        // v172: rewarded-ad grant validation — a per-player cooldown so the client
-        // can't spam re-watches (the ad completion itself is client-attested; this
-        // is the rate-limit backstop). Keyed by discordId when signed in, else pid.
-        const _adKey = player.discordId ? ('d:' + player.discordId) : ('p:' + pid);
-        const _lastAd = _adRewardAt.get(_adKey) || 0;
-        const _left = AD_REWARD_COOLDOWN_MS - (Date.now() - _lastAd);
-        if (_left > 0) {
-          try { ws.send(JSON.stringify({ type: 'ad_reward_ok', grant: false, cooldownMs: _left })); } catch (e) {}
-          break;
-        }
-        _adRewardAt.set(_adKey, Date.now());
-        try { ws.send(JSON.stringify({ type: 'ad_reward_ok', grant: true })); } catch (e) {}
-        console.log('[Ad] reward granted to', _adKey);
-        break;
-      }
 
       case 'chest_claim': {
         // v156: first valid claim wins the chest; everyone else sees it vanish.
