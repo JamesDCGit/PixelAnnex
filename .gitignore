@@ -58,3 +58,6 @@ tweet_queue.json
 shots/
 timelapse/
 autopost_state.json
+
+# clip renders (tools/capture.js / tools/clip.js)
+out/

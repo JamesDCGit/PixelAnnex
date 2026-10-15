@@ -1,0 +1,16 @@
+{
+  "name": "CLIP · Greenland is not for sale (10s · 9:16)",
+  "note": "Record with: node tools/capture.js scenarios/clip-greenland.json --out out/greenland.webm — then node tools/clip.js out/greenland.webm --out out/greenland.mp4. Organic USA spread, forced fall at 6.2s so the leaders popup lands on the beat, end card from 8.4s.",
+  "steps": [
+    { "at": 0,   "action": "world",   "mode": "freeze" },
+    { "at": 0,   "action": "speed",   "mult": 12 },
+    { "at": 0,   "action": "camera",  "countries": ["USA", "Greenland"], "pad": 0.82, "dur": 0 },
+    { "at": 0,   "action": "caption", "text": "Greenland is not for sale.", "sub": "the USA has entered the chat", "dur": 2900 },
+    { "at": 0.6, "action": "attack",  "attacker": "USA", "targets": ["Greenland"], "style": "spread", "rate": 1500 },
+    { "at": 1.3, "action": "camera",  "country": "Greenland", "pad": 0.9, "dur": 1700 },
+    { "at": 3.6, "action": "caption", "text": "they are not stopping", "pos": "bottom", "dur": 2000 },
+    { "at": 6.2, "action": "conquer", "attacker": "USA", "target": "Greenland" },
+    { "at": 6.35,"action": "caption", "text": "Sold.", "pos": "bottom", "dur": 1800 },
+    { "at": 8.4, "action": "endcard", "dur": 0 }
+  ]
+}

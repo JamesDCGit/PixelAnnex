@@ -94,6 +94,29 @@ body.cinematic #m-actionbar,body.cinematic #bucket-hud,body.cinematic #david-bad
 body.cinematic #bomb-menu,body.cinematic #regen-bar,body.cinematic #zoom-hud-tb,body.cinematic #banner,
 body.cinematic #highlight-banner,body.cinematic #tip,body.cinematic #endgame-panel,body.cinematic #ftue-coach,
 body.cinematic #ftue-highlight,body.cinematic #mobile-back-link{display:none !important}
+/* v193: director clip overlays — caption (hook text) + end card. 9:16 safe: sized in vw. */
+#dir-caption{position:fixed;left:50%;top:16%;transform:translateX(-50%);z-index:2147483000;pointer-events:none;
+  max-width:88vw;text-align:center;opacity:0;transition:opacity .22s ease;font-family:'PlexUI',system-ui,sans-serif;}
+#dir-caption.show{opacity:1;}
+#dir-caption .t{display:inline-block;background:rgba(7,13,26,.86);color:#fff;font-weight:700;font-size:6.2vw;line-height:1.15;
+  padding:.35em .6em;border:3px solid var(--px-ink,#14100a);box-shadow:6px 6px 0 #000;}
+#dir-caption .s{display:block;margin-top:.5em;color:#fbbf24;font-weight:700;font-size:3.6vw;text-shadow:0 2px 0 #000,0 0 8px #000;}
+#dir-caption.mid{top:44%;}  #dir-caption.bottom{top:auto;bottom:14%;}
+#dir-endcard{position:fixed;inset:0;z-index:2147483100;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2.2vw;background:rgba(7,13,26,0);opacity:0;transition:opacity .35s ease;pointer-events:none;font-family:'PlexUI',system-ui,sans-serif;text-align:center;}
+#dir-endcard.show{opacity:1;background:rgba(7,13,26,.92);}
+#dir-endcard .name{color:#e8b93c;font-weight:700;font-size:10vw;letter-spacing:.06em;text-shadow:5px 5px 0 #000;}
+#dir-endcard .tag{color:#fff;font-size:4vw;}
+#dir-endcard .url{color:#fff;font-weight:700;font-size:5.4vw;background:#4f46e5;border:3px solid var(--px-ink,#14100a);box-shadow:6px 6px 0 #000;padding:.3em .8em;margin-top:1vw;}
+#dir-endcard .sub{color:#94a3b8;font-size:3vw;margin-top:2vw;}
+#dir-endcard img{width:22vw;image-rendering:pixelated;margin-top:2vw;}
+/* v193: in cinematic (9:16 capture) the leaders popup is a desktop-sized postage stamp —
+   scale it in place. zoom keeps the fixed+translate centering; !important beats the
+   inline _uiZoom. Also hide the small activity card while the end card is up. */
+body.cinematic #fall-popup{zoom:2.9 !important;}
+body.cinematic #fall-popup-backdrop{background:rgba(0,0,0,.45) !important;}
+body.cinematic #fall-popup .fp-foot:last-child{display:none !important;} /* 'click anywhere else to close' is a desktop affordance, not clip content */
+body.endcard-on #activity-toast{display:none !important;}
 body.cinematic:not(.cinematic-events) #activity-toast,body.cinematic:not(.cinematic-events) #fall-popup,
 body.cinematic:not(.cinematic-events) #conquest-toast{display:none !important}
 
@@ -4414,7 +4437,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-09-21-v192';
+const CODE_VERSION = '2026-10-15-v193';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -9274,9 +9297,42 @@ function _setCinematic(on, hud) {
   document.body.classList.toggle('cinematic', !!on);
   document.body.classList.toggle('cinematic-events', !!on && hud === 'events');
 }
+let _dirCapT = null, _dirEndT = null;
+function _directorCaption(m) {
+  let el = document.getElementById('dir-caption');
+  if (!el) { el = document.createElement('div'); el.id = 'dir-caption'; document.body.appendChild(el); }
+  clearTimeout(_dirCapT);
+  if (!m.text) { el.classList.remove('show'); return; }
+  el.className = (m.pos || 'top');
+  el.innerHTML = '<span class="t">' + escapeHtml(m.text) + '</span>' + (m.sub ? '<span class="s">' + escapeHtml(m.sub) + '</span>' : '');
+  requestAnimationFrame(() => el.classList.add('show'));
+  const dur = m.dur != null ? +m.dur : 2500;
+  if (dur > 0) _dirCapT = setTimeout(() => el.classList.remove('show'), dur);
+}
+function _directorEndcard(m) {
+  let el = document.getElementById('dir-endcard');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'dir-endcard';
+    el.innerHTML = '<div class="name">PIXELANNEX</div><div class="tag">' + escapeHtml(m.tag || 'Paint the map. Conquer the world.') + '</div>' +
+      '<div class="url">pixelannex.com</div><div class="sub">' + escapeHtml(m.sub || 'free \u00b7 no download \u00b7 one persistent world war') + '</div>' +
+      '<img src="/PrettyNeatLogo512.png" alt="Pretty Neat Pixels">';
+    document.body.appendChild(el);
+  }
+  clearTimeout(_dirEndT);
+  if (m.on === false) { el.classList.remove('show'); document.body.classList.remove('endcard-on'); return; }
+  document.body.classList.add('endcard-on');
+  requestAnimationFrame(() => el.classList.add('show'));
+  if (m.dur > 0) _dirEndT = setTimeout(() => { el.classList.remove('show'); document.body.classList.remove('endcard-on'); }, +m.dur);
+}
 function _directorHandle(msg) {
   if (msg.cmd === 'camera') _directorCam(msg);
   else if (msg.cmd === 'cinematic') _setCinematic(msg.on, msg.hud);
+  else if (msg.cmd === 'caption') _directorCaption(msg);   // v193
+  else if (msg.cmd === 'endcard') _directorEndcard(msg);   // v193
+  else if (msg.cmd === 'popup') {                            // v193: leaders popup on cue
+    const w = idToFeatIdx.get(String(msg.winner)), l = idToFeatIdx.get(String(msg.loser));
+    if (w !== undefined && l !== undefined && typeof _showConquestFallPopup === 'function') _showConquestFallPopup(w, l);
+  }
 }
 function _focusGuidedTarget(box, done) {
   const cw = vp.clientWidth, ch = vp.clientHeight;
@@ -11591,7 +11647,9 @@ function mpHandleMessage(msg) {
       // v102 (Phase 2C): big winner-vs-loser popup on a fresh nation fall.
       // v144: ONLY the local player who did the conquering sees it (and the emote
       // picker, below) — it was previously shown to every connected client.
-      if (msg.perm && !_wasPerm && targetFi !== fi && fi === currentIdx && typeof _showConquestFallPopup === 'function') {
+      // v193: under DIRECTOR=1 the recording seat is a spectator (never the conqueror),
+      // so it must see the popup for ANY fresh kill — that is the shot.
+      if (msg.perm && !_wasPerm && targetFi !== fi && (fi === currentIdx || window._directorOn === true) && typeof _showConquestFallPopup === 'function') {
         _showConquestFallPopup(fi, targetFi);
       }
       // Attack detection: if WE were conquered, show direction arrow + card + force repick

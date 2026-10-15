@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-09-21-v192';
+const SERVER_VERSION       = '2026-10-15-v193';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -9145,6 +9145,48 @@ function _directorEmit(r) {
   (r.conquests || []).forEach(c => broadcast(JSON.stringify({ type: 'conquest', ...c })));
   (r.reversals || []).forEach(x => broadcast(JSON.stringify({ type: 'reversal', ...x })));
 }
+// v193: frontier flood for directed attacks. _campaignPixels samples every ~48th
+// pixel of a big country and, with no foothold, seeds the N nearest-to-centre
+// SAMPLES — at 90px/tick that plants footholds all over the country and the attack
+// reads as static, not an invasion. This keeps a BFS frontier per (attacker,target):
+// one seed on the target's edge nearest the attacker's homeland, then grows outward
+// with a little jitter so the edge looks hand-painted rather than a perfect disc.
+function _directorSpreadPixels(d, geo, cid, n) {
+  const cidx = getIdx(cid);
+  d.fronts = d.fronts || {};
+  let fr = d.fronts[geo];
+  if (!fr || !fr.length) {
+    const px = geoPixels[geo]; if (!px || !px.length) return [];
+    const hb = geoBbox[getGeoForCountry(cid)];
+    const ax = hb ? (hb.minX + hb.maxX) / 2 : MAP_W / 2, ay = hb ? (hb.minY + hb.maxY) / 2 : MAP_H / 2;
+    let best = Infinity, seed = px[0];
+    const step = Math.max(1, Math.floor(px.length / 3000));
+    for (let k = 0; k < px.length; k += step) {
+      const i = px[k]; if (claimByPixel[i] === cidx) continue;
+      const x = i % MAP_W, y = (i / MAP_W) | 0, dd = (x - ax) * (x - ax) + (y - ay) * (y - ay);
+      if (dd < best) { best = dd; seed = i; }
+    }
+    fr = d.fronts[geo] = [seed];
+  }
+  const out = [], seen = new Set();
+  while (out.length < n && fr.length) {
+    // pop from near the front of the queue, with jitter, so growth is BFS-ish but ragged
+    const j = Math.min(fr.length - 1, Math.floor(Math.random() * Math.min(fr.length, 6)));
+    const i = fr.splice(j, 1)[0];
+    if (claimByPixel[i] === cidx || geoAtPixel[i] !== geo || !landMask[i]) continue;
+    out.push({ x: i % MAP_W, y: (i / MAP_W) | 0 });
+    const x = i % MAP_W, y = (i / MAP_W) | 0;
+    for (let k = 0; k < 4; k++) {
+      const nx = x + DX4[k], ny = y + DY4[k];
+      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+      const ni = ny * MAP_W + nx;
+      if (seen.has(ni) || claimByPixel[ni] === cidx || geoAtPixel[ni] !== geo || !landMask[ni]) continue;
+      seen.add(ni); fr.push(ni);
+    }
+  }
+  if (!fr.length) delete d.fronts[geo];   // exhausted — next tick reseeds if anything is left
+  return out;
+}
 function _directorTick() {
   if (!mapReady || _directed.size === 0) return;
   const now = Date.now();
@@ -9162,7 +9204,7 @@ function _directorTick() {
       try { did = _botEncircleManeuver(cid, { forceRing: true, radius: d.radius }); } catch (e) {}
     }
     if (!did) {
-      const pts = _campaignPixels(geo, getIdx(cid), _directorRate(d));
+      const pts = _directorSpreadPixels(d, geo, cid, _directorRate(d));   // v193: advancing front
       if (pts.length) _directorEmit(applyPixels(pts, cid));
     }
   }
@@ -9289,6 +9331,13 @@ function _directorAction(a) {
     case 'monster':   return _directorMonster(a);
     case 'camera':    return _directorCamera(a);
     case 'cinematic': return _directorCinematic(a);
+    case 'popup': {   // v193: {winner, loser} by name -> ids, relayed to clients
+      const w = _directorFindId(a.winner), l = _directorFindId(a.loser);
+      if (!w || !l) return { ok: false, error: 'bad winner/loser' };
+      broadcast(JSON.stringify({ type: 'director', cmd: 'popup', winner: w, loser: l })); return { ok: true, winner: w, loser: l };
+    }
+    case 'caption':   // v193: clip overlays — relayed verbatim to clients
+    case 'endcard':   { broadcast(JSON.stringify(Object.assign({ type: 'director', cmd: a.action }, a, { action: undefined }))); return { ok: true }; }
     case 'run':       return _directorRun(a);
     case 'abort':     return _directorAbort();
     case 'find':      return _directorFind(a);
