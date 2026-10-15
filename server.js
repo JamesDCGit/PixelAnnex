@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-10-15-v193';
+const SERVER_VERSION       = '2026-10-15-v194';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -6163,8 +6163,8 @@ function _botEncircleManeuver(countryId, opts) {
   }
 
   const ctr = gpx[Math.floor(Math.random() * gpx.length)];
-  const cx = ctr % MAP_W, cy = (ctr / MAP_W) | 0;
-  if (!landMask[cy * MAP_W + cx]) return false;
+  const cx = opts.cx != null ? opts.cx | 0 : ctr % MAP_W, cy = opts.cy != null ? opts.cy | 0 : (ctr / MAP_W) | 0; // v193a: director may pin the centre
+  if (!landMask[cy * MAP_W + cx] || geoAtPixel[cy * MAP_W + cx] !== geo) return false;
   const R = opts.radius || (5 + Math.floor(Math.random() * 4));       // 5..8 (director may override)
   const steps = Math.max(40, Math.round(2 * Math.PI * R * 1.4));
   // wobble: 1-2 sine harmonics with a random phase + amplitude → irregular outline
@@ -9171,7 +9171,7 @@ function _directorSpreadPixels(d, geo, cid, n) {
   const out = [], seen = new Set();
   while (out.length < n && fr.length) {
     // pop from near the front of the queue, with jitter, so growth is BFS-ish but ragged
-    const j = Math.min(fr.length - 1, Math.floor(Math.random() * Math.min(fr.length, 6)));
+    const j = Math.min(fr.length - 1, Math.floor(Math.random() * Math.max(6, fr.length * 0.35))); // wide window -> ragged organic edge
     const i = fr.splice(j, 1)[0];
     if (claimByPixel[i] === cidx || geoAtPixel[i] !== geo || !landMask[i]) continue;
     out.push({ x: i % MAP_W, y: (i / MAP_W) | 0 });
@@ -9265,7 +9265,15 @@ function _directorEncircle(a) {
   const bot = bots.get(String(cid)); if (!bot) return { ok: false, error: 'no bot for ' + _directorName(cid) };
   const n = Math.max(1, +a.count || 1), gap = +a.gapMs || 600;
   bot.campaignGeo = geo; bot.campaignUntil = Date.now() + 3600000;
-  for (let k = 0; k < n; k++) setTimeout(() => { try { _botEncircleManeuver(cid, { forceRing: true, radius: a.radius || 0 }); } catch (e) {} }, k * gap);
+  // v193a: near:'front' pins rings around the front anchor (jittered by `spread` px,
+  // default 3x radius) so a close-up camera actually sees them close.
+  const fp = a.near === 'front' ? _directorFrontPoint(a.attacker, a.target) : null;
+  const jit = +a.spread || Math.max(6, (a.radius || 7) * 3);
+  for (let k = 0; k < n; k++) setTimeout(() => {
+    const o = { forceRing: true, radius: a.radius || 0 };
+    if (fp) { o.cx = fp.x + (+a.dx || 0) + Math.round((Math.random() * 2 - 1) * jit); o.cy = fp.y + (+a.dy || 0) + Math.round((Math.random() * 2 - 1) * jit); } // dx/dy: push rings AHEAD of the front
+    try { _botEncircleManeuver(cid, o); } catch (e) {}
+  }, k * gap);
   return { ok: true, rings: n };
 }
 function _directorMonster(a) {
@@ -9274,7 +9282,29 @@ function _directorMonster(a) {
   else return { ok: false, error: 'monster type must be ufo|kraken|godzilla' };
   return { ok: true, spawned: t };
 }
+// v193a: the FRONT anchor — the target's land pixel geometrically nearest the
+// attacker's homeland centre (where the directed spread seeds). Stable for the
+// whole take, so a close-up camera and pinned rings both land on the fighting.
+function _directorFrontPoint(attacker, target) {
+  const cid = _directorFindId(attacker), geo = _directorGeo(target);
+  if (!cid || geo == null) return null;
+  const px = geoPixels[geo]; if (!px || !px.length) return null;
+  const hb = geoBbox[getGeoForCountry(cid)];
+  const ax = hb ? (hb.minX + hb.maxX) / 2 : MAP_W / 2, ay = hb ? (hb.minY + hb.maxY) / 2 : MAP_H / 2;
+  let best = Infinity, seed = px[0];
+  const step = Math.max(1, Math.floor(px.length / 3000));
+  for (let k = 0; k < px.length; k += step) {
+    const i = px[k], x = i % MAP_W, y = (i / MAP_W) | 0, dd = (x - ax) * (x - ax) + (y - ay) * (y - ay);
+    if (dd < best) { best = dd; seed = i; }
+  }
+  return { x: seed % MAP_W, y: (seed / MAP_W) | 0, geo };
+}
 function _directorCamera(a) {
+  if (a.front && a.front.attacker && a.front.target) {       // camera {front:{attacker,target}, scale}
+    const p = _directorFrontPoint(a.front.attacker, a.front.target);
+    if (!p) return { ok: false, error: 'front: bad attacker/target' };
+    a.x = p.x + (+a.dx || 0); a.y = p.y + (+a.dy || 0);
+  }
   const ids = [].concat(a.countries || a.country || []).map(_directorFindId).filter(Boolean);
   broadcast(JSON.stringify({ type: 'director', cmd: 'camera', ids, x: a.x, y: a.y, scale: a.scale, dur: a.dur, pad: a.pad }));
   return { ok: true, ids };

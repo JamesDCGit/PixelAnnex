@@ -115,7 +115,8 @@ body.cinematic #ftue-highlight,body.cinematic #mobile-back-link{display:none !im
    inline _uiZoom. Also hide the small activity card while the end card is up. */
 body.cinematic #fall-popup{zoom:2.9 !important;}
 body.cinematic #fall-popup-backdrop{background:rgba(0,0,0,.45) !important;}
-body.cinematic #fall-popup .fp-foot:last-child{display:none !important;} /* 'click anywhere else to close' is a desktop affordance, not clip content */
+body.cinematic #fall-popup .fp-foot:last-child{display:none !important;}
+body.cinematic:has(#fall-popup) #activity-toast{display:none !important;} /* the popup IS the beat — no stacked conquest cards beside it */ /* 'click anywhere else to close' is a desktop affordance, not clip content */
 body.endcard-on #activity-toast{display:none !important;}
 body.cinematic:not(.cinematic-events) #activity-toast,body.cinematic:not(.cinematic-events) #fall-popup,
 body.cinematic:not(.cinematic-events) #conquest-toast{display:none !important}
@@ -4437,7 +4438,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-15-v193';
+const CODE_VERSION = '2026-10-15-v194';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar

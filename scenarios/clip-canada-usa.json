@@ -1,0 +1,24 @@
+{
+  "name": "CLIP · Canada conquers the USA (20s · 9:16 · close-up)",
+  "note": "Close framing: the camera locks to the FRONT anchor (USA edge nearest Canada) and pulls back as the invasion widens. Rings are pinned near the front so they are in frame. Record 21.5s, cut to 20. Fresh world (capture resets).",
+  "steps": [
+    { "at": 0,    "action": "world",    "mode": "freeze" },
+    { "at": 0,    "action": "speed",    "mult": 12 },
+    { "at": 0,    "action": "camera",   "front": { "attacker": "Canada", "target": "USA" }, "dy": 14, "scale": 6.5, "dur": 0 },
+    { "at": 0,    "action": "caption",  "text": "Canada has had enough.", "sub": "day 1 of the war", "dur": 2800 },
+    { "at": 0.5,  "action": "attack",   "attacker": "Canada", "targets": ["USA"], "style": "spread", "rate": 1100 },
+
+    { "at": 3.2,  "action": "camera",   "front": { "attacker": "Canada", "target": "USA" }, "dy": 52, "scale": 4.6, "dur": 3000 },
+    { "at": 4.8,  "action": "caption",  "text": "they're drawing circles", "pos": "bottom", "dur": 2200 },
+    { "at": 5.0,  "action": "encircle", "attacker": "Canada", "target": "USA", "near": "front", "dy": 78, "count": 5, "radius": 12, "spread": 34, "gapMs": 850 },
+
+    { "at": 9.0,  "action": "camera",   "front": { "attacker": "Canada", "target": "USA" }, "dy": 60, "scale": 3.2, "dur": 3000 },
+    { "at": 9.3,  "action": "attack",   "attacker": "Canada", "targets": ["USA"], "style": "mixed", "rate": 2600, "radius": 10 },
+    { "at": 11.8, "action": "caption",  "text": "there is no lore.", "sub": "there is only the map.", "dur": 2600 },
+
+    { "at": 14.0, "action": "camera",   "country": "USA", "pad": 0.92, "dur": 2200 },
+    { "at": 16.0, "action": "conquer",  "attacker": "Canada", "target": "USA" },
+    { "at": 16.2, "action": "caption",  "text": "your country is next.", "pos": "bottom", "dur": 1400 },
+    { "at": 17.6, "action": "endcard",  "dur": 0 }
+  ]
+}
