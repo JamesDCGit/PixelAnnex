@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-10-15-v194';
+const SERVER_VERSION       = '2026-10-15-v195';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -9362,10 +9362,12 @@ function _directorAction(a) {
     case 'camera':    return _directorCamera(a);
     case 'cinematic': return _directorCinematic(a);
     case 'popup': {   // v193: {winner, loser} by name -> ids, relayed to clients
+      if (a.off) { broadcast(JSON.stringify({ type: 'director', cmd: 'popup', off: true })); return { ok: true, off: true } } // v195
       const w = _directorFindId(a.winner), l = _directorFindId(a.loser);
       if (!w || !l) return { ok: false, error: 'bad winner/loser' };
       broadcast(JSON.stringify({ type: 'director', cmd: 'popup', winner: w, loser: l })); return { ok: true, winner: w, loser: l };
     }
+    case 'watermark': // v195
     case 'caption':   // v193: clip overlays — relayed verbatim to clients
     case 'endcard':   { broadcast(JSON.stringify(Object.assign({ type: 'director', cmd: a.action }, a, { action: undefined }))); return { ok: true }; }
     case 'run':       return _directorRun(a);

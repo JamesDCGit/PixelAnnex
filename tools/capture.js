@@ -105,6 +105,7 @@ async function director(payload) {
   // Playwright has been recording since the context was created (page load + boot
   // + warm-up included), so note EXACTLY when the timeline starts relative to the
   // recording and hand that to the encoder via a sidecar — a fixed trim is wrong.
+  await page.evaluate(() => { const ov = document.getElementById('tutorial-overlay'); if (ov) ov.classList.remove('open'); }); // it can re-open on welcome
   const runAt = Date.now();
   console.log('[capture] running ' + (sc.name || scenarioPath) + ' — ' + steps.length + ' steps, recording ' + SECONDS + 's');
   await director({ action: 'run', steps });

@@ -1,0 +1,27 @@
+{
+  "name": "TT · Greenland (11s, spoiler-first, hard cuts, safe-zone captions, watermark)",
+  "note": "TikTok grammar: the money shot (leaders popup) is frame 1, then '2 minutes earlier' and the story in hard cuts every ~2s. No bottom captions (platform UI dead zone). Record 11.6s, cut to 11.",
+  "steps": [
+    { "at": 0,    "action": "world",     "mode": "freeze" },
+    { "at": 0,    "action": "speed",     "mult": 15 },
+    { "at": 0,    "action": "watermark", "on": true },
+    { "at": 0,    "action": "camera",    "country": "Greenland", "pad": 0.9, "dur": 0 },
+    { "at": 0,    "action": "popup",     "winner": "USA", "loser": "Greenland" },
+    { "at": 0,    "action": "caption",   "text": "USA took Greenland.", "sub": "here's how", "dur": 2000 },
+
+    { "at": 2.1,  "action": "popup",     "off": true },
+    { "at": 2.1,  "action": "camera",    "front": { "attacker": "USA", "target": "Greenland" }, "dx": 64, "dy": 30, "scale": 6, "dur": 0 },
+    { "at": 2.1,  "action": "caption",   "text": "2 minutes earlier", "dur": 1600 },
+    { "at": 2.2,  "action": "attack",    "attacker": "USA", "targets": ["Greenland"], "style": "spread", "rate": 1600 },
+
+    { "at": 4.2,  "action": "camera",    "front": { "attacker": "USA", "target": "Greenland" }, "dx": 78, "dy": 44, "scale": 4.5, "dur": 0 },
+    { "at": 4.2,  "action": "caption",   "text": "they came from the west", "dur": 1800 },
+
+    { "at": 6.2,  "action": "camera",    "country": "Greenland", "pad": 0.95, "dur": 0 },
+    { "at": 6.2,  "action": "caption",   "text": "nobody defended it", "dur": 1800 },
+
+    { "at": 8.2,  "action": "conquer",   "attacker": "USA", "target": "Greenland" },
+    { "at": 8.3,  "action": "caption",   "text": "Sold.", "dur": 1700 },
+    { "at": 10.2, "action": "endcard",   "dur": 0 }
+  ]
+}

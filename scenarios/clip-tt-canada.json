@@ -1,0 +1,30 @@
+{
+  "name": "TT · Canada conquers the USA (12s, spoiler-first, hard cuts, watermark)",
+  "note": "Open on the crowned-leader popup, then the story in hard cuts: border, circles, the wide fall. Record 12.6s, cut to 12.",
+  "steps": [
+    { "at": 0,    "action": "world",     "mode": "freeze" },
+    { "at": 0,    "action": "speed",     "mult": 14 },
+    { "at": 0,    "action": "watermark", "on": true },
+    { "at": 0,    "action": "camera",    "country": "USA", "pad": 0.9, "dur": 0 },
+    { "at": 0,    "action": "popup",     "winner": "Canada", "loser": "USA" },
+    { "at": 0,    "action": "caption",   "text": "Canada took the USA.", "sub": "no, seriously", "dur": 2000 },
+
+    { "at": 2.1,  "action": "popup",     "off": true },
+    { "at": 2.1,  "action": "camera",    "front": { "attacker": "Canada", "target": "USA" }, "dy": 20, "scale": 6.5, "dur": 0 },
+    { "at": 2.1,  "action": "caption",   "text": "it started at the border", "dur": 1700 },
+    { "at": 2.2,  "action": "attack",    "attacker": "Canada", "targets": ["USA"], "style": "spread", "rate": 1400 },
+
+    { "at": 4.3,  "action": "camera",    "front": { "attacker": "Canada", "target": "USA" }, "dy": 70, "scale": 5, "dur": 0 },
+    { "at": 4.3,  "action": "encircle",  "attacker": "Canada", "target": "USA", "near": "front", "dy": 78, "count": 4, "radius": 12, "spread": 26, "gapMs": 450 },
+    { "at": 4.3,  "action": "caption",   "text": "then the circles", "dur": 1700 },
+
+    { "at": 6.4,  "action": "camera",    "front": { "attacker": "Canada", "target": "USA" }, "dy": 60, "scale": 3.4, "dur": 0 },
+    { "at": 6.4,  "action": "attack",    "attacker": "Canada", "targets": ["USA"], "style": "mixed", "rate": 2600, "radius": 10 },
+    { "at": 6.4,  "action": "caption",   "text": "there is no lore.", "sub": "only the map.", "dur": 2000 },
+
+    { "at": 8.6,  "action": "camera",    "country": "USA", "pad": 0.92, "dur": 0 },
+    { "at": 9.0,  "action": "conquer",   "attacker": "Canada", "target": "USA" },
+    { "at": 9.1,  "action": "caption",   "text": "your country is next.", "dur": 1800 },
+    { "at": 11.0, "action": "endcard",   "dur": 0 }
+  ]
+}

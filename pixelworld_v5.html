@@ -109,6 +109,12 @@ body.cinematic #ftue-highlight,body.cinematic #mobile-back-link{display:none !im
 #dir-endcard .tag{color:#fff;font-size:4vw;}
 #dir-endcard .url{color:#fff;font-weight:700;font-size:5.4vw;background:#4f46e5;border:3px solid var(--px-ink,#14100a);box-shadow:6px 6px 0 #000;padding:.3em .8em;margin-top:1vw;}
 #dir-endcard .sub{color:#94a3b8;font-size:3vw;margin-top:2vw;}
+/* v195: persistent watermark — clips get screen-recorded and re-shared without credit.
+   Sits top-left under the TikTok/IG top bar, clear of the right-side and bottom UI. */
+#dir-wm{position:fixed;top:11%;left:5%;z-index:2147483050;pointer-events:none;opacity:0;transition:opacity .3s;
+  font-family:'PlexUI',system-ui,sans-serif;font-weight:700;font-size:2.7vw;color:#fff;letter-spacing:.02em;
+  background:rgba(7,13,26,.72);border:2px solid var(--px-ink,#14100a);box-shadow:3px 3px 0 #000;padding:.28em .6em;}
+#dir-wm.show{opacity:.92;}
 #dir-endcard img{width:22vw;image-rendering:pixelated;margin-top:2vw;}
 /* v193: in cinematic (9:16 capture) the leaders popup is a desktop-sized postage stamp —
    scale it in place. zoom keeps the fixed+translate centering; !important beats the
@@ -116,7 +122,8 @@ body.cinematic #ftue-highlight,body.cinematic #mobile-back-link{display:none !im
 body.cinematic #fall-popup{zoom:2.9 !important;}
 body.cinematic #fall-popup-backdrop{background:rgba(0,0,0,.45) !important;}
 body.cinematic #fall-popup .fp-foot:last-child{display:none !important;}
-body.cinematic:has(#fall-popup) #activity-toast{display:none !important;} /* the popup IS the beat — no stacked conquest cards beside it */ /* 'click anywhere else to close' is a desktop affordance, not clip content */
+body.cinematic:has(#fall-popup) #activity-toast{display:none !important;}
+body.cinematic #tutorial-overlay{display:none !important;} /* v195: the welcome/quick-start can re-open after boot; never in a take */ /* the popup IS the beat — no stacked conquest cards beside it */ /* 'click anywhere else to close' is a desktop affordance, not clip content */
 body.endcard-on #activity-toast{display:none !important;}
 body.cinematic:not(.cinematic-events) #activity-toast,body.cinematic:not(.cinematic-events) #fall-popup,
 body.cinematic:not(.cinematic-events) #conquest-toast{display:none !important}
@@ -4438,7 +4445,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-15-v194';
+const CODE_VERSION = '2026-10-15-v195';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -9331,8 +9338,18 @@ function _directorHandle(msg) {
   else if (msg.cmd === 'caption') _directorCaption(msg);   // v193
   else if (msg.cmd === 'endcard') _directorEndcard(msg);   // v193
   else if (msg.cmd === 'popup') {                            // v193: leaders popup on cue
+    if (msg.off) {                                             // v195: dismiss on cue (spoiler-first cuts)
+      ['fall-popup', 'fall-popup-backdrop'].forEach(id => { const e = document.getElementById(id); if (e) e.remove(); });
+      return;
+    }
     const w = idToFeatIdx.get(String(msg.winner)), l = idToFeatIdx.get(String(msg.loser));
     if (w !== undefined && l !== undefined && typeof _showConquestFallPopup === 'function') _showConquestFallPopup(w, l);
+  }
+  else if (msg.cmd === 'watermark') {                        // v195
+    let el = document.getElementById('dir-wm');
+    if (!el) { el = document.createElement('div'); el.id = 'dir-wm'; document.body.appendChild(el); }
+    el.textContent = msg.text || 'pixelannex.com';
+    el.classList.toggle('show', msg.on !== false);
   }
 }
 function _focusGuidedTarget(box, done) {
