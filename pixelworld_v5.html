@@ -1729,6 +1729,17 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 .tb-audio .aud-btn.muted { background: #182742; color: #475569; }
 /* v166: zoom panel — a small arcade panel floating just above the stats bar.
    (Replaces the old in-toolbar .tb-zoom placement.) */
+/* v200: touch aiming reticle (paint mode) — sits above the fingertip, outlines the
+   brush footprint snapped to the map grid. Transforms only (compositor-cheap). */
+#touch-reticle { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 54; pointer-events: none; opacity: 0; transition: opacity .12s; }
+#touch-reticle.show { opacity: 1; }
+#touch-reticle > div { position: absolute; left: 0; top: 0; box-sizing: border-box; will-change: transform; }
+#touch-reticle .rt-box { border: 1px solid #fff; outline: 1px solid rgba(0,0,0,.75); }
+#touch-reticle .rt-ring { border-radius: 50%; border: 2px solid rgba(255,255,255,.95); box-shadow: 0 0 0 1px rgba(0,0,0,.6), inset 0 0 0 1px rgba(0,0,0,.45);
+  background:
+    linear-gradient(#fff,#fff) 50% 0 / 2px 6px no-repeat, linear-gradient(#fff,#fff) 50% 100% / 2px 6px no-repeat,
+    linear-gradient(#fff,#fff) 0 50% / 6px 2px no-repeat, linear-gradient(#fff,#fff) 100% 50% / 6px 2px no-repeat; }
+#touch-reticle .rt-stem { width: 2px; background: linear-gradient(rgba(255,255,255,.85), rgba(255,255,255,0)); }
 /* v198: touch Paint/Move toggle — only on touch screens. */
 #z-mode{display:none;width:auto;padding:0 8px;gap:4px;align-items:center;font-size:var(--pa-text);}
 #z-mode span{font-size:var(--pa-text);font-weight:700;}
@@ -4496,7 +4507,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-17-v199';
+const CODE_VERSION = '2026-10-17-v200';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4588,7 +4599,7 @@ const _isMobileForMemory = matchMedia('(max-width: 768px)').matches || _isIOS ||
 // RESTORED on mobile — +16MB, total ~42MB of canvas, well inside the budget the v124
 // bake freed. Without them a phone player got no visual feedback when painting and the
 // long-press inspector showed a card but no territory on the map.
-const _DECORATIVE_CANVAS_IDS = ['c-grid','c-waves','c-sprites','c-landmarks','c-crater','c-siege','c-outline','c-monsters','c-flags','c-overlay','c-nuke','c-night','c-nightfx']; // v174: night layers stripped on mobile
+const _DECORATIVE_CANVAS_IDS = ['c-waves','c-sprites','c-landmarks','c-crater','c-siege','c-outline','c-monsters','c-flags','c-overlay','c-nuke','c-night','c-nightfx']; // v174: night layers stripped on mobile
 const cBase=document.getElementById("c-base");
 const cGrid=document.getElementById("c-grid");
 const gridCtx=cGrid.getContext("2d");
@@ -4812,7 +4823,8 @@ const flashCtx = cFlash ? cFlash.getContext("2d") : null;
 if (flashCtx) flashCtx.imageSmoothingEnabled = false;
 // v31: On mobile/iOS, shrink decorative canvases to 1×1 to free GPU memory.
 //      Essential gameplay canvases stay at full MAP_W × MAP_H.
-[cBase,cGrid,cWaves,cSprites,cLandmarks,cClaim,cMonsters,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege].forEach(c=>{
+// v200: cGrid is screen-space — drawGrid() sizes it to the viewport, so it no longer gets a transient 2048x1024 backing here.
+[cBase,cWaves,cSprites,cLandmarks,cClaim,cMonsters,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege].forEach(c=>{
   if(!c) return;
   if(_isMobileForMemory && _DECORATIVE_CANVAS_IDS.includes(c.id)){
     c.width=1; c.height=1;
@@ -7032,7 +7044,7 @@ function paintBrush(px,py){
   // fingertip covers ~7+ map px there, so a 1px line is hard to place). The cost is
   // now charged PER PIXEL ACTUALLY FLIPPED (was a flat 1 per call) so a wider brush
   // can never paint cheaper than desktop — and a rejected pixel (nuke zone) is free.
-  const bs = (_touchMode === 'paint' && scale < 4) ? 3 : brushSize;
+  const bs = _touchBrushSize(); // v200: shared with the aiming reticle
   let painted = 0;
   const half=Math.floor(bs/2),rsq=(bs/2)**2;
   for(let dy=-half;dy<=half && pixelBucket>=1;dy++)for(let dx=-half;dx<=half && pixelBucket>=1;dx++){
@@ -13380,15 +13392,23 @@ setInterval(() => {
 const HIZOOM_FADE_START = 5;  // scale where the grid + border begin to appear
 const HIZOOM_FADE_RANGE = 5;  // scale span to reach full strength
 function _hiZoomFade() { return (typeof scale === 'undefined') ? 0 : Math.min(1, Math.max(0, (scale - HIZOOM_FADE_START) / HIZOOM_FADE_RANGE)); }
+// v200: the grid now ALSO runs on phones. It is a SCREEN-SPACE canvas (viewport-sized,
+// ~1MB on a phone — not a 2048x1024 map layer), so it was never the canvas-memory risk
+// the v31-v123 strip guarded against. Below the fade threshold it now clears ONCE and then
+// skips (it used to clearRect the whole canvas on every pan frame even when invisible).
+let _gridDrawnVisible = true;
 function drawGrid() {
-  if (_isMobileForMemory) return; // grid canvas is 1×1 on mobile
   if (!cGrid || !gridCtx || !vp) return;
   const vw = vp.clientWidth, vh = vp.clientHeight;
-  if (cGrid.width !== vw || cGrid.height !== vh) { cGrid.width = vw; cGrid.height = vh; }
-  if (cGrid.style.transform !== 'none') { cGrid.style.transform = 'none'; cGrid.style.opacity = '1'; } // screen-space
-  gridCtx.clearRect(0, 0, vw, vh);
+  if (cGrid.width !== vw || cGrid.height !== vh) { cGrid.width = vw; cGrid.height = vh; _gridDrawnVisible = true; }
+  if (cGrid.style.transform !== 'none') { cGrid.style.transform = 'none'; cGrid.style.opacity = '1'; cGrid.style.display = ''; } // screen-space
   const fade = _hiZoomFade();
-  if (fade <= 0 || typeof scale === 'undefined') return;
+  if (fade <= 0 || typeof scale === 'undefined') {
+    if (_gridDrawnVisible) { gridCtx.clearRect(0, 0, vw, vh); _gridDrawnVisible = false; }
+    return;
+  }
+  _gridDrawnVisible = true;
+  gridCtx.clearRect(0, 0, vw, vh);
   gridCtx.strokeStyle = 'rgba(210,220,235,' + (fade * 0.16).toFixed(3) + ')';
   gridCtx.lineWidth = 1;
   gridCtx.beginPath();
@@ -15909,27 +15929,33 @@ let _lpTimer = null, _lpX = 0, _lpY = 0;
 function _fireLongPressInspect() {
   _lpTimer = null;
   clearTimeout(_tCommitTimer); _tCommitTimer = null; // v198: a long-press never paints
+  if (typeof _hideReticle === 'function') _hideReticle(); // v200
   isPainting = false; strokePixelBuffer = []; _touchMode = 'idle';
   if (typeof _inspectAtScreen === 'function') _inspectAtScreen(_lpX, _lpY);
   if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
 }
-// v198: TOUCH MODEL REWORK (mobile pass).
-//  * A finger no longer paints the instant it lands. The first contact is PENDING for
-//    _TOUCH_COMMIT_MS (or until it moves) — if a second finger arrives in that window
-//    it's a pinch and NOTHING is painted (v197 spent + sent a pixel under the first
-//    finger of every pinch). A quick tap still paints its pixel on lift.
-//  * PAINT / MOVE toggle (#z-mode, persisted in pa_touch_mode): in Move mode one finger
-//    pans. Two fingers always pan + zoom in either mode.
-//  * Paint strokes are INTERPOLATED between touch samples (Bresenham), so a fast swipe
-//    draws a solid line instead of dotted gaps — a line you can actually close a ring with.
+// v200: TOUCH MODEL (builds on v198).
+//  * MOVE mode: one finger pans. BOTH modes: two fingers pan + pinch-zoom.
+//  * PAINT mode: the finger steers an AIMING RETICLE drawn _RETICLE_OFFSET px ABOVE the
+//    touch point, and paint lands under the reticle — the fingertip no longer hides the
+//    pixel you are painting. The reticle outlines the exact brush footprint, snapped to
+//    the map grid and tinted with your colour, so you see what a stroke will cover.
+//    A quick tap paints under the reticle too (one consistent rule).
+//  * The first contact is still PENDING for _TOUCH_COMMIT_MS (or until it moves), so a
+//    pinch never paints (v198). Long-press inspects what is under the reticle.
+//  * Pinch zoom is applied DIRECTLY (was routed through the eased doZoom, so the map
+//    lagged behind the fingers). Pans keep momentum: a flick glides and decelerates.
 const _TOUCH_COMMIT_MS = 90;
+const _RETICLE_OFFSET = 64;           // CSS px above the fingertip
 let _touchPanPref = false;
 try { _touchPanPref = localStorage.getItem('pa_touch_mode') === 'pan'; } catch (e) {}
 let _tStartX = 0, _tStartY = 0, _tLastX = 0, _tLastY = 0, _tCommitTimer = null, _tLastMap = null;
+let _tAimX = 0, _tAimY = 0;           // current reticle position (client px)
+function _touchBrushSize(){ return ((_touchMode === 'paint' || _touchMode === 'pending') && scale < 4) ? 3 : brushSize; }
 function _syncTouchModeBtn(){
   const b = document.getElementById('z-mode'); if (!b) return;
   b.innerHTML = _touchPanPref ? '✋<span>Move</span>' : '🖌️<span>Paint</span>';
-  b.title = _touchPanPref ? 'Move mode: one finger pans. Tap to switch to Paint.' : 'Paint mode: one finger paints. Tap to switch to Move.';
+  b.title = _touchPanPref ? 'Move mode: one finger pans. Tap to switch to Paint.' : 'Paint mode: drag to paint under the crosshair. Tap to switch to Move.';
   b.setAttribute('aria-pressed', _touchPanPref ? 'true' : 'false');
   b.classList.toggle('pan', _touchPanPref);
 }
@@ -15940,6 +15966,60 @@ function toggleTouchMode(){
   if (navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
 }
 document.addEventListener('DOMContentLoaded', _syncTouchModeBtn);
+
+// ── aiming reticle ──
+function _aimFrom(cx, cy){
+  // Above the finger; shrink the offset near the top of the map so it never leaves view.
+  const top = vp.getBoundingClientRect().top + 6;
+  _tAimX = cx; _tAimY = Math.max(top, cy - _RETICLE_OFFSET);
+}
+function _reticleEl(){
+  let el = document.getElementById('touch-reticle');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'touch-reticle';
+    el.innerHTML = '<div class="rt-stem"></div><div class="rt-ring"></div><div class="rt-box"></div>';
+    vp.appendChild(el);
+  }
+  return el;
+}
+function _showReticle(fingerY){
+  const el = _reticleEl(), r = vp.getBoundingClientRect();
+  const p = screenToMap(_tAimX, _tAimY), bs = _touchBrushSize(), half = Math.floor(bs / 2);
+  const bx = ox + (p.x - half) * scale, by = oy + (p.y - half) * scale, bw = Math.max(4, bs * scale);
+  const cx = bx + bw / 2, cy = by + bw / 2, ring = Math.max(30, bw + 14);
+  const box = el.children[2], rg = el.children[1], st = el.children[0];
+  box.style.transform = 'translate(' + bx + 'px,' + by + 'px)'; box.style.width = box.style.height = bw + 'px';
+  rg.style.transform = 'translate(' + (cx - ring / 2) + 'px,' + (cy - ring / 2) + 'px)'; rg.style.width = rg.style.height = ring + 'px';
+  const fy = (fingerY == null ? _tLastY : fingerY) - r.top, stemTop = cy + ring / 2, stemH = Math.max(0, fy - 18 - stemTop);
+  st.style.transform = 'translate(' + (cx - 1) + 'px,' + stemTop + 'px)'; st.style.height = stemH + 'px';
+  const rgb = (typeof _renderRgb === 'function' && currentIdx >= 0) ? _renderRgb(currentIdx) : null;
+  if (rgb) box.style.background = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',.45)';
+  el.classList.add('show');
+}
+function _hideReticle(){ const el = document.getElementById('touch-reticle'); if (el) el.classList.remove('show'); }
+
+// ── pan momentum ──
+let _flingRaf = 0, _flingVX = 0, _flingVY = 0, _flingT = 0, _panSamples = [];
+function _panSample(x, y){ const t = performance.now(); _panSamples.push([t, x, y]); while (_panSamples.length > 2 && t - _panSamples[0][0] > 100) _panSamples.shift(); }
+function _flingStop(){ if (_flingRaf) cancelAnimationFrame(_flingRaf); _flingRaf = 0; }
+function _flingFromSamples(){
+  const s = _panSamples; _panSamples = [];
+  if (s.length < 2) return;
+  const a = s[0], b = s[s.length - 1], dt = b[0] - a[0];
+  if (dt <= 0 || performance.now() - b[0] > 60) return;    // finger rested before lifting → no fling
+  _flingVX = (b[1] - a[1]) / dt; _flingVY = (b[2] - a[2]) / dt; // px per ms
+  if (Math.hypot(_flingVX, _flingVY) < 0.3) return;
+  _flingT = performance.now();
+  const step = (now) => {
+    const dt2 = Math.min(40, now - _flingT); _flingT = now;
+    ox += _flingVX * dt2; oy += _flingVY * dt2;
+    const k = Math.pow(0.94, dt2 / 16); _flingVX *= k; _flingVY *= k;
+    clamp(); applyT();
+    _flingRaf = Math.hypot(_flingVX, _flingVY) > 0.02 ? requestAnimationFrame(step) : 0;
+  };
+  _flingRaf = requestAnimationFrame(step);
+}
+
 // Paint every map pixel on the segment a→b (skipping a, which was painted last time).
 function _paintSegment(a, b){
   let x0 = a.x, y0 = a.y; const x1 = b.x, y1 = b.y;
@@ -15957,8 +16037,16 @@ function _touchCommitPaint(){
   if (_touchMode !== 'pending') return;
   _touchMode = 'paint';
   isPainting = true;
-  _tLastMap = screenToMap(_tStartX, _tStartY);
+  _tLastMap = screenToMap(_tAimX, _tAimY);   // v200: paint under the reticle
   paintBrush(_tLastMap.x, _tLastMap.y);
+  _showReticle();
+  // one-time hint: paint lands under the crosshair, not the fingertip
+  try {
+    if (!localStorage.getItem('pa_reticle_hint')) {
+      localStorage.setItem('pa_reticle_hint', '1');
+      actPushCard({ variant: 'info', title: '🎯 Aim with the crosshair', text: 'Paint lands under the crosshair just above your finger. Switch to ✋ Move to pan with one finger.' });
+    }
+  } catch (e) {}
 }
 function _touchEndStroke(){
   if (!isPainting) return;
@@ -15974,14 +16062,21 @@ function _touchEndStroke(){
 }
 vp.addEventListener('touchstart', e => {
   if (!_touchOnMap(e)) return;
+  _flingStop();
+  _camTweenId++; // a touch interrupts any camera fly-to
   if (e.touches.length === 1 && _touchMode === 'idle') {
     const t = e.touches[0];
-    _tStartX = _tLastX = _lpX = t.clientX; _tStartY = _tLastY = _lpY = t.clientY;
-    _camTweenId++; // a touch interrupts any camera fly-to
+    _tStartX = _tLastX = t.clientX; _tStartY = _tLastY = t.clientY;
+    _panSamples = [];
     if (_touchPanPref) {
       _touchMode = 'pan';
+      _lpX = t.clientX; _lpY = t.clientY;
+      _panSample(t.clientX, t.clientY);
     } else {
       _touchMode = 'pending';
+      _aimFrom(t.clientX, t.clientY);
+      _lpX = _tAimX; _lpY = _tAimY;          // long-press inspects what the reticle shows
+      _showReticle(t.clientY);
       clearTimeout(_tCommitTimer);
       _tCommitTimer = setTimeout(_touchCommitPaint, _TOUCH_COMMIT_MS);
     }
@@ -15993,12 +16088,14 @@ vp.addEventListener('touchstart', e => {
     // were already sent) rather than discarded, so its encirclement still counts.
     clearTimeout(_tCommitTimer); _tCommitTimer = null;
     if (_touchMode === 'paint') _touchEndStroke();
+    _hideReticle();
     clearTimeout(_lpTimer); _lpTimer = null; // v128: cancel long-press on pinch
     _touchMode = 'panzoom';
     _touchLastDist = _tdist(e);
     const mid = _tmid(e);
     _touchLastMidX = mid.x;
     _touchLastMidY = mid.y;
+    _panSamples = []; _panSample(mid.x, mid.y);
   }
   e.preventDefault();
 }, { passive: false });
@@ -16010,30 +16107,37 @@ vp.addEventListener('touchmove', e => {
     const moved = Math.abs(t.clientX - _tStartX) > 8 || Math.abs(t.clientY - _tStartY) > 8;
     // v128: a real drag is a stroke/pan, not a long-press — cancel it.
     if (_lpTimer && moved) { clearTimeout(_lpTimer); _lpTimer = null; }
-    if (_touchMode === 'pending' && moved) _touchCommitPaint();
-    if (_touchMode === 'paint') {
-      const p = screenToMap(t.clientX, t.clientY);
-      if (_tLastMap && (p.x !== _tLastMap.x || p.y !== _tLastMap.y)) _paintSegment(_tLastMap, p);
-      _tLastMap = p;
-    } else if (_touchMode === 'pan') {
+    if (_touchMode === 'pan') {
       ox += t.clientX - _tLastX; oy += t.clientY - _tLastY;
       clamp(); applyT();
+      _panSample(t.clientX, t.clientY);
+    } else {
+      // Commit at the touch-DOWN aim first (so the stroke starts where the reticle first
+      // appeared), then move the aim and paint the segment to it.
+      if (_touchMode === 'pending' && moved) _touchCommitPaint();
+      _aimFrom(t.clientX, t.clientY);
+      if (_touchMode === 'paint') {
+        const p = screenToMap(_tAimX, _tAimY);
+        if (_tLastMap && (p.x !== _tLastMap.x || p.y !== _tLastMap.y)) _paintSegment(_tLastMap, p);
+        _tLastMap = p;
+      }
+      _showReticle(t.clientY);
     }
     _tLastX = t.clientX; _tLastY = t.clientY;
   } else if (_touchMode === 'panzoom' && e.touches.length >= 2) {
     const r = vp.getBoundingClientRect();
     const mid = _tmid(e);
-    // Pan: midpoint delta → ox/oy delta
-    ox += mid.x - _touchLastMidX;
+    ox += mid.x - _touchLastMidX;              // pan: midpoint delta
     oy += mid.y - _touchLastMidY;
     _touchLastMidX = mid.x;
     _touchLastMidY = mid.y;
-    // Zoom: distance ratio centered on midpoint (relative to viewport)
     const d = _tdist(e);
-    if (_touchLastDist > 0) doZoom(d / _touchLastDist, mid.x - r.left, mid.y - r.top);
+    if (_touchLastDist > 0) {                  // v200: zoom applied directly — the map stays under the fingers
+      _zoomAnim = null;
+      _zoomApply(scale * (d / _touchLastDist), mid.x - r.left, mid.y - r.top);
+    } else { clamp(); applyT(); }
     _touchLastDist = d;
-    clamp();
-    applyT();
+    _panSample(mid.x, mid.y);
   }
   e.preventDefault();
 }, { passive: false });
@@ -16041,24 +16145,30 @@ vp.addEventListener('touchmove', e => {
 vp.addEventListener('touchend', e => {
   if (!_touchOnMap(e)) return;
   clearTimeout(_lpTimer); _lpTimer = null; // v128: lift cancels a pending long-press
-  // A lift while still PENDING = a quick tap → paint that one pixel, then end the stroke.
+  // A lift while still PENDING = a quick tap → paint under the reticle, then end the stroke.
   if (_touchMode === 'pending' && e.touches.length === 0) _touchCommitPaint();
   clearTimeout(_tCommitTimer); _tCommitTimer = null;
   if (_touchMode === 'paint') _touchEndStroke();
   if (e.touches.length === 0) {
+    if (_touchMode === 'pan' || _touchMode === 'panzoom') _flingFromSamples();
     _touchMode = 'idle';                 // all fingers up
     _touchLastDist = 0;
     _tLastMap = null;
+    _hideReticle();
   } else if (e.touches.length === 1 && _touchMode === 'panzoom') {
-    // Dropped from 2 fingers to 1 — finish the gesture rather than starting a
-    // paint (which would create a stray pixel under the user's lifting finger).
-    _touchMode = 'idle';
+    // Dropped from 2 fingers to 1 — keep panning with the remaining finger (both modes);
+    // it never turns into a stroke, so no stray pixel under the lifting finger.
+    const t = e.touches[0];
+    _touchMode = 'pan';
+    _tStartX = _tLastX = t.clientX; _tStartY = _tLastY = t.clientY;
     _touchLastDist = 0;
+    _panSamples = []; _panSample(t.clientX, t.clientY);
   }
 });
 
 vp.addEventListener('touchcancel', () => {
   clearTimeout(_tCommitTimer); _tCommitTimer = null; // v198
+  _hideReticle(); _panSamples = []; // v200
   _touchMode = 'idle';
   _touchLastDist = 0;
   isPainting = false;
