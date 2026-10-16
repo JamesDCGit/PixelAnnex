@@ -1941,6 +1941,150 @@ html.pa-standalone #toolbar { padding-top: max(5px, env(safe-area-inset-top, 0px
 #pwa-ios .pi-share { display: inline-block; padding: 0 4px; border: 1px solid #475569; border-radius: 4px; }
 #pwa-ios button { width: 100%; background: #4f46e5; color: #fff; border: 2px solid var(--px-ink, #14100a); padding: 9px; font: inherit; font-weight: 700; cursor: pointer; }
 
+/* ════════════════════════════════════════════════════════════════════════════
+   v201: PHONE DESIGN SYSTEM (compact tier, <=820px). One authoritative layer over the
+   older v30/v128/v198 phone rules. Principles:
+     * TYPE: the whole UI reads --pa-text. On phones it is 14px (Aa: 13 / 14 / 15.5),
+       set by _applyFontScale — panel `zoom` is forced to 1 there, so sizes are exact
+       and consistent (desktop keeps its zoom-based scale, untouched).
+     * TAP TARGETS: every control >= 44px tall; icon-only buttons 44x44.
+     * CONTRAST: sheets/popups are OPAQUE; body text #d6dee9, secondary #a9b6c9,
+       muted #93a1b5 (all >= 4.5:1 on the #0f1a2e surface).
+   ════════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 820px) {
+  :root { --pa-surface: #0f1a2e; --pa-surface-2: #16233b; --pa-line: #24324d; --pa-ink-1: #e8eef6; --pa-ink-2: #c3cedc; --pa-ink-3: #93a1b5; }
+
+  /* ── toolbar ── */
+  #toolbar #csel-btn { min-height: 40px; }
+  #toolbar #rank-chip { width: 40px; height: 40px; justify-content: center; }
+  #toolbar #rank-chip img { width: 30px !important; height: 30px !important; }
+  #toolbar #btn-mobile-menu { width: 44px !important; height: 40px !important; }
+  #bucket-hud { min-height: 36px; }
+  #bucket-hud span[style*="#334155"], #bucket-timer { color: var(--pa-ink-3) !important; }
+  #csel-arrow { color: var(--pa-ink-3) !important; }
+
+  /* ── country dropdown: full-width sheet under the toolbar (was 384px wide → off-screen) ── */
+  #csel-dropdown { position: fixed !important; left: 8px !important; right: 8px !important; width: auto !important; max-width: none !important;
+    max-height: min(60vh, 520px) !important; background: var(--pa-surface) !important; border: 1px solid var(--pa-line) !important; z-index: 220 !important; }
+  #csel-search { min-height: 44px; font-size: 16px !important; box-sizing: border-box; width: 100%; }
+  #csel-list > div { min-height: 44px; display: flex; align-items: center; box-sizing: border-box; }
+  #csel-list { max-height: calc(min(60vh, 520px) - 60px) !important; overflow-y: auto !important; }
+
+  /* ── bottom action bar ── */
+  #m-actionbar button span { font-size: 12px !important; color: var(--pa-ink-3) !important; }
+  #m-actionbar button.active span { color: #a5b4fc !important; }
+
+  /* ── menu drawer: aligned icon column, 48px rows, real close button ── */
+  #mobile-drawer { width: min(300px, 86vw) !important; background: var(--pa-surface) !important; border-left: 1px solid var(--pa-line) !important;
+    padding: 0 12px calc(12px + env(safe-area-inset-bottom, 0px)) !important; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; }
+  #mobile-drawer .drawer-header { display: flex !important; align-items: center !important; justify-content: space-between !important;
+    min-height: 56px; padding: 0 0 0 4px !important; margin: 0 0 4px !important; border-bottom: 1px solid var(--pa-line); }
+  #mobile-drawer .drawer-header span { font-size: 16px !important; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--pa-ink-1) !important; }
+  #mobile-drawer-close { width: 44px !important; height: 44px !important; font-size: 26px !important; line-height: 1 !important; color: var(--pa-ink-2) !important;
+    background: none !important; border: none !important; display: flex !important; align-items: center; justify-content: center; padding: 0 !important; }
+  #mobile-drawer button.btn { display: flex !important; align-items: center !important; gap: 12px !important; width: 100% !important; min-height: 48px !important;
+    padding: 0 14px !important; margin: 0 !important; text-align: left !important; justify-content: flex-start !important; box-sizing: border-box;
+    font-size: 15px !important; font-weight: 600 !important; color: var(--pa-ink-1) !important; }
+  #mobile-drawer button.btn[style*="display:none"], #mobile-drawer button.btn[style*="display: none"] { display: none !important; } /* keep JS-hidden rows hidden (install row) */
+  #mobile-drawer .dr-ico { flex: 0 0 24px; width: 24px; text-align: center; font-size: 18px; line-height: 1; }
+  #mobile-drawer .dr-lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Territory + Ranks sheets: opaque, readable, uncropped header ── */
+  body.m-sheet-legend #legend, body.m-sheet-leaderboard-panel #leaderboard-panel {
+    background: var(--pa-surface) !important; border: 1px solid var(--pa-line) !important; padding: 0 14px 12px !important;
+    box-shadow: 0 -8px 28px rgba(0,0,0,.55) !important; max-height: min(64vh, 560px) !important; }
+  #legend h3, #leaderboard-panel h3 { width: auto !important; height: auto !important; text-indent: 0 !important; overflow: visible !important;
+    position: sticky; top: 0; z-index: 2; background: var(--pa-surface); margin: 0 -14px 8px !important; padding: 0 14px !important;
+    display: flex !important; align-items: center !important; justify-content: flex-start !important; border-bottom: 1px solid var(--pa-line) !important; }
+  #legend h3::before { content: none !important; display: none !important; }
+  #legend #leg-panel-territory, #legend #server-status { display: block !important; }
+  #legend #leg-panel-conquests[style*="none"] { display: none !important; }
+  #legend #server-status { display: flex !important; }
+  .leg-tab { min-height: 48px !important; margin-bottom: -1px !important; padding: 0 6px !important; font-size: 13px !important; font-weight: 700 !important;
+    color: var(--pa-ink-3) !important; border-bottom-width: 3px !important; }
+  .leg-tab.active { color: #93c5fd !important; }
+  #legend .leg-row { min-height: 40px; margin: 0 !important; gap: 8px !important; font-size: 14px !important; color: var(--pa-ink-2) !important;
+    border-bottom: 1px solid rgba(255,255,255,.04); }
+  #legend .leg-row .leg-name { font-weight: 600; }
+  /* rank numbers + unranked names are written with inline slate colours (3.7:1) */
+  #legend .leg-rank, #legend .leg-row [style*="rgb(100, 116, 139)"], #legend .leg-row [style*="rgb(71, 85, 105)"],
+  #legend .leg-row [style*="rgb(51, 65, 85)"], #legend [style*="color:#334155"], #legend [style*="color: rgb(51, 65, 85)"] { color: var(--pa-ink-3) !important; }
+  #legend .leg-rank { min-width: 26px; text-align: center; font-size: 13px !important; }
+  #legend .leg-row > span:not(.leg-name):not(.leg-rank), #legend .leg-row > div:not(.leg-dot) { color: var(--pa-ink-3) !important; }
+  #legend .pa-flag-inline, #leaderboard-panel .pa-flag-inline { width: 18px !important; height: 12px !important; }
+  #legend .leg-dot { width: 10px !important; height: 10px !important; }
+  #legend #server-status, #legend #server-status * { font-size: 13px !important; }
+  #legend #mp-status { color: var(--pa-ink-3) !important; }
+@media (max-width: 480px) { #legend .legend-david-shield { display: none !important; } } /* no room in a portrait row */
+  #legend #bot-list { display: none !important; } /* 166 mostly-0px bot rows under the ranking — the count line stays */
+  #leaderboard-panel h3 { min-height: 48px; justify-content: space-between !important; font-size: 13px !important; color: var(--pa-ink-1) !important; letter-spacing: .06em; }
+  #leaderboard-panel .lb-count { color: var(--pa-ink-3) !important; font-size: 13px !important; }
+  #lb-tabs { gap: 8px !important; margin-bottom: 8px !important; }
+  .lb-tab { min-height: 44px !important; font-size: 13px !important; font-weight: 700 !important; }
+  .lb-head, .lb-head * { font-size: 12px !important; color: var(--pa-ink-3) !important; }
+  .lb-row { min-height: 40px; font-size: 14px !important; color: var(--pa-ink-2) !important; }
+  .lb-empty { font-size: 14px !important; color: var(--pa-ink-3) !important; padding: 12px 0 !important; }
+
+  /* ── notification cards ── */
+  .act-card { font-size: 14px !important; }
+  .act-card .act-title { font-size: 13px !important; }
+
+  /* ── welcome / quick start ── */
+  #tutorial-box .qs-btn, .qs-btn { min-height: 46px !important; font-size: 15px !important; }
+  .qs-name { font-size: 15px !important; }
+  #tutorial-box select, #lang-picker-tut select { min-height: 40px; font-size: 15px !important; }
+  .qs-foot, .qs-foot * { font-size: 13px !important; }
+  .qs-foot a, .qs-link { color: #a9b6c9 !important; display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; }
+  .tut-country-search { min-height: 44px; font-size: 16px !important; }
+  .tut-country-list > *, #repick-list > * { min-height: 44px; display: flex; align-items: center; }
+
+  /* ── how to play ── */
+  #howto-overlay h2, #howto-overlay h3 { font-size: 17px !important; }
+  #howto-close { width: 44px !important; height: 44px !important; font-size: 26px !important; display: flex; align-items: center; justify-content: center; }
+  #howto-overlay .tut-btn { min-height: 48px !important; font-size: 15px !important; }
+  .tut-tile-desc, .tut-tile-title { font-size: 14px !important; }
+
+  /* ── stats modal ── */
+  #stats-modal { font-size: 14px; background: var(--pa-surface) !important; }
+  .stats-tab { min-height: 44px !important; font-size: 13px !important; color: var(--pa-ink-3) !important; flex: 1 1 0; }
+  .stats-tab.active { color: #fff !important; }
+  #stats-close { min-height: 44px !important; min-width: 64px; font-size: 14px !important; }
+  #stats-modal button:not(.stats-tab):not(#stats-close) { min-height: 44px; }
+
+  /* ── daily popup ── */
+  #daily-popup-card { font-size: 14px; background: var(--pa-surface) !important; }
+  #daily-popup-card .dp-label, #daily-popup-card .dp-val, #daily-popup-card .dp-world-row { font-size: 14px !important; }
+  #daily-popup-card .dp-section-title { font-size: 13px !important; }
+  #daily-popup-card button { min-height: 44px !important; font-size: 15px !important; }
+  #daily-popup-card .dp-close { position: sticky; bottom: 0; width: 100%; min-height: 52px !important; box-shadow: 0 -12px 18px var(--pa-surface); }
+
+  /* ── conquest-fall popup: inset from the edges ── */
+  #fall-popup { width: calc(100vw - 24px) !important; max-width: 460px !important; box-sizing: border-box; } /* centring transform + pop-in animation untouched */
+  #fall-popup .fp-foot { font-size: 13px !important; opacity: .8 !important; }
+
+  /* ── collectables ── */
+  #collect-overlay button[onclick*="remove"] { width: 44px !important; height: 44px !important; font-size: 24px !important; color: var(--pa-ink-2) !important; }
+  #collect-sub { font-size: 13px !important; color: var(--pa-ink-2) !important; }
+
+  /* ── emote picker ── */
+  #emote-picker button { min-width: 44px; min-height: 44px; }
+  #emote-picker button:last-child { color: var(--pa-ink-2) !important; }
+
+  /* ── endgame panel ── */
+  #endgame-panel { width: calc(100vw - 24px) !important; font-size: 13px !important; }
+
+  /* ── inline slate text colours (#64748b/#475569/#334155, 1.8–3.8:1) used across the
+       older panels → lifted to the muted token inside every phone sheet/popup ── */
+  :is(#legend, #leaderboard-panel, #daily-popup-card, #stats-modal, #collect-overlay, #mobile-drawer, #howto-overlay, #repick-overlay, #emote-picker)
+    :is([style*="#64748b"], [style*="#475569"], [style*="#334155"], [style*="rgb(100, 116, 139)"], [style*="rgb(71, 85, 105)"], [style*="rgb(51, 65, 85)"]) { color: var(--pa-ink-3) !important; }
+  #daily-popup-card .dp-label { color: var(--pa-ink-3) !important; }
+  .ep-skip { color: var(--pa-ink-2) !important; min-height: 44px; display: flex; align-items: center; justify-content: center; font-size: 14px !important; }
+
+  /* ── install nudge buttons ── */
+  #pwa-nudge .pn-go { min-height: 40px; }
+  #pwa-nudge .pn-x { min-width: 40px; min-height: 40px; }
+}
+
 /* v39d: Monster banner fade-out */
 @keyframes monsterBannerFade {
   0%   { opacity: 0; transform: translateX(-50%) translateY(-8px); }
@@ -2317,9 +2461,9 @@ html.pa-standalone #toolbar { padding-top: max(5px, env(safe-area-inset-top, 0px
         <button id="howto-close" onclick="closeHowTo()" aria-label="Close">&times;</button>
         <h2>How to play</h2>
         <div class="howto-grid">
-          <div class="howto-tile"><div class="ht-i">🎨</div><div class="ht-t">Paint pixels</div><div class="ht-d">Click &amp; drag on the map to paint. Each pixel costs 1 from your bucket, which refills over time.</div></div>
+          <div class="howto-tile"><div class="ht-i">🎨</div><div class="ht-t">Paint pixels</div><div class="ht-d">Drag across the map to paint (on a phone, paint lands under the crosshair). Each pixel costs 1 from your bucket, which refills over time.</div></div>
           <div class="howto-tile"><div class="ht-i">⚔️</div><div class="ht-t">Conquer countries</div><div class="ht-d">Hold ~70–75% of a country's pixels to claim it. Smaller countries need a higher share.</div></div>
-          <div class="howto-tile"><div class="ht-i">🛡️</div><div class="ht-t">Fight back</div><div class="ht-d">When your homeland is over half lost, painting your own land grants bonus pixels — the more you've lost, the bigger the boost.</div></div>
+          <div class="howto-tile"><div class="ht-i">🛡️</div><div class="ht-t">Fight back</div><div class="ht-d">When your homeland is over half lost, your regen is maxed until you push the invaders back.</div></div>
           <div class="howto-tile"><div class="ht-i">🎯</div><div class="ht-t">Encircle</div><div class="ht-d">Close a loop around enemy land to capture everything inside it at once, and earn a regen bonus.</div></div>
           <div class="howto-tile"><div class="ht-i">🤝</div><div class="ht-t">Alliances</div><div class="ht-d">Team up via Discord — allied pixels count together toward conquest, and you can rally on shared targets.</div></div>
           <div class="howto-tile"><div class="ht-i">👹</div><div class="ht-t">Monsters</div><div class="ht-d">UFOs, Krakens &amp; Giant Lizards roam the map and wipe pixels in their path. Stay clear — or strike while they rampage.</div></div>
@@ -3758,6 +3902,7 @@ document.addEventListener('DOMContentLoaded', function setupMobileDrawer() {
       else if (act === 'sfx')         clickById('btn-sfx');
       else if (act === 'font-scale')  { if (typeof cycleFontScale === 'function') cycleFontScale(); }
       else if (act === 'howto')       { if (typeof openHowTo === 'function') openHowTo(); } // v198
+      else if (act === 'collect')     { if (typeof openCollectables === 'function') openCollectables(); } // v201
       else if (act === 'install')     { if (typeof pwaInstall === 'function') pwaInstall('drawer'); } // v199
       else if (act === 'account')     { const li = document.querySelector('#login-hud.logged-in'); window.location.href = li ? '/auth/logout' : '/auth/login'; } // v198
     }, 200);
@@ -4507,7 +4652,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-17-v200';
+const CODE_VERSION = '2026-10-17-v201';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -6935,6 +7080,9 @@ if (typeof renderLandmarks === 'function') {
   if (!_isMobileForMemory) prerenderAllTracks();
   // Apply default 110% zoom on boot without advancing the cycle index
   (function applyDefaultZoom(){
+    // v201: just re-run the real font-scale logic — this boot-time copy re-applied
+    // the 1.2 zoom on phones AFTER _applyFontScale had set it to 1 (toolbar 91px → 163px).
+    if (typeof _applyFontScale === 'function') { _applyFontScale(); return; }
     const zoom = _fontScales[0].val;
     // v99c: leaderboard-panel added — it was the ONLY panel missing from the
     // zoom list, so it rendered un-zoomed (smaller font, unscaled edge gaps).
@@ -8673,7 +8821,7 @@ function _showConquestFallPopup(winnerFi, loserFi){
       _fpSideHTML(L, false) +
     '</div>' +
     '<div class="fp-foot"><b style="color:#fca5a5">' + escapeHtml(W.name) + '</b> conquered <b>' + escapeHtml(L.name) + '</b></div>' +
-    '<div class="fp-foot" style="margin-top:8px;opacity:.6;">click anywhere else to close</div>';
+    '<div class="fp-foot" style="margin-top:8px;opacity:.6;">' + (matchMedia('(pointer:coarse)').matches ? 'tap anywhere to close' : 'click anywhere else to close') + '</div>'; // v201
   document.body.appendChild(el);
   let _fpClosed = false;
   const _close = () => {
@@ -10995,11 +11143,19 @@ const _fontScales = [
 ];
 let _fontScaleIdx = 0;
 let _uiZoom = '1.2'; // v105: current font-scale zoom, applied to popups built at runtime
+// v201: on PHONES (compact tier) the font scale sets the type tokens instead of a
+// panel `zoom` — zoom multiplied an 11px base into inconsistent 11/13.2/14px text and
+// broke layout maths (zoomed boxes overflow, don't scroll). Mid is the default.
+const _COMPACT_TYPE = { Mid: [14, 18], Large: [15.5, 19.5], Normal: [13, 17] };
 function _applyFontScale(){
   const s = _fontScales[_fontScaleIdx];
+  const _compact = (typeof _isCompactUI === 'function') && _isCompactUI();
+  const _rs = document.documentElement.style;
+  if (_compact) { const tt = _COMPACT_TYPE[s.label] || _COMPACT_TYPE.Mid; _rs.setProperty('--pa-text', tt[0] + 'px'); _rs.setProperty('--pa-text-lg', tt[1] + 'px'); }
+  else { _rs.removeProperty('--pa-text'); _rs.removeProperty('--pa-text-lg'); }
   // Apply zoom to all UI panels — zoom scales px values, borders, everything
   // NOTE: #tip is excluded — it uses position:fixed and must not be zoomed
-  const zoom = s.val;
+  const zoom = _compact ? '1' : s.val;
   _uiZoom = zoom;
   // v105: panels/popups that can be zoomed whole (corner- or centre-anchored).
   // Added the previously-unscaled login HUD, social links, bonus banners, and the
@@ -11051,6 +11207,8 @@ function cycleFontScale(){
   _fontScaleIdx = (_fontScaleIdx + 1) % _fontScales.length;
   _applyFontScale();
 }
+// v201: re-apply when crossing the phone/desktop breakpoint (rotation, window resize).
+try { _compactMQ.addEventListener('change', () => { try { _applyFontScale(); } catch (e) {} }); } catch (e) {}
 // v82: apply default Mid font scale once the DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', _applyFontScale);
@@ -12251,14 +12409,16 @@ setInterval(() => {
     if (!countryId) return;
     const d = davidByCountry[countryId];
     let shield = row.querySelector('.legend-david-shield');
-    if (d && d.mult > 1) {
+    // v201: the David multiplier is continuous (v97e) — it printed as "1.0253382508413345x".
+    const _dm = d ? Math.round(d.mult * 10) / 10 : 1;
+    if (d && _dm > 1) {
       if (!shield) {
         shield = document.createElement('span');
         shield.className = 'legend-david-shield';
         shield.style.cssText = 'margin-left:4px;font-size:var(--pa-text);color:#a5b4fc;';
         row.appendChild(shield);
       }
-      shield.textContent = '🛡️' + d.mult + 'x';
+      shield.textContent = '🛡️' + _dm.toFixed(1) + 'x';
     } else if (shield) {
       shield.remove();
     }
@@ -13067,7 +13227,7 @@ function renderLoginHUD(profile) {
   }
   // v198: mirror the account state into the phone menu drawer (the toolbar sign-in is hidden there).
   const _mda = document.getElementById('m-drawer-account');
-  if (_mda) _mda.textContent = profile ? ('👤 ' + (profile.username || 'Account') + ' · Log out') : '💬 Sign in with Discord';
+  if (_mda) _drawerLabel(_mda, profile ? ('👤 ' + (profile.username || 'Account') + ' · Log out') : '💬 Sign in with Discord'); // v201
 }
 
 // Run auth check after map loads
@@ -15267,6 +15427,13 @@ async function syncCountryToProfile(countryId){
   }, 1500);
 }
 
+// v201: on phones the dropdown is a fixed full-width sheet (CSS); its top follows the
+// toolbar's real bottom edge (2 rows portrait, 1 row landscape, + safe-area in-app).
+function _placeCselDropdown(){
+  if (!(typeof _isCompactUI === 'function' && _isCompactUI())) return;
+  const dd = document.getElementById('csel-dropdown'), tb = document.getElementById('toolbar');
+  if (dd && tb) dd.style.top = Math.round(tb.getBoundingClientRect().bottom + 4) + 'px';
+}
 function toggleCselDropdown(){
   _cselOpen = !_cselOpen;
   const dd = document.getElementById('csel-dropdown');
@@ -15278,6 +15445,7 @@ function toggleCselDropdown(){
   } else {
     closeCselDropdown();
   }
+  _placeCselDropdown(); // v201
 }
 
 function closeCselDropdown(){
@@ -16271,6 +16439,18 @@ function mkNoise(pm){
   });
 })();
 
+// v201: drawer rows = fixed-width icon column + label, so every label starts at the
+// same x (emoji widths differ, so "📊 Stats" and "❔ How to" drifted). _drawerLabel is
+// also used by the account / install rows, which rewrite their text at runtime.
+function _drawerLabel(el, text) {
+  if (!el) return;
+  const m = String(text).match(/^(\S+)\s+(.+)$/);
+  el.innerHTML = m ? '<span class="dr-ico">' + escapeHtml(m[1]) + '</span><span class="dr-lbl">' + escapeHtml(m[2]) + '</span>' : '<span class="dr-lbl">' + escapeHtml(text) + '</span>';
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('#mobile-drawer button.btn').forEach(b => { if (!b.querySelector('.dr-lbl')) _drawerLabel(b, b.textContent.trim()); });
+});
+
 // ── v199: INSTALLABLE HOME-SCREEN APP (PWA) ─────────────────────────
 // The manifest + service worker already made the site installable from the
 // browser menu, but nothing in the game offered it. Now:
@@ -16290,7 +16470,7 @@ const _pwaIOSSafari = (typeof _isIOS !== 'undefined' && _isIOS) && /Safari/.test
 function _pwaCanOffer() { return !_pwaStandalone() && (!!_pwaPrompt || _pwaIOSSafari); }
 function _pwaSync() {
   const d = document.getElementById('m-drawer-install');
-  if (d) { d.style.display = _pwaCanOffer() ? '' : 'none'; d.textContent = _pwaPrompt ? '📲 Install app' : '📲 Add to Home Screen'; }
+  if (d) { d.style.display = _pwaCanOffer() ? '' : 'none'; _drawerLabel(d, _pwaPrompt ? '📲 Install app' : '📲 Add to Home Screen'); } // v201
   if (!_pwaCanOffer()) _pwaHideNudge();
 }
 function _pwaHideNudge() { const n = document.getElementById('pwa-nudge'); if (n) n.classList.remove('show'); }
@@ -17197,6 +17377,7 @@ function _showMonsterBanner(type) {
   <button class="btn" data-mobile-action="account" id="m-drawer-account">💬 Sign in with Discord</button><!-- v198 -->
   <button class="btn" data-mobile-action="stats">📊 Stats &amp; Leaderboard</button>
   <button class="btn" data-mobile-action="howto">❔ How to play</button><!-- v198 -->
+  <button class="btn" data-mobile-action="collect">🏅 Collectables</button><!-- v201: the rank panel (its only entry point) is hidden on phones -->
   <button class="btn" data-mobile-action="highlight">🎯 Select Target</button>
   <button class="btn" data-mobile-action="invert">🔄 Invert My Pixels</button>
   <button class="btn" data-mobile-action="reset-view">⟲ Reset View</button>
