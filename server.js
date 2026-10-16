@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-10-16-v196';
+const SERVER_VERSION       = '2026-10-16-v197';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3197,6 +3197,14 @@ let _suddenDeath   = false;   // mirrored to clients (regen x2) + drives the pan
 // (SUDDEN_DEATH_MAX_MS + _suddenDeathSince are declared above the session loader — TDZ.)
 let _suddenDeathTweeted = false; // v105: fire the sudden-death tweet once per game
 let _endgamePayload = null;   // last _computeEndgame() result (served + broadcast)
+// v197: SUDDEN-DEATH REINFORCEMENTS. If the race isn't close (the #2 bloc is below
+// SD_CLOSE_RATIO of the leader on the panel's own metric, min(countries%, pixels%)),
+// the leader's bot gets up to SD_BOOST_MAX extra units — paints that many px per
+// stroke and regens accordingly — so the endgame closes out instead of going stale.
+// Recomputed with the endgame (every 30s); {countryId, name, units} or null.
+const SD_CLOSE_RATIO = 0.8, SD_BOOST_MAX = 5;
+let _sdBoost = null;
+function _sdBoostUnits(countryId) { return (_sdBoost && String(_sdBoost.countryId) === String(countryId)) ? _sdBoost.units : 0; }
 
 // v105: playable nations whose homeland still stands (not permanentlyConquered).
 function _standingNations() {
@@ -3306,10 +3314,24 @@ function _computeEndgame() {
       repId: [...b.members].sort((x, y) => (countryPxCount[y] || 0) - (countryPxCount[x] || 0))[0] || null,
     }))
     .sort((a, b) => Math.min(b.countriesFrac, b.pixelsFrac) - Math.min(a.countriesFrac, a.pixelsFrac));
+  // v197: reinforcements — see _sdBoost.
+  _sdBoost = null;
+  if (_suddenDeath && contenders.length) {
+    const sc = (x) => Math.min(x.countriesFrac, x.pixelsFrac);
+    const top = contenders[0], second = contenders[1];
+    const ratio = sc(top) > 0 ? (second ? sc(second) / sc(top) : 0) : 1;
+    if (ratio < SD_CLOSE_RATIO) {
+      const units = Math.max(1, Math.min(SD_BOOST_MAX, Math.ceil((1 - ratio) * SD_BOOST_MAX)));
+      const cid = top.repId; // strongest member of the bloc carries the reinforcements
+      if (cid && bots.has(String(cid))) _sdBoost = { countryId: String(cid), name: top.name, units };
+    }
+  }
   return {
     suddenDeath: _suddenDeath, standing, total,
     winCountriesFrac: WIN_COUNTRIES_FRAC, winPixelsFrac: WIN_PIXELS_FRAC,
     contenders: contenders.slice(0, 8),
+    suddenDeathEndsAt: (_suddenDeath && _suddenDeathSince) ? _suddenDeathSince + SUDDEN_DEATH_MAX_MS : null, // v197: clock for the panel
+    boost: _sdBoost, // v197
   };
 }
 
@@ -6605,7 +6627,8 @@ function botTickSingle(countryId) {
   // no-op; replaced by the per-unit human reduction below.)
   const bot = bots.get(countryId);
   if (!bot) return;
-  const effUnits = _effectiveBotUnits(bot);
+  const _boost = _sdBoostUnits(countryId); // v197: sudden-death reinforcements
+  const effUnits = Math.max(_effectiveBotUnits(bot), _boost);
   if (effUnits <= 0) return; // live humans cover this country
   // v56: bot stands down when overwhelmed so the attacker can reach the formal
   // conquest threshold (60%) without constant reclaim interference.
@@ -6648,7 +6671,7 @@ function botTickSingle(countryId) {
     try { if (_botEncircleManeuver(countryId)) { bot.lastPaintAt = _now; return; } } catch (e) {}
   }
 
-  const budget = Math.min(BOT_PIXELS_PER_TICK, Math.floor(bot.bucket)); // capped at 1px/paint
+  const budget = Math.min(BOT_PIXELS_PER_TICK * Math.max(1, _boost), Math.floor(bot.bucket)); // capped at 1px/paint (v197: reinforcements paint `units` px/stroke)
   const targets = getBotTargets(countryId, budget);
   if (targets.length === 0) return;
 
@@ -6674,10 +6697,11 @@ setInterval(() => {
   // v97e: bot regen via the unified _serverRegen (David curve + encircle + leader
   // tax + exile debuff; bots have no alliance/rank). Mirrors client getRegenMult.
   for (const bot of bots.values()) {
-    const cap = BOT_BUCKET_MAX * (bot.units || 1); // v100: capacity scales with units
+    const _u = Math.max(bot.units || 1, _sdBoostUnits(bot.countryId)); // v197: reinforcements regen too
+    const cap = BOT_BUCKET_MAX * _u; // v100: capacity scales with units
     if (bot.bucket >= cap) continue;
     // v114: _serverRegen now returns px/SECOND — credit rate * elapsed seconds.
-    const add = _serverRegen(bot.countryId) * (BOT_REGEN_MS / 1000) * (bot.units || 1);
+    const add = _serverRegen(bot.countryId) * (BOT_REGEN_MS / 1000) * _u;
     bot.bucket = Math.min(cap, bot.bucket + add);
   }
 }, BOT_REGEN_MS);

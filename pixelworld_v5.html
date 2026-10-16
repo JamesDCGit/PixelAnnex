@@ -4445,7 +4445,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-16-v196';
+const CODE_VERSION = '2026-10-16-v197';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -8190,6 +8190,8 @@ setInterval(() => {
 // Shown when <=5 countries stand. Lists each bloc's progress toward the win
 // (control 65% of countries AND 65% of the map). Data comes from the server's
 // 'endgame' broadcast / welcome payload via _applyEndgame.
+// v197: keep the sudden-death clock ticking between the 30s server broadcasts.
+setInterval(() => { if (_endgameData && _endgameData.suddenDeath && _endgameData.suddenDeathEndsAt && document.getElementById('endgame-panel')) _renderEndgamePanel(); }, 10000);
 function _applyEndgame(data) {
   if (!data) return;
   _endgameData = data;
@@ -8208,6 +8210,9 @@ function _renderEndgamePanel() {
       '#endgame-panel.show{display:block;animation:egIn .4s ease;}' +
       '#endgame-panel h4{margin:0 0 2px;font-size:var(--pa-text);color:#fca5a5;letter-spacing:.04em;}' +
       '#endgame-panel .eg-req{font-size:var(--pa-text);opacity:.85;margin-bottom:7px;line-height:1.4;}' +
+      '#endgame-panel .eg-clock{font-size:var(--pa-text);color:#fde68a;margin:-3px 0 6px;}' + /* v197 */
+      '#endgame-panel .eg-clock b{font-variant-numeric:tabular-nums;}' +
+      '#endgame-panel .eg-boost{font-size:var(--pa-text);color:#bfdbfe;margin:-3px 0 7px;}' +
       '#endgame-panel .eg-row{margin:6px 0;}' +
       '#endgame-panel .eg-name{display:flex;justify-content:space-between;font-size:var(--pa-text);margin-bottom:2px;}' +
       '#endgame-panel .eg-bar{position:relative;height:6px;background:#1f1414;border-radius:3px;margin-bottom:2px;}' +
@@ -8240,6 +8245,16 @@ function _renderEndgamePanel() {
   if (sd) {
     html = '<h4>⚔️ SUDDEN DEATH — ' + d.standing + ' countr' + (d.standing === 1 ? 'y' : 'ies') + ' left</h4>';
     html += '<div class="eg-req">Regen ×2 active. First bloc to <b>' + winC + '% of countries</b> AND <b>' + winP + '% of the map</b> wins.</div>';
+    // v197: sudden-death clock — when it runs out the leading bloc wins on points.
+    if (d.suddenDeathEndsAt) {
+      const left = Math.max(0, d.suddenDeathEndsAt - Date.now());
+      const h = Math.floor(left / 3600000), m = Math.floor(left / 60000) % 60, sct = Math.floor(left / 1000) % 60;
+      const txt = h > 0 ? (h + 'h ' + String(m).padStart(2, '0') + 'm') : (m + 'm ' + String(sct).padStart(2, '0') + 's');
+      html += '<div class="eg-clock">⏱️ Leader wins in <b>' + txt + '</b></div>';
+    }
+    if (d.boost && d.boost.units > 0) {
+      html += '<div class="eg-boost">🪖 Reinforcements: +' + d.boost.units + ' bot' + (d.boost.units === 1 ? '' : 's') + ' for ' + escapeHtml(d.boost.name) + '</div>';
+    }
   } else {
     html = '<h4>🏆 ENDGAME RACE</h4>';
     html += '<div class="eg-req">First bloc to <b>' + winC + '% of countries</b> AND <b>' + winP + '% of the map</b> wins.</div>';
