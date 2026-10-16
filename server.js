@@ -3205,6 +3205,57 @@ let _endgamePayload = null;   // last _computeEndgame() result (served + broadca
 const SD_CLOSE_RATIO = 0.8, SD_BOOST_MAX = 5;
 let _sdBoost = null;
 function _sdBoostUnits(countryId) { return (_sdBoost && String(_sdBoost.countryId) === String(countryId)) ? _sdBoost.units : 0; }
+// v197a: REINFORCEMENT TARGETS. The regular picker starves a dominant leader: its
+// attack scan skips every neighbouring geo it already holds (100+ of them late
+// game), and its home scan only returns UNCLAIMED homeland pixels (none left). So
+// the v197 boost multiplied strokes that never happened (USA: 0 px in 2 min).
+// The win needs 65% of ALL land pixels, and every pixel counts the same — so the
+// reinforcements simply flood outward from any held pixel into any non-held land
+// (unclaimed interiors of its own outposts, neutral Fallen zones, rival pixels).
+// A frontier list is seeded by scanning the owner set and grown as pixels are
+// painted (each new pixel contributes its non-held land neighbours), so the fill
+// stays contiguous. Rebuilt when exhausted or stale.
+function _sdReinforcementTargets(countryId, n, homeFirst) {
+  const bot = bots.get(String(countryId)); if (!bot) return [];
+  const cidx = getIdx(countryId);
+  const own = ownerPixels[cidx]; if (!own || !own.size) return [];
+  const now = Date.now();
+  // While the homeland is invaded, flood the homeland only (defend); otherwise anywhere.
+  const homeId = homeFirst ? parseInt(countryId, 10) : NaN;
+  const ok = (ni) => landMask[ni] && claimByPixel[ni] !== cidx && !NON_PLAYABLE_IDS.has(String(geoAtPixel[ni]))
+    && (!homeFirst || geoAtPixel[ni] === homeId);
+  if (bot._sdHomeFirst !== !!homeFirst) { bot._sdFront = null; bot._sdHomeFirst = !!homeFirst; } // mode flip → reseed
+  if (!bot._sdFront || !bot._sdFront.length || now - (bot._sdFrontAt || 0) > 120000) {
+    const front = [];
+    for (const i of own) {
+      const x = i % MAP_W, y = (i / MAP_W) | 0;
+      for (let d = 0; d < 4; d++) {
+        const nx = x + DX4[d], ny = y + DY4[d];
+        if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+        const ni = ny * MAP_W + nx;
+        if (ok(ni)) { front.push(ni); break; }
+      }
+      if (front.length >= 20000) break;
+    }
+    for (let i = front.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [front[i], front[j]] = [front[j], front[i]]; }
+    bot._sdFront = front; bot._sdFrontAt = now;
+    if (!front.length && homeFirst) return _sdReinforcementTargets(countryId, n, false); // homeland fully held → anywhere
+  }
+  const out = [], front = bot._sdFront;
+  while (out.length < n && front.length) {
+    const i = front.pop();
+    if (!ok(i)) continue;
+    const x = i % MAP_W, y = (i / MAP_W) | 0;
+    out.push({ x, y });
+    for (let d = 0; d < 4; d++) {              // grow the front from the new pixel
+      const nx = x + DX4[d], ny = y + DY4[d];
+      if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue;
+      const ni = ny * MAP_W + nx;
+      if (ok(ni) && front.length < 50000) front.splice((Math.random() * front.length) | 0, 0, ni);
+    }
+  }
+  return out;
+}
 
 // v105: playable nations whose homeland still stands (not permanentlyConquered).
 function _standingNations() {
@@ -6643,7 +6694,7 @@ function botTickSingle(countryId) {
       for (const [cId, cnt] of Object.entries(_claims)) {
         if (cId === countryId) continue;
         _foreignHome += cnt;
-        if (!_exile && cnt / _homeTotal >= BOT_SURRENDER_THRESHOLD) {
+        if (!_exile && !_boost && cnt / _homeTotal >= BOT_SURRENDER_THRESHOLD) { // v197a: reinforced leader never stands down
           return; // overwhelmed — stand down, let applyPixels fire formal conquest (v196a: not for exiles — that conquest already happened)
         }
       }
@@ -6672,7 +6723,8 @@ function botTickSingle(countryId) {
   }
 
   const budget = Math.min(BOT_PIXELS_PER_TICK * Math.max(1, _boost), Math.floor(bot.bucket)); // capped at 1px/paint (v197: reinforcements paint `units` px/stroke)
-  const targets = getBotTargets(countryId, budget);
+  let targets = _boost > 0 ? _sdReinforcementTargets(countryId, budget, _defending) : []; // v197a (homeland first while invaded)
+  if (!targets.length) targets = getBotTargets(countryId, budget);
   if (targets.length === 0) return;
 
   bot.bucket -= Math.min(budget, targets.length);
