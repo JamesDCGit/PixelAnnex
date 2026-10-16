@@ -9009,6 +9009,7 @@ wss.on('connection', (ws, req) => {
         player._strokeChanged = null;
         if (msg.pixels.length < 1 || msg.pixels.length > 5000) return; // v68: ≥1 (was ≥4)
         const enc = detectEncirclement(msg.pixels, player.countryId, strokeChanged);
+        console.log('[Encircle] ' + player.countryId + ' stroke ' + msg.pixels.length + 'px, flipped ' + (strokeChanged ? strokeChanged.size : 0) + ' -> ' + (enc ? enc.count + 'px enclosed' : 'none')); // v197b: diagnose "my fill vanished"
         if (!enc) return;
         _strokeActor = player; // v170: encirclement is this player's action too
         const { changed: encChanged, conquests: encConquests, reversals: encReversals } =
