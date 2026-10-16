@@ -1904,6 +1904,32 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   #world-state-bar { display: none !important; } /* only a sliver showed behind the slim bottom bar */
 }
 
+/* v199: INSTALLED (standalone) mode — keep the toolbar clear of the status bar / notch
+   (iOS draws under it with black-translucent) and stop pull-to-refresh reloading the war. */
+html.pa-standalone, html.pa-standalone body { overscroll-behavior: none; }
+html.pa-standalone #toolbar { padding-top: max(5px, env(safe-area-inset-top, 0px)) !important; }
+/* v199: install nudge (top of the map) + iOS "Add to Home Screen" guide */
+#pwa-nudge { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 58; display: none; align-items: center; gap: 8px;
+  padding: 8px 10px; background: rgba(12,21,38,.94); border: 2px solid var(--px-ink, #14100a); color: #e2e8f0;
+  box-shadow: inset 2px 2px 0 rgba(255,255,255,.08), 0 6px 18px rgba(0,0,0,.45); font-size: var(--pa-text); line-height: 1.3; }
+#pwa-nudge.show { display: flex; animation: pwaIn .3s ease; }
+#pwa-nudge img { width: 32px; height: 32px; flex: 0 0 auto; image-rendering: pixelated; }
+#pwa-nudge .pn-txt { flex: 1 1 auto; min-width: 0; }
+#pwa-nudge .pn-txt b { color: #fff; }
+#pwa-nudge .pn-go { flex: 0 0 auto; background: #4f46e5; color: #fff; border: 2px solid var(--px-ink, #14100a); padding: 6px 10px;
+  font: inherit; font-weight: 700; cursor: pointer; }
+#pwa-nudge .pn-x { flex: 0 0 auto; background: none; border: none; color: #94a3b8; font-size: 18px; line-height: 1; padding: 4px 6px; cursor: pointer; }
+@keyframes pwaIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+#pwa-ios { position: fixed; inset: 0; z-index: 300; display: none; align-items: flex-end; justify-content: center;
+  background: rgba(0,0,0,.55); padding: 16px 12px calc(16px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; }
+#pwa-ios.show { display: flex; }
+#pwa-ios .pi-card { width: 100%; max-width: 420px; background: #0c1526; border: 2px solid var(--px-ink, #14100a); color: #e2e8f0;
+  padding: 16px; font-size: var(--pa-text); line-height: 1.5; box-shadow: inset 2px 2px 0 rgba(255,255,255,.08); }
+#pwa-ios h3 { margin: 0 0 8px; font-size: var(--pa-text-lg); color: #fff; }
+#pwa-ios ol { margin: 0 0 12px; padding-left: 20px; }
+#pwa-ios .pi-share { display: inline-block; padding: 0 4px; border: 1px solid #475569; border-radius: 4px; }
+#pwa-ios button { width: 100%; background: #4f46e5; color: #fff; border: 2px solid var(--px-ink, #14100a); padding: 9px; font: inherit; font-weight: 700; cursor: pointer; }
+
 /* v39d: Monster banner fade-out */
 @keyframes monsterBannerFade {
   0%   { opacity: 0; transform: translateX(-50%) translateY(-8px); }
@@ -3721,6 +3747,7 @@ document.addEventListener('DOMContentLoaded', function setupMobileDrawer() {
       else if (act === 'sfx')         clickById('btn-sfx');
       else if (act === 'font-scale')  { if (typeof cycleFontScale === 'function') cycleFontScale(); }
       else if (act === 'howto')       { if (typeof openHowTo === 'function') openHowTo(); } // v198
+      else if (act === 'install')     { if (typeof pwaInstall === 'function') pwaInstall('drawer'); } // v199
       else if (act === 'account')     { const li = document.querySelector('#login-hud.logged-in'); window.location.href = li ? '/auth/logout' : '/auth/login'; } // v198
     }, 200);
   });
@@ -4469,7 +4496,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-17-v198';
+const CODE_VERSION = '2026-10-17-v199';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -15250,6 +15277,11 @@ function _cselOutsideClick(e){
 // ── Input events ─────────────────────────────────────────────────
 vp.addEventListener("mousedown",e=>{
   if(e.button===1||e.altKey||e.button===2){isDragging=true;dragBase={x:e.clientX-ox,y:e.clientY-oy};vp.style.cursor="grab";return;}
+  // v199: a click on UI living INSIDE #viewport (welcome modal, install nudge, cards,
+  // chests...) must not also paint the pixel underneath. Phones hit this too: a tap on
+  // such a button is not preventDefault-ed (v125), so the browser synthesises a
+  // mousedown that landed here. Same rule as the touch handlers' _touchOnMap.
+  if(!_touchOnMap(e)) return;
   if(highlightMode){
     const p=screenToMap(e.clientX,e.clientY);
     const i=p.y*MAP_W+p.x;
@@ -16129,6 +16161,83 @@ function mkNoise(pm){
   });
 })();
 
+// ── v199: INSTALLABLE HOME-SCREEN APP (PWA) ─────────────────────────
+// The manifest + service worker already made the site installable from the
+// browser menu, but nothing in the game offered it. Now:
+//  * Chromium (Android / desktop): capture beforeinstallprompt and offer it from the
+//    phone menu ("📲 Install app") and a one-time nudge after 90s of play (re-shown at
+//    most once a week if dismissed; phones only — desktop has the address-bar icon).
+//  * iOS Safari has no prompt API: the same entry points open a short
+//    "Share → Add to Home Screen" guide instead.
+//  * Running installed: html.pa-standalone (status-bar-safe toolbar, no pull-to-refresh)
+//    + an analytics event per launch (start_url also carries ?source=pwa).
+const _PWA_NUDGE_AFTER_MS = 90000, _PWA_NUDGE_COOLDOWN_MS = 7 * 86400000;
+let _pwaPrompt = null, _pwaNudgeTimer = null;
+function _pwaStandalone() {
+  return matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
+}
+const _pwaIOSSafari = (typeof _isIOS !== 'undefined' && _isIOS) && /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(navigator.userAgent);
+function _pwaCanOffer() { return !_pwaStandalone() && (!!_pwaPrompt || _pwaIOSSafari); }
+function _pwaSync() {
+  const d = document.getElementById('m-drawer-install');
+  if (d) { d.style.display = _pwaCanOffer() ? '' : 'none'; d.textContent = _pwaPrompt ? '📲 Install app' : '📲 Add to Home Screen'; }
+  if (!_pwaCanOffer()) _pwaHideNudge();
+}
+function _pwaHideNudge() { const n = document.getElementById('pwa-nudge'); if (n) n.classList.remove('show'); }
+function _pwaShowNudge() {
+  if (!_pwaCanOffer() || !(typeof _isCompactUI === 'function' && _isCompactUI())) return;
+  let last = 0; try { last = +localStorage.getItem('pa_pwa_nudge_at') || 0; } catch (e) {}
+  if (Date.now() - last < _PWA_NUDGE_COOLDOWN_MS) return;
+  if (document.querySelector('#tutorial-overlay.open')) { _pwaArmNudge(30000); return; } // never over the welcome
+  try { localStorage.setItem('pa_pwa_nudge_at', String(Date.now())); } catch (e) {}
+  let n = document.getElementById('pwa-nudge');
+  if (!n) {
+    n = document.createElement('div'); n.id = 'pwa-nudge';
+    n.innerHTML = '<img src="/icon-192.png" alt=""><div class="pn-txt"><b>Play full-screen</b><br>Add PixelAnnex to your home screen.</div>' +
+      '<button type="button" class="pn-go">' + (_pwaPrompt ? 'Install' : 'How') + '</button><button type="button" class="pn-x" aria-label="Dismiss">×</button>';
+    n.querySelector('.pn-go').onclick = () => { _pwaHideNudge(); pwaInstall('nudge'); };
+    n.querySelector('.pn-x').onclick = () => { _pwaHideNudge(); try { paTrack('pwa_nudge_dismissed'); } catch (e) {} };
+    (document.getElementById('viewport') || document.body).appendChild(n);
+  }
+  n.classList.add('show');
+  try { paTrack('pwa_nudge_shown', { kind: _pwaPrompt ? 'prompt' : 'ios' }); } catch (e) {}
+}
+function _pwaArmNudge(ms) { clearTimeout(_pwaNudgeTimer); _pwaNudgeTimer = setTimeout(_pwaShowNudge, ms); }
+function _pwaShowIosHelp() {
+  let o = document.getElementById('pwa-ios');
+  if (!o) {
+    o = document.createElement('div'); o.id = 'pwa-ios';
+    o.innerHTML = '<div class="pi-card"><h3>Add PixelAnnex to your Home Screen</h3><ol>' +
+      '<li>Tap the <span class="pi-share">Share ⬆︎</span> button in Safari\'s toolbar.</li>' +
+      '<li>Scroll down and choose <b>Add to Home Screen</b>.</li>' +
+      '<li>Tap <b>Add</b>. PixelAnnex opens full-screen from its icon.</li></ol>' +
+      '<button type="button">Got it</button></div>';
+    o.querySelector('button').onclick = () => o.classList.remove('show');
+    o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); });
+    document.body.appendChild(o);
+  }
+  o.classList.add('show');
+}
+async function pwaInstall(from) {
+  try { paTrack('pwa_install_click', { from: from || '?' }); } catch (e) {}
+  if (_pwaPrompt) {
+    const p = _pwaPrompt; _pwaPrompt = null;
+    try { p.prompt(); const r = await p.userChoice; paTrack('pwa_prompt_' + (r && r.outcome || 'unknown')); } catch (e) {}
+    _pwaSync();
+  } else if (_pwaIOSSafari) {
+    _pwaShowIosHelp();
+  }
+}
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); _pwaPrompt = e; _pwaSync(); });
+window.addEventListener('appinstalled', () => { _pwaPrompt = null; _pwaSync(); try { paTrack('pwa_installed'); } catch (e) {} });
+if (_pwaStandalone()) {
+  document.documentElement.classList.add('pa-standalone');
+  try { if (!sessionStorage.getItem('pa_pwa_launch')) { sessionStorage.setItem('pa_pwa_launch', '1'); paTrack('pwa_launch'); } } catch (e) {}
+} else {
+  _pwaArmNudge(_PWA_NUDGE_AFTER_MS);
+}
+document.addEventListener('DOMContentLoaded', _pwaSync);
+
 // ── Start — no external library loading needed! ───────────────────
 (async()=>{
   // v32: bail if mobile gate is up (game would crash on memory-constrained devices)
@@ -16974,6 +17083,7 @@ function _showMonsterBanner(type) {
   </div>
   <!-- v128: complete secondary-control set. One-tap actions (country-select,
        Nuke, zoom) stay in the toolbar/HUD; everything else lives here. -->
+  <button class="btn" data-mobile-action="install" id="m-drawer-install" style="display:none">📲 Install app</button><!-- v199: shown when the browser can install -->
   <button class="btn" data-mobile-action="account" id="m-drawer-account">💬 Sign in with Discord</button><!-- v198 -->
   <button class="btn" data-mobile-action="stats">📊 Stats &amp; Leaderboard</button>
   <button class="btn" data-mobile-action="howto">❔ How to play</button><!-- v198 -->

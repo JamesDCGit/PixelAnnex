@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-10-17-v198';
+const SERVER_VERSION       = '2026-10-17-v199';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -7069,12 +7069,14 @@ const httpServer = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/site.webmanifest' || url.pathname === '/icon-192.png' ||
       url.pathname === '/icon-512.png' || url.pathname === '/apple-touch-icon.png' ||
+      url.pathname === '/icon-maskable-192.png' || url.pathname === '/icon-maskable-512.png' || // v199: PWA maskable icons
+      url.pathname === '/screenshots/phone.webp' || url.pathname === '/screenshots/wide.webp' || // v199: install-dialog screenshots
       url.pathname === '/city_lights.png') { // v175: day/night city-lights art
     const fn = url.pathname.slice(1);
     const f = path.join(__dirname, 'public', fn);
     if (!fs.existsSync(f)) { res.writeHead(404); res.end('not found'); return; }
     res.writeHead(200, {
-      'Content-Type': fn.endsWith('.png') ? 'image/png' : 'application/manifest+json',
+      'Content-Type': fn.endsWith('.png') ? 'image/png' : fn.endsWith('.webp') ? 'image/webp' : 'application/manifest+json',
       'Cache-Control': 'public, max-age=86400',
     });
     fs.createReadStream(f).pipe(res);

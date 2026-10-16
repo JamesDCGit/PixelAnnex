@@ -1,13 +1,57 @@
 {
+  "id": "/",
   "name": "PixelAnnex — Multiplayer Pixel War Game",
   "short_name": "PixelAnnex",
   "description": "Claim pixels for your country on a live world map. Battle 190+ nations, encircle territory, and conquer the world in real time.",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#070d1a",
   "theme_color": "#0c1526",
+  "categories": [
+    "games"
+  ],
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/phone.webp",
+      "sizes": "1080x2338",
+      "type": "image/webp",
+      "form_factor": "narrow",
+      "label": "Paint your country's pixels and conquer your neighbours"
+    },
+    {
+      "src": "/screenshots/wide.webp",
+      "sizes": "1920x1080",
+      "type": "image/webp",
+      "form_factor": "wide",
+      "label": "A live world war between 190+ nations"
+    }
   ]
 }
