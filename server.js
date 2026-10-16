@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-10-16-v197';
+const SERVER_VERSION       = '2026-10-17-v198';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -4230,6 +4230,50 @@ function precompressAssets() {
   for (const { p, mime } of candidates) {
     if (fs.existsSync(p)) _cacheAsset(p, mime);
   }
+  _minifyHtmlAsset(path.join(__dirname, 'pixelworld_v5.html')); // v198
+}
+
+// v198: MINIFY the client's inline scripts once at boot (async; the raw file is served
+// until it finishes, and permanently if terser is missing or anything throws). Terser
+// runs with compress OFF — comments, whitespace and LOCAL names only, no code
+// transforms, top-level names untouched (inline onclick handlers + cross-script globals
+// keep working). CSS comments are stripped too. ?raw=1 serves the original for debugging.
+// The raw asset stays cached under diskPath+'#raw'. PA_NO_MINIFY=1 disables.
+async function _minifyHtmlAsset(diskPath) {
+  if (process.env.PA_NO_MINIFY === '1') return;
+  let terser;
+  try { terser = require('terser'); } catch (e) { console.log('[Minify] terser not installed — serving the raw client'); return; }
+  try {
+    const t0 = Date.now();
+    const src = fs.readFileSync(diskPath, 'utf8');
+    const re = /<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g;
+    let out = '', last = 0, m;
+    while ((m = re.exec(src))) {
+      const attrs = m[1], code = m[2];
+      out += src.slice(last, m.index);
+      last = m.index + m[0].length;
+      if (/type\s*=\s*["']?(?!text\/javascript|module)[a-z]/i.test(attrs) || code.trim().length < 200) { out += m[0]; continue; }
+      const r = await terser.minify(code, { compress: false, mangle: true, format: { comments: false } });
+      if (!r || typeof r.code !== 'string') throw new Error('terser returned no code');
+      out += '<script' + attrs + '>' + r.code + '</script>';
+    }
+    out += src.slice(last);
+    out = out.replace(/<style([^>]*)>([\s\S]*?)<\/style>/g, (all, a, css) => '<style' + a + '>' + css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\n\s*\n+/g, '\n') + '</style>');
+    const zlib = require('zlib');
+    const raw = Buffer.from(out, 'utf8');
+    const prev = _compressedAssets.get(diskPath);
+    if (prev) _compressedAssets.set(diskPath + '#raw', prev);
+    _compressedAssets.set(diskPath, {
+      raw,
+      br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 } }),
+      gz: zlib.gzipSync(raw, { level: 9 }),
+      mime: 'text/html; charset=utf-8',
+    });
+    const a = _compressedAssets.get(diskPath);
+    console.log('[Minify] client ' + src.length + ' -> ' + raw.length + ' bytes (br ' + (prev ? prev.br.length : '?') + ' -> ' + a.br.length + ') in ' + (Date.now() - t0) + 'ms');
+  } catch (e) {
+    console.warn('[Minify] failed, serving the raw client:', e.message);
+  }
 }
 
 // Re-compress when the source HTML/json changes on disk (dev workflow).
@@ -4245,7 +4289,7 @@ function watchAssetsForChanges() {
     try {
       fs.watch(p, { persistent: false }, () => {
         const asset = _compressedAssets.get(p);
-        if (asset) _cacheAsset(p, asset.mime);
+        if (asset) { _cacheAsset(p, asset.mime); if (p.endsWith('.html')) _minifyHtmlAsset(p); } // v198: re-minify on change
       });
     } catch (e) { /* ignore watch errors */ }
   }
@@ -6909,7 +6953,8 @@ const httpServer = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/' || url.pathname === '/index.html') {
-    const f = path.join(__dirname, 'pixelworld_v5.html');
+    let f = path.join(__dirname, 'pixelworld_v5.html');
+    if (url.searchParams.get('raw') === '1' && _compressedAssets.has(f + '#raw')) f = f + '#raw'; // v198: unminified, for debugging
     serveCompressedAsset(req, res, f, {
       // HTML changes per deploy; tell browser to revalidate
       'Cache-Control': 'no-cache, must-revalidate',
@@ -7360,6 +7405,13 @@ const httpServer = http.createServer(async (req, res) => {
       'Cache-Control': 'public, max-age=86400',
       'Access-Control-Allow-Origin': '*',
     });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
+  if (url.pathname === '/PixelAnnexHero.webp') { // v198: welcome hero for the game client (jpg kept for og:image)
+    const f = path.join(__dirname, 'public', 'PixelAnnexHero.webp');
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'image/webp', 'Cache-Control': 'public, max-age=604800' });
     fs.createReadStream(f).pipe(res);
     return;
   }

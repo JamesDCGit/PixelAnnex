@@ -41,7 +41,7 @@ is: **always bump all three together**.
 
 `deploy.ps1` enforces this with a pre-flight check.
 
-**Current production triad: `2026-06-25-v129`.** (v129 = 5 GAMEPLAY/COPY FIXES + the
+**Current production triad: `2026-10-17-v198`.** (v198 = MOBILE PASS. (1) the "Desktop Recommended / Try anyway" gate is GONE — phones boot straight in (#mobile-splash + the "Show desktop notice" pill removed). (2) COMPACT camera (<=820px, `_isCompactUI`): `clamp()` edge-clamps + `_minScale()` = cover-fit (no starfield void), `resetView()` and `selectCountry()` fly to your country's largest connected landmass (`focusCountry`/`_tweenCamera`); desktop keeps free panning + world fit. `jumpToCountry` fixed (called undefined `panToMapPoint`). (3) TOUCH: first contact is PENDING 90ms (`_TOUCH_COMMIT_MS`) so a pinch never paints; tap paints on lift; strokes Bresenham-interpolated (`_paintSegment`); Paint/Move toggle `#z-mode` (pointer:coarse only, `pa_touch_mode`). (4) touch brush 3x3 below 4x zoom; paintBrush now charges PER PIXEL FLIPPED (claimPixel returns true/false). (5) compact notifications: `opts.global` cards (others' conquests, monsters) -> one-line `#m-ticker`; personal cards cap 2 / 6s. (6) two-row phone toolbar (Stats/How-to/Discord sign-in moved to the drawer, menu button across the whole compact tier) + short-landscape one-row layout. (7) mobile idle: stars drawn once, 1x1-canvas loops on 250ms timers (`_bgFrame`). (8) phones load map_base.webp (same art, 35% smaller) + PixelAnnexHero.webp (101KB vs 323KB). (9) c-flash + c-highlight RESTORED on mobile; flash fade bounded to the flashed box (`_flashBox`); native flags on mobile. (10) server MINIFIES the client's inline scripts at boot with terser (compress OFF, mangle locals only) — 948KB->615KB raw, br 246KB->149KB; `?raw=1` serves the original, `PA_NO_MINIFY=1` disables, missing terser = raw. NEEDS `npm install --no-save terser@5` on the droplet. Verified in emulation only — confirm on a real iPhone + mid-range Android.) (v129 = 5 GAMEPLAY/COPY FIXES + the
 OPERATOR'S BAKED GIF BASEMAP. (1) Conquest danger-flash is size-aware: LARGE countries
 (>= CONTEST_LARGE_MIN 8000px) fall via the contested path to the COMBINED foreign hold, so
 they now warn on the AGGREGATE foreign share with an earlier window (the Russia "fell at
@@ -403,6 +403,8 @@ git push origin main
 ```
 
 The deploy script SSHes to the droplet, `git pull`s, and `pm2 restart pixelannex --update-env`.
+
+**v198: the server minifies the client with `terser`** — after a `package.json` dep change run `npm install --no-save <dep>` on the droplet (`--no-save` keeps the tracked package.json clean for the next `git pull`); without terser the raw client is served.
 
 **deploy.ps1 only restarts the SERVER (`pixelannex`), not the bot.** For `bot.js`
 or `register-commands.js` changes, after `git pull` also:

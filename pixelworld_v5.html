@@ -24,7 +24,8 @@
 <meta name="twitter:site" content="@PixelAnnexGame">
 <link rel="manifest" href="/site.webmanifest">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="preload" href="/map_base.gif" as="image"><!-- v169: LCP — the baked basemap is the biggest boot asset -->
+<link rel="preload" href="/map_base.gif" as="image" media="(min-width: 821px)"><!-- v169: LCP — the baked basemap is the biggest boot asset -->
+<link rel="preload" href="/map_base.webp" as="image" media="(max-width: 820px)"><!-- v198: phones take the identical-art WebP (560KB vs 862KB GIF) -->
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"VideoGame","name":"PixelAnnex","url":"https://pixelannex.com/","description":"Free multiplayer pixel war game. Claim pixels for your country on a live world map, encircle territory, and conquer the world in real time against 190+ nations.","genre":["Strategy","MMO","io game"],"playMode":"MultiPlayer","applicationCategory":"Game","operatingSystem":"Web browser","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","availability":"https://schema.org/InStock"},"image":"https://pixelannex.com/PixelAnnexHero.jpg","author":{"@type":"Organization","name":"Pretty Neat Pixels","url":"https://www.prettyneatpixels.com"}}
 </script>
@@ -1728,6 +1729,11 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 .tb-audio .aud-btn.muted { background: #182742; color: #475569; }
 /* v166: zoom panel — a small arcade panel floating just above the stats bar.
    (Replaces the old in-toolbar .tb-zoom placement.) */
+/* v198: touch Paint/Move toggle — only on touch screens. */
+#z-mode{display:none;width:auto;padding:0 8px;gap:4px;align-items:center;font-size:var(--pa-text);}
+#z-mode span{font-size:var(--pa-text);font-weight:700;}
+#z-mode.pan{background:rgba(59,130,246,.35);}
+@media (pointer:coarse){ #z-mode{display:inline-flex;} }
 #zoom-hud-tb{
   position:absolute;bottom:60px;left:50%;transform:translateX(-50%);
   display:flex;gap:5px;padding:5px;z-index:50;
@@ -1854,6 +1860,50 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   }
 }
 
+/* v198: MOBILE PASS — two-row phone toolbar (was 4 rows / 171px = 21% of a portrait
+   screen). Row 1: logo · country picker · rank chip · menu. Row 2: pixel bucket.
+   Stats / How-to / Discord sign-in move into the menu drawer (Stats is also on the
+   bottom action bar). Plus the global-event ticker + smaller card portraits. */
+@media (max-width: 820px) {
+  #toolbar { display: flex !important; flex-wrap: wrap !important; align-items: center !important;
+    row-gap: 4px !important; column-gap: 6px !important; padding: 5px 8px !important; height: auto !important; }
+  #toolbar > * { order: 20; }
+  #toolbar h1 { order: 1; margin: 0 !important; flex: 0 0 auto; }
+  #toolbar #country-picker { order: 2; flex: 1 1 auto; min-width: 0; }
+  #toolbar #csel-btn { width: 100%; min-width: 0; box-sizing: border-box; }
+  #toolbar #csel-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  #toolbar #rank-chip { order: 3; padding: 2px !important; }
+  #toolbar #rank-chip .rc-name { display: none !important; } /* portrait only — the name made row 1 overflow */
+  #toolbar #btn-mobile-menu { order: 4; flex: 0 0 auto; display: inline-flex !important; align-items: center; justify-content: center; background: #162035; border: 1px solid rgba(255,255,255,.1); color: #cbd5e1; width: 38px; height: 32px; border-radius: 5px; font-size: var(--pa-text-lg); cursor: pointer; } /* v198: across the WHOLE compact tier (was <=768 only) — the drawer now holds sign-in/stats/help */
+  #toolbar #bucket-hud { order: 5; flex: 1 1 100%; }
+  #toolbar #exile-badge { order: 6; flex-basis: 100%; }
+  #toolbar #ver-badge, #toolbar #btn-stats, #toolbar #btn-howto, #toolbar #toolbar-account,
+  #toolbar #btn-font-scale, #toolbar #font-scale-label, #toolbar #btn-rst, #toolbar .sep { display: none !important; }
+  #m-ticker { position: absolute; top: auto; bottom: 122px; left: 8px; right: 8px; /* above the zoom panel, clear of the cards */ z-index: 55; pointer-events: none;
+    display: flex; align-items: center; gap: 6px; padding: 5px 9px; box-sizing: border-box;
+    background: rgba(7,13,26,.82); border: 1px solid rgba(255,255,255,.08); color: #cbd5e1;
+    font-size: var(--pa-text); line-height: 1.25; opacity: 0; transform: translateY(-6px);
+    transition: opacity .25s, transform .25s; }
+  #m-ticker:not(.show) { transform: translateY(6px); }
+  #m-ticker.show { opacity: 1; transform: none; }
+  #m-ticker .mt-txt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #m-ticker .mt-more { flex: 0 0 auto; color: #94a3b8; font-weight: 700; }
+  .act-card img { max-width: 36px !important; max-height: 36px !important; }
+}
+#m-ticker { display: none; }
+@media (max-width: 820px) { #m-ticker { display: flex; } }
+/* v198: short LANDSCAPE phones — one-row toolbar (bucket inline) + a slim bottom bar
+   (icon + label side by side), so the map keeps ~77% of a 375px-tall screen. */
+@media (max-width: 820px) and (max-height: 500px) and (orientation: landscape) {
+  #toolbar #bucket-hud { order: 3; flex: 0 1 260px; }
+  #toolbar #rank-chip { order: 4; }
+  #toolbar #btn-mobile-menu { order: 5; }
+  #m-actionbar button { min-height: 32px; flex-direction: row; gap: 6px; }
+  #zoom-hud-tb { bottom: 46px !important; }
+  #m-ticker { bottom: 92px; }
+  #world-state-bar { display: none !important; } /* only a sliver showed behind the slim bottom bar */
+}
+
 /* v39d: Monster banner fade-out */
 @keyframes monsterBannerFade {
   0%   { opacity: 0; transform: translateX(-50%) translateY(-8px); }
@@ -1874,36 +1924,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
      pages (/about, /how-to-play, /strategy, /faq) linked from the welcome screen. -->
 <noscript><p>PixelAnnex is a free multiplayer pixel war game played on a live world map. It requires JavaScript — enable JavaScript to play, or read more on the <a href="/about">about page</a>.</p></noscript>
 <!-- v32: Mobile gating splash (hidden by default; shown by inline script below) -->
-<div id="mobile-splash">
-  <div class="ms-inner">
-    <div class="ms-art">🗺️</div>
-    <h1>Pixel<span>Annex</span></h1>
-    <div class="ms-sub">Multiplayer · Pixel · Conquest</div>
-
-    <h2>Desktop Recommended</h2>
-    <p>
-      PixelAnnex is a <b>real-time map game</b> with precise pixel painting, 191 AI countries, and live multiplayer.
-      It's designed for <b>desktop browsers</b> where there's room to aim, room to think, and the horsepower to run smoothly.
-    </p>
-    <p>
-      We're working on proper iOS and Android apps — they'll handle the rendering far better than mobile browsers can.
-    </p>
-
-    <div class="ms-actions">
-      <a class="ms-btn ms-primary" href="mailto:hello@pixelannex.com?subject=Notify%20me%20when%20mobile%20apps%20launch">
-        🔔 Notify me when ready
-      </a>
-      <button class="ms-secondary" id="ms-force-mobile-btn">Try anyway (may be unstable)</button>
-    </div>
-
-    <div class="ms-footer">
-      Best on Chrome / Firefox / Safari on desktop.
-    </div>
-  </div>
-</div>
-
-<!-- v32: Small link to revert mobile opt-in -->
-<a id="mobile-back-link" onclick="(function(){ try{localStorage.removeItem('pa_force_mobile');}catch(e){} location.reload(); })()">↶ Show desktop notice</a>
+<!-- v198: #mobile-splash removed (mobile gate retired) -->
 
 <!-- v32: Inline gate — runs BEFORE main script. Hides app, shows splash if mobile and not opted-in -->
 <script>
@@ -1912,10 +1933,12 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     var mobile = matchMedia('(max-width: 768px)').matches
               || /iPad|iPhone|iPod|Android|Mobile/.test(navigator.userAgent)
               || (navigator.maxTouchPoints > 1 && navigator.platform === 'MacIntel');
-    var forced = false;
-    try { forced = localStorage.getItem('pa_force_mobile') === '1'; } catch(e){}
-
-    if (mobile && !forced) {
+    // v198: the "Desktop Recommended / Try anyway" gate is GONE — phones boot straight
+    // into the game. It existed for the iOS OOM era (v31-v123); the v124 pre-baked map
+    // + the mobile canvas strip took mobile to ~26MB of canvas + ~37MB heap, and the
+    // gate was turning away the (almost entirely mobile) social-video audience.
+    if (mobile) document.documentElement.classList.add('pa-mobile');
+    if (false) {
       // Defer until DOM has the splash element. We're inline in body so by the
       // time this runs the splash markup above is in the DOM.
       var splash = document.getElementById('mobile-splash');
@@ -1933,8 +1956,6 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
       // prevents the heavy game init from running. Actually a cleaner approach
       // is to set a global flag the main script can check.
       window.__PA_MOBILE_BLOCKED__ = true;
-    } else if (mobile && forced) {
-      document.documentElement.classList.add('pa-mobile-forced');
     }
     // v118a/v120: crash-surviving boot diagnostic + crash-loop CIRCUIT BREAKER.
     // Each boot milestone writes localStorage 'pa_boot_stage' (see _bootStage);
@@ -2116,7 +2137,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
           <span data-i18n="lang.label">Language</span>
           <select id="lang-picker-tut" onchange="setLanguage(this.value)"></select>
         </div>
-        <img id="tut-hero" src="/PixelAnnexHero.jpg" alt="PixelAnnex — multiplayer pixel war game on a live world map"><!-- v140a: heading + subheading removed; v169: descriptive alt -->
+        <img id="tut-hero" src="/PixelAnnexHero.webp" onerror="this.onerror=null;this.src='/PixelAnnexHero.jpg'" alt="PixelAnnex — multiplayer pixel war game on a live world map"><!-- v140a: heading + subheading removed; v169: descriptive alt -->
         <div class="tut-stats" id="tut-header-stats">
           <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-players">—</div><div class="tut-stat-lbl" data-i18n="tut.stat_players">Players</div></div>
           <div class="tut-stat"><div class="tut-stat-val" id="tut-stat-conquered">—</div><div class="tut-stat-lbl" data-i18n="tut.stat_conquered">Conquered</div></div>
@@ -2273,6 +2294,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
     <div id="daily-bonus-toast"></div>
     <!-- v166: zoom panel — floats just above the stats bar (buttons keep ids #zi/#zo; handlers bind by id) -->
     <div id="zoom-hud-tb">
+      <button class="z-btn" id="z-mode" onclick="toggleTouchMode()" aria-pressed="false" title="Paint or move">🖌️<span>Paint</span></button><!-- v198: touch Paint/Move toggle (touch screens only) -->
       <button class="z-btn" id="zi" title="Zoom in">+</button>
       <button class="z-btn" id="zo" title="Zoom out">-</button>
     </div>
@@ -3698,6 +3720,8 @@ document.addEventListener('DOMContentLoaded', function setupMobileDrawer() {
       else if (act === 'music')       clickById('btn-music');
       else if (act === 'sfx')         clickById('btn-sfx');
       else if (act === 'font-scale')  { if (typeof cycleFontScale === 'function') cycleFontScale(); }
+      else if (act === 'howto')       { if (typeof openHowTo === 'function') openHowTo(); } // v198
+      else if (act === 'account')     { const li = document.querySelector('#login-hud.logged-in'); window.location.href = li ? '/auth/logout' : '/auth/login'; } // v198
     }, 200);
   });
 });
@@ -4445,7 +4469,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-16-v197';
+const CODE_VERSION = '2026-10-17-v198';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4533,7 +4557,11 @@ const _isMobileForMemory = matchMedia('(max-width: 768px)').matches || _isIOS ||
 // the cap is confirmed → WebGL (one surface) is the real fix. Lost on mobile: monster
 // sprites, rally/nuke/overlay layers, the paint flash, the (DOM-rendered) flags
 // canvas — all cosmetic or occasional. Gameplay (terrain + ownership + borders) stays.
-const _DECORATIVE_CANVAS_IDS = ['c-grid','c-waves','c-sprites','c-landmarks','c-crater','c-siege','c-flash','c-outline','c-monsters','c-flags','c-highlight','c-overlay','c-nuke','c-night','c-nightfx']; // v174: night layers stripped on mobile
+// v198: c-flash (paint feedback) + c-highlight (long-press inspect / target highlight)
+// RESTORED on mobile — +16MB, total ~42MB of canvas, well inside the budget the v124
+// bake freed. Without them a phone player got no visual feedback when painting and the
+// long-press inspector showed a card but no territory on the map.
+const _DECORATIVE_CANVAS_IDS = ['c-grid','c-waves','c-sprites','c-landmarks','c-crater','c-siege','c-outline','c-monsters','c-flags','c-overlay','c-nuke','c-night','c-nightfx']; // v174: night layers stripped on mobile
 const cBase=document.getElementById("c-base");
 const cGrid=document.getElementById("c-grid");
 const gridCtx=cGrid.getContext("2d");
@@ -4787,11 +4815,21 @@ let _flashRaf = null;
 let _flashLastTs = 0;
 let _flashLastDecayTs = 0;
 
+// v198: the fade + final clear only touch the BOX that holds flashes (was the whole
+// 2048x1024 layer 15x/s while anything flashed — the cost CLAUDE.md warns about, and the
+// reason the flash layer was stripped on phones). Grown per flashed pixel, dropped on clear.
+let _flashBox = null;
+function _flashGrow(x, y) {
+  const b = _flashBox;
+  if (!b) { _flashBox = { x0: x, y0: y, x1: x, y1: y }; return; }
+  if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x; if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y;
+}
 function flashPixel(px, py) {
   if (!flashCtx) return;
   if (px < 0 || px >= MAP_W || py < 0 || py >= MAP_H) return;
   flashCtx.fillStyle = '#ffffff';
   flashCtx.fillRect(px, py, 1, 1);
+  _flashGrow(px, py);
   _flashHasPixels = true;
   if (!_flashRaf) {
     _flashLastTs = performance.now();
@@ -4813,7 +4851,8 @@ function _flashTick(ts) {
     if (fade > 0) {
       flashCtx.globalCompositeOperation = 'destination-out';
       flashCtx.fillStyle = 'rgba(0,0,0,' + fade + ')';
-      flashCtx.fillRect(0, 0, MAP_W, MAP_H);
+      const _fb = _flashBox; // v198: bounded
+      if (_fb) flashCtx.fillRect(_fb.x0, _fb.y0, _fb.x1 - _fb.x0 + 1, _fb.y1 - _fb.y0 + 1);
       flashCtx.globalCompositeOperation = 'source-over';
     }
     _flashLastDecayTs = ts;
@@ -4829,7 +4868,9 @@ function _flashTick(ts) {
       _flashRaf = requestAnimationFrame(_flashTick);
     } else {
       // Fully decayed — clear and stop.
-      flashCtx.clearRect(0, 0, MAP_W, MAP_H);
+      const _fb = _flashBox; // v198: bounded
+      if (_fb) flashCtx.clearRect(_fb.x0, _fb.y0, _fb.x1 - _fb.x0 + 1, _fb.y1 - _fb.y0 + 1);
+      _flashBox = null;
       _flashRaf = null;
       _flashDecayCounter = 0;
     }
@@ -5677,7 +5718,7 @@ function scheduleNativeFlags() {
 }
 function _buildNativeFlags() {
   if (_nativeFlagsBuilt) { _refreshNativeFlagVis(); return; }
-  if (typeof _isMobileForMemory !== 'undefined' && _isMobileForMemory) return; // skip on mobile (DOM-node budget)
+  // v198: native flags now also build on mobile — without them a phone showed only conquest flags.
   if (!geoPixelList || !landMask) return;
   const ov = document.getElementById('flag-overlay');
   if (!ov) return;
@@ -6193,8 +6234,12 @@ async function _loadBakedMap(){
   prog(24,"Loading terrain…");
   const _loadImg = (src)=>new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>(im.naturalWidth?res(im):rej(new Error('empty image'))); im.onerror=()=>rej(new Error('load failed: '+src)); im.src=src; });
   let img;
-  try { img = await _loadImg('/map_base.gif'); }
-  catch(e){ img = await _loadImg('/map_base.webp'); }
+  // v198: phones (compact tier — same media query as the preload) load the WebP first;
+  // it is the same art as the GIF minus palette rounding, and 35% smaller.
+  const _phone = matchMedia('(max-width: 820px)').matches;
+  const _first = _phone ? '/map_base.webp' : '/map_base.gif', _second = _phone ? '/map_base.gif' : '/map_base.webp';
+  try { img = await _loadImg(_first); }
+  catch(e){ img = await _loadImg(_second); }
   bctx.imageSmoothingEnabled = false;
   bctx.clearRect(0,0,MAP_W,MAP_H);
   bctx.drawImage(img, 0, 0, MAP_W, MAP_H);
@@ -6897,13 +6942,13 @@ if (typeof renderLandmarks === 'function') {
 // updateOwnStrokeVisibility/_ownStrokeVisible and the #c-ownstroke canvas are gone.
 
 function claimPixel(px,py){
-  if(px<0||px>=MAP_W||py<0||py>=MAP_H)return;
+  if(px<0||px>=MAP_W||py<0||py>=MAP_H)return false; // v198: returns true when a pixel flipped
   const i=py*MAP_W+px;
-  if(!landMask[i])return;
+  if(!landMask[i])return false;
   // Reject paint inside an active nuke lockout zone
-  if (typeof isInNukeZone === 'function' && isInNukeZone(px, py)) return;
+  if (typeof isInNukeZone === 'function' && isInNukeZone(px, py)) return false;
   const prev=claimByPixel[i];
-  if(_isMyIdx(prev))return; // v148a: can't repaint ANY pixel already yours (id-aware, multipolygon)
+  if(_isMyIdx(prev))return false; // v148a: can't repaint ANY pixel already yours (id-aware, multipolygon)
   const geo=featByPixel[i];
   if(prev>=0){
     claimerCount[prev]=(claimerCount[prev]||1)-1;
@@ -6942,6 +6987,7 @@ function claimPixel(px,py){
   // still flash.
   if (!(_isMyIdx(geo) && !_fightbackActive)) flashPixel(px, py); // v148a: id-aware
   markOutlineDirty(px, py);
+  return true;
 }
 
 function paintBrush(px,py){
@@ -6955,14 +7001,20 @@ function paintBrush(px,py){
   // v98: require a FULL pixel and clamp — fractional accrual (e.g. 0.6) must
   // never let a spend drive the bucket negative.
   if(pixelBucket < 1) return;
-  pixelBucket = Math.max(0, pixelBucket - 1);
+  // v198: on TOUCH strokes the brush widens to 3x3 when zoomed out below 4x (a
+  // fingertip covers ~7+ map px there, so a 1px line is hard to place). The cost is
+  // now charged PER PIXEL ACTUALLY FLIPPED (was a flat 1 per call) so a wider brush
+  // can never paint cheaper than desktop — and a rejected pixel (nuke zone) is free.
+  const bs = (_touchMode === 'paint' && scale < 4) ? 3 : brushSize;
+  let painted = 0;
+  const half=Math.floor(bs/2),rsq=(bs/2)**2;
+  for(let dy=-half;dy<=half && pixelBucket>=1;dy++)for(let dx=-half;dx<=half && pixelBucket>=1;dx++){
+    if(bs>3&&dx*dx+dy*dy>rsq)continue;
+    if(claimPixel(px+dx,py+dy)){ painted++; pixelBucket = Math.max(0, pixelBucket - 1); }
+  }
+  if(!painted) return;
   updateBucketHUD();
   sfxPixelPlace();
-  const half=Math.floor(brushSize/2),rsq=(brushSize/2)**2;
-  for(let dy=-half;dy<=half;dy++)for(let dx=-half;dx<=half;dx++){
-    if(brushSize>3&&dx*dx+dy*dy>rsq)continue;
-    claimPixel(px+dx,py+dy);
-  }
   // v95: FTUE guided first paint — count strokes that land in the target country.
   if(_ftueActive) _ftueOnPaint(px,py);
   // v113: fight-back no longer grants per-stroke bonus pixels OR an explosive
@@ -7427,17 +7479,97 @@ function applyT(){
 // Free panning — clamp is now a no-op so users can move the map anywhere they like.
 // Previous behaviour pinned the map within the viewport bounds; removing this lets
 // users drag the world off-screen, useful for inspecting edges and far-away regions.
-function clamp(){ /* no-op — free panning */ }
-function resetView(){const cw=vp.clientWidth,ch=vp.clientHeight;scale=Math.min(cw/MAP_W,ch/MAP_H)*.98;ox=(cw-MAP_W*scale)/2;oy=(ch-MAP_H*scale)/2;applyT();}
+// v198: ...on desktop. On COMPACT screens (phones / portrait tablets) the map is
+// edge-clamped and can't zoom out past "cover" (map fills the viewport), so a phone
+// never shows the empty starfield void — at v197's world-fit the map was a thin strip
+// with two-thirds of a portrait screen black.
+const _compactMQ = matchMedia('(max-width: 820px)');
+function _isCompactUI(){ return _compactMQ.matches; }
+function _minScale(){
+  if(!_isCompactUI()) return .25;
+  const cw=vp.clientWidth||1, ch=vp.clientHeight||1;
+  return Math.max(.25, cw/MAP_W, ch/MAP_H);
+}
+function clamp(){
+  if(!_isCompactUI()) return; // desktop: free panning (unchanged)
+  const cw=vp.clientWidth, ch=vp.clientHeight, w=MAP_W*scale, h=MAP_H*scale;
+  ox = w<=cw ? (cw-w)/2 : Math.min(0, Math.max(cw-w, ox));
+  oy = h<=ch ? (ch-h)/2 : Math.min(0, Math.max(ch-h, oy));
+}
+function resetView(){
+  // v198: on a phone "home" is YOUR country, not a world strip.
+  if(_isCompactUI() && typeof currentIdx==='number' && currentIdx>=0 && focusCountry(currentIdx, 0)) return;
+  const cw=vp.clientWidth,ch=vp.clientHeight;scale=Math.max(_minScale(),Math.min(cw/MAP_W,ch/MAP_H)*.98);ox=(cw-MAP_W*scale)/2;oy=(ch-MAP_H*scale)/2;clamp();applyT();
+}
+// v198: shared camera tween (also fixes jumpToCountry, which called an undefined
+// panToMapPoint and threw — legend click-to-pan and ?goto= deep links never moved).
+let _camTweenId = 0;
+function _tweenCamera(sT, cx, cy, dur, done){
+  const cw=vp.clientWidth, ch=vp.clientHeight;
+  sT = Math.max(_minScale(), Math.min(40, sT));
+  const oxT = cw/2 - cx*sT, oyT = ch/2 - cy*sT;
+  _zoomAnim = null;
+  const id = ++_camTweenId;
+  if(!dur){ scale=sT; ox=oxT; oy=oyT; clamp(); applyT(); if(done) done(); return; }
+  const sx0=scale, ox0=ox, oy0=oy, t0=performance.now();
+  const ease = t => (t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2)/2);
+  const step = () => {
+    if(id !== _camTweenId) return; // superseded
+    const p = Math.min(1, (performance.now()-t0)/dur), e = ease(p);
+    scale = sx0 + (sT-sx0)*e; ox = ox0 + (oxT-ox0)*e; oy = oy0 + (oyT-oy0)*e;
+    clamp(); applyT();
+    if(p < 1) requestAnimationFrame(step); else if(done) done();
+  };
+  requestAnimationFrame(step);
+}
+// Bounding box of a country's LARGEST CONNECTED LANDMASS across all its polygons
+// (USA → the lower 48, France → metropolitan France, not a box spanning to Guiana).
+let _focusScratch = null;
+function _countryFocusBox(fi){
+  const f = featList && featList[fi];
+  if(!f || typeof geoPixelList === 'undefined' || !geoPixelList) return null;
+  const id = String(f.id), lists = [];
+  for(let i=0;i<featList.length;i++){ const g=featList[i]; if(g && String(g.id)===id && geoPixelList[i] && geoPixelList[i].length) lists.push(geoPixelList[i]); }
+  if(!lists.length) return null;
+  if(!_focusScratch) _focusScratch = new Uint8Array(MAP_PX);
+  const m = _focusScratch; // 1 = country pixel unvisited, 2 = visited
+  for(const a of lists) for(let k=0;k<a.length;k++) m[a[k]] = 1;
+  let best = null, bestN = 0; const q = [];
+  for(const a of lists) for(let k=0;k<a.length;k++){
+    const s = a[k]; if(m[s] !== 1) continue;
+    m[s] = 2; q.length = 0; q.push(s);
+    let n=0, x0=MAP_W, y0=MAP_H, x1=0, y1=0;
+    for(let h=0; h<q.length; h++){
+      const i=q[h], x=i%MAP_W, y=(i/MAP_W)|0; n++;
+      if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+      if(x>0 && m[i-1]===1){ m[i-1]=2; q.push(i-1); }
+      if(x<MAP_W-1 && m[i+1]===1){ m[i+1]=2; q.push(i+1); }
+      if(y>0 && m[i-MAP_W]===1){ m[i-MAP_W]=2; q.push(i-MAP_W); }
+      if(y<MAP_H-1 && m[i+MAP_W]===1){ m[i+MAP_W]=2; q.push(i+MAP_W); }
+    }
+    if(n > bestN){ bestN = n; best = { x0, y0, x1, y1 }; }
+  }
+  for(const a of lists) for(let k=0;k<a.length;k++) m[a[k]] = 0; // reset scratch
+  return best;
+}
+function focusCountry(fi, dur){
+  const b = _countryFocusBox(fi); if(!b) return false;
+  const cw=vp.clientWidth, ch=vp.clientHeight;
+  const bw=b.x1-b.x0+1, bh=b.y1-b.y0+1;
+  const sT = Math.min(8, Math.min(cw*0.8/bw, ch*0.6/bh));
+  _tweenCamera(sT, (b.x0+b.x1+1)/2, (b.y0+b.y1+1)/2, dur == null ? 650 : dur);
+  return true;
+}
 // v99e: eased zoom — instead of stepping scale instantly, each doZoom call
 // updates a TARGET and a rAF loop converges scale toward it (~35%/frame,
 // cursor-anchored every frame). Rapid wheel ticks compound into one smooth
 // glide; pinch (many small factors) feels buttery instead of stepped.
-function _zoomApply(ns,cx,cy){ns=Math.max(.25,Math.min(40,ns));ox=cx-(cx-ox)*(ns/scale);oy=cy-(cy-oy)*(ns/scale);scale=ns;clamp();applyT();}
+function _zoomApply(ns,cx,cy){ns=Math.max(_minScale(),Math.min(40,ns));ox=cx-(cx-ox)*(ns/scale);oy=cy-(cy-oy)*(ns/scale);scale=ns;clamp();applyT();}
 let _zoomAnim=null,_zoomAnimRAF=0;
 function doZoom(f,cx,cy){
   const cur=_zoomAnim?_zoomAnim.target:scale;
-  _zoomAnim={target:Math.max(.25,Math.min(40,cur*f)),cx,cy};
+  _camTweenId++; // v198: a manual zoom cancels any camera tween
+  _zoomAnim={target:Math.max(_minScale(),Math.min(40,cur*f)),cx,cy};
   if(_zoomAnimRAF) return;
   const step=()=>{
     if(!_zoomAnim){_zoomAnimRAF=0;return;}
@@ -9803,7 +9935,26 @@ const ACT_MAX_CARDS = 5;
 const ACT_CARD_LIFE = 10000; // ms
 let _actCards = [];
 
+// v198: on COMPACT screens, events about OTHER countries (opts.global) go to a slim
+// one-line ticker at the top of the map instead of full cards — two conquest cards
+// covered ~40% of a phone's map. Cards about YOU stay cards, capped at 2 / 6s there.
+let _tickerTimer = null, _tickerQueued = 0;
+function _tickerPush(opts) {
+  let el = document.getElementById('m-ticker');
+  if (!el) { el = document.createElement('div'); el.id = 'm-ticker'; (document.getElementById('viewport') || document.body).appendChild(el); }
+  const tmp = document.createElement('div'); tmp.innerHTML = opts.html || ''; tmp.querySelectorAll('img').forEach(i => i.remove());
+  const text = ((tmp.textContent || opts.text || '').trim()) || (opts.title || '');
+  const icon = (String(opts.title || '').match(/^\S+/) || [''])[0];
+  const showing = el.classList.contains('show');
+  _tickerQueued = showing ? _tickerQueued + 1 : 0;
+  el.innerHTML = '<span class="mt-ico">' + escapeHtml(/\p{Extended_Pictographic}/u.test(icon) ? icon : '⚔️') + '</span><span class="mt-txt">' + escapeHtml(text) + '</span>' +
+    (_tickerQueued ? '<span class="mt-more">+' + _tickerQueued + '</span>' : '');
+  el.classList.add('show');
+  clearTimeout(_tickerTimer);
+  _tickerTimer = setTimeout(() => { el.classList.remove('show'); _tickerQueued = 0; }, 4500);
+}
 function actPushCard(opts) {
+  if (opts && opts.global && typeof _isCompactUI === 'function' && _isCompactUI()) { _tickerPush(opts); return null; } // v198
   const wrap = document.getElementById('activity-toast');
   if (!wrap) return;
   const card = document.createElement('div');
@@ -9829,8 +9980,9 @@ function actPushCard(opts) {
   wrap.insertBefore(card, wrap.firstChild);
   _actCards.unshift({ el: card, born: Date.now() });
 
-  // Cap at ACT_MAX_CARDS — remove oldest (last)
-  while (_actCards.length > ACT_MAX_CARDS) {
+  // Cap at ACT_MAX_CARDS — remove oldest (last). v198: 2 on compact screens.
+  const _cap = (typeof _isCompactUI === 'function' && _isCompactUI()) ? 2 : ACT_MAX_CARDS;
+  while (_actCards.length > _cap) {
     const old = _actCards.pop();
     if (old && old.el && old.el.parentNode) old.el.parentNode.removeChild(old.el);
   }
@@ -9843,7 +9995,7 @@ function actPushCard(opts) {
       if (card.parentNode) card.parentNode.removeChild(card);
       _actCards = _actCards.filter(c => c.el !== card);
     }, 600);
-  }, ACT_CARD_LIFE);
+  }, (typeof _isCompactUI === 'function' && _isCompactUI()) ? 6000 : ACT_CARD_LIFE); // v198: shorter on phones
 
   return card;
 }
@@ -9873,6 +10025,7 @@ function showActivityToast(geoIdx, fightBack) {
 function pushEvent(icon, htmlText, options) {
   const variant = (options && options.variant) || 'info';
   actPushCard({
+    global: !(options && options.mine), // v198: world events → ticker on phones
     variant,
     title: icon + ' ' + (options && options.title ? options.title : 'Event'),
     html: htmlText,
@@ -10036,7 +10189,7 @@ let _siegeLastTick = 0;
 const SIEGE_TICK_MIN_MS = 200; // 5fps
 
 function tickSiegeFlash(){
-  requestAnimationFrame(tickSiegeFlash);
+  _bgFrame(tickSiegeFlash); // v198
   if(!featList || !featList.length) return;
   const now = performance.now();
   if(now - _siegeLastTick < SIEGE_TICK_MIN_MS) return;
@@ -11482,7 +11635,7 @@ function flushPaintQueue() {
         claimCtx.clearRect(x, y, 1, 1);
         claimCtx.fillStyle = (((x + y) >> 1) & 1) ? hi : lo;
         claimCtx.fillRect(x, y, 1, 1);
-        if (flashCtx) { flashCtx.fillRect(x, y, 1, 1); anyFlash = true; }
+        if (flashCtx) { flashCtx.fillRect(x, y, 1, 1); _flashGrow(x, y); anyFlash = true; }
       }
       continue;
     }
@@ -11491,7 +11644,7 @@ function flushPaintQueue() {
       const pi = arr[k];
       const x = pi % MAP_W, y = (pi / MAP_W) | 0;
       claimCtx.fillRect(x, y, 1, 1);
-      if (flashCtx) { flashCtx.fillRect(x, y, 1, 1); anyFlash = true; }
+      if (flashCtx) { flashCtx.fillRect(x, y, 1, 1); _flashGrow(x, y); anyFlash = true; }
     }
   }
   // Wake up the flash decay RAF if we just added new flashes
@@ -11699,6 +11852,7 @@ function mpHandleMessage(msg) {
           // v102: lead with the conqueror's leader portrait (flag fallback).
           const _pimg = _leaderFaceImg(conqueror, '', 'width:60px;height:60px;object-fit:contain;border-radius:6px;margin-right:8px;flex-shrink:0;'); /* v107: 2x */
           actPushCard({
+            global: true, // v198: someone else's conquest → ticker on phones
             variant: 'info',
             title: t('act.conquest_event_title'),
             html: _pimg + '<span>' + t('act.conquest_event_text', { attacker: conqueror.name, defender: target.name }) + '</span>',
@@ -12872,6 +13026,9 @@ function renderLoginHUD(profile) {
     btn.onclick = () => { window.location.href = '/auth/login'; };
     hud.appendChild(btn);
   }
+  // v198: mirror the account state into the phone menu drawer (the toolbar sign-in is hidden there).
+  const _mda = document.getElementById('m-drawer-account');
+  if (_mda) _mda.textContent = profile ? ('👤 ' + (profile.username || 'Account') + ' · Log out') : '💬 Sign in with Discord';
 }
 
 // Run auth check after map loads
@@ -13060,8 +13217,7 @@ function jumpToCountry(geoIdx){
   const cx = sumX / count, cy = sumY / count;
   // Zoom in to show the country well (scale 3-6 depending on country size)
   const targetScale = Math.min(8, Math.max(3, 400 / Math.sqrt(count)));
-  scale = targetScale;
-  panToMapPoint(cx, cy);
+  _tweenCamera(targetScale, cx, cy, 600); // v198: was scale= + undefined panToMapPoint (threw)
   // Flash highlight
   flashCountryHighlight(geoIdx);
 }
@@ -13636,6 +13792,23 @@ function _starsFullyCovered(){
   // true when the opaque map rectangle covers the whole viewport → no void to fill
   return ox<=0 && oy<=0 && (ox+MAP_W*scale)>=_starsW && (oy+MAP_H*scale)>=_starsH;
 }
+// v198: on mobile the starfield is drawn ONCE (no twinkle) and on resize. The ~12fps
+// twinkle kept invalidating a layer, so the compositor re-blended all the full-size map
+// layers continuously even when nothing else moved — a battery drain on phones.
+function _drawStarsOnce(){
+  if(!starCtx) return;
+  const d = starCtx;
+  d.clearRect(0,0,_starsW,_starsH);
+  d.fillStyle = '#070d1a'; d.fillRect(0,0,_starsW,_starsH);
+  for(const s of _stars){
+    d.globalAlpha = s.base; d.fillStyle = s.hue;
+    if(s.r<=1){ d.fillRect(s.x|0, s.y|0, 1, 1); } else { d.beginPath(); d.arc(s.x, s.y, s.r, 0, 6.283); d.fill(); }
+  }
+  d.globalAlpha = 1;
+}
+// v198: loops whose canvas is a 1x1 placeholder on mobile still did bookkeeping every
+// frame; they now tick on a 250ms timer there instead of requestAnimationFrame.
+function _bgFrame(f, hot){ return (_isMobileForMemory && !hot) ? setTimeout(f, 250) : requestAnimationFrame(f); }
 function _tickStars(){
   _starAnimId = requestAnimationFrame(_tickStars);
   if(!starCtx) return;
@@ -13657,8 +13830,8 @@ function _tickStars(){
   }
   d.globalAlpha = 1;
 }
-if(cStars && starCtx){ _initStars(); _starAnimId = requestAnimationFrame(_tickStars); }
-window.addEventListener('resize', ()=>{ try{ _initStars(); }catch(e){} });
+if(cStars && starCtx){ _initStars(); if(_isMobileForMemory) _drawStarsOnce(); else _starAnimId = requestAnimationFrame(_tickStars); } // v198
+window.addEventListener('resize', ()=>{ try{ _initStars(); if(_isMobileForMemory) _drawStarsOnce(); }catch(e){} try{ if(_isCompactUI()){ if(scale<_minScale()) scale=_minScale(); clamp(); applyT(); } }catch(e){} });
 
 // ── Rebuild country selector — disable conquered countries ────────
 function refreshCsel(){
@@ -14851,7 +15024,7 @@ function buildHighlightCache(geoIdx){
 }
 
 function tickHighlightFlash(){
-  _hlFlashRaf = requestAnimationFrame(tickHighlightFlash);
+  _hlFlashRaf = _bgFrame(tickHighlightFlash, highlightGeoIdx >= 0); // v198: full rate only while highlighting
 
   // Check expiry — only when a highlight is actually active
   if(highlightGeoIdx >= 0 && highlightExpiry > 0 && Date.now() >= highlightExpiry){
@@ -15011,6 +15184,8 @@ function selectCountry(idx){
   document.getElementById('csel-label').textContent = f.name;
   document.getElementById('csel-flag').innerHTML = flagAny(f.id, 2);
   if(_countryChanged && typeof refreshRankUI === 'function') refreshRankUI(); // v107: update rank-panel avatar to the new country
+  // v198: on a phone, fly to the country you just picked (the world view is unplayable at phone size).
+  if(_countryChanged && _isCompactUI() && !(typeof _ftueActive!=='undefined' && _ftueActive)) { try { focusCountry(idx); } catch(e){} }
   // v154: carry the Discord identity on EVERY join so the server binds player.discordId
   // (the bootstrap mpSendJoin often fires before /auth/me resolves → discordId:null, and
   // its _joinSent guard blocks a re-send — which is why logged-in players scored nothing).
@@ -15557,7 +15732,7 @@ function _inspectAtScreen(clientX, clientY) {
 //   Pass 2: bright cyan over all painted pixels (shows footprint)
 // hlCtx is shared with tickHighlightFlash; we cleared the conflict in v86a.
 function tickInspectHighlight() {
-  requestAnimationFrame(tickInspectHighlight);
+  _bgFrame(tickInspectHighlight, !!_inspectPainted); // v198: full rate only while inspecting
   if (!hlCtx) return;
   const now = performance.now();
   // Expired? wipe overlay then stop until next right-click.
@@ -15701,28 +15876,91 @@ function _touchOnMap(e){ return e.target === vp || (e.target instanceof HTMLCanv
 let _lpTimer = null, _lpX = 0, _lpY = 0;
 function _fireLongPressInspect() {
   _lpTimer = null;
+  clearTimeout(_tCommitTimer); _tCommitTimer = null; // v198: a long-press never paints
   isPainting = false; strokePixelBuffer = []; _touchMode = 'idle';
   if (typeof _inspectAtScreen === 'function') _inspectAtScreen(_lpX, _lpY);
   if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
 }
+// v198: TOUCH MODEL REWORK (mobile pass).
+//  * A finger no longer paints the instant it lands. The first contact is PENDING for
+//    _TOUCH_COMMIT_MS (or until it moves) — if a second finger arrives in that window
+//    it's a pinch and NOTHING is painted (v197 spent + sent a pixel under the first
+//    finger of every pinch). A quick tap still paints its pixel on lift.
+//  * PAINT / MOVE toggle (#z-mode, persisted in pa_touch_mode): in Move mode one finger
+//    pans. Two fingers always pan + zoom in either mode.
+//  * Paint strokes are INTERPOLATED between touch samples (Bresenham), so a fast swipe
+//    draws a solid line instead of dotted gaps — a line you can actually close a ring with.
+const _TOUCH_COMMIT_MS = 90;
+let _touchPanPref = false;
+try { _touchPanPref = localStorage.getItem('pa_touch_mode') === 'pan'; } catch (e) {}
+let _tStartX = 0, _tStartY = 0, _tLastX = 0, _tLastY = 0, _tCommitTimer = null, _tLastMap = null;
+function _syncTouchModeBtn(){
+  const b = document.getElementById('z-mode'); if (!b) return;
+  b.innerHTML = _touchPanPref ? '✋<span>Move</span>' : '🖌️<span>Paint</span>';
+  b.title = _touchPanPref ? 'Move mode: one finger pans. Tap to switch to Paint.' : 'Paint mode: one finger paints. Tap to switch to Move.';
+  b.setAttribute('aria-pressed', _touchPanPref ? 'true' : 'false');
+  b.classList.toggle('pan', _touchPanPref);
+}
+function toggleTouchMode(){
+  _touchPanPref = !_touchPanPref;
+  try { localStorage.setItem('pa_touch_mode', _touchPanPref ? 'pan' : 'paint'); } catch (e) {}
+  _syncTouchModeBtn();
+  if (navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
+}
+document.addEventListener('DOMContentLoaded', _syncTouchModeBtn);
+// Paint every map pixel on the segment a→b (skipping a, which was painted last time).
+function _paintSegment(a, b){
+  let x0 = a.x, y0 = a.y; const x1 = b.x, y1 = b.y;
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy, guard = 0;
+  while (!(x0 === x1 && y0 === y1) && guard++ < 512) {
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+    paintBrush(x0, y0);
+  }
+}
+function _touchCommitPaint(){
+  clearTimeout(_tCommitTimer); _tCommitTimer = null;
+  if (_touchMode !== 'pending') return;
+  _touchMode = 'paint';
+  isPainting = true;
+  _tLastMap = screenToMap(_tStartX, _tStartY);
+  paintBrush(_tLastMap.x, _tLastMap.y);
+}
+function _touchEndStroke(){
+  if (!isPainting) return;
+  // v63: build interpolated stroke wall before clearing buffer (runAutoFill is async)
+  _strokeWall = _buildStrokeWall(strokePixelBuffer);
+  _strokeChangedSet = _buildStrokeChangedSet(strokePixelBuffer); // v98
+  setTimeout(runAutoFill, 0);
+  if (strokePixelBuffer.length >= 1 && wsReady) { // v68: ≥1 (was ≥4)
+    try { ws.send(JSON.stringify({ type:'stroke-end', pixels: strokePixelBuffer.slice() })); } catch (err) {}
+  }
+  strokePixelBuffer = [];
+  isPainting = false;
+}
 vp.addEventListener('touchstart', e => {
   if (!_touchOnMap(e)) return;
   if (e.touches.length === 1 && _touchMode === 'idle') {
-    _touchMode = 'paint';
-    isPainting = true;
     const t = e.touches[0];
-    const p = screenToMap(t.clientX, t.clientY);
-    paintBrush(p.x, p.y);
-    _lpX = t.clientX; _lpY = t.clientY;
+    _tStartX = _tLastX = _lpX = t.clientX; _tStartY = _tLastY = _lpY = t.clientY;
+    _camTweenId++; // a touch interrupts any camera fly-to
+    if (_touchPanPref) {
+      _touchMode = 'pan';
+    } else {
+      _touchMode = 'pending';
+      clearTimeout(_tCommitTimer);
+      _tCommitTimer = setTimeout(_touchCommitPaint, _TOUCH_COMMIT_MS);
+    }
     clearTimeout(_lpTimer);
     _lpTimer = setTimeout(_fireLongPressInspect, 500);
   } else if (e.touches.length >= 2) {
-    // Second finger landed — switch to pan+zoom. Abort any in-flight paint
-    // without sending stroke-end (the partial stroke is discarded).
-    if (_touchMode === 'paint') {
-      isPainting = false;
-      strokePixelBuffer = [];
-    }
+    // Second finger — pinch/pan. A PENDING first finger painted nothing (the point of
+    // the commit delay). A stroke already in progress is ended normally (its pixels
+    // were already sent) rather than discarded, so its encirclement still counts.
+    clearTimeout(_tCommitTimer); _tCommitTimer = null;
+    if (_touchMode === 'paint') _touchEndStroke();
     clearTimeout(_lpTimer); _lpTimer = null; // v128: cancel long-press on pinch
     _touchMode = 'panzoom';
     _touchLastDist = _tdist(e);
@@ -15735,29 +15973,32 @@ vp.addEventListener('touchstart', e => {
 
 vp.addEventListener('touchmove', e => {
   if (!_touchOnMap(e)) return;
-  if (_touchMode === 'paint' && e.touches.length === 1) {
+  if (e.touches.length === 1 && (_touchMode === 'pending' || _touchMode === 'paint' || _touchMode === 'pan')) {
     const t = e.touches[0];
-    // v128: a real drag (>10px) is a paint stroke, not a long-press — cancel it.
-    if (_lpTimer && (Math.abs(t.clientX - _lpX) > 10 || Math.abs(t.clientY - _lpY) > 10)) { clearTimeout(_lpTimer); _lpTimer = null; }
-    const p = screenToMap(t.clientX, t.clientY);
-    paintBrush(p.x, p.y);
+    const moved = Math.abs(t.clientX - _tStartX) > 8 || Math.abs(t.clientY - _tStartY) > 8;
+    // v128: a real drag is a stroke/pan, not a long-press — cancel it.
+    if (_lpTimer && moved) { clearTimeout(_lpTimer); _lpTimer = null; }
+    if (_touchMode === 'pending' && moved) _touchCommitPaint();
+    if (_touchMode === 'paint') {
+      const p = screenToMap(t.clientX, t.clientY);
+      if (_tLastMap && (p.x !== _tLastMap.x || p.y !== _tLastMap.y)) _paintSegment(_tLastMap, p);
+      _tLastMap = p;
+    } else if (_touchMode === 'pan') {
+      ox += t.clientX - _tLastX; oy += t.clientY - _tLastY;
+      clamp(); applyT();
+    }
+    _tLastX = t.clientX; _tLastY = t.clientY;
   } else if (_touchMode === 'panzoom' && e.touches.length >= 2) {
     const r = vp.getBoundingClientRect();
     const mid = _tmid(e);
     // Pan: midpoint delta → ox/oy delta
-    const dx = mid.x - _touchLastMidX;
-    const dy = mid.y - _touchLastMidY;
-    ox += dx;
-    oy += dy;
+    ox += mid.x - _touchLastMidX;
+    oy += mid.y - _touchLastMidY;
     _touchLastMidX = mid.x;
     _touchLastMidY = mid.y;
     // Zoom: distance ratio centered on midpoint (relative to viewport)
     const d = _tdist(e);
-    if (_touchLastDist > 0) {
-      const ratio = d / _touchLastDist;
-      // doZoom expects viewport-relative center coords
-      doZoom(ratio, mid.x - r.left, mid.y - r.top);
-    }
+    if (_touchLastDist > 0) doZoom(d / _touchLastDist, mid.x - r.left, mid.y - r.top);
     _touchLastDist = d;
     clamp();
     applyT();
@@ -15768,22 +16009,14 @@ vp.addEventListener('touchmove', e => {
 vp.addEventListener('touchend', e => {
   if (!_touchOnMap(e)) return;
   clearTimeout(_lpTimer); _lpTimer = null; // v128: lift cancels a pending long-press
-  // touchend fires when ANY finger leaves; e.touches has the remaining ones.
-  if (_touchMode === 'paint' && isPainting) {
-    // v63: build interpolated stroke wall before clearing buffer (runAutoFill is async)
-    _strokeWall = _buildStrokeWall(strokePixelBuffer);
-    _strokeChangedSet = _buildStrokeChangedSet(strokePixelBuffer); // v98
-    setTimeout(runAutoFill, 0);
-    if (strokePixelBuffer.length >= 1 && wsReady) { // v68: ≥1 (was ≥4)
-      try { ws.send(JSON.stringify({ type:'stroke-end', pixels: strokePixelBuffer.slice() })); } catch (err) {}
-    }
-    strokePixelBuffer = [];
-    isPainting = false;
-  }
+  // A lift while still PENDING = a quick tap → paint that one pixel, then end the stroke.
+  if (_touchMode === 'pending' && e.touches.length === 0) _touchCommitPaint();
+  clearTimeout(_tCommitTimer); _tCommitTimer = null;
+  if (_touchMode === 'paint') _touchEndStroke();
   if (e.touches.length === 0) {
-    // All fingers up — back to idle
-    _touchMode = 'idle';
+    _touchMode = 'idle';                 // all fingers up
     _touchLastDist = 0;
+    _tLastMap = null;
   } else if (e.touches.length === 1 && _touchMode === 'panzoom') {
     // Dropped from 2 fingers to 1 — finish the gesture rather than starting a
     // paint (which would create a stray pixel under the user's lifting finger).
@@ -15793,6 +16026,7 @@ vp.addEventListener('touchend', e => {
 });
 
 vp.addEventListener('touchcancel', () => {
+  clearTimeout(_tCommitTimer); _tCommitTimer = null; // v198
   _touchMode = 'idle';
   _touchLastDist = 0;
   isPainting = false;
@@ -16340,7 +16574,7 @@ function _getSilhouette(src) {
 }
 
 function _renderMonsters() {
-  requestAnimationFrame(_renderMonsters);
+  _bgFrame(_renderMonsters); // v198
   const now = performance.now();
 
   // Full framerate during spawn/despawn animations; throttle to ~8fps otherwise
@@ -16599,7 +16833,7 @@ function _onMonsterSpawn(msg) {
   // v106: monster avatar (public/Avatars/) on the alert card.
   const _mav = { ufo: 'UFO', kraken: 'Kraken', godzilla: 'GiantLizard' }[type];
   const _mimg = _mav ? '<img class="pa-avatar" src="/Avatars/' + _mav + '.png" alt="" style="width:68px;height:68px;border-radius:7px;margin-right:8px;flex-shrink:0;">' : '';
-  actPushCard({ variant: 'alert', title: _ma.icon + ' ' + _ma.title, html: _mimg + '<span>' + _ma.text + '</span>' });
+  actPushCard({ global: true, variant: 'alert', title: _ma.icon + ' ' + _ma.title, html: _mimg + '<span>' + _ma.text + '</span>' }); // v198: global
 }
 
 function _onMonsterTick(msg) {
@@ -16740,7 +16974,9 @@ function _showMonsterBanner(type) {
   </div>
   <!-- v128: complete secondary-control set. One-tap actions (country-select,
        Nuke, zoom) stay in the toolbar/HUD; everything else lives here. -->
+  <button class="btn" data-mobile-action="account" id="m-drawer-account">💬 Sign in with Discord</button><!-- v198 -->
   <button class="btn" data-mobile-action="stats">📊 Stats &amp; Leaderboard</button>
+  <button class="btn" data-mobile-action="howto">❔ How to play</button><!-- v198 -->
   <button class="btn" data-mobile-action="highlight">🎯 Select Target</button>
   <button class="btn" data-mobile-action="invert">🔄 Invert My Pixels</button>
   <button class="btn" data-mobile-action="reset-view">⟲ Reset View</button>
