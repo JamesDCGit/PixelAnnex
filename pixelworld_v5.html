@@ -4445,7 +4445,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-15-v195';
+const CODE_VERSION = '2026-10-16-v196';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -11067,6 +11067,15 @@ function applySnapshotRuns(ab) {
   // the welcome buttons pulsed but were UNRESPONSIVE — and the per-row buffers piled
   // up with no GC yield → OOM crash on mobile. Chunking frees the thread between
   // ~10ms slices (taps work) and lets GC reclaim the transient buffers (no OOM).
+  // v196: STATE ONLY in the chunk loop — no canvas work. The old loop did a
+  // putImageData (+ two allocations) per ROW FRAGMENT of every run, 10ms per
+  // animation frame, and then _finishSnapshotReplay repainted the entire claim
+  // layer from claimByPixel via mpRebuildClaimCanvas anyway. On a fragmented
+  // late-war board that was ~30s of frames spent on pixels thrown away a moment
+  // later ("blank map for 30s after launch"). Now the chunks just fill
+  // claimByPixel/geoClaimCnt/claimerCount (plain typed-array writes, GC-free)
+  // and the one full rebuild at the end draws the board in a single putImageData.
+  const _t00 = performance.now();
   const _paintChunk = () => {
     const _t0 = performance.now();
     while (k < count && off + 10 <= dv.byteLength) {
@@ -11077,27 +11086,16 @@ function applySnapshotRuns(ab) {
       const fi = (o === 0xFFFF) ? undefined : idToFeatIdx.get(String(o));
       if (fi === undefined) continue;
       claimerCount[fi] = (claimerCount[fi] || 0) + l;
-      const [r, g, b] = _renderRgb(fi); // v97g
-      let pos = s;
-      const end = s + l;
-      while (pos < end && pos < MAP_PX) {
-        const x = pos % MAP_W, y = (pos / MAP_W) | 0;
-        const rowRem = Math.min(MAP_W - x, end - pos);
-        const slice = new Uint8ClampedArray(rowRem * 4);
-        for (let kk = 0; kk < rowRem; kk++) {
-          const p = kk * 4;
-          slice[p] = r; slice[p + 1] = g; slice[p + 2] = b; slice[p + 3] = 166;// v130: 65% paint opacity
-          const i = pos + kk;
-          claimByPixel[i] = fi;
-          const geo = featByPixel[i];
-          if (geo >= 0) { if (!geoClaimCnt[geo]) geoClaimCnt[geo] = {}; geoClaimCnt[geo][fi] = (geoClaimCnt[geo][fi] || 0) + 1; }
-        }
-        claimCtx.putImageData(new ImageData(slice, rowRem, 1), x, y);
-        pos += rowRem;
+      const end = Math.min(s + l, MAP_PX);
+      for (let i = s; i < end; i++) {
+        claimByPixel[i] = fi;
+        const geo = featByPixel[i];
+        if (geo >= 0) { const gc = geoClaimCnt[geo] || (geoClaimCnt[geo] = {}); gc[fi] = (gc[fi] || 0) + 1; }
       }
-      if (performance.now() - _t0 > 10) { requestAnimationFrame(_paintChunk); return; } // yield
+      if (performance.now() - _t0 > 12) { requestAnimationFrame(_paintChunk); return; } // yield (mobile: keep taps responsive)
     }
-    _finishSnapshotReplay(); // all runs painted → flags + finalize
+    console.log('[snapshot] ' + count + ' runs applied in ' + Math.round(performance.now() - _t00) + 'ms');
+    _finishSnapshotReplay(); // all runs applied → one full canvas rebuild + flags + finalize
   };
   _paintChunk();
 }
