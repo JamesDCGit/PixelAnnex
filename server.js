@@ -3106,6 +3106,8 @@ let _warNumber = 1;                 // v97h: which PixelAnnex War (game #) this 
 let _sessionStartMs = Date.now();
 const _sessionStats = new Map(); // discordId → { discordId, username, avatar, country, pixels, conquests, points }
 let _sessionDirty = false;
+const SUDDEN_DEATH_MAX_MS = 24 * 3600 * 1000; // v196a: sudden-death clock (see _checkWorldConquest)
+let _suddenDeathSince = 0;                     // v196a: ms epoch of entering sudden death (0 = not in it)
 function _recordSession(discordId, username, avatar, country, dPixels, dConquests, dPoints) { // v155: + points
   if (!discordId) return;
   let s = _sessionStats.get(discordId);
@@ -3126,7 +3128,7 @@ function _sessionLeaderboard(limit) {
 }
 function _saveSessionState(sync) {
   try {
-    const data = JSON.stringify({ warNumber: _warNumber, startMs: _sessionStartMs, stats: [..._sessionStats.values()] });
+    const data = JSON.stringify({ warNumber: _warNumber, startMs: _sessionStartMs, suddenDeathSince: _suddenDeathSince, stats: [..._sessionStats.values()] }); // v196a
     const tmp = SESSION_FILE + '.tmp';
     if (sync) { fs.writeFileSync(tmp, data); fs.renameSync(tmp, SESSION_FILE); }
     else { fs.writeFile(tmp, data, e => { if (!e) fs.rename(tmp, SESSION_FILE, () => {}); }); }
@@ -3139,6 +3141,7 @@ function _loadSessionState() {
     const d = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
     if (d && typeof d.warNumber === 'number') _warNumber = d.warNumber;
     if (d && typeof d.startMs === 'number') _sessionStartMs = d.startMs;
+    if (d && typeof d.suddenDeathSince === 'number') _suddenDeathSince = d.suddenDeathSince; // v196a
     if (d && Array.isArray(d.stats)) for (const s of d.stats) if (s && s.discordId) _sessionStats.set(String(s.discordId), s);
     console.log('[Session] restored War #' + _warNumber + ',', _sessionStats.size, 'players this game');
   } catch (e) { console.warn('[Session] load failed:', e.message); }
@@ -3186,6 +3189,12 @@ const SUDDEN_DEATH_STANDING = 5;
 const WIN_COUNTRIES_FRAC    = 0.65;
 const WIN_PIXELS_FRAC       = 0.65;
 let _suddenDeath   = false;   // mirrored to clients (regen x2) + drives the panel
+// v196a: SUDDEN-DEATH CLOCK. The win needs 65% of countries AND 65% of pixels; a
+// leader can sit at 65% countries / 43% pixels indefinitely once every other bot is
+// dead or exiled (War #20 froze for days). After SUDDEN_DEATH_MAX_MS in sudden death
+// the leading bloc (best of min(countries%, pixels%)) wins outright. Persisted in
+// session_state.json so a restart doesn't reset the clock.
+// (SUDDEN_DEATH_MAX_MS + _suddenDeathSince are declared above the session loader — TDZ.)
 let _suddenDeathTweeted = false; // v105: fire the sudden-death tweet once per game
 let _endgamePayload = null;   // last _computeEndgame() result (served + broadcast)
 
@@ -3321,8 +3330,16 @@ function _checkWorldConquest() {
   // so a displayed "65%" could be a true 64.6% and the exact >=0.65 check never
   // fired (the "passed 65% on both but the world didn't fall" report).
   const WIN_TRIGGER_FRAC = 0.64999;
-  const winner = eg.contenders.find(c =>
+  let winner = eg.contenders.find(c =>
     c.countriesFrac >= WIN_TRIGGER_FRAC && c.pixelsFrac >= WIN_TRIGGER_FRAC);
+  // v196a: sudden-death clock — see SUDDEN_DEATH_MAX_MS.
+  if (eg.suddenDeath) {
+    if (!_suddenDeathSince) { _suddenDeathSince = Date.now(); _sessionDirty = true; console.log('[v196a] sudden death clock started —', eg.standing, 'standing'); }
+    else if (!winner && Date.now() - _suddenDeathSince >= SUDDEN_DEATH_MAX_MS && eg.contenders.length) {
+      winner = eg.contenders[0];
+      console.log('[v196a] sudden-death clock expired after ' + Math.round((Date.now() - _suddenDeathSince) / 3600000) + 'h — ' + winner.name + ' wins on points');
+    }
+  } else if (_suddenDeathSince) { _suddenDeathSince = 0; _sessionDirty = true; } // left sudden death (e.g. reversal) → clock resets
   if (!winner) return;
   const total = eg.total;
   const conquered = _countDistinctConquered();
@@ -3395,6 +3412,7 @@ function _resetWorld() {
   _worldResetAt = 0;
   _worldConquestPayload = null; // v61: clear so new sessions don't see stale overlay
   _suddenDeath = false; _suddenDeathTweeted = false; // v105: re-arm endgame tweet for the new game
+  _suddenDeathSince = 0; // v196a
   // v97h: a finished game → next War. Bump the counter, wipe the session tally
   // (all-time profiles persist), persist immediately.
   _warNumber += 1;
@@ -4616,7 +4634,7 @@ setInterval(() => {
       if (_humanCountries.has(sid)) continue;                            // may be reclaiming — leave it
       if (!_isPlayableNation(sid)) continue;
       if (_foreignHolderOf(sid) === null) continue;                      // homeland is free → not a zombie
-      if (_countryOutposts(sid).length > 0) continue;                    // holds outposts → an exile, still alive
+      if (_countryOutposts(sid).length > 0) { exiledSet.add(sid); continue; } // holds outposts → an exile, still alive (v196a: re-derive the in-memory set after a restart)
       _zk++;
       permanentlyConquered.add(sid);
       broadcast(JSON.stringify({ type: 'country_fallen', countryId: sid })); // v152: clients grey it + render Fallen
@@ -5958,6 +5976,15 @@ function _botScarcityFrac() {
 }
 // Per-bot minimum gap between paints. Shrinks as the world consolidates; a defending
 // bot paints ~3x faster than its current gap.
+// v196a: exile status derived from the board (exiledSet is not persisted across
+// restarts): homeland held by a foreigner, not dead, still holds an outpost.
+function _isExileLike(countryId) {
+  const sid = String(countryId);
+  if (exiledSet.has(sid)) return true;
+  if (permanentlyConquered.has(sid)) return false;
+  if (_foreignHolderOf(sid) === null) return false;
+  return _countryOutposts(sid).length > 0;
+}
 function _botPaintGap(defending) {
   const frac = _botScarcityFrac();
   let gap = BOT_GAP_FRENZY_MS + (BOT_GAP_CALM_MS - BOT_GAP_FRENZY_MS) * frac;
@@ -6259,7 +6286,9 @@ function getBotTargets(countryId, limit) {
   }
 
   // ── 2. Strategic attack — score all neighbouring geos ────────
-  const homeStable = homeOwned / homeSampleSize >= BOT_HOMESTABLE_THRESH;
+  // v196a: an EXILE's homeland is held by someone else, so it is never "stable" —
+  // let it attack from its outposts anyway (that is all it has).
+  const homeStable = _isExileLike(countryId) || homeOwned / homeSampleSize >= BOT_HOMESTABLE_THRESH;
   if (homeStable && ownerPixels[cidx]) {
     const geoScores    = new Map(); // targetGeoIdx → score
     const geoCandidates = new Map(); // targetGeoIdx → [{x,y}]
@@ -6563,7 +6592,14 @@ function botTickSingle(countryId) {
   if (permanentlyConquered.has(countryId)) return;
   // Active conquest gate (redundant with permanentlyConquered, but kept for
   // clarity and to block mid-conquest activity before the set is populated).
-  if (_isCountryConquered(countryId)) return;
+  // v196a: EXCEPT exiles. An exiled country (homeland fallen, outposts held) is
+  // alive by design (v97e) but this gate silenced its bot forever — War #20 froze
+  // with 3 exiles + the USA (whose only bot unit a human replaced): zero bots
+  // painting, nothing to update. Exiles now fight on from their outposts.
+  // exiledSet is in-memory only (not in board_state.json), so after a restart an
+  // exile is merely "held, not dead, holds outposts" — derive it from the board.
+  const _exile = _isExileLike(countryId);
+  if (!_exile && _isCountryConquered(countryId)) return;
   // v100 (Phase 2A): humans replace bot units 1:1. (humanClaimedCountries is dead
   // code — .add is never called anywhere — so the old all-or-nothing gate was a
   // no-op; replaced by the per-unit human reduction below.)
@@ -6584,14 +6620,16 @@ function botTickSingle(countryId) {
       for (const [cId, cnt] of Object.entries(_claims)) {
         if (cId === countryId) continue;
         _foreignHome += cnt;
-        if (cnt / _homeTotal >= BOT_SURRENDER_THRESHOLD) {
-          return; // overwhelmed — stand down, let applyPixels fire formal conquest
+        if (!_exile && cnt / _homeTotal >= BOT_SURRENDER_THRESHOLD) {
+          return; // overwhelmed — stand down, let applyPixels fire formal conquest (v196a: not for exiles — that conquest already happened)
         }
       }
     }
   }
   // v34: only active bots paint
-  if (!_isBotActive(countryId)) return;
+  // v196a: ...except in sudden death — with <=5 countries left a 3-20min idle window
+  // per bot leaves the whole world motionless for minutes at a time.
+  if (!_suddenDeath && !_isBotActive(countryId)) return;
   if (DIRECTOR) bot.bucket = Math.max(bot.bucket, BOT_PIXELS_PER_TICK * 4); // v191: never bucket-starve during a take
   if (bot.bucket < BOT_PIXELS_PER_TICK) return;
 
