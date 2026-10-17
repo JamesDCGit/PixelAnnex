@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-10-18-v205';
+const SERVER_VERSION       = '2026-10-18-v206';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -7067,6 +7067,15 @@ const httpServer = http.createServer(async (req, res) => {
       '\n</urlset>\n');
     return;
   }
+  // v206: favicons. /favicon.ico is what browsers (and crawlers) request by default —
+  // serve the 64px PNG there too (every modern browser accepts PNG under that name).
+  if (url.pathname === '/favicon.ico' || url.pathname === '/favicon-64.png' || url.pathname === '/favicon-32.png') {
+    const f = path.join(__dirname, 'public', url.pathname === '/favicon-32.png' ? 'favicon-32.png' : 'favicon-64.png');
+    if (!fs.existsSync(f)) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+    fs.createReadStream(f).pipe(res);
+    return;
+  }
   if (url.pathname === '/site.webmanifest' || url.pathname === '/icon-192.png' ||
       url.pathname === '/icon-512.png' || url.pathname === '/apple-touch-icon.png' ||
       url.pathname === '/icon-maskable-192.png' || url.pathname === '/icon-maskable-512.png' || // v199: PWA maskable icons
@@ -7095,7 +7104,7 @@ const httpServer = http.createServer(async (req, res) => {
       '<meta property="og:url" content="' + SITE_URL + canonicalPath + '">' +
       '<meta property="og:image" content="' + SITE_URL + '/PixelAnnexHero.jpg">' +
       '<meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@PixelAnnexGame">' +
-      '<link rel="icon" href="/icon-192.png">' +
+      '<link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">' + // v206
       // v183a: AdSense loader on the content pages too (was game page only). The
       // review crawler weighs pages carrying the ad code, and these are the readable
       // ones; also lets Auto ads serve here once approved.
