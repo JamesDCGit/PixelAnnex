@@ -7104,7 +7104,7 @@ const httpServer = http.createServer(async (req, res) => {
       '<meta property="og:url" content="' + SITE_URL + canonicalPath + '">' +
       '<meta property="og:image" content="' + SITE_URL + '/PixelAnnexHero.jpg">' +
       '<meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@PixelAnnexGame">' +
-      '<link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">' + // v206
+      '<link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png?v=206"><link rel="apple-touch-icon" href="/apple-touch-icon.png?v=206">' + // v206
       // v183a: AdSense loader on the content pages too (was game page only). The
       // review crawler weighs pages carrying the ad code, and these are the readable
       // ones; also lets Auto ads serve here once approved.
