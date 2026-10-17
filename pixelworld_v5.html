@@ -1785,7 +1785,10 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
   #m-actionbar button.active, #m-actionbar button.active span { color: #a5b4fc; }
 
   body.m-sheet-open #m-sheet-backdrop {
-    display: block; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 61;
+    /* v203: TRANSPARENT — it only catches a tap outside the sheet to close it. The old
+       50% black dimmed the whole map, which also hid the country a Territory-row tap
+       highlights. The sheet itself is opaque (v201), so it still reads clearly. */
+    display: block; position: fixed; inset: 0; background: transparent; z-index: 61;
   }
   /* the "Show desktop notice" pill overlaps the action bar in-game — the user
      already opted into mobile, so drop it on compact screens. */
@@ -4654,7 +4657,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-17-v202';
+const CODE_VERSION = '2026-10-17-v203';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
