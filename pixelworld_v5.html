@@ -1744,7 +1744,7 @@ html.pa-mobile-forced #mobile-back-link { display: block; }
 #z-mode{display:none;width:auto;padding:0 8px;gap:4px;align-items:center;font-size:var(--pa-text);}
 #z-mode span{font-size:var(--pa-text);font-weight:700;}
 #z-mode.pan{background:rgba(59,130,246,.35);}
-@media (pointer:coarse){ #z-mode{display:inline-flex;} }
+/* v204: Paint/Move toggle retired — one finger pans, hold to paint. */
 #zoom-hud-tb{
   position:absolute;bottom:60px;left:50%;transform:translateX(-50%);
   display:flex;gap:5px;padding:5px;z-index:50;
@@ -2466,7 +2466,7 @@ html.pa-standalone #toolbar { padding-top: max(5px, env(safe-area-inset-top, 0px
         <button id="howto-close" onclick="closeHowTo()" aria-label="Close">&times;</button>
         <h2>How to play</h2>
         <div class="howto-grid">
-          <div class="howto-tile"><div class="ht-i">🎨</div><div class="ht-t">Paint pixels</div><div class="ht-d">Drag across the map to paint (on a phone, paint lands under the crosshair). Each pixel costs 1 from your bucket, which refills over time.</div></div>
+          <div class="howto-tile"><div class="ht-i">🎨</div><div class="ht-t">Paint pixels</div><div class="ht-d">Drag across the map to paint. On a phone: drag to move, hold still until the crosshair pops in, then drag to paint under it. Each pixel costs 1 from your bucket, which refills over time.</div></div>
           <div class="howto-tile"><div class="ht-i">⚔️</div><div class="ht-t">Conquer countries</div><div class="ht-d">Hold ~70–75% of a country's pixels to claim it. Smaller countries need a higher share.</div></div>
           <div class="howto-tile"><div class="ht-i">🛡️</div><div class="ht-t">Fight back</div><div class="ht-d">When your homeland is over half lost, your regen is maxed until you push the invaders back.</div></div>
           <div class="howto-tile"><div class="ht-i">🎯</div><div class="ht-t">Encircle</div><div class="ht-d">Close a loop around enemy land to capture everything inside it at once, and earn a regen bonus.</div></div>
@@ -4657,7 +4657,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-17-v203';
+const CODE_VERSION = '2026-10-17-v204';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -16102,43 +16102,38 @@ function _touchOnMap(e){ return e.target === vp || (e.target instanceof HTMLCanv
 let _lpTimer = null, _lpX = 0, _lpY = 0;
 function _fireLongPressInspect() {
   _lpTimer = null;
-  clearTimeout(_tCommitTimer); _tCommitTimer = null; // v198: a long-press never paints
+  clearTimeout(_tHoldTimer); _tHoldTimer = null; // v204 (helper no longer wired: a tap inspects)
   if (typeof _hideReticle === 'function') _hideReticle(); // v200
   isPainting = false; strokePixelBuffer = []; _touchMode = 'idle';
   if (typeof _inspectAtScreen === 'function') _inspectAtScreen(_lpX, _lpY);
   if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
 }
-// v200: TOUCH MODEL (builds on v198).
-//  * MOVE mode: one finger pans. BOTH modes: two fingers pan + pinch-zoom.
-//  * PAINT mode: the finger steers an AIMING RETICLE drawn _RETICLE_OFFSET px ABOVE the
-//    touch point, and paint lands under the reticle — the fingertip no longer hides the
-//    pixel you are painting. The reticle outlines the exact brush footprint, snapped to
-//    the map grid and tinted with your colour, so you see what a stroke will cover.
-//    A quick tap paints under the reticle too (one consistent rule).
-//  * The first contact is still PENDING for _TOUCH_COMMIT_MS (or until it moves), so a
-//    pinch never paints (v198). Long-press inspects what is under the reticle.
-//  * Pinch zoom is applied DIRECTLY (was routed through the eased doZoom, so the map
-//    lagged behind the fingers). Pans keep momentum: a flick glides and decelerates.
-const _TOUCH_COMMIT_MS = 90;
-const _RETICLE_OFFSET = 64;           // CSS px above the fingertip
-let _touchPanPref = false;
-try { _touchPanPref = localStorage.getItem('pa_touch_mode') === 'pan'; } catch (e) {}
-let _tStartX = 0, _tStartY = 0, _tLastX = 0, _tLastY = 0, _tCommitTimer = null, _tLastMap = null;
-let _tAimX = 0, _tAimY = 0;           // current reticle position (client px)
-function _touchBrushSize(){ return ((_touchMode === 'paint' || _touchMode === 'pending') && scale < 4) ? 3 : brushSize; }
-function _syncTouchModeBtn(){
-  const b = document.getElementById('z-mode'); if (!b) return;
-  b.innerHTML = _touchPanPref ? '✋<span>Move</span>' : '🖌️<span>Paint</span>';
-  b.title = _touchPanPref ? 'Move mode: one finger pans. Tap to switch to Paint.' : 'Paint mode: drag to paint under the crosshair. Tap to switch to Move.';
-  b.setAttribute('aria-pressed', _touchPanPref ? 'true' : 'false');
-  b.classList.toggle('pan', _touchPanPref);
-}
-function toggleTouchMode(){
-  _touchPanPref = !_touchPanPref;
-  try { localStorage.setItem('pa_touch_mode', _touchPanPref ? 'pan' : 'paint'); } catch (e) {}
-  _syncTouchModeBtn();
-  if (navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
-}
+// v204: TOUCH MODEL — one gesture vocabulary, no mode toggle.
+//   DRAG (moves before _HOLD_MS)   → pan the map, with fling on release.
+//   HOLD STILL _HOLD_MS            → the aiming reticle POPS in (scales up over
+//                                    _POP_MS, light haptic tick) _RETICLE_OFFSET px above
+//                                    the fingertip; painting starts as the pop lands, then
+//                                    dragging paints under the reticle. Lift ends the stroke.
+//   QUICK TAP (no move)            → inspect the pixel under the finger (replaces the old
+//                                    long-press, which now means "paint"). A tap that only
+//                                    stops a fling does nothing.
+//   TWO FINGERS                    → pan + pinch-zoom (direct, v200); cancels any hold.
+// Strokes are Bresenham-interpolated (v198); the touch brush widens to 3x3 below 4x zoom
+// and is charged per pixel flipped (v198).
+const _HOLD_MS = 220;                  // stationary time before the reticle arms
+const _POP_MS = 150;                   // reticle pop-in; painting begins when it lands
+const _MOVE_SLOP = 8;                  // px of movement that turns a press into a pan
+const _RETICLE_OFFSET = 64;            // CSS px above the fingertip
+let _tStartX = 0, _tStartY = 0, _tLastX = 0, _tLastY = 0, _tHoldTimer = null, _tLastMap = null;
+let _tAimX = 0, _tAimY = 0;            // current reticle position (client px)
+let _tStoppedFling = false;            // the touch-down stopped a glide → its tap is not an inspect
+let _rtScale = 1, _rtPopRaf = 0;
+function _touchBrushSize(){ return ((_touchMode === 'aim' || _touchMode === 'paint') && scale < 4) ? 3 : brushSize; }
+// v204: the Paint/Move toggle is retired (one finger always pans; hold to paint). Kept as
+// no-ops so any stale onclick/drawer reference stays harmless.
+function _syncTouchModeBtn(){ const b = document.getElementById('z-mode'); if (b) b.style.display = 'none'; }
+function toggleTouchMode(){}
+try { localStorage.removeItem('pa_touch_mode'); } catch (e) {}
 document.addEventListener('DOMContentLoaded', _syncTouchModeBtn);
 
 // ── aiming reticle ──
@@ -16161,21 +16156,43 @@ function _showReticle(fingerY){
   const p = screenToMap(_tAimX, _tAimY), bs = _touchBrushSize(), half = Math.floor(bs / 2);
   const bx = ox + (p.x - half) * scale, by = oy + (p.y - half) * scale, bw = Math.max(4, bs * scale);
   const cx = bx + bw / 2, cy = by + bw / 2, ring = Math.max(30, bw + 14);
+  const k = _rtScale;                       // pop-in scale, applied about the ring centre
   const box = el.children[2], rg = el.children[1], st = el.children[0];
   box.style.transform = 'translate(' + bx + 'px,' + by + 'px)'; box.style.width = box.style.height = bw + 'px';
-  rg.style.transform = 'translate(' + (cx - ring / 2) + 'px,' + (cy - ring / 2) + 'px)'; rg.style.width = rg.style.height = ring + 'px';
-  const fy = (fingerY == null ? _tLastY : fingerY) - r.top, stemTop = cy + ring / 2, stemH = Math.max(0, fy - 18 - stemTop);
+  box.style.opacity = k < 1 ? String(Math.max(0, (k - 0.4) / 0.6)) : '1';
+  const rs = ring * k;
+  rg.style.transform = 'translate(' + (cx - rs / 2) + 'px,' + (cy - rs / 2) + 'px)'; rg.style.width = rg.style.height = rs + 'px';
+  const fy = (fingerY == null ? _tLastY : fingerY) - r.top, stemTop = cy + rs / 2, stemH = Math.max(0, fy - 18 - stemTop);
   st.style.transform = 'translate(' + (cx - 1) + 'px,' + stemTop + 'px)'; st.style.height = stemH + 'px';
   const rgb = (typeof _renderRgb === 'function' && currentIdx >= 0) ? _renderRgb(currentIdx) : null;
   if (rgb) box.style.background = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',.45)';
   el.classList.add('show');
 }
-function _hideReticle(){ const el = document.getElementById('touch-reticle'); if (el) el.classList.remove('show'); }
+function _hideReticle(){
+  if (_rtPopRaf) { cancelAnimationFrame(_rtPopRaf); _rtPopRaf = 0; }
+  const el = document.getElementById('touch-reticle'); if (el) el.classList.remove('show');
+}
+// Pop the reticle in (0.3 → 1.12 → 1 overshoot). The animation is VISUAL ONLY — the
+// stroke starts from a timer in _touchArm, so painting never waits on animation frames
+// (a throttled/backgrounded page would otherwise never start the stroke).
+function _popReticle(){
+  if (_rtPopRaf) cancelAnimationFrame(_rtPopRaf);
+  const t0 = performance.now();
+  const step = (now) => {
+    if (_touchMode !== 'aim' && _touchMode !== 'paint') { _rtPopRaf = 0; _rtScale = 1; return; } // cancelled
+    const p = Math.min(1, (now - t0) / _POP_MS);
+    _rtScale = p < 0.7 ? 0.3 + (1.12 - 0.3) * (p / 0.7) : 1.12 - 0.12 * ((p - 0.7) / 0.3);
+    _showReticle();
+    if (p < 1) _rtPopRaf = requestAnimationFrame(step);
+    else { _rtPopRaf = 0; _rtScale = 1; _showReticle(); }
+  };
+  _rtPopRaf = requestAnimationFrame(step);
+}
 
 // ── pan momentum ──
 let _flingRaf = 0, _flingVX = 0, _flingVY = 0, _flingT = 0, _panSamples = [];
 function _panSample(x, y){ const t = performance.now(); _panSamples.push([t, x, y]); while (_panSamples.length > 2 && t - _panSamples[0][0] > 100) _panSamples.shift(); }
-function _flingStop(){ if (_flingRaf) cancelAnimationFrame(_flingRaf); _flingRaf = 0; }
+function _flingStop(){ const was = !!_flingRaf; if (_flingRaf) cancelAnimationFrame(_flingRaf); _flingRaf = 0; return was; }
 function _flingFromSamples(){
   const s = _panSamples; _panSamples = [];
   if (s.length < 2) return;
@@ -16206,21 +16223,27 @@ function _paintSegment(a, b){
     paintBrush(x0, y0);
   }
 }
-function _touchCommitPaint(){
-  clearTimeout(_tCommitTimer); _tCommitTimer = null;
+// HOLD elapsed: arm the reticle, pop it in, then start painting where it landed.
+let _tPaintTimer = null;
+function _touchArm(){
+  _tHoldTimer = null;
   if (_touchMode !== 'pending') return;
-  _touchMode = 'paint';
-  isPainting = true;
-  _tLastMap = screenToMap(_tAimX, _tAimY);   // v200: paint under the reticle
-  paintBrush(_tLastMap.x, _tLastMap.y);
-  _showReticle();
-  // one-time hint: paint lands under the crosshair, not the fingertip
-  try {
-    if (!localStorage.getItem('pa_reticle_hint')) {
-      localStorage.setItem('pa_reticle_hint', '1');
-      actPushCard({ variant: 'info', title: '🎯 Aim with the crosshair', text: 'Paint lands under the crosshair just above your finger. Switch to ✋ Move to pan with one finger.' });
-    }
-  } catch (e) {}
+  _touchMode = 'aim';
+  _aimFrom(_tLastX, _tLastY);
+  _rtScale = 0.3; _showReticle(_tLastY);
+  if (navigator.vibrate) { try { navigator.vibrate(10); } catch (e) {} }
+  _popReticle();
+  clearTimeout(_tPaintTimer);
+  _tPaintTimer = setTimeout(() => {
+    _tPaintTimer = null;
+    if (_touchMode !== 'aim') return;
+    _touchMode = 'paint';
+    isPainting = true;
+    _aimFrom(_tLastX, _tLastY);
+    _tLastMap = screenToMap(_tAimX, _tAimY);
+    paintBrush(_tLastMap.x, _tLastMap.y);
+    _rtScale = 1; _showReticle(_tLastY);
+  }, _POP_MS);
 }
 function _touchEndStroke(){
   if (!isPainting) return;
@@ -16234,36 +16257,31 @@ function _touchEndStroke(){
   strokePixelBuffer = [];
   isPainting = false;
 }
+// One-time hint the first time a phone player lifts a finger off the map.
+function _touchHintOnce(){
+  try {
+    if (localStorage.getItem('pa_touch_hint_v204')) return;
+    localStorage.setItem('pa_touch_hint_v204', '1');
+    actPushCard({ variant: 'info', title: '👆 Touch controls', text: 'Drag to move the map · hold still to paint (the crosshair shows where) · tap to inspect · pinch to zoom.' });
+  } catch (e) {}
+}
 vp.addEventListener('touchstart', e => {
   if (!_touchOnMap(e)) return;
-  _flingStop();
+  _tStoppedFling = _flingStop();
   _camTweenId++; // a touch interrupts any camera fly-to
   if (e.touches.length === 1 && _touchMode === 'idle') {
     const t = e.touches[0];
     _tStartX = _tLastX = t.clientX; _tStartY = _tLastY = t.clientY;
-    _panSamples = [];
-    if (_touchPanPref) {
-      _touchMode = 'pan';
-      _lpX = t.clientX; _lpY = t.clientY;
-      _panSample(t.clientX, t.clientY);
-    } else {
-      _touchMode = 'pending';
-      _aimFrom(t.clientX, t.clientY);
-      _lpX = _tAimX; _lpY = _tAimY;          // long-press inspects what the reticle shows
-      _showReticle(t.clientY);
-      clearTimeout(_tCommitTimer);
-      _tCommitTimer = setTimeout(_touchCommitPaint, _TOUCH_COMMIT_MS);
-    }
-    clearTimeout(_lpTimer);
-    _lpTimer = setTimeout(_fireLongPressInspect, 500);
+    _panSamples = []; _panSample(t.clientX, t.clientY);
+    _touchMode = 'pending';
+    clearTimeout(_tHoldTimer);
+    _tHoldTimer = setTimeout(_touchArm, _HOLD_MS);
   } else if (e.touches.length >= 2) {
-    // Second finger — pinch/pan. A PENDING first finger painted nothing (the point of
-    // the commit delay). A stroke already in progress is ended normally (its pixels
-    // were already sent) rather than discarded, so its encirclement still counts.
-    clearTimeout(_tCommitTimer); _tCommitTimer = null;
+    // Second finger — pinch/pan. A pending or aiming first finger painted nothing; a stroke
+    // already in progress is ended normally (its pixels were sent) so its encirclement counts.
+    clearTimeout(_tHoldTimer); _tHoldTimer = null; clearTimeout(_tPaintTimer); _tPaintTimer = null;
     if (_touchMode === 'paint') _touchEndStroke();
     _hideReticle();
-    clearTimeout(_lpTimer); _lpTimer = null; // v128: cancel long-press on pinch
     _touchMode = 'panzoom';
     _touchLastDist = _tdist(e);
     const mid = _tmid(e);
@@ -16276,25 +16294,25 @@ vp.addEventListener('touchstart', e => {
 
 vp.addEventListener('touchmove', e => {
   if (!_touchOnMap(e)) return;
-  if (e.touches.length === 1 && (_touchMode === 'pending' || _touchMode === 'paint' || _touchMode === 'pan')) {
+  if (e.touches.length === 1 && (_touchMode === 'pending' || _touchMode === 'pan' || _touchMode === 'aim' || _touchMode === 'paint')) {
     const t = e.touches[0];
-    const moved = Math.abs(t.clientX - _tStartX) > 8 || Math.abs(t.clientY - _tStartY) > 8;
-    // v128: a real drag is a stroke/pan, not a long-press — cancel it.
-    if (_lpTimer && moved) { clearTimeout(_lpTimer); _lpTimer = null; }
+    if (_touchMode === 'pending' && (Math.abs(t.clientX - _tStartX) > _MOVE_SLOP || Math.abs(t.clientY - _tStartY) > _MOVE_SLOP)) {
+      clearTimeout(_tHoldTimer); _tHoldTimer = null;   // moved before the hold → it's a pan
+      _touchMode = 'pan';
+    }
     if (_touchMode === 'pan') {
       ox += t.clientX - _tLastX; oy += t.clientY - _tLastY;
       clamp(); applyT();
       _panSample(t.clientX, t.clientY);
-    } else {
-      // Commit at the touch-DOWN aim first (so the stroke starts where the reticle first
-      // appeared), then move the aim and paint the segment to it.
-      if (_touchMode === 'pending' && moved) _touchCommitPaint();
+    } else if (_touchMode === 'aim') {
+      _tLastX = t.clientX; _tLastY = t.clientY;      // reticle follows during the pop
       _aimFrom(t.clientX, t.clientY);
-      if (_touchMode === 'paint') {
-        const p = screenToMap(_tAimX, _tAimY);
-        if (_tLastMap && (p.x !== _tLastMap.x || p.y !== _tLastMap.y)) _paintSegment(_tLastMap, p);
-        _tLastMap = p;
-      }
+      _showReticle(t.clientY);
+    } else if (_touchMode === 'paint') {
+      _aimFrom(t.clientX, t.clientY);
+      const p = screenToMap(_tAimX, _tAimY);
+      if (_tLastMap && (p.x !== _tLastMap.x || p.y !== _tLastMap.y)) _paintSegment(_tLastMap, p);
+      _tLastMap = p;
       _showReticle(t.clientY);
     }
     _tLastX = t.clientX; _tLastY = t.clientY;
@@ -16318,20 +16336,27 @@ vp.addEventListener('touchmove', e => {
 
 vp.addEventListener('touchend', e => {
   if (!_touchOnMap(e)) return;
-  clearTimeout(_lpTimer); _lpTimer = null; // v128: lift cancels a pending long-press
-  // A lift while still PENDING = a quick tap → paint under the reticle, then end the stroke.
-  if (_touchMode === 'pending' && e.touches.length === 0) _touchCommitPaint();
-  clearTimeout(_tCommitTimer); _tCommitTimer = null;
-  if (_touchMode === 'paint') _touchEndStroke();
+  clearTimeout(_tHoldTimer); _tHoldTimer = null; clearTimeout(_tPaintTimer); _tPaintTimer = null;
   if (e.touches.length === 0) {
+    if (_touchMode === 'pending' && !_tStoppedFling) {
+      // Quick tap, no movement → inspect what is under the finger.
+      if (typeof _inspectAtScreen === 'function') _inspectAtScreen(_tStartX, _tStartY);
+    } else if (_touchMode === 'aim') {
+      // Lifted during the pop → the stroke had not started; place the one pixel it was aiming at.
+      _aimFrom(_tLastX, _tLastY);
+      const p = screenToMap(_tAimX, _tAimY);
+      isPainting = true; paintBrush(p.x, p.y);
+      _touchMode = 'paint';
+    }
+    if (_touchMode === 'paint') _touchEndStroke();
     if (_touchMode === 'pan' || _touchMode === 'panzoom') _flingFromSamples();
-    _touchMode = 'idle';                 // all fingers up
+    _touchMode = 'idle';
     _touchLastDist = 0;
     _tLastMap = null;
     _hideReticle();
+    _touchHintOnce();
   } else if (e.touches.length === 1 && _touchMode === 'panzoom') {
-    // Dropped from 2 fingers to 1 — keep panning with the remaining finger (both modes);
-    // it never turns into a stroke, so no stray pixel under the lifting finger.
+    // Dropped from 2 fingers to 1 — keep panning with the remaining finger.
     const t = e.touches[0];
     _touchMode = 'pan';
     _tStartX = _tLastX = t.clientX; _tStartY = _tLastY = t.clientY;
@@ -16341,7 +16366,7 @@ vp.addEventListener('touchend', e => {
 });
 
 vp.addEventListener('touchcancel', () => {
-  clearTimeout(_tCommitTimer); _tCommitTimer = null; // v198
+  clearTimeout(_tHoldTimer); _tHoldTimer = null; clearTimeout(_tPaintTimer); _tPaintTimer = null; // v204
   _hideReticle(); _panSamples = []; // v200
   _touchMode = 'idle';
   _touchLastDist = 0;
