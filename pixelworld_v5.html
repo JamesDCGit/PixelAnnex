@@ -2122,6 +2122,14 @@ html.pa-standalone #toolbar { padding-top: max(5px, env(safe-area-inset-top, 0px
 }
 body.cinematic #ftue-steps { display: none !important; }
 
+/* v207: paint focus — 10-frame (~167ms) fades. The filter dims+desaturates every painted
+   pixel on the claim layer while a stroke is in progress; #c-focus (above) holds the
+   undimmed stroke + the touched countries' borders. */
+#c-focus { opacity: 0; transition: opacity 167ms linear; pointer-events: none; }
+#c-focus.on { opacity: 1; }
+#c-claim { transition: filter 167ms linear; }
+body.pa-painting #c-claim { filter: brightness(.55) saturate(.3); }
+
 /* v39d: Monster banner fade-out */
 @keyframes monsterBannerFade {
   0%   { opacity: 0; transform: translateX(-50%) translateY(-8px); }
@@ -2548,6 +2556,7 @@ body.cinematic #ftue-steps { display: none !important; }
     <canvas id="c-border"></canvas><!-- v39b: now below c-claim -->
     <canvas id="c-claim"></canvas>
     <canvas id="c-nightfx" style="pointer-events:none"></canvas><!-- v174: city-light glints ABOVE claims; fades out with zoom -->
+    <canvas id="c-focus" style="pointer-events:none"></canvas><!-- v207: paint focus — undimmed stroke + touched-country borders while painting -->
     <canvas id="c-flash" style="pointer-events:none;"></canvas>
     <canvas id="c-outline" style="pointer-events:none;"></canvas>
     <!-- v39b: c-border moved below to render before c-claim -->
@@ -4690,7 +4699,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-18-v206';
+const CODE_VERSION = '2026-10-26-v207';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -4822,6 +4831,9 @@ const cBorder=document.getElementById("c-border");
 const cMonsters=document.getElementById("c-monsters"); // v40
 const bctx=cBase.getContext("2d");
 const claimCtx=cClaim.getContext("2d");
+const cFocus = document.getElementById("c-focus"); // v207: paint-focus layer
+const focusCtx = cFocus ? cFocus.getContext("2d") : null;
+if (focusCtx) focusCtx.imageSmoothingEnabled = false;
 const cFlags=document.getElementById("c-flags");
 const flagCtx=cFlags.getContext("2d");
 const cOutline=document.getElementById("c-outline");
@@ -5037,7 +5049,7 @@ if (flashCtx) flashCtx.imageSmoothingEnabled = false;
 // v31: On mobile/iOS, shrink decorative canvases to 1×1 to free GPU memory.
 //      Essential gameplay canvases stay at full MAP_W × MAP_H.
 // v200: cGrid is screen-space — drawGrid() sizes it to the viewport, so it no longer gets a transient 2048x1024 backing here.
-[cBase,cWaves,cSprites,cLandmarks,cClaim,cMonsters,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege].forEach(c=>{
+[cBase,cWaves,cSprites,cLandmarks,cClaim,cFocus,cMonsters,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege].forEach(c=>{
   if(!c) return;
   if(_isMobileForMemory && _DECORATIVE_CANVAS_IDS.includes(c.id)){
     c.width=1; c.height=1;
@@ -7235,6 +7247,7 @@ function claimPixel(px,py){
   claimCtx.clearRect(px, py, 1, 1);
   claimCtx.fillStyle = _mineStyle(currentIdx, px, py); // v97g invert + v144b stripe
   claimCtx.fillRect(px, py, 1, 1);
+  if (_focusOn) { focusCtx.fillStyle = claimCtx.fillStyle; focusCtx.fillRect(px, py, 1, 1); } // v207: the stroke stays bright above the dimmed board
   // v113: don't white-flash when reclaiming pixels inside your OWN homeland while
   // NOT in fight-back. Once you've pushed the enemy back below the fight-back line,
   // painting your own land should be calm — no attention-grabbing pulse. Painting
@@ -7245,11 +7258,78 @@ function claimPixel(px,py){
   return true;
 }
 
+
+// ── v207: PAINT FOCUS ─────────────────────────────────────────────────────────
+// While a stroke is in progress the claim layer (every painted pixel) is darkened and
+// desaturated by a CSS filter, and a separate full-size layer (c-focus, above it) carries
+// (a) the stroke's own pixels at full strength — so what you are painting pops instead of
+// dimming with everything else — and (b) a bright 1-map-pixel outline of every country the
+// stroke has touched (all polygons of that country id). Both fade in/out over FOCUS_FADE_MS
+// (10 frames @ 60fps) via CSS transitions; the layer is cleared after the fade-out.
+// Start = first paintBrush of a stroke (isPainting); end = a 50ms watcher that only runs
+// during the effect and fires when isPainting drops (mouse-up, touch end, long-press...).
+const FOCUS_FADE_MS = 167;
+const FOCUS_BORDER_STYLE = '#ffd84d';
+let _focusOn = false, _focusWatch = 0, _focusClearTimer = 0;
+const _focusCountries = new Set();
+const _focusBorderCache = new Map();   // countryId → Int32Array of border pixel indices
+let _focusMark = null;                 // reusable MAP_PX scratch (1 = in country)
+function _countryBorderPixels(cid) {
+  if (_focusBorderCache.has(cid)) return _focusBorderCache.get(cid);
+  const lists = [];
+  for (let i = 0; i < featList.length; i++) {
+    const g = featList[i];
+    if (g && String(g.id) === cid && geoPixelList && geoPixelList[i] && geoPixelList[i].length) lists.push(geoPixelList[i]);
+  }
+  if (!_focusMark) _focusMark = new Uint8Array(MAP_PX);
+  const m = _focusMark, out = [];
+  for (const a of lists) for (let k = 0; k < a.length; k++) m[a[k]] = 1;
+  for (const a of lists) for (let k = 0; k < a.length; k++) {
+    const i = a[k], x = i % MAP_W, y = (i / MAP_W) | 0;
+    if (x === 0 || x === MAP_W - 1 || y === 0 || y === MAP_H - 1 ||
+        !m[i - 1] || !m[i + 1] || !m[i - MAP_W] || !m[i + MAP_W]) out.push(i);
+  }
+  for (const a of lists) for (let k = 0; k < a.length; k++) m[a[k]] = 0; // reset scratch
+  const arr = Int32Array.from(out);
+  _focusBorderCache.set(cid, arr);
+  return arr;
+}
+function _focusAddCountryAt(px, py) {
+  if (!focusCtx) return;
+  const fi = featByPixel[py * MAP_W + px];
+  if (fi < 0 || !featList[fi]) return;
+  const cid = String(featList[fi].id);
+  if (_focusCountries.has(cid)) return;
+  _focusCountries.add(cid);
+  const b = _countryBorderPixels(cid);
+  focusCtx.fillStyle = FOCUS_BORDER_STYLE;
+  for (let k = 0; k < b.length; k++) { const i = b[k]; focusCtx.fillRect(i % MAP_W, (i / MAP_W) | 0, 1, 1); }
+}
+function _focusStart() {
+  if (_focusOn || !focusCtx) return;
+  if (_focusClearTimer) { clearTimeout(_focusClearTimer); _focusClearTimer = 0; } // restarted mid fade-out: start clean
+  focusCtx.clearRect(0, 0, MAP_W, MAP_H);
+  _focusCountries.clear();
+  _focusOn = true;
+  document.body.classList.add('pa-painting');
+  cFocus.classList.add('on');
+  _focusWatch = setInterval(() => { if (!isPainting) _focusEnd(); }, 50);
+}
+function _focusEnd() {
+  if (!_focusOn) return;
+  _focusOn = false;
+  clearInterval(_focusWatch); _focusWatch = 0;
+  document.body.classList.remove('pa-painting');
+  cFocus.classList.remove('on');
+  _focusClearTimer = setTimeout(() => { _focusClearTimer = 0; focusCtx.clearRect(0, 0, MAP_W, MAP_H); _focusCountries.clear(); }, FOCUS_FADE_MS + 40);
+}
+
 function paintBrush(px,py){
   // v160: no painting once the world is conquered (server rejects too via _isPaintLocked).
   if(typeof _worldLockClient!=='undefined' && _worldLockClient) return;
   // Reject ocean clicks — landMask check at brush centre
   if(!landMask||!landMask[py*MAP_W+px]) return;
+  if(isPainting){ _focusStart(); _focusAddCountryAt(px,py); } // v207: paint focus (dim the board, outline the country)
   // Block painting if this pixel already belongs to the same country (wastage prevention)
   if(_isMyIdx(claimByPixel[py*MAP_W+px])) return; // v148a: id-aware (multipolygon-safe)
   // Inventory gate: each brush call costs 1 pixel.
@@ -7713,7 +7793,7 @@ if (typeof _isMobileForMemory !== 'undefined' && !_isMobileForMemory) {
 function applyT(){
   const t="translate("+ox+"px,"+oy+"px) scale("+scale+")";
   // v133a: cGrid removed — the pixel grid is now screen-space (drawn by drawGrid), not transformed with the map.
-  [cBase,cWaves,cSprites,cLandmarks,cClaim,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cNight,cNightFx].forEach(c=>{if(c)c.style.transform=t;});
+  [cBase,cWaves,cSprites,cLandmarks,cClaim,cFocus,cFlash,cOutline,cFlags,cBorder,cHighlight,cOverlay,cCrater,cNuke,cSiege,cNight,cNightFx].forEach(c=>{if(c)c.style.transform=t;}); // v207: + cFocus
   // v174: environment sprites + landmark icons + city lights FADE OUT as you zoom in
   // (fully visible below scale 4, gone by scale 8) — operator request.
   const _envFade = Math.max(0, Math.min(1, (8 - scale) / 4));
