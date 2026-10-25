@@ -2124,7 +2124,8 @@ body.cinematic #ftue-steps { display: none !important; }
 
 /* v207: paint focus — 10-frame (~167ms) fades. The filter dims+desaturates every painted
    pixel on the claim layer while a stroke is in progress; #c-focus (above) holds the
-   undimmed stroke + the touched countries' borders. */
+   undimmed stroke + the touched countries' borders + (v207a) all of YOUR country's pixels,
+   so only other countries' pixels read as dimmed. */
 #c-focus { opacity: 0; transition: opacity 167ms linear; pointer-events: none; }
 #c-focus.on { opacity: 1; }
 #c-claim { transition: filter 167ms linear; }
@@ -4699,7 +4700,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-26-v207';
+const CODE_VERSION = '2026-10-26-v208';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -7305,11 +7306,50 @@ function _focusAddCountryAt(px, py) {
   focusCtx.fillStyle = FOCUS_BORDER_STYLE;
   for (let k = 0; k < b.length; k++) { const i = b[k]; focusCtx.fillRect(i % MAP_W, (i / MAP_W) | 0, 1, 1); }
 }
+// v207a: the PLAYER'S OWN pixels are exempt from the dimming (operator: only other
+// countries' pixels dim). At stroke start, snapshot every pixel of your country (all its
+// polygons / outposts — _myCountryIdxSet) onto the focus layer exactly as the claim layer
+// draws them (_renderRgb colour incl. "invert mine", stripe alpha _mineAlpha), so they sit
+// above the dimmed claim layer at normal brightness. One 2M-entry scan for the bbox, then an
+// ImageData sized to that bbox only (reused when the size repeats). Pixels you paint during
+// the stroke are mirrored by claimPixel; changes by others mid-stroke catch up at stroke end.
+let _focusMineImg = null;
+function _focusDrawMine() {
+  if (typeof _rebuildMyIdxSet === 'function') _rebuildMyIdxSet();
+  if (!_myCountryIdxSet || !_myCountryIdxSet.size) return;
+  // Lookup indexed by fi+1 so the -1 "unclaimed" sentinel needs no separate branch, and the
+  // bbox is only updated on matches — the 2M-cell pass is one load + one byte test per cell.
+  const mine = new Uint8Array(featList.length + 2);
+  for (const fi of _myCountryIdxSet) if (fi >= 0 && fi + 1 < mine.length) mine[fi + 1] = 1;
+  // Pass 1 (the only full-map pass): collect YOUR pixel indices + their bbox. Pass 2 touches
+  // only those pixels — an outpost far away makes the bbox wide, so walking the bbox was the
+  // real cost (437k cells for 2.4k pixels).
+  const cb = claimByPixel, N = MAP_PX, W = MAP_W; // locals: a global-binding read per cell is slower
+  const idx = [];
+  let x0 = W, x1 = -1;
+  for (let i = 0; i < N; i++) {
+    if (mine[cb[i] + 1]) { idx.push(i); const x = i % W; if (x < x0) x0 = x; if (x > x1) x1 = x; }
+  }
+  if (!idx.length) return;
+  const y0 = (idx[0] / W) | 0, y1 = (idx[idx.length - 1] / W) | 0;
+  const w = x1 - x0 + 1, h = y1 - y0 + 1;
+  if (!_focusMineImg || _focusMineImg.width !== w || _focusMineImg.height !== h) _focusMineImg = new ImageData(w, h);
+  const d = _focusMineImg.data; d.fill(0);
+  const rgbCache = {};
+  for (let k = 0; k < idx.length; k++) {
+    const i = idx[k], fi = cb[i], x = i % W, y = (i / W) | 0;
+    const rgb = rgbCache[fi] || (rgbCache[fi] = _renderRgb(fi));
+    const p = ((y - y0) * w + (x - x0)) * 4;
+    d[p] = rgb[0]; d[p + 1] = rgb[1]; d[p + 2] = rgb[2]; d[p + 3] = (_mineAlpha(x, y) * 255) | 0;
+  }
+  focusCtx.putImageData(_focusMineImg, x0, y0);
+}
 function _focusStart() {
   if (_focusOn || !focusCtx) return;
   if (_focusClearTimer) { clearTimeout(_focusClearTimer); _focusClearTimer = 0; } // restarted mid fade-out: start clean
   focusCtx.clearRect(0, 0, MAP_W, MAP_H);
   _focusCountries.clear();
+  try { _focusDrawMine(); } catch (e) {} // v207a: your country stays at full brightness
   _focusOn = true;
   document.body.classList.add('pa-painting');
   cFocus.classList.add('on');
