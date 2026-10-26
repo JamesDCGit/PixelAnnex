@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-10-26-v211';
+const SERVER_VERSION       = '2026-10-26-v213';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -7033,6 +7033,7 @@ function checkMapReady() {
 }
 
 // ── WebSocket server ──────────────────────────────────────────────
+const _PORTAL_PUBLIC_API = new Set(['/api/version', '/api/world-state', '/api/alliances', '/api/stats/leaderboard', '/api/playable']); // v212
 const httpServer = http.createServer(async (req, res) => {
   let url;
   try {
@@ -7042,6 +7043,10 @@ const httpServer = http.createServer(async (req, res) => {
     res.writeHead(400); res.end();
     return;
   }
+
+  // v212: portal builds (Poki / Y8) run on the portal's domain and call these public,
+  // read-only, cookie-free endpoints cross-origin. Session endpoints stay same-origin.
+  if (req.method === 'GET' && _PORTAL_PUBLIC_API.has(url.pathname)) res.setHeader('Access-Control-Allow-Origin', '*');
 
   // ── Static game file (cached, compressed) ──────────────────────
   if (url.pathname === '/api/version') {
