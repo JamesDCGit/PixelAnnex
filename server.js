@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-10-26-v209';
+const SERVER_VERSION       = '2026-10-26-v210';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -3071,6 +3071,34 @@ let _strokeActor = null;
 // their browser (pa_collect); only signed-in players are persisted on the Discord profile.
 const COLLECT_MIN_PX = 5;
 const COLLECT_WINDOW_MS = 20 * 60 * 1000;
+// v210: a signed-out player's items can be CLAIMED onto their profile when they sign in.
+// Each award to an anonymous socket carries sig = HMAC(key, anonId + ':' + countryId), where
+// anonId is the random per-browser id the client sends on join (pa_anon_id). On sign-in the
+// client POSTs {anonId, items:[{id,sig}]} to /auth/claim-collectables; only items whose sig
+// verifies are added, so a client cannot invent items, and one anonId can be claimed into
+// ONE account (profile.anonIds) so a copied browser save can't seed several accounts.
+// Key is derived from DISCORD_CLIENT_SECRET (stable across restarts; claiming needs OAuth,
+// which needs that secret anyway) — COLLECT_SIGN_KEY overrides; random per boot in dev.
+const _COLLECT_KEY = crypto.createHash('sha256')
+  .update('pa-collect-v1:' + (process.env.COLLECT_SIGN_KEY || DISCORD_CLIENT_SECRET || crypto.randomBytes(32).toString('hex')))
+  .digest();
+const ANON_ID_RE = /^[a-f0-9]{32}$/;
+function _collectSig(anonId, countryId) {
+  return crypto.createHmac('sha256', _COLLECT_KEY).update(anonId + ':' + countryId).digest('hex').slice(0, 32);
+}
+function _collectSigOK(anonId, countryId, sig) {
+  if (typeof sig !== 'string' || sig.length !== 32) return false;
+  const want = Buffer.from(_collectSig(anonId, countryId)), got = Buffer.from(sig);
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+let _collectItemIds = null; // valid item ids from public/collectables/manifest.json (lazy)
+function _isCollectItem(id) {
+  if (!_collectItemIds) {
+    try { _collectItemIds = new Set(Object.keys(JSON.parse(fs.readFileSync(path.join(__dirname, 'public', 'collectables', 'manifest.json'), 'utf8')).items || {})); }
+    catch (e) { return false; } // retried on the next call
+  }
+  return _collectItemIds.has(String(id));
+}
 function _notePlayerGeoPaint(player, changed) {
   if (!player || !changed || !changed.length) return;
   if (!player._geoPaint) player._geoPaint = new Map();
@@ -5391,7 +5419,9 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
           else { _apr.collectables[_gk] = _nowC; markProfilesDirty(); }
         }
         if (!isNew) continue; // the client already has it (merged from the profile)
-        try { ep.ws.send(JSON.stringify({ type: 'collect_award', countryId: _gk })); } catch (e) {} // client dedupes its local set
+        const _award = { type: 'collect_award', countryId: _gk };
+        if (!ep.discordId && ep.anonId) _award.sig = _collectSig(ep.anonId, _gk); // v210: claimable on sign-in
+        try { ep.ws.send(JSON.stringify(_award)); } catch (e) {} // client dedupes its local set
         console.log('[Collect]', _countryName(geo), 'item earned by', ep.discordId ? (getProfile(ep.discordId).username || ep.discordId) : 'anonymous', ep === _actor ? '(final stroke)' : '(contributor)');
       }
     } catch (e) { console.warn('[Conquest] human credit failed:', e.message); }
@@ -8551,6 +8581,49 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── v210: /auth/claim-collectables → move signed-out items onto the profile ──
+  if (url.pathname === '/auth/claim-collectables' && req.method === 'POST') {
+    const cookie = req.headers.cookie || '';
+    const m = cookie.match(/pa_session=([a-f0-9]+)/);
+    const session = m ? getSession(m[1]) : null;
+    if (!session) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, reason: 'not_logged_in' })); return; }
+    let body = '';
+    req.on('data', chunk => { body += chunk; if (body.length > 64 * 1024) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const anonId = String(data.anonId || '');
+        const items = Array.isArray(data.items) ? data.items.slice(0, 400) : [];
+        if (!ANON_ID_RE.test(anonId)) { res.writeHead(400); res.end('bad anonId'); return; }
+        const profile = getProfile(session.discordId);
+        for (const [, other] of profiles) { // one browser save → one account
+          if (other !== profile && Array.isArray(other.anonIds) && other.anonIds.includes(anonId)) {
+            res.writeHead(409, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, reason: 'claimed_by_other' }));
+            return;
+          }
+        }
+        if (!profile.collectables) profile.collectables = {};
+        let added = 0;
+        const now = Date.now();
+        for (const it of items) {
+          const id = String(it && it.id);
+          if (!_isCollectItem(id) || !_collectSigOK(anonId, id, it.sig)) continue;
+          if (!profile.collectables[id]) { profile.collectables[id] = now; added++; }
+        }
+        if (!Array.isArray(profile.anonIds)) profile.anonIds = [];
+        if (!profile.anonIds.includes(anonId)) profile.anonIds.push(anonId);
+        markProfilesDirty();
+        if (added) console.log('[Collect] claimed', added, 'signed-out item(s) onto', profile.username || session.discordId);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, added, collectables: Object.keys(profile.collectables) }));
+      } catch (e) {
+        res.writeHead(400); res.end('bad request');
+      }
+    });
+    return;
+  }
+
   // ── /auth/logout → clear session ───────────────────────────────
   if (url.pathname === '/auth/logout') {
     const cookie = req.headers.cookie || '';
@@ -8898,6 +8971,7 @@ wss.on('connection', (ws, req) => {
             p.username = msg.username;
           }
         }
+        if (typeof msg.anonId === 'string' && ANON_ID_RE.test(msg.anonId)) player.anonId = msg.anonId; // v210
         // v170: join-time collectables backfill REMOVED — items are personal now
         // (only the player whose own stroke lands a conquest earns one).
         console.log(`  Player ${pid} → country ${player.countryId}`);

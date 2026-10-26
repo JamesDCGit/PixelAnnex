@@ -4725,7 +4725,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-26-v209';
+const CODE_VERSION = '2026-10-26-v210';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -11874,6 +11874,7 @@ function mpSendJoin() {
     countryId: f.id,
     discordId: _userProfile && _userProfile.loggedIn ? _userProfile.discordId : null,
     username:  _userProfile && _userProfile.loggedIn ? _userProfile.username  : null,
+    anonId: _anonId(), // v210: binds signed-out collectable awards to this browser
     geoTotal: geoTotalById,
     geoNames,
     indexToId,
@@ -12376,6 +12377,7 @@ function mpHandleMessage(msg) {
       // v157: you conquered a country → its collectable unlocks (server-persisted;
       // mirrored locally). Card names the item once the manifest is available.
       const _ccid = String(msg.countryId);
+      if (msg.sig) _storeCollectSig(_ccid, msg.sig); // v210: signed-out award, claimable on sign-in
       if (!_collectSet.has(_ccid)) {
         _collectSet.add(_ccid); _saveCollect();
         if (typeof refreshRankUI === 'function') refreshRankUI();
@@ -13362,6 +13364,7 @@ async function checkAuth() {
       // v157: merge the server-side collection into the local set (server is the
       // cross-device source of truth for logged-in players).
       if (typeof _mergeCollectables === 'function') _mergeCollectables(data.collectables);
+      if (typeof _claimAnonCollectables === 'function') _claimAnonCollectables(); // v210: upload items earned while signed out
     } else {
       _userProfile = null;
       _autoCountryApplied = false;
@@ -14882,6 +14885,45 @@ document.addEventListener('visibilitychange', () => {
 let _collectSet = new Set();
 try { _collectSet = new Set(JSON.parse(localStorage.getItem('pa_collect') || '[]').map(String)); } catch (e) {}
 function _saveCollect() { try { localStorage.setItem('pa_collect', JSON.stringify([..._collectSet])); } catch (e) {} }
+// v210: items earned while signed OUT arrive with a server signature bound to this
+// browser's anon id; they're kept in pa_collect_sig {countryId: sig} until the player
+// signs in, then _claimAnonCollectables uploads them onto the Discord profile.
+function _anonId() {
+  let id = null;
+  try { id = localStorage.getItem('pa_anon_id'); } catch (e) {}
+  if (!id || !/^[a-f0-9]{32}$/.test(id)) {
+    const b = new Uint8Array(16); crypto.getRandomValues(b);
+    id = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    try { localStorage.setItem('pa_anon_id', id); } catch (e) {}
+  }
+  return id;
+}
+function _collectSigs() { try { return JSON.parse(localStorage.getItem('pa_collect_sig') || '{}') || {}; } catch (e) { return {}; } }
+function _storeCollectSig(cid, sig) {
+  const m = _collectSigs(); m[String(cid)] = String(sig);
+  try { localStorage.setItem('pa_collect_sig', JSON.stringify(m)); } catch (e) {}
+}
+let _claimingCollect = false;
+async function _claimAnonCollectables() {
+  const sigs = _collectSigs(), ids = Object.keys(sigs);
+  if (!ids.length || _claimingCollect) return;
+  _claimingCollect = true;
+  try {
+    const r = await fetch('/auth/claim-collectables', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ anonId: _anonId(), items: ids.map(id => ({ id, sig: sigs[id] })) }),
+    });
+    if (r.status === 401 || r.status >= 500) return; // not signed in / server trouble: keep them, retry next sign-in
+    // 200 = saved; 400/409 = can't ever be claimed (bad id, or this browser's items went to
+    // another account) — either way the tokens are spent, the items stay in the local set.
+    try { localStorage.removeItem('pa_collect_sig'); } catch (e) {}
+    if (r.ok) {
+      const data = await r.json();
+      _mergeCollectables(data.collectables);
+      if (data.added) console.log('[Collect] uploaded', data.added, 'signed-out item(s) to your profile');
+    }
+  } catch (e) {} finally { _claimingCollect = false; }
+}
 let _collectManifest = null, _collectManifestP = null;
 function _loadCollectManifest() {
   if (_collectManifest) return Promise.resolve(_collectManifest);
