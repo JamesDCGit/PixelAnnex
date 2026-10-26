@@ -22,7 +22,7 @@
 // install prompt and share-to-X. The bundle's CODE_VERSION must equal the live
 // SERVER_VERSION — rebuild + re-upload whenever the client triad moves.
 'use strict';
-const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
+const fs = require('fs'), path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const argv = process.argv.slice(2);
@@ -155,8 +155,43 @@ function copyAssets() {
   console.log(`[${PORTAL}] ${codeV} → ${path.relative(ROOT, OUT)}  index.html ${mb(Buffer.byteLength(out))}, ${as.count} assets ${mb(as.bytes)}, ${rewrites} path rewrites, server ${ORIGIN}`);
   if (argv.includes('--no-zip')) return;
   const zip = path.join(ROOT, 'dist', `pixelannex-${PORTAL}-${codeV}.zip`);
-  fs.rmSync(zip, { force: true });
-  if (process.platform === 'win32') execFileSync('powershell', ['-NoProfile', '-Command', `Compress-Archive -Path '${OUT}\\*' -DestinationPath '${zip}' -Force`]);
-  else execFileSync('zip', ['-qr', zip, '.'], { cwd: OUT });
+  fs.writeFileSync(zip, makeZip(OUT));
   console.log(`[${PORTAL}] zip ${path.relative(ROOT, zip)} ${mb(fs.statSync(zip).size)}`);
 })().catch(e => { console.error(e); process.exit(1); });
+
+// Minimal zip writer (deflate, no dependency). Windows PowerShell 5.1's Compress-Archive
+// stores entry names with BACKSLASHES ("assets\flags\us.png"), which Linux unzip — i.e.
+// the portals' upload pipelines — extracts as literal filenames, so every asset 404s.
+// Entries here always use forward slashes, index.html at the root.
+function makeZip(dir) {
+  const zlib = require('zlib');
+  const crcTable = new Int32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c; });
+  const crc32 = buf => { let c = -1; for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xff] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+  const walk = (d, pre) => fs.readdirSync(d, { withFileTypes: true }).flatMap(e =>
+    e.isDirectory() ? walk(path.join(d, e.name), pre + e.name + '/') : [pre + e.name]);
+  const names = walk(dir, '').sort((a, b) => (a === 'index.html' ? -1 : b === 'index.html' ? 1 : a.localeCompare(b)));
+  const DOS_TIME = 0, DOS_DATE = (2026 - 1980) << 9 | 1 << 5 | 1; // fixed stamp → reproducible zips
+  const local = [], central = [];
+  let offset = 0;
+  for (const name of names) {
+    const data = fs.readFileSync(path.join(dir, name));
+    const comp = zlib.deflateRawSync(data, { level: 9 });
+    const stored = comp.length >= data.length; // already-compressed art: store as-is
+    const body = stored ? data : comp, nameBuf = Buffer.from(name, 'utf8'), crc = crc32(data);
+    const lh = Buffer.alloc(30);
+    lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0x0800, 6); lh.writeUInt16LE(stored ? 0 : 8, 8);
+    lh.writeUInt16LE(DOS_TIME, 10); lh.writeUInt16LE(DOS_DATE, 12); lh.writeUInt32LE(crc, 14);
+    lh.writeUInt32LE(body.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nameBuf.length, 26); lh.writeUInt16LE(0, 28);
+    const ch = Buffer.alloc(46);
+    ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(0x0800, 8); ch.writeUInt16LE(stored ? 0 : 8, 10);
+    ch.writeUInt16LE(DOS_TIME, 12); ch.writeUInt16LE(DOS_DATE, 14); ch.writeUInt32LE(crc, 16);
+    ch.writeUInt32LE(body.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nameBuf.length, 28);
+    ch.writeUInt32LE(offset, 42);
+    local.push(lh, nameBuf, body); central.push(ch, nameBuf);
+    offset += lh.length + nameBuf.length + body.length;
+  }
+  const cd = Buffer.concat(central), end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(names.length, 8); end.writeUInt16LE(names.length, 10);
+  end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...local, cd, end]);
+}
