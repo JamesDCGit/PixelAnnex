@@ -2156,6 +2156,14 @@ body.pa-painting #c-claim { filter: brightness(.55) saturate(.3); }
 @keyframes ipGlow { 0%,100% { transform: scale(.92); opacity: .8; } 50% { transform: scale(1.08); opacity: 1; } }
 body.cinematic #item-popup, body.cinematic #item-popup-backdrop { display: none !important; }
 
+/* v212: portal builds (html.pa-portal) — no Discord sign-in, no outbound links, no install
+   prompt, no share-to-X. Outbound <a target=_blank> stay as plain text (credits). */
+html.pa-portal #social-links, html.pa-portal #login-hud, html.pa-portal #dp-discord-cta,
+html.pa-portal #pwa-nudge, html.pa-portal #pwa-ios, html.pa-portal #wc-share,
+html.pa-portal [onclick*="/auth/login"], html.pa-portal [data-mobile-action="install"],
+html.pa-portal [data-mobile-action="account"], html.pa-portal .qs-foot a[href^="/"] { display: none !important; }
+html.pa-portal a[target="_blank"] { pointer-events: none; text-decoration: none !important; }
+
 /* v39d: Monster banner fade-out */
 @keyframes monsterBannerFade {
   0%   { opacity: 0; transform: translateX(-50%) translateY(-8px); }
@@ -4229,6 +4237,11 @@ function _idbGridPut(key, val){ return _idbPut('grid', key, val); }
 // NEXT load can surface where boot died (see the gate banner above). Cleared on
 // 'ready'. Also mirrored to console for connected debuggers.
 function _bootStage(name){
+  if (name === 'boot-done' && typeof _portalCall === 'function') _portalCall('loaded'); // v212: portal SDK gameLoadingFinished
+  if (name === 'ready' && typeof _portalPlay === 'function') { // v212: returning players skip the start screen and land straight in the world
+    const _ov = document.getElementById('tutorial-overlay');
+    if (!_ov || !_ov.classList.contains('open')) _portalPlay();
+  }
   try { localStorage.setItem('pa_boot_stage', name + ' @' + Math.round(performance.now()) + 'ms'); } catch(e){}
   try { console.log('[Boot]', name); } catch(e){}
   if (name === 'ready') {
@@ -4243,8 +4256,8 @@ let _actx = null;
 function getACtx(){
   // Returns audio context for SFX — null when SFX is muted
   if(!_actx){ try{ _actx = new AudioCtx(); }catch(e){ return null; } }
-  if(_actx.state === 'suspended') _actx.resume();
-  return (typeof _sfxOn==='undefined'||_sfxOn) ? _actx : null;
+  if(_actx.state === 'suspended' && !_paAdMute) _actx.resume(); // v212: stay muted during a portal ad break
+  return ((typeof _sfxOn==='undefined'||_sfxOn) && !_paAdMute) ? _actx : null;
 }
 // v92t: null-safe audio-context time. getACtx() returns null before the first
 // user gesture (autoplay policy) or when SFX is muted; reading .currentTime on
@@ -4254,7 +4267,7 @@ function _actxTime(){ const a = getACtx(); return a ? a.currentTime : 0; }
 function getMusicCtx(){
   // Returns audio context for music — always, regardless of SFX mute
   if(!_actx){ try{ _actx = new AudioCtx(); }catch(e){ return null; } }
-  if(_actx.state === 'suspended') _actx.resume();
+  if(_actx.state === 'suspended' && !_paAdMute) _actx.resume(); // v212
   return _actx;
 }
 
@@ -4725,14 +4738,39 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-26-v211';
+const CODE_VERSION = '2026-10-26-v212';
 window.CODE_VERSION = CODE_VERSION;
+// ── v212: PORTAL BUILDS (Poki / Y8) ──────────────────────────────────────────
+// tools/build-portal.js produces a self-contained index.html for game portals. It sets
+// window.PA_PORTAL ('poki' | 'y8') + window.PA_ORIGIN (the live server) BEFORE this script
+// runs, and window.paPortal = the portal SDK adapter {loaded, gameplayStart, gameplayStop,
+// commercialBreak}. On pixelannex.com none of these exist and every hook below is a no-op.
+// In a portal: no Discord sign-in, no outbound links, no service worker / install prompt,
+// no version-mismatch reload (the bundle is fixed until it is re-uploaded).
+var PA_PORTAL = window.PA_PORTAL || null;
+if (PA_PORTAL) document.documentElement.classList.add('pa-portal');
+var _portalPlaying = false, _paAdMute = false;
+function _portalCall(name) {
+  try { const p = window.paPortal; if (p && typeof p[name] === 'function') return p[name](); } catch (e) {}
+}
+function _portalPlay()  { if (!PA_PORTAL || _portalPlaying) return; _portalPlaying = true;  _portalCall('gameplayStart'); }
+function _portalPause() { if (!PA_PORTAL || !_portalPlaying) return; _portalPlaying = false; _portalCall('gameplayStop'); }
+// Ad break at a natural pause (re-pick after your country fell). Gameplay is stopped and
+// the game is muted for the duration; resolves when play may continue (also on ad errors).
+function _portalBreak() {
+  if (!PA_PORTAL || !window.paPortal || typeof window.paPortal.commercialBreak !== 'function') return Promise.resolve();
+  _portalPause();
+  _paAdMute = true;
+  try { if (_actx && _actx.state === 'running') _actx.suspend(); } catch (e) {}
+  let p; try { p = Promise.resolve(window.paPortal.commercialBreak()); } catch (e) { p = Promise.resolve(); }
+  return p.catch(() => {}).then(() => { _paAdMute = false; try { if (_actx) _actx.resume(); } catch (e) {} });
+}
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
 (function(){ const b=document.getElementById('ver-badge'); if(b) b.textContent=CODE_VERSION.split('-').pop(); })();
 
 // ── Service worker (caches static assets for fast reloads) ────────
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && !window.PA_PORTAL) { // v212: never inside a portal frame
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then(reg => {
       console.log('[SW] Registered, scope:', reg.scope);
@@ -7394,7 +7432,7 @@ function paintBrush(px,py){
   if(typeof _worldLockClient!=='undefined' && _worldLockClient) return;
   // Reject ocean clicks — landMask check at brush centre
   if(!landMask||!landMask[py*MAP_W+px]) return;
-  if(isPainting){ _focusStart(); _focusAddCountryAt(px,py); } // v207: paint focus (dim the board, outline the country)
+  if(isPainting){ _focusStart(); _focusAddCountryAt(px,py); _portalPlay(); } // v212: + portal gameplayStart fallback (cheap no-op once playing) // v207: paint focus (dim the board, outline the country)
   // Block painting if this pixel already belongs to the same country (wastage prevention)
   if(_isMyIdx(claimByPixel[py*MAP_W+px])) return; // v148a: id-aware (multipolygon-safe)
   // Inventory gate: each brush call costs 1 pixel.
@@ -9314,6 +9352,7 @@ function qsStart(id, meta) {
 }
 function _qsClose() {
   const ov = document.getElementById('tutorial-overlay'); if (ov) ov.classList.remove('open');
+  _portalPlay(); // v212
   try { localStorage.setItem('pa_tutorial_seen', '1'); } catch (e) {}
   _syncToolbarVisibility(); // v140: restore the toolbar
   if (typeof _ftueWasNew !== 'undefined' && _ftueWasNew) setTimeout(() => { try { startFtueSteps(); } catch (e) {} }, 900); // v205
@@ -10046,7 +10085,7 @@ async function checkDailyBonus() {
   // v142: the "Welcome Back" daily popup is REMOVED (frictionless flow — it popped up
   // right after the player picked a country). Still ping /api/daily-login so the server
   // credits the login bonus silently, then run the fallen-country re-pick check.
-  try { fetch('/api/daily-login', { credentials: 'include' }).catch(() => {}); } catch (e) {}
+  if (!PA_PORTAL) try { fetch('/api/daily-login', { credentials: 'include' }).catch(() => {}); } catch (e) {} // v212: session-only
   setTimeout(_tryShowFallenRepick, 1000);
 }
 
@@ -11491,6 +11530,7 @@ const WS_URL = (() => {
   // Auto-detect: same host, or override via ?server=ws://...
   const params = new URLSearchParams(window.location.search);
   if (params.get('server')) return params.get('server');
+  if (window.PA_ORIGIN) return String(window.PA_ORIGIN).replace(/^http/, 'ws'); // v212: portal build → the live server
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   // On https: use same origin (Nginx proxies to localhost:3000)
   // On http: connect directly to port 3000
@@ -12103,7 +12143,9 @@ function mpHandleMessage(msg) {
       // v92p: now that we have a player id, report our current viewport so the
       // server can start filtering deltas to what we see.
       _lastVpSent = ''; scheduleViewportUpdate();
-      if (msg.serverVersion && msg.serverVersion !== CODE_VERSION) {
+      if (msg.serverVersion && msg.serverVersion !== CODE_VERSION && PA_PORTAL) {
+        console.warn('[Portal] client', CODE_VERSION, 'vs server', msg.serverVersion, '— rebuild + re-upload the portal bundle');
+      } else if (msg.serverVersion && msg.serverVersion !== CODE_VERSION) {
         console.warn('[MP] Version mismatch — client', CODE_VERSION, 'vs server', msg.serverVersion);
         // v75 fix: only auto-reload ONCE per tab. Previously this caused an
         // infinite reload loop whenever CODE_VERSION and SERVER_VERSION
@@ -13342,6 +13384,7 @@ function paTrack(name, data){
 }
 
 async function checkAuth() {
+  if (PA_PORTAL) { _userProfile = null; renderLoginHUD(null); return; } // v212: portals play signed out
   try {
     const res = await fetch('/auth/me', { credentials: 'include' });
     const data = await res.json();
@@ -13526,11 +13569,13 @@ function getAlliancePixelTotals(){
 async function openStats() {
   if (typeof _updateBarVars === 'function') _updateBarVars(); // v128: size the modal between the bars
   document.getElementById('stats-overlay').classList.add('open');
+  _portalPause(); // v212
   loadStatsMe();
   loadStatsLeaderboard();
 }
 function closeStats() {
   document.getElementById('stats-overlay').classList.remove('open');
+  if (document.getElementById('tutorial-overlay') && !document.getElementById('tutorial-overlay').classList.contains('open')) _portalPlay(); // v212
 }
 function switchStatsTab(panel) {
   document.querySelectorAll('.stats-tab').forEach(t => {
@@ -16898,7 +16943,7 @@ function _pwaStandalone() {
   return matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
 }
 const _pwaIOSSafari = (typeof _isIOS !== 'undefined' && _isIOS) && /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(navigator.userAgent);
-function _pwaCanOffer() { return !_pwaStandalone() && (!!_pwaPrompt || _pwaIOSSafari); }
+function _pwaCanOffer() { return !window.PA_PORTAL && !_pwaStandalone() && (!!_pwaPrompt || _pwaIOSSafari); }
 function _pwaSync() {
   const d = document.getElementById('m-drawer-install');
   if (d) { d.style.display = _pwaCanOffer() ? '' : 'none'; _drawerLabel(d, _pwaPrompt ? '📲 Install app' : '📲 Add to Home Screen'); } // v201
@@ -17077,6 +17122,7 @@ document.addEventListener('DOMContentLoaded', () => setTimeout(refreshLeaderboar
 // and a "Share on X" button tweets the result (+ the server's full-world shot URL).
 let _worldLockClient = false; // v160: blocks paintBrush once the world is conquered
 function _showWorldConquestOverlay(data) {
+  _portalPause(); // v212: the war is over
   const old = document.getElementById('world-conquest-overlay');
   if (old) old.remove();
   // v100: the game's over — drop the sudden-death panel/regen.
@@ -17236,6 +17282,7 @@ function _outpostInfo(holderId, geoCountryId) {
 
 let _repickAwarded = false;
 function _showCountryRepickModal(data) {
+  _portalPause(); // v212: your country fell — gameplay stops until you pick again
   if (document.getElementById('repick-overlay')) return;
   // v153: never over the welcome screen — the welcome IS a country picker, so a
   // "your country has fallen, pick again" modal on top is redundant + confusing (and
@@ -17341,6 +17388,7 @@ function _showCountryRepickModal(data) {
   function _pickRepick(f) {
     const idx = featList.indexOf(f);
     if (idx < 0) return;
+    _portalBreak().then(_portalPlay); // v212: natural break → portal ad, then back to play
     currentIdx = idx;
     if (typeof _resetBonusesForCountryChange === 'function') _resetBonusesForCountryChange(); // v93y task 2
     try { localStorage.setItem('pa_country_idx', String(idx)); } catch(e) {}
