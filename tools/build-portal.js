@@ -13,7 +13,8 @@
 //     the game's /api calls to the live server, answers session-only calls (/auth, daily
 //     login, my stats) locally as "signed out", and blocks window.open (no outbound links);
 //   * the portal SDK adapter window.paPortal (Poki SDK for poki, no-op for y8) — the
-//     client's v212 hooks call loaded / gameplayStart / gameplayStop / commercialBreak;
+//     client's v212 hooks call loaded / gameplayStart / gameplayStop / commercialBreak
+//     (+ rewardedBreak for the v213 bonus-pixels button, Poki only);
 //   * root-absolute asset paths (/fonts/, /flags/, /map_grid.json, …) → relative assets/…,
 //     and those files are copied in, so the portal's CDN serves all art;
 //   * SEO/PWA/analytics head tags dropped (canonical, OG, manifest, JSON-LD, Umami);
@@ -41,6 +42,8 @@ const ADAPTERS = {
     gameplayStart: function () { call('gameplayStart'); },
     gameplayStop: function () { call('gameplayStop'); },
     commercialBreak: function () { try { return sdk().commercialBreak(); } catch (e) { return Promise.resolve(); } },
+    // v213: resolves true only when the player watched the ad through (→ bonus pixels)
+    rewardedBreak: sdk() ? function () { try { return sdk().rewardedBreak(); } catch (e) { return Promise.resolve(false); } } : undefined,
   };
 })();`,
   },
