@@ -54,6 +54,8 @@ board_state.json
 board_state.json.tmp
 session_state.json
 session_state.json.tmp
+auth_sessions.json
+auth_sessions.json.tmp
 tweet_queue.json
 shots/
 timelapse/

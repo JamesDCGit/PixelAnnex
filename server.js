@@ -329,8 +329,8 @@ const DISCORD_REDIRECT_URI  = process.env.DISCORD_REDIRECT_URI || 'http://localh
 const DISCORD_GUILD_ID      = process.env.DISCORD_GUILD_ID || '';
 const DISCORD_BOT_TOKEN     = process.env.DISCORD_BOT_TOKEN || '';
 
-// In-memory session store: token → { discordId, username, avatar, expires }
-// In production, replace with Redis or persistent DB
+// Session store: token → { discordId, username, avatar, expires }
+// v211a: persisted to auth_sessions.json (see _saveAuthSessions)
 const sessions = new Map();
 
 // SSE event streams subscribed by the Discord bot
@@ -2657,8 +2657,8 @@ function saveProfiles() {
 setInterval(saveProfiles, 60 * 1000);
 // v93o: also persist the board on shutdown so deploys/restarts resume the world.
 // saveBoardSnapshot is a hoisted fn defined later; sync=true for a clean exit.
-process.on('SIGTERM', () => { saveProfiles(); saveBoardSnapshot(true); _saveSessionState(true); });
-process.on('SIGINT',  () => { saveProfiles(); saveBoardSnapshot(true); _saveSessionState(true); process.exit(0); });
+process.on('SIGTERM', () => { saveProfiles(); saveBoardSnapshot(true); _saveSessionState(true); _saveAuthSessions(); });
+process.on('SIGINT',  () => { saveProfiles(); saveBoardSnapshot(true); _saveSessionState(true); _saveAuthSessions(); process.exit(0); });
 // profile = { discordId, username, avatar, countryMain, countryB, countryC, rank, xp, joinedAt }
 
 function generateToken() {
@@ -2668,9 +2668,45 @@ function generateToken() {
 function getSession(token) {
   const s = sessions.get(token);
   if (!s) return null;
-  if (s.expires < Date.now()) { sessions.delete(token); return null; }
+  if (s.expires < Date.now()) { sessions.delete(token); _authSessionsDirty = true; return null; }
   return s;
 }
+
+// v211a: persist login sessions so a restart/deploy no longer signs everyone out.
+// Before v211 the client re-sent its discordId on reconnect and the server trusted
+// it, which hid the wipe; with cookie-only identity a lost session map means no
+// credit until the player signs in again. Saved on login/logout (tiny file, sync),
+// every 30s if expiries pruned something, and on shutdown. Atomic .tmp + rename;
+// owner-only perms since the tokens are bearer credentials. Separate from
+// session_state.json, which is the per-war leaderboard tally.
+const AUTH_SESSIONS_FILE = path.join(__dirname, 'auth_sessions.json');
+let _authSessionsDirty = false;
+function _saveAuthSessions() {
+  try {
+    const now = Date.now();
+    const out = {};
+    for (const [tok, s] of sessions) if (s && s.expires > now) out[tok] = s;
+    const tmp = AUTH_SESSIONS_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(out), { mode: 0o600 });
+    fs.renameSync(tmp, AUTH_SESSIONS_FILE);
+    _authSessionsDirty = false;
+  } catch (e) { console.warn('[Auth] session save failed:', e.message); }
+}
+function _loadAuthSessions() {
+  try {
+    if (!fs.existsSync(AUTH_SESSIONS_FILE)) return;
+    const d = JSON.parse(fs.readFileSync(AUTH_SESSIONS_FILE, 'utf8'));
+    const now = Date.now();
+    let n = 0;
+    for (const tok of Object.keys(d || {})) {
+      const s = d[tok];
+      if (/^[a-f0-9]+$/.test(tok) && s && s.discordId && s.expires > now) { sessions.set(tok, s); n++; }
+    }
+    console.log('[Auth] restored ' + n + ' login session(s) from disk');
+  } catch (e) { console.warn('[Auth] session load failed:', e.message); }
+}
+_loadAuthSessions();
+setInterval(() => { if (_authSessionsDirty) _saveAuthSessions(); }, 30 * 1000);
 
 function getProfile(discordId) {
   if (!profiles.has(discordId)) {
@@ -8505,6 +8541,7 @@ const httpServer = http.createServer(async (req, res) => {
         avatar:    profile.avatar,
         expires:   Date.now() + SESSION_TTL_MS,
       });
+      _saveAuthSessions(); // v211a
 
       console.log(`[OAuth] ${profile.username} (${user.id}) logged in. In guild: ${inGuild}`);
 
@@ -8628,7 +8665,7 @@ const httpServer = http.createServer(async (req, res) => {
   if (url.pathname === '/auth/logout') {
     const cookie = req.headers.cookie || '';
     const m = cookie.match(/pa_session=([a-f0-9]+)/);
-    if (m) sessions.delete(m[1]);
+    if (m && sessions.delete(m[1])) _saveAuthSessions(); // v211a
     res.writeHead(302, {
       'Set-Cookie': 'pa_session=; Path=/; Max-Age=0',
       Location: '/',
