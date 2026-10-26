@@ -3061,6 +3061,29 @@ setInterval(() => {
 // handlers around applyPixels so _conquerGeo knows who landed the finishing blow;
 // bot strokes and the periodic sweep leave it null → no item.
 let _strokeActor = null;
+// v208a: ...but "your own stroke landed the final pixel" missed most real conquests —
+// countries usually tip a moment later, on a bot of your own country, the 60s sweep, or a
+// post-immunity re-eval. So a player also EARNS the item when they personally painted at
+// least COLLECT_MIN_PX pixels INTO that country within COLLECT_WINDOW_MS before it fell
+// (player._geoPaint: geo → {n, t}, updated by the stroke handlers). Still personal (you did
+// the work) — joining/re-picking a conquering country still grants nothing.
+// Signed-out players now get items too: the collect_award is sent to their socket and kept in
+// their browser (pa_collect); only signed-in players are persisted on the Discord profile.
+const COLLECT_MIN_PX = 5;
+const COLLECT_WINDOW_MS = 20 * 60 * 1000;
+function _notePlayerGeoPaint(player, changed) {
+  if (!player || !changed || !changed.length) return;
+  if (!player._geoPaint) player._geoPaint = new Map();
+  const now = Date.now();
+  for (const px of changed) {
+    const g = geoAtPixel[px.y * MAP_W + px.x];
+    if (g < 0) continue;
+    const k = String(g);
+    let e = player._geoPaint.get(k);
+    if (!e || now - e.t > COLLECT_WINDOW_MS) { e = { n: 0, t: now }; player._geoPaint.set(k, e); }
+    e.n++; e.t = now;
+  }
+}
 
 // ── v156: TREASURE CHESTS ─────────────────────────────────────────
 // Server-spawned bonus chests: 10/hour (one every 6 min), max 10 active, anywhere
@@ -5347,20 +5370,29 @@ function _conquerGeo(geo, conquerorId, conquests, changed) {
         markProfilesDirty();
         console.log('[Conquest] credited', _pts, 'pts to', _pr.username || hp.discordId); // v161 audit / v170: collectable moved below
       }
-      // v170: the COLLECTABLE is personal — only the player whose OWN stroke
-      // triggered this fall earns the item. Bot strokes and the periodic sweep
-      // run with _strokeActor null, so they award nothing.
+      // v170: the COLLECTABLE is personal. v208a: earned by the player whose stroke
+      // triggered the fall OR any human of the conquering country who painted
+      // >= COLLECT_MIN_PX into this country in the last COLLECT_WINDOW_MS — signed in or not.
+      const _earners = new Set();
       const _actor = _strokeActor;
-      if (_actor && _actor.discordId && !_actor.isBot &&
-          String(_actor.countryId) === String(conquerorId)) {
-        const _apr = getProfile(_actor.discordId);
-        if (!_apr.collectables) _apr.collectables = {};
-        if (!_apr.collectables[String(geo)]) {
-          _apr.collectables[String(geo)] = Date.now();
-          try { _actor.ws.send(JSON.stringify({ type: 'collect_award', countryId: String(geo) })); } catch (e) {}
-          markProfilesDirty();
-          console.log('[Collect]', _countryName(geo), 'item earned by', _apr.username || _actor.discordId, '(personal conquest)');
+      if (_actor && !_actor.isBot && _actor.ws && String(_actor.countryId) === String(conquerorId)) _earners.add(_actor);
+      const _nowC = Date.now(), _gk = String(geo);
+      for (const [, hp] of players) {
+        if (hp.isBot || !hp.ws || String(hp.countryId) !== String(conquerorId)) continue;
+        const gp = hp._geoPaint && hp._geoPaint.get(_gk);
+        if (gp && gp.n >= COLLECT_MIN_PX && _nowC - gp.t < COLLECT_WINDOW_MS) _earners.add(hp);
+      }
+      for (const ep of _earners) {
+        let isNew = true;
+        if (ep.discordId) {
+          const _apr = getProfile(ep.discordId);
+          if (!_apr.collectables) _apr.collectables = {};
+          if (_apr.collectables[_gk]) isNew = false;
+          else { _apr.collectables[_gk] = _nowC; markProfilesDirty(); }
         }
+        if (!isNew) continue; // the client already has it (merged from the profile)
+        try { ep.ws.send(JSON.stringify({ type: 'collect_award', countryId: _gk })); } catch (e) {} // client dedupes its local set
+        console.log('[Collect]', _countryName(geo), 'item earned by', ep.discordId ? (getProfile(ep.discordId).username || ep.discordId) : 'anonymous', ep === _actor ? '(final stroke)' : '(contributor)');
       }
     } catch (e) { console.warn('[Conquest] human credit failed:', e.message); }
   }
@@ -9021,6 +9053,9 @@ wss.on('connection', (ws, req) => {
         if (allowed <= 0) return; // empty bucket — drop entire stroke silently
         const limitedPixels = allowed < msg.pixels.length ? msg.pixels.slice(0, allowed) : msg.pixels;
         _strokeActor = player; // v170: this player's stroke — a conquest it triggers earns THEM the collectable
+        // v208a: record this stroke's per-country contribution BEFORE the conquest
+        // evaluation inside applyPixels, so a stroke that tips a country counts too.
+        _notePlayerGeoPaint(player, limitedPixels.filter(p => p && p.x >= 0 && p.x < MAP_W && p.y >= 0 && p.y < MAP_H && landMask[p.y * MAP_W + p.x]));
         const { changed, conquests, reversals } = applyPixels(limitedPixels, player.countryId);
         _strokeActor = null;
         if (changed.length) queueDelta(changed);
@@ -9075,6 +9110,7 @@ wss.on('connection', (ws, req) => {
         console.log('[Encircle] ' + player.countryId + ' stroke ' + msg.pixels.length + 'px, flipped ' + (strokeChanged ? strokeChanged.size : 0) + ' -> ' + (enc ? enc.count + 'px enclosed' : 'none')); // v197b: diagnose "my fill vanished"
         if (!enc) return;
         _strokeActor = player; // v170: encirclement is this player's action too
+        _notePlayerGeoPaint(player, enc.enclosed); // v208a: an encirclement counts as painting into those countries
         const { changed: encChanged, conquests: encConquests, reversals: encReversals } =
           applyPixels(enc.enclosed, player.countryId);
         _strokeActor = null;
