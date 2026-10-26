@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-10-26-v210';
+const SERVER_VERSION       = '2026-10-26-v211';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -8904,6 +8904,7 @@ wss.on('connection', (ws, req) => {
     const _sess = _ck ? getSession(_ck[1]) : null;
     if (_sess && _sess.discordId) {
       player.discordId = String(_sess.discordId);
+      player._sessTok = _ck[1]; // v211: re-checked on join so a logout/expiry unbinds
       console.log('  [Auth] player ' + pid + ' bound to Discord ' + player.discordId + ' via session cookie');
     }
   } catch (e) {}
@@ -8962,13 +8963,25 @@ wss.on('connection', (ws, req) => {
         if (!msg.countryId) return;
         player.countryId  = String(msg.countryId);
         player.countryIdx = getIdx(player.countryId);
-        // Bind discord identity from session cookie if available
+        // v211 SECURITY: identity comes ONLY from the session cookie bound at connect.
+        // msg.discordId used to be trusted, so any client could join as someone else's
+        // id and collect their points/XP/conquests/collectables (and rename them). It is
+        // now just a claim: a match allows the username refresh; a mismatch means the
+        // client signed in after this socket opened (e.g. in another tab), so we ask it
+        // to reconnect — the new upgrade request carries the current cookie.
+        if (player._sessTok && !getSession(player._sessTok)) { // logged out / expired since connect
+          delete player.discordId; delete player._sessTok;
+        }
         if (msg.discordId) {
-          player.discordId = String(msg.discordId);
-          // Update profile username if provided
-          if (msg.username) {
-            const p = getProfile(player.discordId);
-            p.username = msg.username;
+          const _claim = String(msg.discordId);
+          if (_claim === player.discordId) {
+            if (typeof msg.username === 'string' && msg.username) {
+              getProfile(player.discordId).username = msg.username.slice(0, 64);
+            }
+          } else if (!player._rebindSent) {
+            player._rebindSent = true; // once per socket — never a reconnect loop
+            console.log('  [Auth] player ' + pid + ' claimed Discord ' + _claim + ' without a matching session cookie — asking for a reconnect');
+            try { ws.send(JSON.stringify({ type: 'auth_rebind' })); } catch (e) {}
           }
         }
         if (typeof msg.anonId === 'string' && ANON_ID_RE.test(msg.anonId)) player.anonId = msg.anonId; // v210

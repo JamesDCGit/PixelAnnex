@@ -4725,7 +4725,7 @@ function isPlayableCountry(fi) {
 }
 // Code version — bump this every time we change client logic. Used to verify
 // what's actually deployed vs. local. Check via: window.CODE_VERSION
-const CODE_VERSION = '2026-10-26-v210';
+const CODE_VERSION = '2026-10-26-v211';
 window.CODE_VERSION = CODE_VERSION;
 console.log('PixelAnnex client', CODE_VERSION);
 // Version badge in toolbar
@@ -12527,6 +12527,18 @@ function mpHandleMessage(msg) {
       setTimeout(function(){ location.reload(); }, 1500);
       break;
     }
+    case 'auth_rebind': {
+      // v211: the server binds identity only from the session cookie on the WS upgrade.
+      // We signed in after this socket opened (e.g. in another tab), so reconnect —
+      // the close handler reopens in 3s with the current cookie. Throttled so a
+      // cookie the upgrade can't see never turns into a reconnect loop.
+      if (_userProfile && _userProfile.loggedIn && Date.now() - _authRebindAt > 120000) {
+        _authRebindAt = Date.now();
+        console.log('[Auth] socket not bound to this sign-in — reconnecting');
+        try { ws.close(); } catch (e) {}
+      }
+      break;
+    }
     case 'admin_announce': {
       // v95v: operator broadcast from the /admin dashboard.
       if (msg.text) {
@@ -13321,6 +13333,7 @@ function updateServerStatus(online, humanCount, botList){
 // ── Discord auth client ───────────────────────────────────────────
 let _userProfile = null;
 let _autoCountryApplied = false; // ensures we only auto-select once per session
+let _authRebindAt = 0; // v211: last auth_rebind reconnect (throttle)
 
 // v95w: Umami custom-event helper. No-op if the tracker hasn't loaded
 // (blocked/offline) so it can never throw. Wraps window.umami.track.
