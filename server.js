@@ -50,7 +50,7 @@ let _directorSpeed       = 1;          // global multiplier for directed paint r
 let _directorBroadcastMs = 0;          // >0 overrides BROADCAST_MS so paint streams
 const _directed          = new Map();  // countryId -> {geos,i,style,pxPerSec,gapMs,radius,lastAt,rateExplicit}
 let _directorTimers      = [];         // timeline setTimeouts
-const SERVER_VERSION       = '2026-10-26-v213';
+const SERVER_VERSION       = '2026-11-08-v214';
 console.log('PixelAnnex server', SERVER_VERSION);
 const MAP_W              = 2048;
 const MAP_H              = 1024;
@@ -5190,6 +5190,66 @@ function broadcast(msg, excludePid = -1) {
   }
 }
 
+// -- v214: PLAYER PRESENCE -- "X joined Spain" / "X left Spain" cards -------------
+// Humans only (bots never announce). One join per socket (the join message is re-sent
+// for identity rebinds). A refresh / reconnect must stay silent, so a leave is HELD for
+// PRESENCE_LEAVE_GRACE_MS and cancelled if the same person (Discord id > anonId > IP)
+// comes back in time; a second tab of someone already online announces nothing, and
+// neither does closing one of several tabs. Global cap PRESENCE_MAX_PER_MIN so a busy
+// world (or a reconnect storm after a deploy) can't flood the notification column.
+const PRESENCE_LEAVE_GRACE_MS = 20000;
+const PRESENCE_MAX_PER_MIN    = 8;
+const _presencePendingLeave = new Map(); // identity key -> { timer, countryId }
+let _presenceSent = [];                  // timestamps of recent announcements
+function _presenceKey(p) {
+  return p.discordId ? 'd:' + p.discordId : p.anonId ? 'a:' + p.anonId : 'i:' + (p._ip || '');
+}
+function _presenceOnlineElsewhere(key, exceptPid) {
+  for (const [pid, p] of players) {
+    if (pid !== exceptPid && !p.isBot && p._presenceJoined && _presenceKey(p) === key) return true;
+  }
+  return false;
+}
+function _presenceName(p) {
+  if (!p.discordId) return null; // client shows "A player"
+  const prof = profiles.get(p.discordId);
+  return prof && prof.username ? String(prof.username).slice(0, 32) : null;
+}
+function _presenceBroadcast(event, countryId, name, excludePid) {
+  if (DIRECTOR || !countryId) return; // v191 recording rig: keep takes clean
+  const now = Date.now();
+  _presenceSent = _presenceSent.filter(t => now - t < 60000);
+  if (_presenceSent.length >= PRESENCE_MAX_PER_MIN) return;
+  _presenceSent.push(now);
+  broadcast(JSON.stringify({ type: 'player_presence', event, countryId: String(countryId), name: name || null }), excludePid);
+}
+function _presenceOnJoin(pid, p) {
+  if (p.isBot || p._presenceJoined || !p.countryId) return;
+  const key = _presenceKey(p);
+  const pending = _presencePendingLeave.get(key);
+  const elsewhere = _presenceOnlineElsewhere(key, pid);
+  p._presenceJoined = true;
+  if (pending) {
+    clearTimeout(pending.timer);
+    _presencePendingLeave.delete(key);
+    if (pending.countryId === p.countryId) return; // refresh / reconnect: silent
+  } else if (elsewhere) return;                    // another tab of someone already online
+  _presenceBroadcast('join', p.countryId, _presenceName(p), pid);
+}
+function _presenceOnLeave(pid, p) {
+  if (!p || p.isBot || !p._presenceJoined || !p.countryId) return;
+  const key = _presenceKey(p);
+  if (_presenceOnlineElsewhere(key, pid)) return; // still here in another tab
+  const prev = _presencePendingLeave.get(key);
+  if (prev) clearTimeout(prev.timer);
+  const countryId = p.countryId, name = _presenceName(p);
+  const timer = setTimeout(() => {
+    _presencePendingLeave.delete(key);
+    if (!_presenceOnlineElsewhere(key, -1)) _presenceBroadcast('leave', countryId, name, -1);
+  }, PRESENCE_LEAVE_GRACE_MS);
+  _presencePendingLeave.set(key, { timer, countryId });
+}
+
 function broadcastPlayers() {
   _rebuildHumansByCountry(); // v100 (Phase 2A): keep per-country human counts fresh
   const davidSnapshot = buildDavidSnapshot();
@@ -8935,7 +8995,7 @@ wss.on('connection', (ws, req) => {
   _wsPerIP.set(ip, ipCount);
   console.log(`[+] Player ${pid} connected from ${ip}`);
 
-  const player = { ws, countryId: null, countryIdx: -1, lastSeen: Date.now(), isBot: false, viewport: null };
+  const player = { ws, countryId: null, countryIdx: -1, lastSeen: Date.now(), isBot: false, viewport: null, _ip: ip }; // v214: _ip = presence identity fallback
   // v168a: bind the Discord identity from the SESSION COOKIE at connect —
   // authoritative and timing-proof. The old binding relied on the CLIENT including
   // discordId in a join message, which races auth resolution vs socket join (live
@@ -9125,6 +9185,7 @@ wss.on('connection', (ws, req) => {
           try { ws.send(JSON.stringify(_worldConquestPayload)); } catch(e) {}
         }
         broadcastPlayers();
+        _presenceOnJoin(pid, player); // v214
         break;
       }
 
@@ -9420,7 +9481,9 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     clearInterval(keepalive);
+    const _leaving = players.get(pid);
     players.delete(pid);
+    _presenceOnLeave(pid, _leaving); // v214 (after delete, so this socket isn't "elsewhere")
     // v98b: release the per-IP connection slot
     const c = (_wsPerIP.get(ip) || 1) - 1;
     if (c <= 0) _wsPerIP.delete(ip); else _wsPerIP.set(ip, c);
